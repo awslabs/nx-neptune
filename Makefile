@@ -93,6 +93,12 @@ docs:             ## Build the documentation.
 	@$(ENV_PREFIX)mkdocs build
 	URL="site/index.html"; xdg-open $$URL || sensible-browser $$URL || x-www-browser $$URL || gnome-open $$URL || open $$URL
 
+.PHONY: doc-sphinx
+doc-sphinx:             ## Build the documentation.
+	@echo "building Sphinx documentation ..."
+	@$(ENV_PREFIX)sphinx-build -M html ./doc ./sphinx_output
+
+
 .PHONY: switch-to-poetry
 switch-to-poetry: ## Switch to poetry package manager.
 	@echo "Switching to poetry ..."

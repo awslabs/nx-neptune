@@ -31,6 +31,23 @@ jobs:
       - name: Run linter
         run: make lint
 
+  doc:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.9]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install project
+        run: make install
+      - name: Run Sphinx doc generation
+        run: make doc-sphinx
+
   tests_linux:
     needs: linter
     strategy:
