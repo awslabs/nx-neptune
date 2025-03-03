@@ -99,6 +99,13 @@ doc-sphinx:             ## Build the documentation.
 	@$(ENV_PREFIX)sphinx-build -M html ./doc ./sphinx_output
 
 
+.PHONY: license-check
+license-check:             ## Build the documentation.
+	@echo "license check ..."
+	@$(ENV_PREFIX)liccheck -s liccheck.ini -r requirements.txt
+
+
+
 .PHONY: switch-to-poetry
 switch-to-poetry: ## Switch to poetry package manager.
 	@echo "Switching to poetry ..."
