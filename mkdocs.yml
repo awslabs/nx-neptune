@@ -1,2 +1,3 @@
 site_name: nx_neptune_analytics
-theme: Improving
+theme:
+  name: 'material'
