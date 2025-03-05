@@ -75,17 +75,39 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
       - name: Install project
         run: make install
+
       - name: Run tests
         run: make test
-      - name: "Upload coverage to Codecov"
-        uses: codecov/codecov-action@v5
-        # with:
-        #   fail_ci_if_error: true
+
+      - name: Upload HTML coverage report
+        id: artifact-upload-step
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/
+
+      - name: Comment PR with artifact link
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const artifactId = ${{ steps.artifact-upload-step.outputs.artifact-id }}
+            const prNumber = context.payload.pull_request.number;
+            const runId = context.runId;
+            const artifactUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${runId}/artifacts/${artifactId}`;
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `📊 **Coverage Report**: Download the HTML report [here](${artifactUrl}).`
+            });
 
   tests_mac:
     needs: linter
