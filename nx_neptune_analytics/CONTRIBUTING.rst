@@ -165,7 +165,7 @@ Guidelines
 * All code should be documented, to the same
   `standard <https://numpydoc.readthedocs.io/en/latest/format.html#docstring-standard>`_
   as NumPy and SciPy.
-* Default dependencies are listed in ``requirements.txt`` and test
+* Default dependencies are listed in ``default.txt`` and test
   (i.e., optional) dependencies are listed in ``requirements-test.txt``.
   We don't often add new default and extra dependencies.  If you are considering
   adding code that has a dependency, you should first consider adding a gallery

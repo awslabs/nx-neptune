@@ -102,7 +102,7 @@ doc-sphinx:             ## Build the documentation.
 .PHONY: license-check
 license-check:             ## Build the documentation.
 	@echo "license check ..."
-	@$(ENV_PREFIX)liccheck -s liccheck.ini -r requirements.txt
+	@$(ENV_PREFIX)liccheck -s liccheck.ini -r requirements/default.txt
 
 
 
@@ -115,8 +115,8 @@ switch-to-poetry: ## Switch to poetry package manager.
 	@echo "" >> pyproject.toml
 	@echo "[tool.poetry.scripts]" >> pyproject.toml
 	@echo "nx_neptune_analytics = 'nx_neptune_analytics.__main__:main'" >> pyproject.toml
-	@cat requirements.txt | while read in; do poetry add --no-interaction "$${in}"; done
-	@cat requirements-test.txt | while read in; do poetry add --no-interaction "$${in}" --dev; done
+	@cat requirements/default.txt | while read in; do poetry add --no-interaction "$${in}"; done
+	@cat requirements/test.txt | while read in; do poetry add --no-interaction "$${in}" --dev; done
 	@poetry install --no-interaction
 	@mkdir -p .github/backup
 	@mv requirements* .github/backup

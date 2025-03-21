@@ -38,9 +38,9 @@ setup(
     long_description_content_type="text/markdown",
     author="Improving",
     packages=find_packages(exclude=["tests", ".github"]),
-    install_requires=read_requirements("requirements.txt"),
+    install_requires=read_requirements("requirements/default.txt"),
     entry_points={
         "console_scripts": ["nx_neptune_analytics = nx_neptune_analytics.__main__:main"]
     },
-    extras_require={"test": read_requirements("requirements-test.txt")},
+    extras_require={"test": read_requirements("requirements/test.txt")},
 )

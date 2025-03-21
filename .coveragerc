@@ -1,0 +1,3 @@
+[run]
+omit =
+    nx_neptune_analytics/na_client.py
