@@ -232,3 +232,22 @@ class NeptuneAnalyticsClient:
             "MATCH (" + matchClause + ") " + "DELETE " + deleteClause + " "
         )
         return self.__execute_generic_query(queryString)
+
+    def execute_algo_bfs(self, variableName: str, condition: str):
+        self.logger.info(
+            "Executing algorithm with parameters [" + condition + "]"
+        )
+
+        response = self.client.execute_query(
+            graphIdentifier=self.graphId,
+            queryString="MATCH ("
+            + variableName
+            + ") where "
+            + condition
+            + " CALL neptune.algo.bfs("
+            + variableName
+            + ") YIELD node RETURN node",
+            language="OPEN_CYPHER",
+        )
+
+        return json.loads(response["payload"].read())["results"]
