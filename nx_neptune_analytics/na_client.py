@@ -233,27 +233,29 @@ class NeptuneAnalyticsClient:
         )
         return self.__execute_generic_query(queryString)
 
-    def execute_algo_bfs(self, variableClause: str, whereClause: str):
+    def execute_algo_bfs(self, sourceNodeList: str, whereClause: str):
         """
         Composite an OpenCypher `CALL` statement for BFS algorithm run,
         then execute over the remote NA cluster.
 
         Args:
-            variableClause (str): The variable which will be used
+            sourceNodeList (str): The variable which will be used
             under MATCH and CALL clause.
             whereClause (str): The condition statement to be used
             under WHERE clause for filtering.
+            TODO: add additional (optional) arguments for the BFS algorithm
 
         Returns:
             _type_: The execution result of BFS algorithm.
+            TODO: add example
         """
         queryString = (
             "MATCH ("
-            + variableClause
+            + sourceNodeList
             + ") where "
             + whereClause
             + " CALL neptune.algo.bfs("
-            + variableClause
+            + sourceNodeList
             + ") YIELD node RETURN node"
         )
 
