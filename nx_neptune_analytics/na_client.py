@@ -128,8 +128,7 @@ class NeptuneAnalyticsClient:
         Returns:
             _type_: Nodes in JSON format.
         """
-        response = self.__execute_generic_query("MATCH (a) RETURN a")
-        return json.loads(response["payload"].read())["results"]
+        return self.__execute_generic_query("MATCH (a) RETURN a")
 
     def get_all_edges(self):
         """
@@ -139,8 +138,7 @@ class NeptuneAnalyticsClient:
         Returns:
             _type_: Edges in JSON format.
         """
-        response = self.__execute_generic_query("MATCH (a)-[r]->(b) RETURN r")
-        return json.loads(response["payload"].read())["results"]
+        return self.__execute_generic_query("MATCH (a)-[r]->(b) RETURN r")
 
     def __execute_generic_query(self, queryString: str):
         """
@@ -151,7 +149,7 @@ class NeptuneAnalyticsClient:
             queryString (str): OpenCypher query in string format.
 
         Returns:
-            _type_: Result from boto client in string format.
+            _type_: Result from Boto client.
         """
         self.logger.info(
             "Executing generic query ["
@@ -160,11 +158,13 @@ class NeptuneAnalyticsClient:
             + self.graphId
             + "]"
         )
-        return self.client.execute_query(
+        response = self.client.execute_query(
             graphIdentifier=self.graphId,
             queryString=queryString,
             language="OPEN_CYPHER",
         )
+
+        return json.loads(response["payload"].read())["results"]
 
     def __execute_insert_query(self, createClause: str, matchClause: str = ""):
         """
@@ -233,21 +233,29 @@ class NeptuneAnalyticsClient:
         )
         return self.__execute_generic_query(queryString)
 
-    def execute_algo_bfs(self, variableName: str, condition: str):
-        self.logger.info(
-            "Executing algorithm with parameters [" + condition + "]"
-        )
+    def execute_algo_bfs(self, variableClause: str, whereClause: str):
+        """
+        Composite an OpenCypher `CALL` statement,
+        then execute it on the remote NX cluster.
 
-        response = self.client.execute_query(
-            graphIdentifier=self.graphId,
-            queryString="MATCH ("
-            + variableName
+        Args:
+            variableClause (str): The variable which will be used
+            under MATCH and CALL clause.
+            whereClause (str): The condition statement to be used
+            under WHERE clause for filtering.
+
+        Returns:
+            _type_: The execution result of BFS algorithm.
+        """
+        queryString = (
+            "MATCH ("
+            + variableClause
             + ") where "
-            + condition
+            + whereClause
             + " CALL neptune.algo.bfs("
-            + variableName
-            + ") YIELD node RETURN node",
-            language="OPEN_CYPHER",
+            + variableClause
+            + ") YIELD node RETURN node"
         )
 
-        return json.loads(response["payload"].read())["results"]
+        return self.__execute_generic_query(queryString)
+        # return json.loads(response["payload"].read())["results"]
