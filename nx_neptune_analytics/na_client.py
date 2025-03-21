@@ -235,7 +235,7 @@ class NeptuneAnalyticsClient:
 
     def execute_algo_bfs(self, sourceNodeList: str, whereClause: str):
         """
-        Composite an OpenCypher `CALL` statement for BFS algorithm run,
+        Compose an OpenCypher `CALL` statement for BFS algorithm run,
         then execute over the remote NA cluster.
 
         Args:
