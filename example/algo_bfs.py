@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(filename="stdout.log", level=os.getenv("LOGLEVEL", "INFO").upper())
 
 """Provide the graph ID as constructor argument.""" 
-client = NeptuneAnalyticsClient("g-r4g1koz7v9")
+client = NeptuneAnalyticsClient(graphId="g-r4g1koz7v9")
 client.clear_graph()
 
 """Adding nodes and edges to composite a simple graph on AWS NA graph for test dataset """
