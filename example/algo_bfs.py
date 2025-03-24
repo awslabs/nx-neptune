@@ -3,8 +3,11 @@ import logging
 import os
 
 """ 
-This is an sample script to demonstrate how AWS Neptune Analytic service 
-can be leveraged to offload graph algorithm computation from local cluster.
+This sample script demonstrates how to use AWS Neptune Analytics 
+to offload graph algorithm computations from a local cluster.
+In this example, a single graph is imported into Neptune Analytics. 
+Once imported, a Breadth-First Search (BFS) algorithm is executed on Neptune Analytics 
+to determine which nodes (people) are connected as friends to Alice.
 """
 logger = logging.getLogger(__name__)
 logging.basicConfig(filename="stdout.log", level=os.getenv("LOGLEVEL", "INFO").upper())
@@ -14,8 +17,8 @@ client = NeptuneAnalyticsClient(graphId="g-r4g1koz7v9")
 client.clear_graph()
 
 """
-Adding nodes and edges to composite a simple graph on AWS NA graph for test dataset,
-which Alice direct or indirectly connects to Bob, Kathy and Ken, but not Ben. 
+This dataset represents a simple directed graph where Alice is indirectly connected to Ken through Bob and Kathy, 
+while Ben is an isolated node with no connections. 
 
 Dataset:
 Alice --> Bob --> Kathy --> Ken     Ben
@@ -33,12 +36,16 @@ client.add_edge('(a)-[:FRIEND_WITH]->(b)',
 client.add_edge('(a)-[:FRIEND_WITH]->(b)',
                 '(a:Person {name: \'Kathy\'}), (b:Person {name: \'Ken\'})')
 
-""" Trigger the remote execution of BFS algorithm with provided dataset."""
+"""
+Execute BFS algorithm starting from the node where name = "Alice". 
+It traverses the graph outward from Alice, identifying all reachable nodes. 
+The result contains the connected nodes and their traversal paths.
+"""
 result = client.execute_algo_bfs('n', 'n.name=\"Alice\"')
 
 """ 
 Print the result, which expect to have Alice, Bob, Kathy and Ken on the result set,
-but not Ben, as there is NO direct or indirect edge connection between Alice and Ben. 
+but not Ben, as there is NO direct or indirect edge connection between Alice and Ben (Isolated node). 
 
 {'node': {'~id': 'xxx', '~entityType': 'node', '~labels': ['Person'], '~properties': {'name': 'Kathy'}}}
 {'node': {'~id': 'xxx', '~entityType': 'node', '~labels': ['Person'], '~properties': {'name': 'Bob'}}}
