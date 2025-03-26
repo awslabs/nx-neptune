@@ -1,5 +1,5 @@
-from nx_neptune_analytics.base import NAME
+from nx_neptune_analytics.na_client import NeptuneAnalyticsClient
 
 
 def test_base():
-    assert NAME == "nx_neptune_analytics"
+    assert NeptuneAnalyticsClient.NAME == "nx_neptune_analytics"

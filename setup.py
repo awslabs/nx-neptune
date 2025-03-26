@@ -31,7 +31,7 @@ def read_requirements(path):
 
 setup(
     name="nx_neptune_analytics",
-    version=read("nx_neptune_analytics", "VERSION"),
+    version="0.1.0",
     description="Awesome nx_neptune_analytics created by Improving",
     url="https://github.com/Bit-Quill/nx-neptune-analytics/",
     long_description=read("README.md"),

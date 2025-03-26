@@ -3,6 +3,7 @@
 nx_neptune_analytics welcomes contributions from the community.
 
 **You need PYTHON3!**
+TODO: Compatibility table on NetworkX and Python.
 
 This instructions are for linux base systems. (Linux, MacOS, BSD, etc.)
 ## Setting up your own fork of this repo.
@@ -45,7 +46,19 @@ Run `make lint` to run the linter.
 
 Run `make test` to run the tests.
 
-Ensure code coverage report shows `100%` coverage, add tests to your PR.
+This will print a report with one line for each file in `nx_neptune_analytics`,
+detailing the test coverage::
+
+  Name                                             Stmts   Miss Branch BrPart  Cover
+  ----------------------------------------------------------------------------------
+  networkx/__init__.py                                33      2      2      1    91%
+  networkx/algorithms/__init__.py                    114      0      0      0   100%
+  networkx/algorithms/approximation/__init__.py       12      0      0      0   100%
+  networkx/algorithms/approximation/clique.py         42      1     18      1    97%
+  ...
+
+
+Ensure code coverage report shows `95%` coverage, add tests to your PR.
 
 ## Build the docs locally
 
