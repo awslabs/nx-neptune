@@ -24,11 +24,16 @@ pip install nx_neptune_analytics
 ## Usage
 
 ```py
-from nx_neptune_analytics import BaseClass
-from nx_neptune_analytics import base_function
+import networkx as nx
 
-BaseClass().base_method()
-base_function()
+G = nx.Graph()
+G.add_node("Bill")
+G.add_node("John")
+G.add_edge("Bill", "John")
+
+nx.shortest_path(
+    G, source="John", target="Bill", backend="neptune_analytics"
+)
 ```
 
 ```bash
