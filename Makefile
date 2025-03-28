@@ -61,7 +61,6 @@ clean:            ## Clean unused files.
 	@rm -rf *.egg-info
 	@rm -rf htmlcov
 	@rm -rf .tox/
-	@rm -rf docs/_build
 
 .PHONY: virtualenv
 virtualenv:       ## Create a virtual environment.
@@ -87,11 +86,6 @@ release:          ## Create a new tag for release.
 	@git push -u origin HEAD --tags
 	@echo "Github Actions will detect the new tag and release the new version."
 
-.PHONY: docs
-docs:             ## Build the documentation.
-	@echo "building documentation ..."
-	@$(ENV_PREFIX)mkdocs build
-	URL="site/index.html"; xdg-open $$URL || sensible-browser $$URL || x-www-browser $$URL || gnome-open $$URL || open $$URL
 
 .PHONY: doc-sphinx
 doc-sphinx:             ## Build the documentation.

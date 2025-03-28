@@ -60,12 +60,6 @@ detailing the test coverage::
 
 Ensure code coverage report shows `95%` coverage, add tests to your PR.
 
-## Build the docs locally
-
-Run `make docs` to build the docs.
-
-Ensure your new changes are documented.
-
 ## Makefile utilities
 
 This project comes with a `Makefile` that contains a number of useful utility.
@@ -84,7 +78,6 @@ watch:            ## Run tests on every change.
 clean:            ## Clean unused files.
 virtualenv:       ## Create a virtual environment.
 release:          ## Create a new tag for release.
-docs:             ## Build the documentation.
 switch-to-poetry: ## Switch to poetry package manager.
 init:             ## Initialize the project based on an application template.
 ```
