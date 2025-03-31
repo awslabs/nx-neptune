@@ -84,17 +84,23 @@ jobs:
         run: make install
 
       - name: Run tests
-        run: make test
+        id: unit-test
+        run: pytest -v --cov-config .coveragerc --cov=nx_neptune_analytics -l --tb=short --maxfail=1 --cov-fail-under=95 tests/
+      
+      - name: Package test reports
+        run: coverage xml && coverage html
+        if: always()
 
       - name: Upload HTML coverage report
         id: artifact-upload-step
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: coverage-report
           path: htmlcov/
 
-      - name: Comment PR with artifact link
-        if: github.event_name == 'pull_request'
+      - name: Comment PR with artifact link 
+        if: ${{ failure() && steps.unit-test.outcome == 'failure' && github.event_name == 'pull_request'}}
         uses: actions/github-script@v6
         with:
           script: |
