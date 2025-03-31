@@ -23,9 +23,6 @@ pip install nx_neptune_analytics
 ```
 
 ## Prerequisite 
- - Some prerequisites on AWS IAM actions and credentials 
- - Python runtime requirements
-
 Before using this backend, ensure the following prerequisites are met:
 
 ### AWS IAM Permissions
@@ -62,6 +59,30 @@ $ python -m nx_neptune_analytics
 #or
 $ nx_neptune_analytics
 ```
+
+
+## Examples
+Before running the examples, you must specify your Neptune Analytics Graph ID 
+as an environment variable:
+
+```bash
+# Set the GRAPH_ID environment variable
+export GRAPH_ID=your-neptune-analytics-graph-id
+
+# Then run the example
+.venv/bin/python ./example/nx_client_example.py
+```
+
+Alternatively, you can pass the GRAPH_ID directly when running the example:
+
+```bash
+GRAPH_ID=your-neptune-analytics-graph-id .venv/bin/python ./example/nx_client_example.py
+````
+
+Without a valid GRAPH_ID, the examples will fail to connect to your Neptune 
+Analytics instance. Make sure your AWS credentials are properly configured and 
+your IAM role/user has the required permissions (ReadDataViaQuery, 
+WriteDataViaQuery, DeleteDataViaQuery).
 
 ## Development
 

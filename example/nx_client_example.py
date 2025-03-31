@@ -10,8 +10,11 @@ can be used to perform basic CRUD operation against an existing Neptune Analytic
 logger = logging.getLogger(__name__)
 logging.basicConfig(filename="stdout.log", level=os.getenv("LOGLEVEL", "INFO").upper())
 
+
+"""Read and load graphId from environment variable. """ 
+graph_id = os.getenv('GRAPH_ID')
 """Provide the graph ID as constructor argument. """
-client = NeptuneAnalyticsClient(graphId="g-r4g1koz7v9")
+client = NeptuneAnalyticsClient(graphId=graph_id)
 
 """ The below lines of script demonstrate how basic node operation can be done, via client's API call. """
 

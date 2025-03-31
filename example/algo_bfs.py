@@ -12,8 +12,11 @@ to determine which nodes (people) are connected as friends to Alice.
 logger = logging.getLogger(__name__)
 logging.basicConfig(filename="stdout.log", level=os.getenv("LOGLEVEL", "INFO").upper())
 
+
+"""Read and load graphId from environment variable. """ 
+graph_id = os.getenv('GRAPH_ID')
 """Provide the graph ID as constructor argument.""" 
-client = NeptuneAnalyticsClient(graphId="g-r4g1koz7v9")
+client = NeptuneAnalyticsClient(graphId=graph_id)
 client.clear_graph()
 
 """
