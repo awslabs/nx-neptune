@@ -1,6 +1,6 @@
 # How to develop on this project
 
-nx_neptune_analytics welcomes contributions from the community.
+nx_neptune welcomes contributions from the community.
 
 **You need PYTHON3!**
 TODO: Compatibility table on NetworkX and Python.
@@ -46,7 +46,7 @@ Run `make lint` to run the linter.
 
 Run `make test` to run the tests.
 
-This will print a report with one line for each file in `nx_neptune_analytics`,
+This will print a report with one line for each file in `nx_neptune`,
 detailing the test coverage::
 
   Name                                             Stmts   Miss Branch BrPart  Cover

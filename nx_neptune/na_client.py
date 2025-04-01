@@ -14,7 +14,7 @@ class NeptuneAnalyticsClient:
     when hard-coded openCypher syntax being replaced by Python lib.
     """
 
-    NAME = "nx_neptune_analytics"
+    NAME = "nx_neptune"
 
     def __init__(
         self,

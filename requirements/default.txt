@@ -1,2 +1,3 @@
-# Requirements for the project. 
+# Requirements for the project.
+networkx>=3.2.1
 boto3>=1.37

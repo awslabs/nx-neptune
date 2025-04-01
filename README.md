@@ -1,6 +1,6 @@
 
 ---
-# nx_neptune_analytics
+# nx_neptune
 
 <a href="https://networkx.github.io/">
     <img src="https://avatars.githubusercontent.com/u/388785?s=200&v=4" alt="NetworkX" height="60">
@@ -19,7 +19,7 @@ This project offers a NetworkX-compatible backend for Neptune Analytics, enablin
 ## Install it from PyPI
 
 ```bash
-pip install nx_neptune_analytics
+pip install nx_neptune
 ```
 
 ## Prerequisite 
@@ -55,9 +55,9 @@ nx.shortest_path(
 ```
 
 ```bash
-$ python -m nx_neptune_analytics
+$ python -m nx_neptune
 #or
-$ nx_neptune_analytics
+$ nx_neptune
 ```
 
 

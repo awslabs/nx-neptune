@@ -1,4 +1,4 @@
-from nx_neptune_analytics import NeptuneAnalyticsClient
+from nx_neptune import NeptuneAnalyticsClient
 import logging
 import os
 

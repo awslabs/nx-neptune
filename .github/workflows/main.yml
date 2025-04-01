@@ -85,7 +85,7 @@ jobs:
 
       - name: Run tests
         id: unit-test
-        run: pytest -v --cov-config .coveragerc --cov=nx_neptune_analytics -l --tb=short --maxfail=1 --cov-fail-under=95 tests/
+        run: pytest -v --cov-config .coveragerc --cov=nx_neptune -l --tb=short --maxfail=1 --cov-fail-under=95 tests/
       
       - name: Package test reports
         run: coverage xml && coverage html
