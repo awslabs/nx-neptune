@@ -35,8 +35,8 @@ The IAM role or user accessing Neptune Analytics must have the following permiss
 These permissions are required to read, write, and manage graph data via queries on Neptune Analytics.
 
 ### Python Runtime
- - Python 3.9 is required.
- - Ensure your environment uses Python 3.9 to maintain compatibility with dependencies and API integrations.
+ - Python 3.11 is required.
+ - Ensure your environment uses Python 3.11 to maintain compatibility with dependencies and API integrations.
 
 
 ## Usage
