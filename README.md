@@ -2,14 +2,6 @@
 ---
 # nx_neptune
 
-<a href="https://networkx.github.io/">
-    <img src="https://avatars.githubusercontent.com/u/388785?s=200&v=4" alt="NetworkX" height="60">
-</a>
-<a href="https://aws.amazon.com/neptune/">
-    <img src="https://avatars.githubusercontent.com/u/2232217?s=200&v=4" alt="AWS" height="60">
-</a>
-
-
 [![CI](https://github.com/Bit-Quill/nx-neptune-analytics/actions/workflows/main.yml/badge.svg)](https://github.com/Bit-Quill/nx-neptune-analytics/actions/workflows/main.yml)
 [![Upload Python Package](https://github.com/Bit-Quill/nx-neptune-analytics/actions/workflows/release.yml/badge.svg)](https://github.com/Bit-Quill/nx-neptune-analytics/actions/workflows/release.yml)
 
