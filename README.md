@@ -78,8 +78,8 @@ WriteDataViaQuery, DeleteDataViaQuery).
 
 ## Development
 
-Read the [CONTRIBUTING.md](CONTRIBUTING.md) file.
+Please read the [contributing documentation](CONTRIBUTING.md) for more information.
 
 
 ## License
-- License for the repo
+This project is licensed under the [Apache-2.0 License](LICENSE).
