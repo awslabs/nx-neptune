@@ -1,0 +1,65 @@
+import json
+import logging
+import os
+
+import boto3
+
+
+class NeptuneAnalyticsClient:
+    """
+    Neptune Analytics (neptune-graph) Client is used to fetch/execute queries to the Neptune Analytics
+    backend data source using the AWS boto3 client.
+    """
+
+    def __init__(
+        self,
+        graph_id=None,
+        logger=None,
+        client=None,
+    ):
+        """
+        Constructs a NeptuneGraph object for AWS service interaction,
+        with optional custom logger and boto client.
+        TODO: To have a create_client || connect_to_na_instance
+        for networkX backend integration.
+        TODO: Save a boto3 session instance once the client
+        has connected
+        """
+        self.graph_id = graph_id or os.getenv("GRAPH_ID")
+        self.logger = logger or logging.getLogger(__name__)
+        self.client = client or boto3.client("neptune-graph")
+
+    def create_na_instance(self):
+        """
+        TODO: Connect to Boto3 and create a Neptune Analytic instance,
+        then return the graph ID.
+        """
+        return self.graph_id
+
+    def connect_to_na_instance(self):
+        """
+        TODO: Connect to Boto3 then return the graph ID.
+        """
+        return self.graph_id
+
+    def execute_generic_query(self, query_string: str):
+        """
+        Wrapper method to execute incoming openCypher query,
+        and return the result from Boto client.
+
+        Args:
+            query_string (str): OpenCypher query in string format.
+
+        Returns:
+            _type_: Result from Boto client.
+        """
+        self.logger.debug(
+            f"Executing generic query [{query_string}] on graph [{self.graph_id}]"
+        )
+        response = self.client.execute_query(
+            graphIdentifier=self.graph_id,
+            queryString=query_string,
+            language="OPEN_CYPHER",
+        )
+
+        return json.loads(response["payload"].read())["results"]

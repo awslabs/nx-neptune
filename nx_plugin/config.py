@@ -13,6 +13,7 @@ class NeptuneConfig(Config):
     verbose: int = 0
     prefer: bool = False
     require: bool = False
+    graph_id: str = ""
 
 
 _config = NeptuneConfig()

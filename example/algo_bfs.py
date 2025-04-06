@@ -1,4 +1,5 @@
-from nx_neptune import NeptuneAnalyticsClient
+import networkx as nx
+from nx_neptune import NeptuneGraph
 import logging
 import os
 
@@ -10,50 +11,60 @@ Once imported, a Breadth-First Search (BFS) algorithm is executed on Neptune Ana
 to determine which nodes (people) are connected as friends to Alice.
 """
 logger = logging.getLogger(__name__)
-logging.basicConfig(filename="stdout.log", level=os.getenv("LOGLEVEL", "INFO").upper())
-
+logging.basicConfig(filename="out.log", level=os.getenv("LOGLEVEL", "DEBUG").upper())
+nx.config.warnings_to_ignore.add("cache")
 
 """Read and load graphId from environment variable. """ 
 graph_id = os.getenv('GRAPH_ID')
-"""Provide the graph ID as constructor argument.""" 
-client = NeptuneAnalyticsClient(graphId=graph_id)
-client.clear_graph()
+if not graph_id:
+    raise Exception('Environment Variable GRAPH_ID is not defined')
+
+"""Clear the Neptune Analytics graph"""
+g = nx.Graph()
+na_graph = NeptuneGraph(graph=g)
+na_graph.clear_graph()
 
 """
-This dataset represents a simple directed graph where Alice is indirectly connected to Ken through Bob and Kathy, 
-while Ben is an isolated node with no connections. 
-
-Dataset:
-Alice --> Bob --> Kathy --> Ken     Ben
+Create a graph with 3 nodes, and edges in between
+0 --> 1 --> 2
 """
-client.add_node('a:Person {name: \'Alice\'}')
-client.add_node('a:Person {name: \'Bob\'}')
-client.add_node('a:Person {name: \'Kathy\'}')
-client.add_node('a:Person {name: \'Ken\'}')
-client.add_node('a:Person {name: \'Ben\'}')
+print("Create NX Graph with 3 nodes: nx.path_graph(3)")
+G = nx.path_graph(3)
 
-client.add_edge('(a)-[:FRIEND_WITH]->(b)',
-                '(a:Person {name: \'Alice\'}), (b:Person {name: \'Bob\'})')
-client.add_edge('(a)-[:FRIEND_WITH]->(b)',
-                '(a:Person {name: \'Bob\'}), (b:Person {name: \'Kathy\'})')
-client.add_edge('(a)-[:FRIEND_WITH]->(b)',
-                '(a:Person {name: \'Kathy\'}), (b:Person {name: \'Ken\'})')
+print('Edges from BFS search from source=0: ')
+r = nx.bfs_edges(G, "0", backend="neptune")
+print(r)
+# [1, 2, 0]
+
+print('Edges from BFS search from source=0; depth_limit=1: ')
+r = nx.bfs_edges(G, source="0", depth_limit=1, backend="neptune")
+print(r)
+# [(0, 1)]
+
+print('Edges from BFS search from source=1: ')
+r = nx.bfs_edges(G, source="1", backend="neptune")
+print(r)
+# [(1, 2)]
+
+print('Edges from BFS search from source=1; reversed=True: ')
+r = nx.bfs_edges(G, source="1", reverse=True, backend="neptune")
+print(r)
+# [(1, 0)]
 
 """
-Execute BFS algorithm starting from the node where name = "Alice". 
-It traverses the graph outward from Alice, identifying all reachable nodes. 
-The result contains the connected nodes and their traversal paths.
+Create a graph with 12 nodes, and edges in between
+0 --> 1 --> 2 --> ... --> 11
 """
-result = client.execute_algo_bfs('n', 'n.name=\"Alice\"')
+print("\nCreate NX Graph with 12 nodes: nx.path_graph(12)")
+G = nx.path_graph(12)
 
-""" 
-Print the result, which expect to have Alice, Bob, Kathy and Ken on the result set,
-but not Ben, as there is NO direct or indirect edge connection between Alice and Ben (Isolated node). 
+r = nx.bfs_edges(G, source="6", backend="neptune")
+print('Edges from BFS search from source=6: ')
+print(r)
+# ['6', ..., '11']
 
-{'node': {'~id': 'xxx', '~entityType': 'node', '~labels': ['Person'], '~properties': {'name': 'Kathy'}}}
-{'node': {'~id': 'xxx', '~entityType': 'node', '~labels': ['Person'], '~properties': {'name': 'Bob'}}}
-{'node': {'~id': 'xxx', '~entityType': 'node', '~labels': ['Person'], '~properties': {'name': 'Ken'}}}
-{'node': {'~id': 'xxx', '~entityType': 'node', '~labels': ['Person'], '~properties': {'name': 'Alice'}}}
-"""
-for item in result:
-    print(item)
+r = nx.bfs_edges(G, source="6", reverse=True, backend="neptune")
+print('Edges from BFS search from source=6, reverse=True: ')
+print(r)
+# ['0', ..., '6']
+

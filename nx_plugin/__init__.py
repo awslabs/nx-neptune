@@ -1,4 +1,6 @@
-from .config import _config
+from .config import _config, NeptuneConfig
+
+__all__ = ["NeptuneConfig"]
 
 # Entries between BEGIN and END are automatically generated
 _info = {

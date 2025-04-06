@@ -2,3 +2,4 @@
 omit =
     nx_neptune/na_client.py
     tests/*
+    __init__.py
