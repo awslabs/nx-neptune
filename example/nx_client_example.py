@@ -1,5 +1,6 @@
 import networkx as nx
 from nx_neptune import NeptuneGraph
+from nx_neptune.clients import Node, Edge
 import logging
 import os
 
@@ -19,17 +20,25 @@ g = NeptuneGraph(graph=nx_graph)
 g.clear_graph()
 
 """Populate the dataset by inserting nodes into the graph"""
-g.add_node('a:Person {name: \'Alice\'}')
-g.add_node('a:Person {name: \'Bob\'}')
-g.add_edge('(a)-[:FRIEND_WITH]->(b)',
-                '(a:Person {name: \'Alice\'}), (b:Person {name: \'Bob\'})')
+alice = Node(labels=['Person'], properties={'name': 'Alice'})
+bob = Node(labels=['Person'], properties={'name': 'Bob'})
+edge = Edge(label='FRIEND_WITH', properties={}, node_src=alice, node_dest=bob)
 
-g.update_nodes('(a:Person)', 'a.name = \'Alice\'', 'a.age=\'25\'')
+g.add_node(alice)
+g.add_node(bob)
+
+g.add_edge(edge)
+
+g.update_nodes(match_labels='a',
+               ref_name='a',
+               where_filters={'a.name': 'Alice'},
+               properties_set={'a.age': '25'})
 
 """Update an edge"""
-g.update_edges('(a:Person)-[r:FRIEND_WITH]->(b:Person)',
-               'a.name = \'Alice\' AND b.name = \'Bob\'', 
-               'r.since = 1997')
+g.update_edges('a', 'r', 'b',
+               edge,
+               {'a.name': 'Alice', 'b.name': 'Bob'},
+               {'r.since': 1997})
 
 """ To demonstrate how to print existing nodes and edges which exist on the graph """
 

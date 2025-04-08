@@ -1,9 +1,13 @@
 from __future__ import annotations
+
+import logging
 import os
 from operator import attrgetter
-import logging
+
 import networkx as nx
-from nx_neptune import algorithms, NeptuneGraph
+
+from nx_neptune import NeptuneGraph, algorithms
+from nx_neptune.clients import Edge, Node
 
 logger = logging.getLogger(__name__)
 
@@ -45,17 +49,23 @@ class BackendInterface:
         Push all Nodes from NetworkX into Neptune Analytics
         """
         for node in graph.nodes:
-            node_string = f"a:Node {{name: '{node}'}}"
-            logger.debug(f"add_node={node_string}")
-            na_graph.add_node(node_string)
+            # TODO: Encapsulate nx.node -> Node object conversion logic inside nx_neptune.clients.Node.convert_from_nx( )
+            na_node = Node(labels=["Node"], properties={"name": f"{node}"})
+            logger.debug(f"add_node={na_node}")
+            na_graph.add_node(na_node)
 
         for edge in graph.edges:
-            create_clause = "(a)-[:FRIEND_WITH]->(b)"
-            match_clause = (
-                f"(a:Node {{name: '{edge[0]}'}}), (b:Node {{name: '{edge[1]}'}})"
+            # TODO: Encapsulate the conversion logic into Edge.convert_from_nx
+            node_zero = Node(labels=["Node"], properties={"name": edge[0]})
+            node_one = Node(labels=["Node"], properties={"name": edge[1]})
+            friend_edge = Edge(
+                label="FRIEND_WITH",
+                properties={},
+                node_src=node_zero,
+                node_dest=node_one,
             )
-            logger.debug(f"add_edge={create_clause}, {match_clause}")
-            na_graph.add_edge(create_clause, match_clause)
+            logger.debug(f"add_edge={friend_edge}")
+            na_graph.add_edge(friend_edge)
 
         return na_graph
 

@@ -1,6 +1,7 @@
+import logging
+
 from nx_neptune.na_graph import NeptuneGraph
 from nx_neptune.utils.decorators import configure_if_nx_active
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +44,7 @@ def bfs_edges(
         parameters["traversalDirection"] = '"inbound"'
     # TODO: map sort_neighbours
     logger.debug(f"where_clause={where_clause}")
-    json_result = G.execute_algo_bfs("n", where_clause, parameters)
-
+    json_result = G.execute_algo_bfs("n", {"n.name": f"{source}"}, parameters)
     # TODO: move to object mapper
     nodes = list(map(lambda x: x["node"]["~properties"]["name"], json_result))
     return nodes

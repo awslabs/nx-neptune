@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from typing import Optional
 
 import boto3
 
@@ -42,24 +43,38 @@ class NeptuneAnalyticsClient:
         """
         return self.graph_id
 
-    def execute_generic_query(self, query_string: str):
+    def execute_generic_query(
+        self, query_string: str, parameter_map: Optional[dict] = None
+    ):
         """
         Wrapper method to execute incoming openCypher query,
         and return the result from Boto client.
 
         Args:
             query_string (str): OpenCypher query in string format.
+            parameter_map (dict, optional): Parameter map for parameterized queries. Defaults to None.
 
         Returns:
             _type_: Result from Boto client.
         """
-        self.logger.debug(
-            f"Executing generic query [{query_string}] on graph [{self.graph_id}]"
-        )
-        response = self.client.execute_query(
-            graphIdentifier=self.graph_id,
-            queryString=query_string,
-            language="OPEN_CYPHER",
-        )
+        if parameter_map:
+            self.logger.debug(
+                f"Executing parameterized query [{query_string}], {parameter_map} on graph [{self.graph_id}]"
+            )
+            response = self.client.execute_query(
+                graphIdentifier=self.graph_id,
+                queryString=query_string,
+                parameters=parameter_map,
+                language="OPEN_CYPHER",
+            )
+        else:
+            self.logger.debug(
+                f"Executing generic query [{query_string}] on graph [{self.graph_id}]"
+            )
+            response = self.client.execute_query(
+                graphIdentifier=self.graph_id,
+                queryString=query_string,
+                language="OPEN_CYPHER",
+            )
 
         return json.loads(response["payload"].read())["results"]

@@ -26,7 +26,7 @@ class TestBfsEdges:
         result = bfs_edges(mock_graph, source)
 
         # Verify the function called execute_algo_bfs with correct parameters
-        mock_graph.execute_algo_bfs.assert_called_once_with("n", "n.name='A'", {})
+        mock_graph.execute_algo_bfs.assert_called_once_with("n", {"n.name": "A"}, {})
 
         # Verify the result contains the expected nodes
         assert result == ["A", "B", "C"]
@@ -38,7 +38,7 @@ class TestBfsEdges:
 
         # TODO: the reverse parameter is not implemented in the function
         mock_graph.execute_algo_bfs.assert_called_once_with(
-            "n", "n.name='A'", {"traversalDirection": '"inbound"'}
+            "n", {"n.name": "A"}, {"traversalDirection": '"inbound"'}
         )
         assert result == ["A", "B", "C"]
 
@@ -49,7 +49,7 @@ class TestBfsEdges:
 
         # TODO: the depth_limit parameter is not implemented in the function
         mock_graph.execute_algo_bfs.assert_called_once_with(
-            "n", "n.name='A'", {"maxDepth": 2}
+            "n", {"n.name": "A"}, {"maxDepth": 2}
         )
         assert result == ["A", "B", "C"]
 
@@ -59,7 +59,7 @@ class TestBfsEdges:
         result = list(bfs_edges(mock_graph, source, sort_neighbors=True))
 
         # TODO: the sort_neighbors parameter is not implemented in the function
-        mock_graph.execute_algo_bfs.assert_called_once_with("n", "n.name='A'", {})
+        mock_graph.execute_algo_bfs.assert_called_once_with("n", {"n.name": "A"}, {})
         assert result == ["A", "B", "C"]
 
     def test_bfs_edges_with_all_parameters(self, mock_graph):
@@ -73,7 +73,7 @@ class TestBfsEdges:
 
         # Verify the function called execute_algo_bfs with correct parameters
         mock_graph.execute_algo_bfs.assert_called_once_with(
-            "n", "n.name='A'", {"traversalDirection": '"inbound"', "maxDepth": 3}
+            "n", {"n.name": "A"}, {"traversalDirection": '"inbound"', "maxDepth": 3}
         )
         assert result == ["A", "B", "C"]
 

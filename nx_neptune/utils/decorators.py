@@ -1,7 +1,8 @@
 import os
-import networkx
 from dataclasses import asdict
 from functools import wraps
+
+import networkx
 
 __all__ = ["configure_if_nx_active"]
 

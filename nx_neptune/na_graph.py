@@ -1,16 +1,23 @@
 import logging
+from typing import Any, Dict, List
+
+from networkx import Graph
 
 from .clients import (
+    Edge,
     NeptuneAnalyticsClient,
-    insert_query,
-    update_query,
-    delete_query,
-    clear_query,
-    match_all_nodes,
-    match_all_edges,
+    Node,
     bfs_query,
+    clear_query,
+    delete_edge,
+    delete_node,
+    insert_edge,
+    insert_node,
+    match_all_edges,
+    match_all_nodes,
+    update_edge,
+    update_node,
 )
-from networkx import Graph
 
 
 class NeptuneGraph:
@@ -53,35 +60,42 @@ class NeptuneGraph:
         """
         return self.graph
 
-    def add_node(self, node_content: str):
+    def add_node(self, node: Node):
         """
         Method to add additional nodes into the existing graph,
         which this client hold references to.
         """
-        query_str = insert_query(node_content)
-        return self.client.execute_generic_query(query_str)
+        query_str, para_map = insert_node(node)
+        return self.client.execute_generic_query(query_str, para_map)
 
-    def update_nodes(self, match_clause: str, where_clause: str, set_clause: str):
+    def update_nodes(
+        self,
+        match_labels: str,
+        ref_name: str,
+        where_filters: dict,
+        properties_set: dict,
+    ):
         """
         Perform an update on node's property for nodes with matching condition,
         which presented within the graph.
         """
-        query_str = update_query(match_clause, where_clause, set_clause)
-        return self.client.execute_generic_query(query_str)
+        query_str, para_map = update_node(
+            match_labels, ref_name, where_filters, properties_set
+        )
+        return self.client.execute_generic_query(query_str, para_map)
 
-    def delete_nodes(self, match_clause: str, delete_clause: str):
+    def delete_nodes(self, node: Node):
         """
         To delete note from the graph with provided condition.
 
         Args:
-            match_clause (str): The OpenCypher MATCH clause.
-            delete_clause (str): The OpenCypher DELETE clause.
+            node (Node): The node to delete.
 
         Returns:
             _type_: Result from boto client in string format.
         """
-        query_str = delete_query(match_clause, delete_clause)
-        return self.client.execute_generic_query(query_str)
+        query_str, para_map = delete_node(node)
+        return self.client.execute_generic_query(query_str, para_map)
 
     def clear_graph(self):
         """
@@ -90,49 +104,65 @@ class NeptuneGraph:
         query_str = clear_query()
         return self.client.execute_generic_query(query_str)
 
-    def add_edge(self, create_clause: str, match_clause: str):
+    def add_edge(self, edge: Edge):
         """
         Perform an insertion to add a relationship between two nodes.
 
         Args:
-            create_clause (str): The OpenCypher CREATE clause.
-            match_clause (str): The OpenCypher MATCH clause.
+            edge: Edge (Edge object)
 
         Returns:
             _type_: Result from boto client in string format.
         """
-        query_str = insert_query(create_clause, match_clause)
-        return self.client.execute_generic_query(query_str)
+        query_str, para_map = insert_edge(edge)
+        return self.client.execute_generic_query(query_str, para_map)
 
-    def update_edges(self, match_clause: str, where_clause: str, set_clause: str):
+    def update_edges(
+        self,
+        ref_name_src: str,
+        ref_name_edge: str,
+        ref_name_des: str,
+        edge: Edge,
+        where_filters: dict,
+        properties_set: dict,
+    ):
         """
         Update existing edge's properties with provided condition and values.
 
         Args:
-            match_clause (str): The OpenCypher MATCH clause.
-            where_clause (str): The OpenCypher WHERE clause.
-            set_clause (str): The OpenCypher VALUE clause.
+            ref_name_src: Reference name for the source node
+            ref_name_edge: Reference name for the edge
+            edge: Edge (Edge object)
+            ref_name_des: Reference name for the destination node
+            where_filters: Filters to apply in the WHERE clause
+            properties_set: Properties to set
 
         Returns:
             _type_: Result from boto client in string format.
         """
-        query_str = update_query(match_clause, where_clause, set_clause)
-        return self.client.execute_generic_query(query_str)
+        query_str, para_map = update_edge(
+            ref_name_src,
+            ref_name_edge,
+            edge,
+            ref_name_des,
+            where_filters,
+            properties_set,
+        )
+        return self.client.execute_generic_query(query_str, para_map)
 
-    def delete_edges(self, match_clause: str, delete_clause: str):
+    def delete_edges(self, edge: Edge):
         """
         Delete one or more edges from NA graph,
         with provided conditions and values.
 
         Args:
-            match_clause (str): The OpenCypher MATCH clause.
-            delete_clause (str): The OpenCypher VALUE clause.
+            edge: Edge (Edge object) with source and destination nodes
 
         Returns:
-            _type_: N/A
+            _type_: Result from boto client in string format.
         """
-        query_str = delete_query(match_clause, delete_clause)
-        return self.client.execute_generic_query(query_str)
+        query_str, para_map = delete_edge(edge)
+        return self.client.execute_generic_query(query_str, para_map)
 
     def get_all_nodes(self):
         """
@@ -157,7 +187,7 @@ class NeptuneGraph:
         return self.client.execute_generic_query(query_str)
 
     def execute_algo_bfs(
-        self, source_node_list: str, where_clause: str, parameters=None
+        self, source_node_list: str, where_filters: dict, parameters=None
     ):
         """
         Compose an OpenCypher `CALL` statement for BFS algorithm run,
@@ -179,5 +209,5 @@ class NeptuneGraph:
         """
         if parameters is None:
             parameters = {}
-        query_str = bfs_query(source_node_list, where_clause, parameters)
-        return self.client.execute_generic_query(query_str)
+        query_str, para_map = bfs_query(source_node_list, where_filters, parameters)
+        return self.client.execute_generic_query(query_str, para_map)

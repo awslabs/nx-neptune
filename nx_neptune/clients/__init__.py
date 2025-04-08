@@ -1,10 +1,16 @@
-from .opencypher_builder import (
-    insert_query,
-    update_query,
-    delete_query,
-    clear_query,
-    match_all_nodes,
-    match_all_edges,
-    bfs_query,
-)
+# clients
 from .na_client import NeptuneAnalyticsClient
+from .opencypher_builder import (
+    Edge,
+    Node,
+    bfs_query,
+    clear_query,
+    delete_edge,
+    delete_node,
+    insert_edge,
+    insert_node,
+    match_all_edges,
+    match_all_nodes,
+    update_edge,
+    update_node,
+)
