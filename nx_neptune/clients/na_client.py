@@ -55,26 +55,19 @@ class NeptuneAnalyticsClient:
             parameter_map (dict, optional): Parameter map for parameterized queries. Defaults to None.
 
         Returns:
-            _type_: Result from Boto client.
+            dict: Result from Boto client.
         """
+        query_params = {
+            "graphIdentifier": self.graph_id,
+            "queryString": query_string,
+            "language": "OPEN_CYPHER"
+        }
+        
+        # Add parameters if provided
         if parameter_map:
-            self.logger.debug(
-                f"Executing parameterized query [{query_string}], {parameter_map} on graph [{self.graph_id}]"
-            )
-            response = self.client.execute_query(
-                graphIdentifier=self.graph_id,
-                queryString=query_string,
-                parameters=parameter_map,
-                language="OPEN_CYPHER",
-            )
-        else:
-            self.logger.debug(
-                f"Executing generic query [{query_string}] on graph [{self.graph_id}]"
-            )
-            response = self.client.execute_query(
-                graphIdentifier=self.graph_id,
-                queryString=query_string,
-                language="OPEN_CYPHER",
-            )
+            query_params["parameters"] = parameter_map
+
+        self.logger.debug(f"Executing generic query [{query_string}] on graph [{self.graph_id}]")
+        response = self.client.execute_query(**query_params)
 
         return json.loads(response["payload"].read())["results"]
