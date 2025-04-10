@@ -54,6 +54,7 @@ developer = [
     "Flake8-pyproject",
     "mypy",
     "sphinx",
+    "isort",
 ]
 test = [
     'pytest>=7.2',
