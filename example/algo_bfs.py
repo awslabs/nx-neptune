@@ -19,37 +19,80 @@ graph_id = os.getenv('GRAPH_ID')
 if not graph_id:
     raise Exception('Environment Variable GRAPH_ID is not defined')
 
+BACKEND = "neptune"
+print(f"Using backend={BACKEND}")
+
 """Clear the Neptune Analytics graph"""
 g = nx.Graph()
 na_graph = NeptuneGraph(graph=g)
 na_graph.clear_graph()
 
 """
+Using a Directed Graph: Add named nodes with strings for the "name" property
+"""
+G = nx.DiGraph()
+G.add_node("Alice")
+G.add_node("Bob")
+G.add_node("Carl")
+G.add_edge("Alice", "Bob")
+G.add_edge("Alice", "Carl")
+
+print('Edges from BFS search from source="Alice": ')
+r = list(nx.bfs_edges(G, "Alice", backend=BACKEND))
+print(r) # [("Alice", "Bob"), ("Alice", "Carl")]
+assert isinstance(r, list)
+assert len(r) == 2
+assert ("Alice", "Bob") in r
+assert ("Alice", "Carl") in r
+
+print('Edges from BFS search from source="Bob"; reverse=True; depth_limit=1: ')
+r = list(nx.bfs_edges(G, "Bob", backend=BACKEND, reverse=True, depth_limit=1))
+print(r) # [("Bob", "Alice")]
+assert isinstance(r, list)
+assert len(r) == 1
+assert ("Bob", "Alice") in r
+
+"""
 Create a graph with 3 nodes, and edges in between
 0 --> 1 --> 2
 """
-print("Create NX Graph with 3 nodes: nx.path_graph(3)")
 G = nx.path_graph(3)
 
 print('Edges from BFS search from source=0: ')
-r = nx.bfs_edges(G, "0", backend="neptune")
-print(r)
-# [1, 2, 0]
+r = list(nx.bfs_edges(G, 0, backend=BACKEND))
+print(r) # [(0, 1), (1, 2)]
+assert isinstance(r, list)
+assert len(r) == 2
+assert (0, 1) in r
+assert (1, 2) in r
 
 print('Edges from BFS search from source=0; depth_limit=1: ')
-r = nx.bfs_edges(G, source="0", depth_limit=1, backend="neptune")
-print(r)
-# [(0, 1)]
+r = list(nx.bfs_edges(G, source=0, depth_limit=1, backend=BACKEND))
+print(r) # [(0, 1)]
+assert r == [(0, 1)]
 
 print('Edges from BFS search from source=1: ')
-r = nx.bfs_edges(G, source="1", backend="neptune")
-print(r)
-# [(1, 2)]
+r = list(nx.bfs_edges(G, source=1, backend=BACKEND))
+print(r) # [(1, 0), (1, 2)]
+assert len(r) == 2
+assert (1, 0) in r
+assert (1, 2) in r
 
 print('Edges from BFS search from source=1; reversed=True: ')
-r = nx.bfs_edges(G, source="1", reverse=True, backend="neptune")
-print(r)
-# [(1, 0)]
+r = list(nx.bfs_edges(G, source=1, reverse=True, backend=BACKEND))
+print(r) # [(1, 0), (1, 2)]
+assert isinstance(r, list)
+assert len(r) == 2
+assert (1, 0) in r
+assert (1, 2) in r
+
+print('Edges from BFS search from source=1; reversed=False: ')
+r = list(nx.bfs_edges(G, source=1, reverse=False, backend=BACKEND))
+print(r) # [(1, 0), (1, 2)]
+assert isinstance(r, list)
+assert len(r) == 2
+assert (1, 0) in r
+assert (1, 2) in r
 
 """
 Create a graph with 12 nodes, and edges in between
@@ -58,13 +101,13 @@ Create a graph with 12 nodes, and edges in between
 print("\nCreate NX Graph with 12 nodes: nx.path_graph(12)")
 G = nx.path_graph(12)
 
-r = nx.bfs_edges(G, source="6", backend="neptune")
+r = list(nx.bfs_edges(G, source=6, backend=BACKEND))
 print('Edges from BFS search from source=6: ')
 print(r)
-# ['6', ..., '11']
-
-r = nx.bfs_edges(G, source="6", reverse=True, backend="neptune")
-print('Edges from BFS search from source=6, reverse=True: ')
-print(r)
-# ['0', ..., '6']
-
+# [(6, 7) ..., (10, 11)]
+assert isinstance(r, list)
+assert len(r) == 11
+for i in [6, 7, 8, 9, 10]:
+    assert(i, i+1) in r
+for i in [6, 5, 4, 3, 2, 1]:
+    assert(i, i-1) in r

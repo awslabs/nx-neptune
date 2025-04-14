@@ -8,6 +8,8 @@ _DEST_NODE_REF = "b"
 _RELATION_REF = "r"
 _NODE_REF = "n"
 _NODE_FULL_FORM_REF = "node"
+_PARENT_FULL_FORM_REF = "parent"
+_BFS_PARENTS_ALG = "neptune.algo.bfs.parents"
 
 __all__ = [
     "match_all_nodes",
@@ -84,13 +86,45 @@ class Node:
     TODO: Move data model under na_graph
 
     Attributes:
+        id (str, optional): a unique identifier for the node
         labels (list): A list of labels for the node
         properties (dict): A dictionary of properties for the node
     """
 
-    def __init__(self, labels=None, properties=None):
+    def __init__(self, id=None, labels=None, properties=None):
+        self.id = id
         self.labels = labels if labels else []
         self.properties = properties if properties else {}
+
+    @classmethod
+    def from_neptune_response(cls, json: Dict):
+        return cls(
+            id=json.get("~id"),
+            labels=json.get("~labels"),
+            properties=json.get("~properties"),
+        )
+
+    def by_name(self) -> str:
+        """
+        Gets the Name property of the Node if available
+        :return: str
+        """
+        return self.properties.get("name", "")
+
+    def __eq__(self, other):
+        """
+        Comparison operator of a Node
+
+        :param other: Node to compare
+        :return: (boolean) if Nodes are considered equal
+        """
+        if not isinstance(other, Node):
+            return False
+        if self.id and self.id == other.id:
+            return True
+        if self.labels == other.labels and self.properties == other.properties:
+            return True
+        return False
 
     def __repr__(self):
         return f"Node(labels={self.labels}, properties={self.properties})"
@@ -150,6 +184,26 @@ class Edge:
         self.node_dest = node_dest
         self.label = label if label is not None else ""
         self.properties = properties if properties else {}
+
+    @classmethod
+    def from_neptune_response(cls, json: Dict):
+        """
+        Creates an Edge from the JSON response from Neptune
+
+        :param json: json-encoded string from neptune-graph containing an edge object
+        :return: Edge
+        """
+        return cls(
+            Node.from_neptune_response(json.get("parent", {})),
+            Node.from_neptune_response(json.get("node", {})),
+        )
+
+    def to_list(self) -> Tuple[str, str]:
+        """
+        Converts edge to a Tuple with the src and destination Node name
+        :return: (Tuple): pair is strings with the name of the Nodes
+        """
+        return self.node_src.by_name(), self.node_dest.by_name()
 
     def __repr__(self):
         return f"Edge(label={self.label}, properties={self.properties}, node_src={self.node_src}, node_dest={self.node_dest})"
@@ -464,43 +518,52 @@ def clear_query() -> str:
 
 
 def bfs_query(
-    source_node_list: str, where_filters: dict, parameters=None
+    source_node: str, where_filters: dict, parameters=None
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Create a query to execute a Breadth-First Search algorithm on Neptune Analytics.
     TODO: Update source_node_list to receive multiple node objects, for BFS calculation.
 
-    :param source_node_list: The variable name for the source node list
+    :param source_node: The variable name for the source node
     :param where_filters: Dictionary of filters to apply in the WHERE clause
     :param parameters: Optional dictionary of algorithm parameters to pass to BFS
     :return: Tuple of (OpenCypher query string, parameter map) for BFS algorithm execution
 
     Example:
         >>> bfs_query('n', {'n.name': 'Alice'})
-        ('MATCH (n) WHERE n.name = $0 CALL neptune.algo.bfs(n) YIELD node RETURN node', {'0': 'Alice'})
+        ('MATCH (n) WHERE n.name = $0 CALL neptune.algo.bfs.parent(n)
+        YIELD parent as parent, node as node RETURN parent, node', {'0': 'Alice'})
         >>> bfs_query('n', {'n.name': 'Alice'}, {'maxDepth': 3})
-        ('MATCH (n) WHERE n.name = $0 CALL neptune.algo.bfs(n, {maxDepth:3}) YIELD node RETURN node', {'0': 'Alice'})
+        ('MATCH (n) WHERE n.name = $0 CALL neptune.algo.bfs.parent(n, {maxDepth:3})
+        YIELD parent as parent, node as node RETURN parent, node', {'0': 'Alice'})
     """
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
     masked_where_filters = param_builder.read(where_filters)
 
-    bfs_params = f"{source_node_list}"
+    bfs_params = f"{source_node}"
     if parameters:
         parameters_list_str = ", ".join(
             ["%s:%s" % (key, value) for (key, value) in parameters.items()]
         )
         bfs_params = f"{bfs_params}, {{{parameters_list_str}}}"
 
-    return (
+    # for a query that returns the source and node for each traversal
+    query_str = (
         QueryBuilder()
         .match()
-        .node(ref_name=source_node_list)
+        .node(ref_name=source_node)
         .where_multiple(masked_where_filters, escape=False)
         .call()
-        .procedure("neptune.algo.bfs(" + bfs_params + ")")
-        .yield_((_NODE_FULL_FORM_REF, _NODE_FULL_FORM_REF))
-        .return_literal(_NODE_FULL_FORM_REF)
+        .procedure(f"{_BFS_PARENTS_ALG}({bfs_params})")
+        .yield_(
+            [
+                (_PARENT_FULL_FORM_REF, _PARENT_FULL_FORM_REF),
+                (_NODE_FULL_FORM_REF, _NODE_FULL_FORM_REF),
+            ]
+        )
+        .return_literal(f"{_PARENT_FULL_FORM_REF}, {_NODE_FULL_FORM_REF}")
         .query
-    ), param_builder.get_param_values()
+    )
+    return query_str, param_builder.get_param_values()

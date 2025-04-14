@@ -68,7 +68,7 @@ class TestOpencypherBuilder(unittest.TestCase):
         # Check that the query is exactly as expected
         self.assertEqual(
             query[0],
-            " MATCH (n) WHERE n.name = $0 CALL neptune.algo.bfs(n, {maxDepth:1, traversalDirection:inbound}) YIELD node AS node RETURN node",
+            " MATCH (n) WHERE n.name = $0 CALL neptune.algo.bfs.parents(n, {maxDepth:1, traversalDirection:inbound}) YIELD parent AS parent, node AS node RETURN parent, node",
         )
         self.assertEqual(query[1], {"0": "Alice"})
 

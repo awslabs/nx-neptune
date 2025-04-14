@@ -53,6 +53,15 @@ class NeptuneGraph:
     def graph_object(self) -> Graph:
         return self.graph
 
+    def traversal_direction(self, reverse: bool) -> str:
+        if not self.graph_object().is_directed():
+            # 'reverse' parameter has no effect for non-directed graphs
+            return '"both"'
+        elif reverse is False:
+            return '"outbound"'
+        else:
+            return '"inbound"'
+
     def create_na_instance(self):
         """
         TODO: Connect to Boto3 and create a Neptune Analytic instance,

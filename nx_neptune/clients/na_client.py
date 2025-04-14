@@ -60,14 +60,16 @@ class NeptuneAnalyticsClient:
         query_params = {
             "graphIdentifier": self.graph_id,
             "queryString": query_string,
-            "language": "OPEN_CYPHER"
+            "language": "OPEN_CYPHER",
         }
-        
+
         # Add parameters if provided
         if parameter_map:
             query_params["parameters"] = parameter_map
 
-        self.logger.debug(f"Executing generic query [{query_string}] on graph [{self.graph_id}]")
+        self.logger.debug(
+            f"Executing generic query [{query_string}] on graph [{self.graph_id}]"
+        )
         response = self.client.execute_query(**query_params)
 
         return json.loads(response["payload"].read())["results"]

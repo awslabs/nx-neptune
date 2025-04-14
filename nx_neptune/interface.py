@@ -50,14 +50,14 @@ class BackendInterface:
         """
         for node in graph.nodes:
             # TODO: Encapsulate nx.node -> Node object conversion logic inside nx_neptune.clients.Node.convert_from_nx( )
-            na_node = Node(labels=["Node"], properties={"name": f"{node}"})
+            na_node = Node(labels=["Node"], properties={"name": node})
             logger.debug(f"add_node={na_node}")
             na_graph.add_node(na_node)
 
         for edge in graph.edges:
             # TODO: Encapsulate the conversion logic into Edge.convert_from_nx
-            node_zero = Node(labels=["Node"], properties={"name": f"{edge[0]}"})
-            node_one = Node(labels=["Node"], properties={"name": f"{edge[1]}"})
+            node_zero = Node(labels=["Node"], properties={"name": edge[0]})
+            node_one = Node(labels=["Node"], properties={"name": edge[1]})
             friend_edge = Edge(
                 label="FRIEND_WITH",
                 properties={},
