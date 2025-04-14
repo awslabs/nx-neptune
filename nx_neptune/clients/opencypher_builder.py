@@ -288,41 +288,23 @@ def insert_edge(edge: Edge) -> Tuple[str, Dict[str, Any]]:
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
-    # Get source and destination nodes
-    src_node = edge.node_src
-    dest_node = edge.node_dest
-
-    # Mask node and edge properties
-    masked_src_properties = param_builder.read(src_node.properties)
-    masked_dest_properties = param_builder.read(dest_node.properties)
-    masked_edge_properties = param_builder.read(edge.properties)
-
-    return (
-        QueryBuilder()
-        .merge()
-        .node(
-            ref_name=_SRC_NODE_REF,
-            labels=src_node.labels,
-            properties=masked_src_properties,
-            escape=False,
-        )
-        .merge()
-        .node(
-            ref_name=_DEST_NODE_REF,
-            labels=dest_node.labels,
-            properties=masked_dest_properties,
-            escape=False,
-        )
-        .merge()
-        .node(ref_name=_SRC_NODE_REF)
+    qb = QueryBuilder()
+    qb = _append_node(qb, param_builder, edge.node_src, _SRC_NODE_REF, True)
+    qb = _append_node(qb, param_builder, edge.node_dest, _DEST_NODE_REF, True)
+    masked_properties = param_builder.read(edge.properties)
+    qb = qb.merge()
+    qb = (
+        qb.node(ref_name=_SRC_NODE_REF)
         .related_to(
             label=edge.label,
             ref_name=_RELATION_REF,
-            properties=masked_edge_properties,
+            properties=masked_properties,
             escape=False,
         )
         .node(ref_name=_DEST_NODE_REF)
-    ).query, param_builder.get_param_values()
+    )
+
+    return qb.query, param_builder.get_param_values()
 
 
 def update_node(
@@ -389,35 +371,18 @@ def update_edge(
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
-    # Get source and destination nodes from the edge
-    src_node = edge.node_src
-    dest_node = edge.node_dest
+    qb = QueryBuilder().match()
+    qb = _append_node(qb, param_builder, edge.node_src, ref_name_src)
+    qb = qb.related_to(label=edge.label, ref_name=ref_name_edge)
+    qb = _append_node(qb, param_builder, edge.node_dest, ref_name_des)
 
-    masked_src_properties = param_builder.read(src_node.properties)
-    masked_dest_properties = param_builder.read(dest_node.properties)
     masked_where_filters = param_builder.read(where_filters)
     masked_properties_set = param_builder.read(properties_set)
+    qb = qb.where_multiple(masked_where_filters, escape=False).set(
+        masked_properties_set, escape_values=False
+    )
 
-    return (
-        QueryBuilder()
-        .match()
-        .node(
-            ref_name=ref_name_src,
-            labels=src_node.labels,
-            properties=masked_src_properties,
-            escape=False,
-        )
-        .related_to(label=edge.label, ref_name=ref_name_edge)
-        .node(
-            ref_name=ref_name_des,
-            labels=dest_node.labels,
-            properties=masked_dest_properties,
-            escape=False,
-        )
-        .where_multiple(masked_where_filters, escape=False)
-        .set(masked_properties_set, escape_values=False)
-        .query
-    ), param_builder.get_param_values()
+    return qb.query, param_builder.get_param_values()
 
 
 def delete_node(node: Node) -> Tuple[str, Dict[str, Any]]:
@@ -435,21 +400,11 @@ def delete_node(node: Node) -> Tuple[str, Dict[str, Any]]:
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
-    # Mask node properties
-    masked_properties = param_builder.read(node.properties)
+    qb = QueryBuilder().match()
+    qb = _append_node(qb, param_builder, node, _NODE_REF)
+    qb = qb.delete(ref_name=_NODE_REF)
 
-    return (
-        QueryBuilder()
-        .match()
-        .node(
-            ref_name=_NODE_REF,
-            labels=node.labels,
-            properties=masked_properties,
-            escape=False,
-        )
-        .delete(ref_name=_NODE_REF)
-        .query
-    ), param_builder.get_param_values()
+    return qb.query, param_builder.get_param_values()
 
 
 def delete_edge(edge: Edge) -> Tuple[str, Dict[str, Any]]:
@@ -469,33 +424,13 @@ def delete_edge(edge: Edge) -> Tuple[str, Dict[str, Any]]:
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
-    # Get source and destination nodes
-    src_node = edge.node_src
-    dest_node = edge.node_dest
+    qb = QueryBuilder().match()
+    qb = _append_node(qb, param_builder, edge.node_src, _SRC_NODE_REF)
+    qb = qb.related_to(label=edge.label, ref_name=_RELATION_REF)
+    qb = _append_node(qb, param_builder, edge.node_dest, _DEST_NODE_REF)
+    qb = qb.delete(ref_name=_RELATION_REF)
 
-    # Mask node properties
-    masked_src_properties = param_builder.read(src_node.properties)
-    masked_dest_properties = param_builder.read(dest_node.properties)
-
-    return (
-        QueryBuilder()
-        .match()
-        .node(
-            ref_name=_SRC_NODE_REF,
-            labels=src_node.labels,
-            properties=masked_src_properties,
-            escape=False,
-        )
-        .related_to(label=edge.label, ref_name=_RELATION_REF)
-        .node(
-            ref_name=_DEST_NODE_REF,
-            labels=dest_node.labels,
-            properties=masked_dest_properties,
-            escape=False,
-        )
-        .delete(ref_name=_RELATION_REF)
-        .query
-    ), param_builder.get_param_values()
+    return qb.query, param_builder.get_param_values()
 
 
 def clear_query() -> str:
@@ -567,3 +502,38 @@ def bfs_query(
         .query
     )
     return query_str, param_builder.get_param_values()
+
+
+def _append_node(
+    query_builder,
+    param_builder: ParameterMapBuilder,
+    node: Node,
+    ref_name: str = _NODE_REF,
+    incl_merge: bool = False,
+) -> QueryBuilder:
+    """
+    Helper method to append a node to a query builder.
+
+    :param query_builder: The QueryBuilder instance to modify
+    :param param_builder: The ParameterMapBuilder to use for masking properties
+    :param node: The node to append
+    :param ref_name: Reference name for the node (default: _NODE_REF)
+    :param incl_merge: If True, adds .merge() to the node creation (default: False)
+    :return: The modified QueryBuilder instance
+    """
+    # Mask node properties
+    masked_properties = param_builder.read(node.properties)
+
+    # Add merge if requested
+    if incl_merge:
+        query_builder = query_builder.merge()
+
+    # Append the node to the query builder
+    query_builder = query_builder.node(
+        ref_name=ref_name,
+        labels=node.labels,
+        properties=masked_properties,
+        escape=False,
+    )
+
+    return query_builder
