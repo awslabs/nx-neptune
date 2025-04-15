@@ -97,7 +97,7 @@ doc-sphinx:             ## Build the documentation.
 .PHONY: license-check
 license-check:             ## Build the documentation.
 	@echo "license check ..."
-	@$(ENV_PREFIX)liccheck -s liccheck.ini -r requirements/default.txt
+	@$(ENV_PREFIX)pip-licenses
 
 
 
