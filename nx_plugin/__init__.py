@@ -13,11 +13,18 @@ _info = {
     "functions": {
         # BEGIN: functions
         "bfs",
+        "pagerank",
         # END: functions
     },
     "additional_docs": {
         # BEGIN: additional_docs
         "bfs": "limited version of nx.shortest_path",
+        "pagerank": """Neptune Analytics recommends using a max_iter value of 20 for PageRank
+            calculations, which balances computational efficiency with result accuracy. This
+            default setting is optimized for most graph workloads, though you can adjust it
+            based on your specific convergence requirements. Please note that the
+            personalization, nstart, weight, and dangling parameters are not supported at
+            the moment.""",
         # END: additional_docs
     },
     "additional_parameters": {

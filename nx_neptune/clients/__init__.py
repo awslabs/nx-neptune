@@ -11,6 +11,7 @@ from .opencypher_builder import (
     insert_node,
     match_all_edges,
     match_all_nodes,
+    pagerank_query,
     update_edge,
     update_node,
 )

@@ -72,6 +72,7 @@ packages = [
     'nx_neptune',
     'nx_neptune.algorithms',
     'nx_neptune.algorithms.traversal',
+    'nx_neptune.algorithms.link_analysis',
     'nx_neptune.clients',
     'nx_neptune.utils',
 ]

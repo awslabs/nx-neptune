@@ -4,6 +4,7 @@ from nx_neptune.clients.opencypher_builder import (
     match_all_edges,
     clear_query,
     bfs_query,
+    pagerank_query,
     Node,
     Edge,
     delete_node,
@@ -71,6 +72,48 @@ class TestOpencypherBuilder(unittest.TestCase):
             " MATCH (n) WHERE n.name = $0 CALL neptune.algo.bfs.parents(n, {maxDepth:1, traversalDirection:inbound}) YIELD parent AS parent, node AS node RETURN parent, node",
         )
         self.assertEqual(query[1], {"0": "Alice"})
+
+    def test_pagerank_query_default(self):
+        """Test the pagerank_query function with default parameters."""
+        # Test case 1: Default parameters (no parameters provided)
+        query_str, params = pagerank_query()
+        print(query_str)
+        self.assertEqual(
+            query_str,
+            " MATCH (n) CALL neptune.algo.pageRank(n) YIELD rank AS rank RETURN n, rank",
+        )
+        self.assertEqual(params, {})
+
+    def test_pagerank_query_with_parameters(self):
+        """Test the pagerank_query function with various parameters."""
+        # Define test cases as (description, parameters, expected_query)
+        test_cases = [
+            (
+                "With dampingFactor parameter",
+                {"dampingFactor": 0.5},
+                " MATCH (n) CALL neptune.algo.pageRank(n, {dampingFactor:0.5}) YIELD rank AS rank RETURN n, rank",
+            ),
+            (
+                "With numOfIterations parameter",
+                {"numOfIterations": 20},
+                " MATCH (n) CALL neptune.algo.pageRank(n, {numOfIterations:20}) YIELD rank AS rank RETURN n, rank",
+            ),
+            (
+                "With numOfIterations parameter",
+                {"tolerance": 0.1},
+                " MATCH (n) CALL neptune.algo.pageRank(n, {tolerance:0.1}) YIELD rank AS rank RETURN n, rank",
+            ),
+            (
+                "With numOfIterations parameter",
+                {"edgeWeightProperty": "test_field", "edgeWeightType": "double"},
+                ' MATCH (n) CALL neptune.algo.pageRank(n, {edgeWeightProperty:"test_field", edgeWeightType:"double"}) YIELD rank AS rank RETURN n, rank',
+            ),
+        ]
+
+        for desc, parameters, expected_query in test_cases:
+            with self.subTest(description=desc):
+                query_str, params = pagerank_query(parameters)
+                self.assertEqual(query_str, expected_query)
 
     def test_insert_edge_parameterized(self):
         """

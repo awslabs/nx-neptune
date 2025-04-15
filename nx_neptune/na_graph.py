@@ -15,6 +15,7 @@ from .clients import (
     insert_node,
     match_all_edges,
     match_all_nodes,
+    pagerank_query,
     update_edge,
     update_node,
 )
@@ -219,4 +220,23 @@ class NeptuneGraph:
         if parameters is None:
             parameters = {}
         query_str, para_map = bfs_query(source_node_list, where_filters, parameters)
+        return self.client.execute_generic_query(query_str, para_map)
+
+    def execute_algo_pagerank(self, parameters=None):
+        """
+        Execute PageRank algorithm on Neptune Analytics.
+
+        Args:
+            parameters (dict, optional): Parameters for the PageRank algorithm.
+                Supported parameters include:
+                - dampingFactor: The damping factor (default: 0.85)
+                - maxIterations: Maximum number of iterations (default: 20)
+                - tolerance: Error tolerance to check convergence (default: 1.0e-6)
+
+        Returns:
+            list: The execution result of PageRank algorithm, containing nodes and their PageRank scores.
+        """
+        if parameters is None:
+            parameters = {}
+        query_str, para_map = pagerank_query(parameters)
         return self.client.execute_generic_query(query_str, para_map)
