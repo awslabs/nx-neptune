@@ -24,6 +24,11 @@ install:          ## Install the project in dev mode.
 	@echo "Don't forget to run 'make virtualenv' if you got errors."
 	$(ENV_PREFIX)pip install -e .[test,developer]
 
+.PHONY: dist
+dist: install
+	$(ENV_PREFIX)python -m build
+
+
 .PHONY: fmt
 fmt:              ## Format code using black & isort.
 	$(ENV_PREFIX)isort nx_neptune/

@@ -5,13 +5,42 @@
 [![CI](https://github.com/Bit-Quill/nx-neptune-analytics/actions/workflows/main.yml/badge.svg)](https://github.com/Bit-Quill/nx-neptune-analytics/actions/workflows/main.yml)
 [![Upload Python Package](https://github.com/Bit-Quill/nx-neptune-analytics/actions/workflows/release.yml/badge.svg)](https://github.com/Bit-Quill/nx-neptune-analytics/actions/workflows/release.yml)
 
-
 This project offers a NetworkX-compatible backend for Neptune Analytics, enabling users to offload graph algorithm workloads to AWS with no code changes. By using familiar NetworkX APIs, developers can seamlessly scale graph computations on-demand through Neptune Analytics. This approach combines the simplicity of local development with the performance and scalability of a fully managed AWS graph analytics service.
 
-## Install it from PyPI
+## Preview Status: Alpha Release
+
+We're making the `nx_neptune` plugin library an open-source project, and are releasing it now as an Alpha Preview to the community to gather feedback, and actively collaborate on the project roadmap. We welcome questions, suggestions, and contributions from all community members. At this point in development, the project has not been fully released to the public and is recommended for testing purposes only.  We're tracking its production readiness for general availability on the roadmap.   
+
+## Installation
+
+_Note, as part of the preview status, the project is not yet published to PyPI. Please install from wheel or source_. 
+
+### Install it from PyPI
 
 ```bash
 pip install nx_neptune
+```
+
+### Build and install from package wheel
+
+```bash
+# Package the project from source:
+python -m pip wheel -w dist .
+
+# Install with Jupyter dependencies from wheel: 
+pip install "dist/nx_neptune-0.1.0-py3-none-any.whl"
+```
+
+### Installation
+
+To install the required nx_neptune dependencies:
+
+```bash
+git clone git@github.com:Bit-Quill/nx-neptune-analytics.git
+cd nx-neptune-analytics
+
+# install from source directly
+pip install -e "."
 ```
 
 ## Prerequisite 
@@ -30,6 +59,7 @@ These permissions are required to read, write, and manage graph data via queries
  - Python 3.11 is required.
  - Ensure your environment uses Python 3.11 to maintain compatibility with dependencies and API integrations.
 
+_Note: As part of the preview status, we are recommending that you run the library using Python 3.11_. 
 
 ## Usage
 
@@ -52,6 +82,61 @@ $ python -m nx_neptune
 $ nx_neptune
 ```
 
+## Jupyter Notebook Integration
+
+For interactive exploration and visualization, you can use the Jupyter notebook integration.
+
+### Features
+
+The notebooks directory contains interactive demonstrations of using Neptune Analytics with NetworkX:
+
+- `pagerank_demo.ipynb`: Focused demonstration of the PageRank algorithm
+  - Comparing PageRank results between NetworkX and Neptune Analytics
+  - Visualizing PageRank values on a directed graph
+
+- `bfs_demo.ipynb`: Demonstration of Breadth-First Search traversal
+  - Running BFS with different parameters, like depth_limit and reverse
+  - Visualizing BFS traversal paths
+
+### Building a package wheel
+
+We recommend uploading your package as a wheel to Jupyter Notebooks. 
+
+```bash
+# Package the project from source:
+python -m pip wheel -w dist .
+# creates dist/nx_neptune-0.1.0-py3-none-any.whl
+```
+
+### Installation
+
+To install the required dependencies for the Jupyter notebook (including the `Jupyter` dependencies):
+
+```bash
+# Install with Jupyter dependencies from wheel: 
+pip install "dist/nx_neptune-0.1.0-py3-none-any.whl[jupyter]"
+```
+
+### Running the Jupyter Notebook
+
+[A full tutorial is available to run in Neptune Jupyter Notebooks](./notebooks/README.md).
+
+To run the Jupyter notebooks:
+
+1. Set your Neptune Analytics Graph ID as an environment variable:
+   ```bash
+   export GRAPH_ID=your-neptune-analytics-graph-id
+   ```
+
+2. Launch Jupyter Notebook:
+   ```bash
+   jupyter notebook notebooks/
+   ```
+
+3. You can also set the Graph ID directly in the notebook using:
+   ```python
+   %env GRAPH_ID=your-neptune-analytics-graph-id
+   ```
 
 ## Examples
 Before running the examples, you must specify your Neptune Analytics Graph ID 

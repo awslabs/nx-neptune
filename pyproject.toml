@@ -63,6 +63,12 @@ test = [
     'scipy>=1.9,!=1.11.0,!=1.11.1',
     "pytest-cov",
 ]
+jupyter = [
+    "jupyter>=1.0.0",
+    "notebook>=7.0.0",
+    "ipykernel>=6.0.0",
+    "matplotlib>=3.0.0",
+]
 
 [tool.setuptools]
 zip-safe = false
@@ -73,6 +79,7 @@ packages = [
     'nx_neptune.algorithms',
     'nx_neptune.algorithms.traversal',
     'nx_neptune.algorithms.link_analysis',
+    'nx_neptune.algorithms.util',
     'nx_neptune.clients',
     'nx_neptune.utils',
 ]
