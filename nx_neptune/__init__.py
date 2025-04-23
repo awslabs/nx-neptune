@@ -3,7 +3,7 @@ from .algorithms.traversal.bfs import bfs_edges
 from .na_graph import NeptuneGraph
 from .utils.decorators import configure_if_nx_active
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     # algorithms

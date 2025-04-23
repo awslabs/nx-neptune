@@ -103,7 +103,7 @@ max-line-length = 127
 extend-ignore = ['E203']
 
 [tool.black]
-target-version = ['py39', 'py310', 'py311', 'py312', 'py313']
+target-version = ['py311', 'py312', 'py313']
 
 [tool.mypy]
 exclude = []
