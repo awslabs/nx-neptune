@@ -112,12 +112,8 @@ exclude = []
 [tool.pip-licenses]
 ignore-packages = [
     # Following packge has no license info embedded on package level.
-    "filelock", # The Unlicense: https://github.com/tox-dev/filelock/blob/main/LICENSE
-    "Sphinx", # Two clause BSD licence: https://github.com/sphinx-doc/sphinx/blob/master/LICENSE.rst
     "cymple", # MIT: https://github.com/Accenture/Cymple/blob/master/LICENSE
-    "typing_extensions", # Sync with CPython: https://github.com/python/typing_extensions/blob/main/LICENSE
     "urllib3", # MIT: https://github.com/urllib3/urllib3/blob/main/LICENSE.txt
-
 ]
 
 allow-only = """

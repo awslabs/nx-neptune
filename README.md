@@ -40,7 +40,7 @@ git clone git@github.com:Bit-Quill/nx-neptune-analytics.git
 cd nx-neptune-analytics
 
 # install from source directly
-pip install -e "."
+make install
 ```
 
 ## Prerequisite 

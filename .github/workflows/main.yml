@@ -26,8 +26,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install project
-        run: make install
+      - name: Install project for developers
+        run: make install-dev
       - name: Run linter
         run: make lint
 
@@ -43,8 +43,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install project
-        run: make install
       - name: Run license-check
         run: make license-check
 
@@ -60,8 +58,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install project
-        run: make install
+      - name: Install project for developers
+        run: make install-dev
       - name: Run Sphinx doc generation
         run: make doc-sphinx
 
@@ -80,8 +78,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install project
-        run: make install
+      - name: Install project for developers
+        run: make install-dev
 
       - name: Run tests
         id: unit-test
@@ -129,8 +127,8 @@ jobs:
 #      - uses: actions/setup-python@v5
 #        with:
 #          python-version: ${{ matrix.python-version }}
-#      - name: Install project
-#        run: make install
+#      - name: Install project for developers
+#        run: make install-dev
 #      - name: Run tests
 #        run: make test
 

@@ -1,4 +1,5 @@
 .ONESHELL:
+SHELL := /bin/bash
 ENV_PREFIX=$(shell python -c "if __import__('pathlib').Path('.venv/bin/pip').exists(): print('.venv/bin/')")
 USING_POETRY=$(shell grep "tool.poetry" pyproject.toml && echo "yes")
 
@@ -19,15 +20,23 @@ show:             ## Show the current environment.
 	@$(ENV_PREFIX)python -m site
 
 .PHONY: install
-install:          ## Install the project in dev mode.
+install:          ## Install the project for examples.
+	@if [ "$(USING_POETRY)" ]; then poetry install && exit; fi
+	@echo "Don't forget to run 'make virtualenv' if you got errors."
+	$(ENV_PREFIX)pip install -e .[jupyter]
+
+.PHONY: install-dev
+install-dev: install          ## Install the project in dev mode.
 	@if [ "$(USING_POETRY)" ]; then poetry install && exit; fi
 	@echo "Don't forget to run 'make virtualenv' if you got errors."
 	$(ENV_PREFIX)pip install -e .[test,developer]
 
-.PHONY: dist
-dist: install
-	$(ENV_PREFIX)python -m build
 
+.PHONY: dist
+dist: ## install the distribution
+	@echo "Building distribution:"
+	$(ENV_PREFIX)pip install -e .
+	$(ENV_PREFIX)python -m build
 
 .PHONY: fmt
 fmt:              ## Format code using black & isort.
@@ -55,9 +64,6 @@ watch:            ## Run tests on every change.
 .PHONY: clean
 clean:            ## Clean unused files.
 	@find ./ -name '*.pyc' -exec rm -f {} \;
-	@find ./ -name '__pycache__' -exec rm -rf {} \;
-	@find ./ -name 'Thumbs.db' -exec rm -f {} \;
-	@find ./ -name '*~' -exec rm -f {} \;
 	@rm -rf .cache
 	@rm -rf .pytest_cache
 	@rm -rf .mypy_cache
@@ -66,6 +72,7 @@ clean:            ## Clean unused files.
 	@rm -rf *.egg-info
 	@rm -rf htmlcov
 	@rm -rf .tox/
+	$(ENV_PREFIX)pip freeze -l | grep . && $(ENV_PREFIX)pip uninstall -y -r <($(ENV_PREFIX)pip freeze -l)
 
 .PHONY: virtualenv
 virtualenv:       ## Create a virtual environment.
@@ -74,7 +81,6 @@ virtualenv:       ## Create a virtual environment.
 	@rm -rf .venv
 	@python3 -m venv .venv
 	@./.venv/bin/pip install -U pip
-	@./.venv/bin/pip install -e .[test]
 	@echo
 	@echo "!!! Please run 'source .venv/bin/activate' to enable the environment !!!"
 
@@ -101,9 +107,8 @@ doc-sphinx:             ## Build the documentation.
 .PHONY: license-check
 license-check:             ## Build the documentation.
 	@echo "license check ..."
-	@$(ENV_PREFIX)pip-licenses
-
-
+	$(ENV_PREFIX)pip install -e . pip-licenses
+	$(ENV_PREFIX)pip-licenses
 
 .PHONY: switch-to-poetry
 switch-to-poetry: ## Switch to poetry package manager.
