@@ -529,6 +529,36 @@ def bfs_query(
     return query_str, param_builder.get_param_values()
 
 
+def pagerank_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the PageRank algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to PageRank
+    :return: Tuple of (OpenCypher query string, parameter map) for PageRank algorithm execution
+
+    Example:
+        >>> pagerank_query()
+        (' MATCH (n) CALL neptune.algo.pageRank(n ) YIELD rank AS rank RETURN n, rank', {})
+        >>> pagerank_query({'dampingFactor': 0.9, 'maxIterations': 50})
+        (' MATCH (n) CALL neptune.algo.pageRank(n, {dampingFactor:0.9, maxIterations:50 } )
+        YIELD rank AS rank RETURN n, rank', {})
+    """
+    pagerank_params = f"{_NODE_REF}"
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        pagerank_params = f"{pagerank_params}, {{{parameters_list_str}}}"
+    return (
+        QueryBuilder()
+        .match()
+        .node(ref_name=_NODE_REF)
+        .call()
+        .procedure(f"{_PAGE_RANK_ALG}({pagerank_params})")
+        .yield_((_RANK_REF, _RANK_REF))
+        .return_literal(_NODE_REF + ", " + _RANK_REF)
+        .query
+    ), {}
+
+
 def _append_node(
     query_builder,
     param_builder: ParameterMapBuilder,
@@ -562,33 +592,3 @@ def _append_node(
     )
 
     return query_builder
-
-
-def pagerank_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
-    """
-    Create a query to execute the PageRank algorithm on Neptune Analytics.
-
-    :param parameters: Optional dictionary of algorithm parameters to pass to PageRank
-    :return: Tuple of (OpenCypher query string, parameter map) for PageRank algorithm execution
-
-    Example:
-        >>> pagerank_query()
-        (' MATCH (n) CALL neptune.algo.pageRank(n ) YIELD rank AS rank RETURN n, rank', {})
-        >>> pagerank_query({'dampingFactor': 0.9, 'maxIterations': 50})
-        (' MATCH (n) CALL neptune.algo.pageRank(n, {dampingFactor:0.9, maxIterations:50 } )
-        YIELD rank AS rank RETURN n, rank', {})
-    """
-    pagerank_params = f"{_NODE_REF}"
-    if parameters:
-        parameters_list_str = _to_parameter_list(parameters)
-        pagerank_params = f"{pagerank_params}, {{{parameters_list_str}}}"
-    return (
-        QueryBuilder()
-        .match()
-        .node(ref_name=_NODE_REF)
-        .call()
-        .procedure(f"{_PAGE_RANK_ALG}({pagerank_params})")
-        .yield_((_RANK_REF, _RANK_REF))
-        .return_literal(_NODE_REF + ", " + _RANK_REF)
-        .query
-    ), {}

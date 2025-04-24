@@ -1,7 +1,13 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from nx_neptune import NeptuneGraph, configure_if_nx_active
+from nx_neptune.clients import pagerank_query
+from nx_neptune.clients.neptune_constants import (
+    PARAM_DAMPING_FACTOR,
+    PARAM_NUM_OF_ITERATIONS,
+    PARAM_TOLERANCE,
+)
+from nx_neptune import NeptuneGraph
 from nx_neptune.algorithms.link_analysis.pagerank import pagerank
 
 
@@ -12,8 +18,8 @@ class TestPageRank:
     def mock_graph(self):
         """Create a mock NeptuneGraph for testing."""
         graph = MagicMock(spec=NeptuneGraph)
-        # Mock the execute_algo_pagerank method to return a predefined result
-        graph.execute_algo_pagerank.return_value = [
+        # Mock the execute_call method to return a predefined result
+        graph.execute_call.return_value = [
             {
                 "n": {"~id": "1", "~labels": ["Person"], "~properties": {"name": "A"}},
                 "rank": 0.3,
@@ -42,17 +48,23 @@ class TestPageRank:
             dangling=None,
         )
 
+        # Verify the correct query was built and executed
+        parameters = {}
+        (expected_query, param_values) = pagerank_query(parameters)
+
         # No conversion should happen if method receiving networkX default.
-        mock_graph.execute_algo_pagerank.assert_called_once_with({})
+        mock_graph.execute_call.assert_called_once_with(expected_query, param_values)
+        assert "neptune.algo.pageRank" in expected_query
 
         # Verify the result contains the expected nodes with their PageRank values
         assert result == {"A": 0.3, "B": 0.2, "C": 0.5}
 
     def test_pagerank_with_alpha(self, mock_graph):
         """Test pagerank with custom alpha parameter (0.75)."""
+        damping_factor = 0.75
         result = pagerank(
             mock_graph,
-            alpha=0.75,
+            alpha=damping_factor,
             personalization=None,
             max_iter=100,
             tol=1e-06,
@@ -61,50 +73,64 @@ class TestPageRank:
             dangling=None,
         )
 
-        # Verify the function called execute_algo_pagerank with correct parameters
-        mock_graph.execute_algo_pagerank.assert_called_once_with(
-            {"dampingFactor": 0.75}
-        )
+        # Verify the correct query was built and executed
+        parameters = {PARAM_DAMPING_FACTOR: damping_factor}
+        (expected_query, param_values) = pagerank_query(parameters)
+
+        # Verify the function called execute_call with correct parameters
+        mock_graph.execute_call.assert_called_once_with(expected_query, param_values)
+        assert "neptune.algo.pageRank" in expected_query
+        assert f"{PARAM_DAMPING_FACTOR}:{damping_factor}" in expected_query
 
         # Verify the result
         assert result == {"A": 0.3, "B": 0.2, "C": 0.5}
 
     def test_pagerank_with_max_iter(self, mock_graph):
         """Test pagerank with custom max_iter parameter (50)."""
+        num_of_iterations = 50
         result = pagerank(
             mock_graph,
             alpha=0.85,
             personalization=None,
-            max_iter=50,
+            max_iter=num_of_iterations,
             tol=1e-06,
             nstart=None,
             weight=None,
             dangling=None,
         )
 
-        # Verify the function called execute_algo_pagerank with correct parameters
-        mock_graph.execute_algo_pagerank.assert_called_once_with(
-            {"numOfIterations": 50}
-        )
+        # Verify the correct query was built and executed
+        parameters = {PARAM_NUM_OF_ITERATIONS: num_of_iterations}
+        (expected_query, param_values) = pagerank_query(parameters)
+
+        # Verify the function called execute_call with correct parameters
+        mock_graph.execute_call.assert_called_once_with(expected_query, param_values)
+        assert "neptune.algo.pageRank" in expected_query
+        assert f"{PARAM_NUM_OF_ITERATIONS}:{num_of_iterations}" in expected_query
 
         # Verify the result
         assert result == {"A": 0.3, "B": 0.2, "C": 0.5}
 
     def test_pagerank_with_tolerance(self, mock_graph):
         """Test pagerank with custom tolerance parameter (1e-04)."""
+        tolerance = 1e-04
         result = pagerank(
             mock_graph,
             alpha=0.85,
             personalization=None,
             max_iter=100,
-            tol=1e-04,
+            tol=tolerance,
             nstart=None,
             weight=None,
             dangling=None,
         )
 
-        # Verify the function called execute_algo_pagerank with correct parameters
-        mock_graph.execute_algo_pagerank.assert_called_once_with({"tolerance": 1e-04})
+        # Verify the correct query was built and executed
+        parameters = {PARAM_TOLERANCE: tolerance}
+        (expected_query, param_values) = pagerank_query(parameters)
+
+        # Verify the function called execute_call with correct parameters
+        mock_graph.execute_call.assert_called_once_with(expected_query, param_values)
 
         # Verify the result
         assert result == {"A": 0.3, "B": 0.2, "C": 0.5}
@@ -115,7 +141,7 @@ class TestPageRank:
         in the of method being called with networkX default value,
         no additional option should be passed as part of the openCypher call.
         """
-        mock_graph.execute_algo_pagerank.return_value = []
+        mock_graph.execute_call.return_value = []
 
         result = pagerank(
             mock_graph,

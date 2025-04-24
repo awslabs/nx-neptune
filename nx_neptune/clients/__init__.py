@@ -1,5 +1,12 @@
 # clients
 from .na_client import NeptuneAnalyticsClient
+from .neptune_constants import (
+    PARAM_MAX_DEPTH,
+    PARAM_TRAVERSAL_DIRECTION,
+    PARAM_TRAVERSAL_DIRECTION_BOTH,
+    PARAM_TRAVERSAL_DIRECTION_INBOUND,
+    PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
+)
 from .opencypher_builder import (
     Edge,
     Node,

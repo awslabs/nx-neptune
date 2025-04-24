@@ -32,8 +32,7 @@ dist: install
 .PHONY: fmt
 fmt:              ## Format code using black & isort.
 	$(ENV_PREFIX)isort nx_neptune/
-	$(ENV_PREFIX)black nx_neptune/
-	$(ENV_PREFIX)black tests/
+	$(ENV_PREFIX)black nx_neptune/ nx_plugin/ tests/
 
 .PHONY: lint
 lint:             ## Run flake8, black, mypy linters.
@@ -45,7 +44,7 @@ lint:             ## Run flake8, black, mypy linters.
 
 .PHONY: test
 test: lint        ## Run tests and generate coverage report.
-	$(ENV_PREFIX)pytest -v --cov-config=.coveragerc --cov=nx_neptune -l --tb=short --maxfail=1 --cov-fail-under=40 tests/
+	$(ENV_PREFIX)pytest -v --cov-config=.coveragerc --cov=nx_neptune -l --tb=short --maxfail=1 --cov-fail-under=80 tests/
 	$(ENV_PREFIX)coverage xml
 	$(ENV_PREFIX)coverage html
 

@@ -1,13 +1,15 @@
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from networkx import Graph
+from networkx import DiGraph, Graph
 
 from .clients import (
+    PARAM_TRAVERSAL_DIRECTION_BOTH,
+    PARAM_TRAVERSAL_DIRECTION_INBOUND,
+    PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
     Edge,
     NeptuneAnalyticsClient,
     Node,
-    bfs_query,
     clear_query,
     delete_edge,
     delete_node,
@@ -15,7 +17,6 @@ from .clients import (
     insert_node,
     match_all_edges,
     match_all_nodes,
-    pagerank_query,
     update_edge,
     update_node,
 )
@@ -27,8 +28,6 @@ class NeptuneGraph:
     responsible for interacting with the AWS Neptune Analytics service.
     It facilitates various actions, including CRUD operations on graphs
     and the execution of supported algorithms.
-    TODO: To add test on CRUD operation,
-    when hard-coded openCypher syntax being replaced by Python lib.
     """
 
     NAME = "nx_neptune"
@@ -48,20 +47,23 @@ class NeptuneGraph:
         has connected
         """
         self.logger = logger or logging.getLogger(__name__)
-        self.client = client or NeptuneAnalyticsClient()
-        self.graph = graph or Graph()
+        self.client = client or NeptuneAnalyticsClient(logger=self.logger)
+        if graph is None:
+            self.graph = Graph()
+        else:
+            self.graph = graph
 
-    def graph_object(self) -> Graph:
+    def graph_object(self) -> Graph | DiGraph:
         return self.graph
 
     def traversal_direction(self, reverse: bool) -> str:
         if not self.graph_object().is_directed():
             # 'reverse' parameter has no effect for non-directed graphs
-            return '"both"'
+            return PARAM_TRAVERSAL_DIRECTION_BOTH
         elif reverse is False:
-            return '"outbound"'
+            return PARAM_TRAVERSAL_DIRECTION_OUTBOUND
         else:
-            return '"inbound"'
+            return PARAM_TRAVERSAL_DIRECTION_INBOUND
 
     def create_na_instance(self):
         """
@@ -196,47 +198,13 @@ class NeptuneGraph:
         query_str = match_all_edges()
         return self.client.execute_generic_query(query_str)
 
-    def execute_algo_bfs(
-        self, source_node_list: str, where_filters: dict, parameters=None
-    ):
+    def execute_call(
+        self, query_string: str, parameter_map: Optional[dict] = None
+    ) -> Any:
         """
-        Compose an OpenCypher `CALL` statement for BFS algorithm run,
-        then execute over the remote NA cluster.
-        TODO: add additional (optional) arguments for the BFS algorithm
-        TODO: add example
-
-        Args:
-            source_node_list (str): The variable which will be used
-            under MATCH and CALL clause.
-            where_clause (str): The condition statement to be used
-            under WHERE clause for filtering.
+        Helper method to call a Neptune Function.
 
         Returns:
-            _type_: The execution result of BFS algorithm.
-            :param source_node_list:
-            :param where_clause:
-            :param parameters:
+            dict: Result from Boto client.
         """
-        if parameters is None:
-            parameters = {}
-        query_str, para_map = bfs_query(source_node_list, where_filters, parameters)
-        return self.client.execute_generic_query(query_str, para_map)
-
-    def execute_algo_pagerank(self, parameters=None):
-        """
-        Execute PageRank algorithm on Neptune Analytics.
-
-        Args:
-            parameters (dict, optional): Parameters for the PageRank algorithm.
-                Supported parameters include:
-                - dampingFactor: The damping factor (default: 0.85)
-                - maxIterations: Maximum number of iterations (default: 20)
-                - tolerance: Error tolerance to check convergence (default: 1.0e-6)
-
-        Returns:
-            list: The execution result of PageRank algorithm, containing nodes and their PageRank scores.
-        """
-        if parameters is None:
-            parameters = {}
-        query_str, para_map = pagerank_query(parameters)
-        return self.client.execute_generic_query(query_str, para_map)
+        return self.client.execute_generic_query(query_string, parameter_map)

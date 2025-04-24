@@ -1,6 +1,12 @@
 import logging
 
-from nx_neptune.na_graph import Edge, NeptuneGraph
+from nx_neptune.clients import Edge
+from nx_neptune.clients.neptune_constants import (
+    PARAM_MAX_DEPTH,
+    PARAM_TRAVERSAL_DIRECTION,
+)
+from nx_neptune.clients.opencypher_builder import bfs_query
+from nx_neptune.na_graph import NeptuneGraph
 from nx_neptune.utils.decorators import configure_if_nx_active
 
 logger = logging.getLogger(__name__)
@@ -44,30 +50,29 @@ def bfs_edges(
         Edges in the breadth-first search starting from `source`.
     """
     logger.debug(
-        f"nx_neptune_analytics.bfs() with: \nneptune_graph={neptune_graph}\nsource={source}\n"
+        f"nx_neptune_analytics.bfs_edges() with: \nneptune_graph={neptune_graph}\nsource={source}\n"
         f"reverse={reverse}\n"
         f"depth_limit={depth_limit}\n"
         f"sort_neighbors={sort_neighbors}"
     )
 
-    # determine source for match call
-    if isinstance(source, str):
-        where_clause = f"n.name='{source}'"
-    else:
-        where_clause = f"n.name={source}"
+    source_node = "n"
 
-    # map parameters
     parameters = {}
+    # map parameters:
     if depth_limit:
-        parameters["maxDepth"] = depth_limit
-    parameters["traversalDirection"] = neptune_graph.traversal_direction(reverse)
-
+        parameters[PARAM_MAX_DEPTH] = depth_limit
+    parameters[PARAM_TRAVERSAL_DIRECTION] = neptune_graph.traversal_direction(reverse)
     # TODO: map sort_neighbours
-    logger.debug(f"where_clause={where_clause}")
-    json_result = neptune_graph.execute_algo_bfs("n", {"n.name": source}, parameters)
+
+    query_str, para_map = bfs_query(
+        source_node, {f"{source_node}.name": source}, parameters
+    )
+    json_result = neptune_graph.execute_call(query_str, para_map)
 
     for json_edge in json_result:
         edge = Edge.from_neptune_response(json=json_edge)
+        # Neptune returns a result with source node -> source node - skip it
         if edge.node_src == edge.node_dest:
             continue
         yield edge.to_list()
