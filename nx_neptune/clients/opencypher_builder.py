@@ -230,6 +230,21 @@ class Edge:
         """
         return self.node_src.by_name(), self.node_dest.by_name()
 
+    def __eq__(self, other):
+        """
+        Comparison operator of an Edge
+
+        :param other: Edge to compare
+        :return: (boolean) if Edges are considered equal
+        """
+        if not isinstance(other, Edge):
+            return False
+        if self.node_src != other.node_src or self.node_dest != other.node_dest:
+            return False
+        if self.label != other.label or self.properties != other.properties:
+            return False
+        return True
+
     def __repr__(self):
         return f"Edge(label={self.label}, properties={self.properties}, node_src={self.node_src}, node_dest={self.node_dest})"
 

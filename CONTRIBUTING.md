@@ -58,7 +58,7 @@ detailing the test coverage::
   ...
 
 
-Ensure code coverage report shows `95%` coverage, add tests to your PR.
+Ensure code coverage report shows `80%` coverage, add tests to your PR.
 
 ## Makefile utilities
 
