@@ -48,5 +48,5 @@ jobs:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       run: |
-        python setup.py sdist bdist_wheel
+        python -m pip wheel -w dist .
         twine upload dist/*
