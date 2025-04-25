@@ -3,14 +3,7 @@ from unittest.mock import MagicMock, patch
 import logging
 import networkx as nx
 
-from nx_neptune.clients.neptune_constants import (
-    PARAM_DAMPING_FACTOR,
-    PARAM_TOLERANCE,
-    PARAM_NUM_OF_ITERATIONS,
-    PARAM_MAX_DEPTH,
-)
 from nx_neptune.clients import (
-    PARAM_TRAVERSAL_DIRECTION,
     PARAM_TRAVERSAL_DIRECTION_BOTH,
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
@@ -24,8 +17,6 @@ from nx_neptune.clients import (
     clear_query,
     match_all_nodes,
     match_all_edges,
-    bfs_query,
-    pagerank_query,
     update_node,
     delete_node,
     insert_edge,
