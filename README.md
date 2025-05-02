@@ -49,11 +49,22 @@ Before using this backend, ensure the following prerequisites are met:
 ### AWS IAM Permissions
 The IAM role or user accessing Neptune Analytics must have the following permissions:
 
+These permissions are required to read, write, and manage graph data via queries on Neptune Analytics:
+
  - neptune-graph:ReadDataViaQuery
  - neptune-graph:WriteDataViaQuery
  - neptune-graph:DeleteDataViaQuery
 
-These permissions are required to read, write, and manage graph data via queries on Neptune Analytics.
+These permissions are required to import/export between S3 and Neptune Analytics: 
+
+ - s3:GetObject (for import)
+ - s3:PutObject (for export)
+ - s3:DeleteObject (for export)
+ - kms:Decrypt
+ - kms:GenerateDataKey
+ - kms:DescribeKey
+
+The ARN with the above permissions must be added to your environment variables
 
 ### Python Runtime
  - Python 3.11 is required.
@@ -128,12 +139,20 @@ To run the Jupyter notebooks:
    export GRAPH_ID=your-neptune-analytics-graph-id
    ```
 
-2. Launch Jupyter Notebook:
+2. You will also need to specify the IAM roles that will execute S3 import or export:
+
+   ```bash
+   export ARN_IAM_ROLE=your-iam-arn
+   export ARN_S3_IMPORT=your-s3-bucket-for-import
+   export ARN_S3_EXPORT=your-s3-bucket-to-export
+   ```
+
+3. Launch Jupyter Notebook:
    ```bash
    jupyter notebook notebooks/
    ```
 
-3. You can also set the Graph ID directly in the notebook using:
+4. You can also set the Graph ID directly in the notebook using:
    ```python
    %env GRAPH_ID=your-neptune-analytics-graph-id
    ```

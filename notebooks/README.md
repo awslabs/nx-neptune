@@ -16,7 +16,14 @@ You can run these notebooks on AWS Neptune Notebook, which provides a flexible J
    - `neptune-graph:ReadDataViaQuery`
    - `neptune-graph:WriteDataViaQuery`
    - `neptune-graph:DeleteDataViaQuery`
-3. Access to AWS Neptune Notebook
+3. ARN for an IAM role with s3 read/write permissions
+   - `s3:GetObject (for import)`
+   - `s3:PutObject (for export)`
+   - `s3:DeleteObject (for export)`
+   - `kms:Decrypt`
+   - `kms:GenerateDataKey`
+   - `kms:DescribeKey`
+4. Access to AWS Neptune Notebook
 
 ### Step 1: Create a Neptune Notebook Instance
 
@@ -76,7 +83,13 @@ If you prefer to create a Neptune Notebook instance manually, follow these steps
        - `neptune-graph:ReadDataViaQuery`
        - `neptune-graph:WriteDataViaQuery`
        - `neptune-graph:DeleteDataViaQuery`
-       - S3 access for storing notebook files
+       - `s3:GetObject (for import)`
+       - `s3:PutObject (for export)`
+       - `s3:DeleteObject (for export)`
+       - `kms:Decrypt`
+       - `kms:GenerateDataKey`
+       - `kms:DescribeKey`
+
      - If using an existing role, verify it has the necessary permissions
    
      ![IAM Role Configuration](./img/iam_role_config.png)
