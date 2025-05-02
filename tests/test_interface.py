@@ -32,10 +32,6 @@ class TestBackendInterface:
             # Verify NeptuneGraph was created with the correct graph
             mock_neptune_graph.assert_called_once_with(graph=G)
 
-            # Verify clear_graph was called
-            # TODO: remove
-            mock_instance.clear_graph.assert_called_once()
-
             # Verify add_node was called for each node
             assert mock_instance.add_node.call_count == 2
 

@@ -68,6 +68,7 @@ jupyter = [
     "notebook>=7.0.0",
     "ipykernel>=6.0.0",
     "matplotlib>=3.0.0",
+    "nbstripout>=0.3.10"
 ]
 
 [tool.setuptools]

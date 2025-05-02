@@ -62,14 +62,14 @@ class TestOpencypherBuilder(unittest.TestCase):
         """
         # Call the function with test parameters
         source_node = "n"
-        where_condition = {"n.name": "Alice"}
+        where_condition = {"id(n)": "Alice"}
         parameters = {"maxDepth": 1, "traversalDirection": "inbound"}
         query = bfs_query(source_node, where_condition, parameters)
 
         # Check that the query is exactly as expected
         self.assertEqual(
             query[0],
-            " MATCH (n) WHERE n.name = $0 CALL neptune.algo.bfs.parents(n, {maxDepth:1, traversalDirection:inbound}) YIELD parent AS parent, node AS node RETURN parent, node",
+            " MATCH (n) WHERE id(n) = $0 CALL neptune.algo.bfs.parents(n, {maxDepth:1, traversalDirection:inbound}) YIELD parent AS parent, node AS node RETURN parent, node",
         )
         self.assertEqual(query[1], {"0": "Alice"})
 

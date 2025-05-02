@@ -44,7 +44,6 @@ class BackendInterface:
 
         # TODO: add nodes and edges from G to the instance
         na_graph = NeptuneGraph(graph=graph)
-        na_graph.clear_graph()
 
         """
         Push all Nodes from NetworkX into Neptune Analytics

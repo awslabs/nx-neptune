@@ -7,7 +7,7 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_NUM_OF_ITERATIONS,
     PARAM_TOLERANCE,
 )
-from nx_neptune import NeptuneGraph
+from nx_neptune.na_graph import NeptuneGraph
 from nx_neptune.algorithms.link_analysis.pagerank import pagerank
 
 

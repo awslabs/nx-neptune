@@ -105,10 +105,15 @@ doc-sphinx:             ## Build the documentation.
 
 
 .PHONY: license-check
-license-check:             ## Build the documentation.
+license-check:             ## Perform license check on core dependencies
 	@echo "license check ..."
 	$(ENV_PREFIX)pip install -e . pip-licenses
 	$(ENV_PREFIX)pip-licenses
+
+.PHONY: clear-notebook-output
+clear-notebook-output:             ## Clear notebook output cells
+	@echo "Clear notebook output cells ..."
+	$(ENV_PREFIX)nbstripout notebooks/*
 
 .PHONY: switch-to-poetry
 switch-to-poetry: ## Switch to poetry package manager.

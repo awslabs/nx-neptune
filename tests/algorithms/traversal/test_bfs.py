@@ -74,7 +74,7 @@ class TestBfsEdges:
 
         # Verify the correct query was built and executed
         source_node = "n"
-        where_filters = {"n.name": source}
+        where_filters = {"id(n)": source}
         parameters = {PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_BOTH}
         (expected_query, param_values) = bfs_query(
             source_node, where_filters, parameters
@@ -100,7 +100,7 @@ class TestBfsEdges:
 
         # Verify the correct query was built and executed
         source_node = "n"
-        where_filters = {"n.name": source}
+        where_filters = {"id(n)": source}
         parameters = {PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_INBOUND}
         (expected_query, param_values) = bfs_query(
             source_node, where_filters, parameters
@@ -127,7 +127,7 @@ class TestBfsEdges:
 
         # Verify the correct query was built and executed
         source_node = "n"
-        where_filters = {"n.name": source}
+        where_filters = {"id(n)": source}
         parameters = {
             PARAM_MAX_DEPTH: depth_limit,
             PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
@@ -158,7 +158,7 @@ class TestBfsEdges:
 
         # Verify the correct query was built and executed
         source_node = "n"
-        where_filters = {"n.name": source}
+        where_filters = {"id(n)": source}
         parameters = {
             # Note: sort_neighbours is not used in the query
             PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_BOTH,

@@ -8,6 +8,7 @@ from .clients import (
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
     Edge,
+    IamClient,
     NeptuneAnalyticsClient,
     Node,
     clear_query,
@@ -37,6 +38,7 @@ class NeptuneGraph:
         graph=None,
         logger=None,
         client=None,
+        iam_client=None,
     ):
         """
         Constructs a NeptuneGraph object for AWS service interaction,
@@ -52,6 +54,8 @@ class NeptuneGraph:
             self.graph = Graph()
         else:
             self.graph = graph
+        self.current_jobs = set()
+        self.iam_client = iam_client or IamClient(logger=self.logger)
 
     def graph_object(self) -> Graph | DiGraph:
         return self.graph

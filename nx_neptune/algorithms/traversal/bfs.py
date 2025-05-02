@@ -66,7 +66,7 @@ def bfs_edges(
     # TODO: map sort_neighbours
 
     query_str, para_map = bfs_query(
-        source_node, {f"{source_node}.name": source}, parameters
+        source_node, {f"id({source_node})": source}, parameters
     )
     json_result = neptune_graph.execute_call(query_str, para_map)
 

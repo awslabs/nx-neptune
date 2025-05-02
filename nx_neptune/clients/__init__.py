@@ -1,4 +1,5 @@
 # clients
+from .iam_client import IamClient
 from .na_client import NeptuneAnalyticsClient
 from .neptune_constants import (
     PARAM_MAX_DEPTH,
