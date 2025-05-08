@@ -15,7 +15,7 @@ class TestParameterMapBuilder:
         builder = ParameterMapBuilder()
         params = {"name": "John"}
 
-        masked_params = builder.read(params)
+        masked_params = builder.read_map(params)
 
         # Check masked parameters
         assert masked_params == {"name": "$0"}
@@ -32,7 +32,7 @@ class TestParameterMapBuilder:
         builder = ParameterMapBuilder()
         params = {"name": "John", "age": 30, "city": "Seattle"}
 
-        masked_params = builder.read(params)
+        masked_params = builder.read_map(params)
 
         # Check masked parameters
         assert masked_params == {"name": "$0", "age": "$1", "city": "$2"}
@@ -50,17 +50,17 @@ class TestParameterMapBuilder:
 
         # First read call
         params1 = {"name": "John"}
-        masked_params1 = builder.read(params1)
+        masked_params1 = builder.read_map(params1)
         assert masked_params1 == {"name": "$0"}
 
         # Second read call
         params2 = {"age": 30}
-        masked_params2 = builder.read(params2)
+        masked_params2 = builder.read_map(params2)
         assert masked_params2 == {"age": "$1"}
 
         # Third read call
         params3 = {"city": "Seattle"}
-        masked_params3 = builder.read(params3)
+        masked_params3 = builder.read_map(params3)
         assert masked_params3 == {"city": "$2"}
 
         # Check all parameter values were accumulated

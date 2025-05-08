@@ -9,7 +9,7 @@ from nx_neptune.clients import Edge, Node
 
 
 class TestBackendInterface:
-    def test_convert_from_nx(self):
+    def test_convert_from_nx_undirected(self):
         """Test converting from NetworkX graph to NeptuneGraph"""
         # Create a simple NetworkX graph
         G = nx.Graph()
@@ -37,9 +37,57 @@ class TestBackendInterface:
 
             mock_instance.add_node.assert_any_call(node_alice)
             mock_instance.add_node.assert_any_call(node_bob)
-            mock_instance.add_edge.assert_called_once_with(
+            mock_instance.add_edge.assert_any_call(
                 Edge(
                     label="FRIEND_WITH",
+                    properties={},
+                    node_src=node_alice,
+                    node_dest=node_bob,
+                )
+            )
+            mock_instance.add_edge.assert_any_call(
+                Edge(
+                    label="FRIEND_WITH",
+                    properties={},
+                    node_src=node_bob,
+                    node_dest=node_alice,
+                )
+            )
+
+            # Verify the result is the mock instance
+            assert result == mock_instance
+
+    def test_convert_from_nx_undirected(self):
+        """Test converting from NetworkX graph to NeptuneGraph"""
+        # Create a simple NetworkX graph
+        G = nx.DiGraph()
+        G.add_node("Alice")
+        G.add_node("Bob")
+        G.add_edge("Alice", "Bob")
+
+        node_alice = Node(id="Alice", labels=["Node"], properties={})
+        node_bob = Node(id="Bob", labels=["Node"], properties={})
+
+        # Mock the NeptuneGraph to avoid actual AWS calls
+        with patch("nx_neptune.interface.NeptuneGraph") as mock_neptune_graph:
+            # Setup
+            mock_instance = MagicMock()
+            mock_neptune_graph.return_value = mock_instance
+
+            # Call convert_from_nx
+            result = BackendInterface.convert_from_nx(G)
+
+            # Verify NeptuneGraph was created with the correct graph
+            mock_neptune_graph.assert_called_once_with(graph=G)
+
+            # Verify add_node was called for each node
+            assert mock_instance.add_node.call_count == 2
+
+            mock_instance.add_node.assert_any_call(node_alice)
+            mock_instance.add_node.assert_any_call(node_bob)
+            mock_instance.add_edge.assert_called_once_with(
+                Edge(
+                    label="RELATES_TO",
                     properties={},
                     node_src=node_alice,
                     node_dest=node_bob,
@@ -54,7 +102,7 @@ class TestBackendInterface:
         # Create a mock NeptuneGraph
         mock_neptune_graph = MagicMock(spec=NeptuneGraph)
         mock_graph_object = nx.Graph()
-        mock_neptune_graph.graph_object = mock_graph_object
+        mock_neptune_graph.graph_object.return_value = mock_graph_object
 
         # Call the method
         result = BackendInterface.convert_to_nx(mock_neptune_graph)

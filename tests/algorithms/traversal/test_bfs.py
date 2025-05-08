@@ -24,16 +24,16 @@ class TestBfsEdges:
         # Mock the execute_call method to return a predefined result
         graph.execute_call.return_value = [
             {
-                "node": {"~id": "id_A", "~properties": {"name": "A"}},
-                "parent": {"~id": "id_A", "~properties": {"name": "A"}},
+                "node": {"~id": "A", "~properties": {"name": "A-name"}},
+                "parent": {"~id": "A", "~properties": {"name": "A-name"}},
             },
             {
-                "node": {"~id": "id_B", "~properties": {"name": "B"}},
-                "parent": {"~id": "id_A", "~properties": {"name": "A"}},
+                "node": {"~id": "B", "~properties": {"name": "B-name"}},
+                "parent": {"~id": "A", "~properties": {"name": "A-name"}},
             },
             {
-                "node": {"~id": "id_C", "~properties": {"name": "C"}},
-                "parent": {"~id": "id_A", "~properties": {"name": "A"}},
+                "node": {"~id": "C", "~properties": {"name": "C-name"}},
+                "parent": {"~id": "A", "~properties": {"name": "A-name"}},
             },
         ]
         graph.traversal_direction.return_value = '"both"'
@@ -46,16 +46,40 @@ class TestBfsEdges:
         # Mock the execute_call method to return a predefined result
         graph.execute_call.return_value = [
             {
-                "node": {"~labels": ["Node"], "~properties": {"name": "A"}},
-                "parent": {"~labels": ["Node"], "~properties": {"name": "A"}},
+                "node": {
+                    "~id": "A",
+                    "~labels": ["Node"],
+                    "~properties": {"name": "A-name"},
+                },
+                "parent": {
+                    "~id": "A",
+                    "~labels": ["Node"],
+                    "~properties": {"name": "A-name"},
+                },
             },
             {
-                "node": {"~labels": ["Node"], "~properties": {"name": "B"}},
-                "parent": {"~labels": ["Node"], "~properties": {"name": "A"}},
+                "node": {
+                    "~id": "B",
+                    "~labels": ["Node"],
+                    "~properties": {"name": "B-name"},
+                },
+                "parent": {
+                    "~id": "A",
+                    "~labels": ["Node"],
+                    "~properties": {"name": "A-name"},
+                },
             },
             {
-                "node": {"~labels": ["Node"], "~properties": {"name": "C"}},
-                "parent": {"~labels": ["Node"], "~properties": {"name": "A"}},
+                "node": {
+                    "~id": "C",
+                    "~labels": ["Node"],
+                    "~properties": {"name": "C-name"},
+                },
+                "parent": {
+                    "~id": "A",
+                    "~labels": ["Node"],
+                    "~properties": {"name": "A-name"},
+                },
             },
         ]
         # TODO fix
@@ -89,7 +113,7 @@ class TestBfsEdges:
         )
 
         # Verify the result contains the expected nodes
-        assert result == [("A", "B"), ("A", "C")]
+        assert result == [["A", "B"], ["A", "C"]]
 
     def test_bfs_edges_with_reverse(self, mock_digraph):
         """Test bfs_edges with reverse parameter."""
@@ -115,7 +139,7 @@ class TestBfsEdges:
         mock_digraph.execute_call.assert_called_once_with(expected_query, param_values)
 
         # Verify the result contains the expected nodes
-        assert result == [("A", "B"), ("A", "C")]
+        assert result == [["A", "B"], ["A", "C"]]
 
     def test_bfs_edges_with_depth_limit(self, mock_digraph):
         """Test bfs_edges with depth_limit parameter."""
@@ -146,7 +170,7 @@ class TestBfsEdges:
         mock_digraph.execute_call.assert_called_once_with(expected_query, param_values)
 
         # Verify the result contains the expected nodes
-        assert result == [("A", "B"), ("A", "C")]
+        assert result == [["A", "B"], ["A", "C"]]
 
     def test_bfs_edges_with_sort_neighbors(self, mock_graph):
         """Test bfs_edges with sort_neighbors parameter."""
@@ -171,7 +195,7 @@ class TestBfsEdges:
         assert "neptune.algo.bfs.parents" in expected_query
         mock_graph.execute_call.assert_called_once_with(expected_query, param_values)
 
-        assert result == [("A", "B"), ("A", "C")]
+        assert result == [["A", "B"], ["A", "C"]]
 
     def test_bfs_edges_empty_result(self, mock_graph):
         """Test bfs_edges when no results are returned."""

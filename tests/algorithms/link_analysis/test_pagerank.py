@@ -57,7 +57,7 @@ class TestPageRank:
         assert "neptune.algo.pageRank" in expected_query
 
         # Verify the result contains the expected nodes with their PageRank values
-        assert result == {"A": 0.3, "B": 0.2, "C": 0.5}
+        assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
 
     def test_pagerank_with_alpha(self, mock_graph):
         """Test pagerank with custom alpha parameter (0.75)."""
@@ -83,7 +83,7 @@ class TestPageRank:
         assert f"{PARAM_DAMPING_FACTOR}:{damping_factor}" in expected_query
 
         # Verify the result
-        assert result == {"A": 0.3, "B": 0.2, "C": 0.5}
+        assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
 
     def test_pagerank_with_max_iter(self, mock_graph):
         """Test pagerank with custom max_iter parameter (50)."""
@@ -109,7 +109,7 @@ class TestPageRank:
         assert f"{PARAM_NUM_OF_ITERATIONS}:{num_of_iterations}" in expected_query
 
         # Verify the result
-        assert result == {"A": 0.3, "B": 0.2, "C": 0.5}
+        assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
 
     def test_pagerank_with_tolerance(self, mock_graph):
         """Test pagerank with custom tolerance parameter (1e-04)."""
@@ -133,7 +133,7 @@ class TestPageRank:
         mock_graph.execute_call.assert_called_once_with(expected_query, param_values)
 
         # Verify the result
-        assert result == {"A": 0.3, "B": 0.2, "C": 0.5}
+        assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
 
     def test_pagerank_empty_result(self, mock_graph):
         """
@@ -188,4 +188,4 @@ class TestPageRank:
         mock_logger.warning.assert_any_call(f"'dangling'{warning_suffix}")
 
         # Verify the result is still correct
-        assert result == {"A": 0.3, "B": 0.2, "C": 0.5}
+        assert result == {"1": 0.3, "2": 0.2, "3": 0.5}

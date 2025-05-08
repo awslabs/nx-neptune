@@ -2,6 +2,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from cymple import QueryBuilder
 
+from .na_models import Edge, Node
+
 # Internal constants for reference names
 _SRC_NODE_REF = "a"
 _DEST_NODE_REF = "b"
@@ -25,8 +27,6 @@ __all__ = [
     "clear_query",
     "bfs_query",
     "pagerank_query",
-    "Node",
-    "Edge",
 ]
 
 
@@ -67,7 +67,7 @@ class ParameterMapBuilder:
         self._counter = 0
         self._param_values = {}
 
-    def read(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    def read_map(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
         """
         Process a dictionary and create a masked version with parameter placeholders.
         If params is None or empty, returns an empty dictionary.
@@ -81,13 +81,37 @@ class ParameterMapBuilder:
         if not params:
             return {}
 
+        # handle a map of values
         masked_params = {}
-
         for key, value in params.items():
             param_name = str(self._counter)
             masked_param_name = f"${param_name}"
             masked_params[key] = masked_param_name
             self._param_values[param_name] = value
+            self._counter += 1
+
+        return masked_params
+
+    def read_list(self, params: Optional[List[Any]] = None) -> List[str]:
+        """
+        Process a list of parameters and create a masked version with parameter placeholders.
+        If params is None or empty, returns an empty dictionary.
+
+        Args:
+            params: A list containing parameter values, or None
+
+        Returns:
+            A list replaced with parameter placeholders ($0, $1, etc.)
+        """
+        if not params:
+            return []
+
+        # handle a list of values
+        masked_params = []
+        for value in params:
+            masked_param_name = f"${self._counter}"
+            masked_params.append(masked_param_name)
+            self._param_values[str(self._counter)] = value
             self._counter += 1
 
         return masked_params
@@ -100,153 +124,6 @@ class ParameterMapBuilder:
             A dictionary mapping parameter placeholders to their values
         """
         return self._param_values
-
-
-class Node:
-    """
-    Represents a node in a graph with labels and properties.
-
-    A node can have multiple labels and a dictionary of properties.
-    This class is used to create, update, and delete nodes in Neptune Analytics.
-    TODO: Move data model under na_graph
-
-    Attributes:
-        id (str, optional): a unique identifier for the node
-        labels (list): A list of labels for the node
-        properties (dict): A dictionary of properties for the node
-    """
-
-    def __init__(self, id=None, labels=None, properties=None):
-        self.id = id
-        self.labels = labels if labels else []
-        self.properties = properties if properties else {}
-
-    @classmethod
-    def from_neptune_response(cls, json: Dict):
-        return cls(
-            id=json.get("~id"),
-            labels=json.get("~labels"),
-            properties=json.get("~properties"),
-        )
-
-    def by_name(self) -> str:
-        """
-        Gets the Name property of the Node if available
-        :return: str
-        """
-        return self.properties.get("name", "")
-
-    def __eq__(self, other):
-        """
-        Comparison operator of a Node
-
-        :param other: Node to compare
-        :return: (boolean) if Nodes are considered equal
-        """
-        if not isinstance(other, Node):
-            return False
-        if self.id and self.id == other.id:
-            return True
-        if self.labels == other.labels and self.properties == other.properties:
-            return True
-        return False
-
-    def __repr__(self):
-        return f"Node(labels={self.labels}, properties={self.properties})"
-
-
-class Edge:
-    """
-    Represents an edge (relationship) in a graph with an optional label and properties.
-
-    An edge connects two nodes and can have a single label and a dictionary of properties.
-    In OpenCypher, relationships can only have one lavel. This class is used
-    to create, update, and delete relationships in Neptune Analytics.
-
-    Attributes:
-        node_src (Node): The source node of the edge. Must be a valid Node object.
-        node_dest (Node): The destination node of the edge. Must be a valid Node object.
-        label (str, optional): The label for the edge. If not provided, defaults to an empty string.
-        properties (dict, optional): A dictionary of properties for the edge. Optional key-value pairs
-                          that describe attributes of the relationship.
-
-    Examples:
-        >>> # Create an edge between two nodes with a label
-        >>> src_node = Node(labels=['Person'], properties={'name': 'Alice'})
-        >>> dest_node = Node(labels=['Company'], properties={'name': 'ACME'})
-        >>> edge = Edge(
-        ...     node_src=src_node,
-        ...     node_dest=dest_node,
-        ...     label='WORKS_AT',
-        ...     properties={'since': '2020', 'role': 'Engineer'}
-        ... )
-    """
-
-    def __init__(self, node_src, node_dest, label=None, properties=None):
-        """
-        Initialize an Edge object.
-
-        Args:
-            node_src (Node): The source node of the edge
-            node_dest (Node): The destination node of the edge
-            label (str, optional): The label for the edge. If None, defaults to an empty string.
-            properties (dict, optional): A dictionary of properties for the edge
-
-        Raises:
-            ValueError: If edge doesn't have both source and destination nodes
-            TypeError: If edge's source and destination nodes are not Node objects
-        """
-        # Validate source and destination nodes
-        if not node_src or not node_dest:
-            raise ValueError(
-                "Edge must have both source and destination nodes specified"
-            )
-
-        if not isinstance(node_src, Node) or not isinstance(node_dest, Node):
-            raise TypeError("Edge's node_src and node_dest must be Node objects")
-
-        self.node_src = node_src
-        self.node_dest = node_dest
-        self.label = label if label is not None else ""
-        self.properties = properties if properties else {}
-
-    @classmethod
-    def from_neptune_response(cls, json: Dict):
-        """
-        Creates an Edge from the JSON response from Neptune
-
-        :param json: json-encoded string from neptune-graph containing an edge object
-        :return: Edge
-        """
-        return cls(
-            Node.from_neptune_response(json.get("parent", {})),
-            Node.from_neptune_response(json.get("node", {})),
-        )
-
-    def to_list(self) -> Tuple[str, str]:
-        """
-        Converts edge to a Tuple with the src and destination Node name
-        :return: (Tuple): pair is strings with the name of the Nodes
-        """
-        return self.node_src.by_name(), self.node_dest.by_name()
-
-    def __eq__(self, other):
-        """
-        Comparison operator of an Edge
-
-        :param other: Edge to compare
-        :return: (boolean) if Edges are considered equal
-        """
-        if not isinstance(other, Edge):
-            return False
-        if self.node_src != other.node_src or self.node_dest != other.node_dest:
-            return False
-        if self.label != other.label or self.properties != other.properties:
-            return False
-        return True
-
-    def __repr__(self):
-        return f"Edge(label={self.label}, properties={self.properties}, node_src={self.node_src}, node_dest={self.node_dest})"
 
 
 def match_all_nodes() -> str:
@@ -293,20 +170,27 @@ def insert_node(node: Node) -> Tuple[str, Dict[str, Any]]:
     :return: Tuple of (OpenCypher query string, parameter map) for node creation
 
     Examples:
-        >>> node = Node(labels=['Person'], properties={'name': 'Alice'})
+        >>> node = Node(id='Alice', labels=['Person'], properties={'age': 15})
         >>> insert_node(node)
-        ('CREATE (:Person {name: $0})', {'0': 'Alice'})
+        ('CREATE (:Person {'~id': $0, age: $1})', {'0': 'Alice', '1': '15'})
     """
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
+    updated_parameters = node.properties
+    updated_parameters["`~id`"] = str(node.id)
+
     # Mask node properties
-    masked_properties = param_builder.read(node.properties)
+    masked_properties = param_builder.read_map(updated_parameters)
 
     return (
         QueryBuilder()
         .create()
-        .node(labels=node.labels, properties=masked_properties, escape=False)
+        .node(
+            labels=node.labels,
+            properties=masked_properties,
+            escape=False,
+        )
     ).query, param_builder.get_param_values()
 
 
@@ -314,15 +198,15 @@ def insert_edge(edge: Edge) -> Tuple[str, Dict[str, Any]]:
     """
     Create an edge (relationship) in the graph.
 
-    :param edge: An Edge object with label, properties, node_src, and node_dest
+    :param edge: An Edge object with label, properties, node_src, node_dest, and is_directed flag
     :return: Tuple of (OpenCypher query string, parameter map) for edge creation
 
     Examples:
-        >>> src = Node(labels=['Person'], properties={'name': 'Alice'})
-        >>> dest = Node(labels=['Person'], properties={'name': 'Bob'})
+        >>> src = Node(id='Alice', labels=['Person'], properties={})
+        >>> dest = Node(id='Bob', labels=['Person'], properties={})
         >>> edge = Edge(label='FRIEND_WITH', properties={'since': '2020'}, node_src=src, node_dest=dest)
         >>> insert_edge(edge)
-        ('MERGE (a:Person {name: $0}) MERGE (b:Person {name: $1})
+        ('MERGE (a:Person {`~id`: $0}) MERGE (b:Person {`~id`: $1})
         MERGE (a)-[r:FRIEND_WITH {since: $2}]->(b)', {'0': 'Alice', '1': 'Bob', '2': '2020'})
     """
     # Initialize parameter map builder
@@ -331,49 +215,56 @@ def insert_edge(edge: Edge) -> Tuple[str, Dict[str, Any]]:
     qb = QueryBuilder()
     qb = _append_node(qb, param_builder, edge.node_src, _SRC_NODE_REF, True)
     qb = _append_node(qb, param_builder, edge.node_dest, _DEST_NODE_REF, True)
-    masked_properties = param_builder.read(edge.properties)
-    qb = qb.merge()
-    qb = (
-        qb.node(ref_name=_SRC_NODE_REF)
-        .related_to(
+    masked_properties = param_builder.read_map(edge.properties)
+    qb = qb.merge().node(ref_name=_SRC_NODE_REF)
+    if edge.is_directed:
+        qb = qb.related_to(
             label=edge.label,
             ref_name=_RELATION_REF,
             properties=masked_properties,
             escape=False,
-        )
-        .node(ref_name=_DEST_NODE_REF)
-    )
+        ).node(ref_name=_DEST_NODE_REF)
+    else:
+        qb = qb.related(
+            label=edge.label,
+            ref_name=_RELATION_REF,
+            properties=masked_properties,
+            escape=False,
+        ).node(ref_name=_DEST_NODE_REF)
 
     return qb.query, param_builder.get_param_values()
 
 
 def update_node(
-    match_labels: str, ref_name: str, where_filters: dict, properties_set: dict
+    match_labels: str, ref_name: str, node_ids: list[str], properties_set: dict
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Update a node's properties.
 
     :param match_labels: Labels to match
     :param ref_name: Reference name for the node
-    :param where_filters: Filters to apply in the WHERE clause
+    :param node_ids: list of node IDs to match by
     :param properties_set: Properties to set
     :return: Tuple of (OpenCypher query string, parameter map) for node update
 
     Example:
-        >>> update_node('Person', 'a', {'a.name': 'Alice'}, {'a.age': '25'})
-        ('MATCH (a:Person) WHERE a.name = $0 SET a.age = $1', {'0': 'Alice', '1': '25'})
+        >>> update_node('Person', 'a', ['Alice'], {'a.age': '25'})
+        ('MATCH (a:Person) WHERE id(a) = $0 SET a.age = $1', {'0': 'Alice', '1': '25'})
     """
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
-    masked_where_filters = param_builder.read(where_filters)
-    masked_properties_set = param_builder.read(properties_set)
+    masked_node_ids = param_builder.read_list(node_ids)
+    literal_where_clause = " OR ".join(
+        [f"id({ref_name})={node_id}" for node_id in masked_node_ids]
+    )
+    masked_properties_set = param_builder.read_map(properties_set)
 
     return (
         QueryBuilder()
         .match()
         .node(labels=match_labels, ref_name=ref_name)
-        .where_multiple(masked_where_filters, escape=False)
+        .where_literal(literal_where_clause)
         .set(masked_properties_set, escape_values=False)
         .query
     ), param_builder.get_param_values()
@@ -390,13 +281,13 @@ def update_edge(
     """
     Update an edge's properties.
 
-    :param ref_name_src: Reference name for the source node
-    :param ref_name_edge: Reference name for the edge
-    :param edge: Edge object with node_src and node_dest attributes
-    :param ref_name_des: Reference name for the destination node
-    :param where_filters: Filters to apply in the WHERE clause
-    :param properties_set: Properties to set
-    :return: Tuple of (OpenCypher query string, parameter map) for edge update
+    :param ref_name_src: Reference name for the source node.
+    :param ref_name_edge: Reference name for the edge.
+    :param edge: Edge object with node_src and node_dest attributes.
+    :param ref_name_des: Reference name for the destination node.
+    :param where_filters: Filters to apply in the WHERE clause.
+    :param properties_set: Properties to set.
+    :return: Tuple of (OpenCypher query string, parameter map) for edge update.
 
     Example:
         >>> src = Node(labels=['Person'], properties={})
@@ -405,7 +296,7 @@ def update_edge(
         >>> update_edge('a', 'r', edge, 'b',
         ...                  {"a.name": "Alice", "b.name": "Bob"},
         ...                  {"r.since": "1997"})
-        ('MATCH (a:Person)-[r:FRIEND_WITH]->(b:Person) WHERE a.name = $0 AND b.name = $1 SET r.since = $2',
+        ('MATCH (a:Person)-[r:FRIEND_WITH]->(b:Person) WHERE id(a) = $0 AND id(b) = $1 SET r.since = $2',
          {'0': 'Alice', '1': 'Bob', '2': '1997'})
     """
     # Initialize parameter map builder
@@ -413,11 +304,14 @@ def update_edge(
 
     qb = QueryBuilder().match()
     qb = _append_node(qb, param_builder, edge.node_src, ref_name_src)
-    qb = qb.related_to(label=edge.label, ref_name=ref_name_edge)
+    if edge.is_directed:
+        qb = qb.related_to(label=edge.label, ref_name=ref_name_edge)
+    else:
+        qb = qb.relates(label=edge.label, ref_name=ref_name_edge)
     qb = _append_node(qb, param_builder, edge.node_dest, ref_name_des)
 
-    masked_where_filters = param_builder.read(where_filters)
-    masked_properties_set = param_builder.read(properties_set)
+    masked_where_filters = param_builder.read_map(where_filters)
+    masked_properties_set = param_builder.read_map(properties_set)
     qb = qb.where_multiple(masked_where_filters, escape=False).set(
         masked_properties_set, escape_values=False
     )
@@ -433,9 +327,9 @@ def delete_node(node: Node) -> Tuple[str, Dict[str, Any]]:
     :return: Tuple of (OpenCypher query string, parameter map) for node deletion
 
     Examples:
-        >>> node = Node(labels=['Person'], properties={'name': 'Alice'})
+        >>> node = Node(id='Alice', labels=['Person'], properties={})
         >>> delete_node(node)
-        ('MATCH (n:Person {name: $0}) DELETE n', {'0': 'Alice'})
+        ('MATCH (n:Person {`~id`: $0}) DELETE n', {'0': 'Alice'})
     """
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
@@ -466,7 +360,10 @@ def delete_edge(edge: Edge) -> Tuple[str, Dict[str, Any]]:
 
     qb = QueryBuilder().match()
     qb = _append_node(qb, param_builder, edge.node_src, _SRC_NODE_REF)
-    qb = qb.related_to(label=edge.label, ref_name=_RELATION_REF)
+    if edge.is_directed:
+        qb = qb.related_to(label=edge.label, ref_name=_RELATION_REF)
+    else:
+        qb = qb.relates(label=edge.label, ref_name=_RELATION_REF)
     qb = _append_node(qb, param_builder, edge.node_dest, _DEST_NODE_REF)
     qb = qb.delete(ref_name=_RELATION_REF)
 
@@ -515,7 +412,7 @@ def bfs_query(
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
-    masked_where_filters = param_builder.read(where_filters)
+    masked_where_filters = param_builder.read_map(where_filters)
 
     bfs_params = f"{source_node}"
     if parameters:
@@ -592,7 +489,11 @@ def _append_node(
     :return: The modified QueryBuilder instance
     """
     # Mask node properties
-    masked_properties = param_builder.read(node.properties)
+    updated_parameters = node.properties
+    updated_parameters["`~id`"] = str(node.id)
+
+    # Mask node properties
+    masked_properties = param_builder.read_map(updated_parameters)
 
     # Add merge if requested
     if incl_merge:

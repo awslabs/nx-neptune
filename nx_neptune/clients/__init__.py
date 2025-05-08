@@ -1,6 +1,7 @@
 # clients
 from .iam_client import IamClient
 from .na_client import NeptuneAnalyticsClient
+from .na_models import Edge, Node
 from .neptune_constants import (
     PARAM_MAX_DEPTH,
     PARAM_TRAVERSAL_DIRECTION,
@@ -9,8 +10,6 @@ from .neptune_constants import (
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
 )
 from .opencypher_builder import (
-    Edge,
-    Node,
     bfs_query,
     clear_query,
     delete_edge,

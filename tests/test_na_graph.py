@@ -103,7 +103,7 @@ class TestNeptuneGraph:
 
     def test_add_node(self, neptune_graph, mock_client):
         """Test add_node method"""
-        node = Node(properties={"name": "TestNode", "prop": "value"})
+        node = Node(id=123, properties={"name": "TestNode", "prop": "value"})
 
         # execute
         result = neptune_graph.add_node(node)
@@ -119,17 +119,17 @@ class TestNeptuneGraph:
         """Test update_nodes method"""
         match_labels = "Person"
         ref_name = "n"
-        where_filters = {"n.name": "John"}
+        nodes = [Node(id="John")]
         properties_set = {"n.age": 30}
 
         # execute
         result = neptune_graph.update_nodes(
-            match_labels, ref_name, where_filters, properties_set
+            match_labels, ref_name, nodes, properties_set
         )
 
         # Verify the correct query was built and executed
         (expected_query, param_values) = update_node(
-            match_labels, ref_name, where_filters, properties_set
+            match_labels, ref_name, ["John"], properties_set
         )
         mock_client.execute_generic_query.assert_called_once_with(
             expected_query, param_values
@@ -138,7 +138,7 @@ class TestNeptuneGraph:
 
     def test_delete_nodes(self, neptune_graph, mock_client):
         """Test delete_nodes method"""
-        node = Node(properties={"name": "TestNode", "prop": "value"})
+        node = Node(id=123, properties={"name": "TestNode", "prop": "value"})
 
         # execute
         result = neptune_graph.delete_nodes(node)
@@ -161,8 +161,8 @@ class TestNeptuneGraph:
 
     def test_add_edge(self, neptune_graph, mock_client):
         """Test add_edge method"""
-        src_node = Node(labels=["Person"])
-        dst_node = Node(labels=["Person"])
+        src_node = Node("Alice")
+        dst_node = Node("Bob")
         edge = Edge(src_node, dst_node, label="KNOWS")
 
         result = neptune_graph.add_edge(edge)
@@ -176,8 +176,8 @@ class TestNeptuneGraph:
 
     def test_update_edges(self, neptune_graph, mock_client):
         """Test update_edges method"""
-        src_node = Node(labels=["Person"], properties={"name": "Tarzan"})
-        dst_node = Node(labels=["Person"], properties={"name": "Jane"})
+        src_node = Node("Tarzan", labels=["Person"], properties={"name": "Tarzan"})
+        dst_node = Node("Jane", labels=["Person"], properties={"name": "Jane"})
         edge = Edge(src_node, dst_node, label="KNOWS")
 
         ref_name_src = "a"
@@ -211,8 +211,8 @@ class TestNeptuneGraph:
 
     def test_delete_edges(self, neptune_graph, mock_client):
         """Test delete_edges method"""
-        src_node = Node(labels=["Person"], properties={"name": "Tarzan"})
-        dst_node = Node(labels=["Person"], properties={"name": "Jane"})
+        src_node = Node("Tarzan", labels=["Person"], properties={"name": "Tarzan"})
+        dst_node = Node("Jane", labels=["Person"], properties={"name": "Jane"})
         edge = Edge(src_node, dst_node, label="KNOWS", properties={"since": 2020})
 
         # exercise
@@ -226,19 +226,29 @@ class TestNeptuneGraph:
         assert result == {"client": "response"}
 
     def test_get_all_nodes(self, neptune_graph, mock_client):
+        mock_client.execute_generic_query.return_value = [
+            {"n": "node1"},
+            {"n": "node2"},
+        ]
+
         """Test get_all_nodes method"""
         result = neptune_graph.get_all_nodes()
 
         # Verify the correct query was built and executed
         expected_query = match_all_nodes()
         mock_client.execute_generic_query.assert_called_once_with(expected_query)
-        assert result == {"client": "response"}
+        assert result == ["node1", "node2"]
 
     def test_get_all_edges(self, neptune_graph, mock_client):
+        mock_client.execute_generic_query.return_value = [
+            {"r": "relationship1"},
+            {"r": "relationship1"},
+        ]
+
         """Test get_all_edges method"""
         result = neptune_graph.get_all_edges()
 
         # Verify the correct query was built and executed
         expected_query = match_all_edges()
         mock_client.execute_generic_query.assert_called_once_with(expected_query)
-        assert result == {"client": "response"}
+        assert result == ["relationship1", "relationship1"]

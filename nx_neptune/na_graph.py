@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from networkx import DiGraph, Graph
 
@@ -21,6 +21,10 @@ from .clients import (
     update_edge,
     update_node,
 )
+
+__all__ = [
+    "NeptuneGraph",
+]
 
 
 class NeptuneGraph:
@@ -84,19 +88,35 @@ class NeptuneGraph:
         query_str, para_map = insert_node(node)
         return self.client.execute_generic_query(query_str, para_map)
 
+    def update_node(
+        self,
+        match_labels: str,
+        ref_name: str,
+        node: Node,
+        properties_set: dict,
+    ):
+        """
+        Perform an update on node's properties.
+        """
+        query_str, para_map = update_node(
+            match_labels, ref_name, [node.id], properties_set
+        )
+        return self.client.execute_generic_query(query_str, para_map)
+
     def update_nodes(
         self,
         match_labels: str,
         ref_name: str,
-        where_filters: dict,
+        nodes: List[Node],
         properties_set: dict,
     ):
         """
         Perform an update on node's property for nodes with matching condition,
         which presented within the graph.
         """
+        node_ids = [n.id for n in nodes]
         query_str, para_map = update_node(
-            match_labels, ref_name, where_filters, properties_set
+            match_labels, ref_name, node_ids, properties_set
         )
         return self.client.execute_generic_query(query_str, para_map)
 
@@ -189,7 +209,8 @@ class NeptuneGraph:
             _type_: Nodes in JSON format.
         """
         query_str = match_all_nodes()
-        return self.client.execute_generic_query(query_str)
+        all_nodes = self.client.execute_generic_query(query_str)
+        return [node["n"] for node in all_nodes]
 
     def get_all_edges(self):
         """
@@ -200,7 +221,8 @@ class NeptuneGraph:
             _type_: Edges in JSON format.
         """
         query_str = match_all_edges()
-        return self.client.execute_generic_query(query_str)
+        all_edges = self.client.execute_generic_query(query_str)
+        return [edge["r"] for edge in all_edges]
 
     def execute_call(
         self, query_string: str, parameter_map: Optional[dict] = None

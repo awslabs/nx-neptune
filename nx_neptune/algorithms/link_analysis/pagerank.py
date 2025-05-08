@@ -84,7 +84,6 @@ def pagerank(
     result = {}
     for item in json_result:
         node = Node.from_neptune_response(item["n"])
-        node_name = node.by_name()
-        result[node_name] = item[RESPONSE_RANK]
+        result[node.id] = item[RESPONSE_RANK]
 
     return result

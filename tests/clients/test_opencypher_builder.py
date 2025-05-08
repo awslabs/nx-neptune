@@ -127,11 +127,15 @@ class TestOpencypherBuilder(unittest.TestCase):
                 Edge(
                     label="FRIEND_WITH",
                     properties={},
-                    node_src=Node(labels=["Person"], properties={"name": "Alice"}),
-                    node_dest=Node(labels=["Person"], properties={"name": "Bob"}),
+                    node_src=Node(
+                        id="123", labels=["Person"], properties={"name": "Alice"}
+                    ),
+                    node_dest=Node(
+                        id="456", labels=["Person"], properties={"name": "Bob"}
+                    ),
                 ),
-                " MERGE (a: Person {name : $0}) MERGE (b: Person {name : $1}) MERGE (a)-[r: FRIEND_WITH]->(b)",
-                {"0": "Alice", "1": "Bob"},
+                " MERGE (a: Person {name : $0, `~id` : $1}) MERGE (b: Person {name : $2, `~id` : $3}) MERGE (a)-[r: FRIEND_WITH]->(b)",
+                {"0": "Alice", "1": "123", "2": "Bob", "3": "456"},
             ),
             # Edge without properties
             (
@@ -139,11 +143,11 @@ class TestOpencypherBuilder(unittest.TestCase):
                 Edge(
                     label="FRIEND_WITH",
                     properties={},
-                    node_src=Node(labels=["Person"]),
-                    node_dest=Node(labels=["Person"]),
+                    node_src=Node(id="123", labels=["Person"]),
+                    node_dest=Node(id="456", labels=["Person"]),
                 ),
-                " MERGE (a: Person) MERGE (b: Person) MERGE (a)-[r: FRIEND_WITH]->(b)",
-                {},
+                " MERGE (a: Person {`~id` : $0}) MERGE (b: Person {`~id` : $1}) MERGE (a)-[r: FRIEND_WITH]->(b)",
+                {"0": "123", "1": "456"},
             ),
             # Edge with properties
             (
@@ -151,11 +155,15 @@ class TestOpencypherBuilder(unittest.TestCase):
                 Edge(
                     label="FRIEND_WITH",
                     properties={"since": "2020"},
-                    node_src=Node(labels=["Person"], properties={"name": "Alice"}),
-                    node_dest=Node(labels=["Person"], properties={"name": "Bob"}),
+                    node_src=Node(
+                        id="123", labels=["Person"], properties={"name": "Alice"}
+                    ),
+                    node_dest=Node(
+                        id="456", labels=["Person"], properties={"name": "Bob"}
+                    ),
                 ),
-                " MERGE (a: Person {name : $0}) MERGE (b: Person {name : $1}) MERGE (a)-[r: FRIEND_WITH {since : $2}]->(b)",
-                {"0": "Alice", "1": "Bob", "2": "2020"},
+                " MERGE (a: Person {name : $0, `~id` : $1}) MERGE (b: Person {name : $2, `~id` : $3}) MERGE (a)-[r: FRIEND_WITH {since : $4}]->(b)",
+                {"0": "Alice", "1": "123", "2": "Bob", "3": "456", "4": "2020"},
             ),
             # Edge between nodes with multiple labels
             (
@@ -164,14 +172,18 @@ class TestOpencypherBuilder(unittest.TestCase):
                     label="REPORTS_TO",
                     properties={},
                     node_src=Node(
-                        labels=["Person", "Employee"], properties={"name": "Alice"}
+                        id="123",
+                        labels=["Person", "Employee"],
+                        properties={"name": "Alice"},
                     ),
                     node_dest=Node(
-                        labels=["Person", "Manager"], properties={"name": "Bob"}
+                        id="456",
+                        labels=["Person", "Manager"],
+                        properties={"name": "Bob"},
                     ),
                 ),
-                " MERGE (a: Person: Employee {name : $0}) MERGE (b: Person: Manager {name : $1}) MERGE (a)-[r: REPORTS_TO]->(b)",
-                {"0": "Alice", "1": "Bob"},
+                " MERGE (a: Person: Employee {name : $0, `~id` : $1}) MERGE (b: Person: Manager {name : $2, `~id` : $3}) MERGE (a)-[r: REPORTS_TO]->(b)",
+                {"0": "Alice", "1": "123", "2": "Bob", "3": "456"},
             ),
             # Edge with numeric property values
             (
@@ -179,11 +191,15 @@ class TestOpencypherBuilder(unittest.TestCase):
                 Edge(
                     label="PURCHASED",
                     properties={"quantity": 5, "price": 29.99},
-                    node_src=Node(labels=["Person"], properties={"name": "Alice"}),
-                    node_dest=Node(labels=["Product"], properties={"id": "1001"}),
+                    node_src=Node(
+                        id="123", labels=["Person"], properties={"name": "Alice"}
+                    ),
+                    node_dest=Node(
+                        id="456", labels=["Product"], properties={"id": "1001"}
+                    ),
                 ),
-                " MERGE (a: Person {name : $0}) MERGE (b: Product {id : $1}) MERGE (a)-[r: PURCHASED {quantity : $2, price : $3}]->(b)",
-                {"0": "Alice", "1": "1001", "2": 5, "3": 29.99},
+                " MERGE (a: Person {name : $0, `~id` : $1}) MERGE (b: Product {id : $2, `~id` : $3}) MERGE (a)-[r: PURCHASED {quantity : $4, price : $5}]->(b)",
+                {"0": "Alice", "1": "123", "2": "1001", "3": "456", "4": 5, "5": 29.99},
             ),
             # Edge with boolean property values
             (
@@ -191,13 +207,22 @@ class TestOpencypherBuilder(unittest.TestCase):
                 Edge(
                     label="LIKED",
                     properties={"public": True, "notified": False},
-                    node_src=Node(labels=["User"], properties={"username": "alice123"}),
+                    node_src=Node(
+                        id="123", labels=["User"], properties={"username": "alice123"}
+                    ),
                     node_dest=Node(
-                        labels=["Content"], properties={"id": "content-456"}
+                        id="456", labels=["Content"], properties={"id": "content-456"}
                     ),
                 ),
-                " MERGE (a: User {username : $0}) MERGE (b: Content {id : $1}) MERGE (a)-[r: LIKED {public : $2, notified : $3}]->(b)",
-                {"0": "alice123", "1": "content-456", "2": True, "3": False},
+                " MERGE (a: User {username : $0, `~id` : $1}) MERGE (b: Content {id : $2, `~id` : $3}) MERGE (a)-[r: LIKED {public : $4, notified : $5}]->(b)",
+                {
+                    "0": "alice123",
+                    "1": "123",
+                    "2": "content-456",
+                    "3": "456",
+                    "4": True,
+                    "5": False,
+                },
             ),
             # Edge with different node type
             (
@@ -205,11 +230,21 @@ class TestOpencypherBuilder(unittest.TestCase):
                 Edge(
                     label="WORKS_FOR",
                     properties={"role": "Engineer"},
-                    node_src=Node(labels=["Person"], properties={"name": "Alice"}),
-                    node_dest=Node(labels=["Company"], properties={"name": "ACME Inc"}),
+                    node_src=Node(
+                        id="123", labels=["Person"], properties={"name": "Alice"}
+                    ),
+                    node_dest=Node(
+                        id="456", labels=["Company"], properties={"name": "ACME Inc"}
+                    ),
                 ),
-                " MERGE (a: Person {name : $0}) MERGE (b: Company {name : $1}) MERGE (a)-[r: WORKS_FOR {role : $2}]->(b)",
-                {"0": "Alice", "1": "ACME Inc", "2": "Engineer"},
+                " MERGE (a: Person {name : $0, `~id` : $1}) MERGE (b: Company {name : $2, `~id` : $3}) MERGE (a)-[r: WORKS_FOR {role : $4}]->(b)",
+                {
+                    "0": "Alice",
+                    "1": "123",
+                    "2": "ACME Inc",
+                    "3": "456",
+                    "4": "Engineer",
+                },
             ),
         ]
 
@@ -228,39 +263,49 @@ class TestOpencypherBuilder(unittest.TestCase):
             # (description, node, expected_query, expected_params)
             (
                 "Single label with properties",
-                Node(labels=["Person"], properties={"name": "Alice"}),
-                " CREATE (: Person {name : $0})",
-                {"0": "Alice"},
+                Node(id="123", labels=["Person"], properties={"name": "Alice"}),
+                " CREATE (: Person {name : $0, `~id` : $1})",
+                {"0": "Alice", "1": "123"},
             ),
             (
                 "Multiple labels with properties",
-                Node(labels=["Person", "Employee"], properties={"id": "12345"}),
-                " CREATE (: Person: Employee {id : $0})",
-                {"0": "12345"},
+                Node(
+                    id="456", labels=["Person", "Employee"], properties={"id": "12345"}
+                ),
+                " CREATE (: Person: Employee {id : $0, `~id` : $1})",
+                {"0": "12345", "1": "456"},
             ),
             (
                 "Single label without properties",
-                Node(labels=["Person"]),
-                " CREATE (: Person)",
-                {},
+                Node(id="789", labels=["Person"]),
+                " CREATE (: Person {`~id` : $0})",
+                {"0": "789"},
             ),
             (
                 "No labels with properties",
-                Node(labels=[], properties={"name": "Alice"}),
-                " CREATE ( {name : $0})",
-                {"0": "Alice"},
+                Node(id="111", labels=[], properties={"name": "Alice"}),
+                " CREATE ( {name : $0, `~id` : $1})",
+                {"0": "Alice", "1": "111"},
             ),
             (
                 "Numeric property values",
-                Node(labels=["Product"], properties={"price": 29.99, "stock": 100}),
-                " CREATE (: Product {price : $0, stock : $1})",
-                {"0": 29.99, "1": 100},
+                Node(
+                    id="222",
+                    labels=["Product"],
+                    properties={"price": 29.99, "stock": 100},
+                ),
+                " CREATE (: Product {price : $0, stock : $1, `~id` : $2})",
+                {"0": 29.99, "1": 100, "2": "222"},
             ),
             (
                 "Boolean property values",
-                Node(labels=["User"], properties={"active": True, "verified": False}),
-                " CREATE (: User {active : $0, verified : $1})",
-                {"0": True, "1": False},
+                Node(
+                    id="333",
+                    labels=["User"],
+                    properties={"active": True, "verified": False},
+                ),
+                " CREATE (: User {active : $0, verified : $1, `~id` : $2})",
+                {"0": True, "1": False, "2": "333"},
             ),
         ]
 
@@ -281,88 +326,119 @@ class TestOpencypherBuilder(unittest.TestCase):
                 Edge(
                     label="FRIEND_WITH",
                     properties={},
-                    node_src=Node(labels=["Person"], properties={}),
-                    node_dest=Node(labels=["Person"], properties={}),
+                    node_src=Node(id="123", labels=["Person"], properties={}),
+                    node_dest=Node(id="456", labels=["Person"], properties={}),
                 ),
                 "a",
                 "r",
                 "b",
                 {"a.name": "Alice", "b.name": "Bob"},
                 {"r.since": "2020"},
-                " MATCH (a: Person)-[r: FRIEND_WITH]->(b: Person) WHERE a.name = $0 AND b.name = $1 SET r.since = $2",
-                {"0": "Alice", "1": "Bob", "2": "2020"},
+                " MATCH (a: Person {`~id` : $0})-[r: FRIEND_WITH]->(b: Person {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.since = $4",
+                {"0": "123", "1": "456", "2": "Alice", "3": "Bob", "4": "2020"},
             ),
             (
                 "Multiple properties update",
                 Edge(
                     label="FRIEND_WITH",
                     properties={},
-                    node_src=Node(labels=["Person"], properties={}),
-                    node_dest=Node(labels=["Person"], properties={}),
+                    node_src=Node(id="123", labels=["Person"], properties={}),
+                    node_dest=Node(id="456", labels=["Person"], properties={}),
                 ),
                 "a",
                 "r",
                 "b",
                 {"a.name": "Alice", "b.name": "Bob"},
                 {"r.since": "2020", "r.strength": "strong", "r.active": "true"},
-                " MATCH (a: Person)-[r: FRIEND_WITH]->(b: Person) WHERE a.name = $0 AND b.name = $1 SET r.since = $2, r.strength = $3, r.active = $4",
-                {"0": "Alice", "1": "Bob", "2": "2020", "3": "strong", "4": "true"},
+                " MATCH (a: Person {`~id` : $0})-[r: FRIEND_WITH]->(b: Person {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.since = $4, r.strength = $5, r.active = $6",
+                {
+                    "0": "123",
+                    "1": "456",
+                    "2": "Alice",
+                    "3": "Bob",
+                    "4": "2020",
+                    "5": "strong",
+                    "6": "true",
+                },
             ),
             (
                 "Different node types",
                 Edge(
                     label="WORKS_FOR",
                     properties={},
-                    node_src=Node(labels=["Person"], properties={}),
-                    node_dest=Node(labels=["Company"], properties={}),
+                    node_src=Node(id="123", labels=["Person"], properties={}),
+                    node_dest=Node(id="456", labels=["Company"], properties={}),
                 ),
                 "a",
                 "r",
                 "b",
                 {"a.name": "Alice", "b.name": "ACME Inc"},
                 {"r.role": "Engineer", "r.startDate": "2022-01-15"},
-                " MATCH (a: Person)-[r: WORKS_FOR]->(b: Company) WHERE a.name = $0 AND b.name = $1 SET r.role = $2, r.startDate = $3",
-                {"0": "Alice", "1": "ACME Inc", "2": "Engineer", "3": "2022-01-15"},
+                " MATCH (a: Person {`~id` : $0})-[r: WORKS_FOR]->(b: Company {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.role = $4, r.startDate = $5",
+                {
+                    "0": "123",
+                    "1": "456",
+                    "2": "Alice",
+                    "3": "ACME Inc",
+                    "4": "Engineer",
+                    "5": "2022-01-15",
+                },
             ),
             (
                 "With node properties in MATCH",
                 Edge(
                     label="FRIEND_WITH",
                     properties={"since": "2019"},
-                    node_src=Node(labels=["Person"], properties={"age": "30"}),
-                    node_dest=Node(labels=["Person"], properties={"age": "28"}),
+                    node_src=Node(
+                        id="123", labels=["Person"], properties={"age": "30"}
+                    ),
+                    node_dest=Node(
+                        id="456", labels=["Person"], properties={"age": "28"}
+                    ),
                 ),
                 "a",
                 "r",
                 "b",
                 {"a.name": "Alice", "b.name": "Bob"},
                 {"r.strength": "very strong"},
-                " MATCH (a: Person {age : $0})-[r: FRIEND_WITH]->(b: Person {age : $1}) WHERE a.name = $2 AND b.name = $3 SET r.strength = $4",
-                {"0": "30", "1": "28", "2": "Alice", "3": "Bob", "4": "very strong"},
+                " MATCH (a: Person {age : $0, `~id` : $1})-[r: FRIEND_WITH]->(b: Person {age : $2, `~id` : $3}) WHERE a.name = $4 AND b.name = $5 SET r.strength = $6",
+                {
+                    "0": "30",
+                    "1": "123",
+                    "2": "28",
+                    "3": "456",
+                    "4": "Alice",
+                    "5": "Bob",
+                    "6": "very strong",
+                },
             ),
             (
                 "Multiple node labels",
                 Edge(
                     label="REPORTS_TO",
                     properties={},
-                    node_src=Node(labels=["Person", "Employee"], properties={}),
-                    node_dest=Node(labels=["Person", "Manager"], properties={}),
+                    node_src=Node(
+                        id="123", labels=["Person", "Employee"], properties={}
+                    ),
+                    node_dest=Node(
+                        id="456", labels=["Person", "Manager"], properties={}
+                    ),
                 ),
                 "a",
                 "r",
                 "b",
                 {"a.name": "Alice", "b.name": "Bob"},
                 {"r.department": "Engineering"},
-                " MATCH (a: Person: Employee)-[r: REPORTS_TO]->(b: Person: Manager) WHERE a.name = $0 AND b.name = $1 SET r.department = $2",
-                {"0": "Alice", "1": "Bob", "2": "Engineering"},
+                " MATCH (a: Person: Employee {`~id` : $0})-[r: REPORTS_TO]->(b: Person: Manager {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.department = $4",
+                {"0": "123", "1": "456", "2": "Alice", "3": "Bob", "4": "Engineering"},
             ),
             (
                 "Multiple WHERE conditions",
                 Edge(
                     label="FRIEND_WITH",
                     properties={},
-                    node_src=Node(labels=["Person"], properties={}),
-                    node_dest=Node(labels=["Person"], properties={}),
+                    node_src=Node(id="123", labels=["Person"], properties={}),
+                    node_dest=Node(id="456", labels=["Person"], properties={}),
                 ),
                 "a",
                 "r",
@@ -375,14 +451,16 @@ class TestOpencypherBuilder(unittest.TestCase):
                     "r.since": "2018",
                 },
                 {"r.strength": "best friends"},
-                " MATCH (a: Person)-[r: FRIEND_WITH]->(b: Person) WHERE a.name = $0 AND a.age = $1 AND b.name = $2 AND b.city = $3 AND r.since = $4 SET r.strength = $5",
+                " MATCH (a: Person {`~id` : $0})-[r: FRIEND_WITH]->(b: Person {`~id` : $1}) WHERE a.name = $2 AND a.age = $3 AND b.name = $4 AND b.city = $5 AND r.since = $6 SET r.strength = $7",
                 {
-                    "0": "Alice",
-                    "1": "30",
-                    "2": "Bob",
-                    "3": "Seattle",
-                    "4": "2018",
-                    "5": "best friends",
+                    "0": "123",
+                    "1": "456",
+                    "2": "Alice",
+                    "3": "30",
+                    "4": "Bob",
+                    "5": "Seattle",
+                    "6": "2018",
+                    "7": "best friends",
                 },
             ),
             (
@@ -390,64 +468,77 @@ class TestOpencypherBuilder(unittest.TestCase):
                 Edge(
                     label="PURCHASED",
                     properties={},
-                    node_src=Node(labels=["Person"], properties={}),
-                    node_dest=Node(labels=["Product"], properties={}),
+                    node_src=Node(id="123", labels=["Person"], properties={}),
+                    node_dest=Node(id="456", labels=["Product"], properties={}),
                 ),
                 "a",
                 "r",
                 "b",
                 {"a.name": "Alice", "b.id": "1001"},
                 {"r.quantity": 5, "r.price": 29.99},
-                " MATCH (a: Person)-[r: PURCHASED]->(b: Product) WHERE a.name = $0 AND b.id = $1 SET r.quantity = $2, r.price = $3",
-                {"0": "Alice", "1": "1001", "2": 5, "3": 29.99},
+                " MATCH (a: Person {`~id` : $0})-[r: PURCHASED]->(b: Product {`~id` : $1}) WHERE a.name = $2 AND b.id = $3 SET r.quantity = $4, r.price = $5",
+                {"0": "123", "1": "456", "2": "Alice", "3": "1001", "4": 5, "5": 29.99},
             ),
             (
                 "Boolean property values",
                 Edge(
                     label="LIKED",
                     properties={},
-                    node_src=Node(labels=["User"], properties={}),
-                    node_dest=Node(labels=["Content"], properties={}),
+                    node_src=Node(id="123", labels=["User"], properties={}),
+                    node_dest=Node(id="456", labels=["Content"], properties={}),
                 ),
                 "a",
                 "r",
                 "b",
                 {"a.username": "alice123", "b.id": "content-456"},
                 {"r.public": True, "r.notified": False},
-                " MATCH (a: User)-[r: LIKED]->(b: Content) WHERE a.username = $0 AND b.id = $1 SET r.public = $2, r.notified = $3",
-                {"0": "alice123", "1": "content-456", "2": True, "3": False},
+                " MATCH (a: User {`~id` : $0})-[r: LIKED]->(b: Content {`~id` : $1}) WHERE a.username = $2 AND b.id = $3 SET r.public = $4, r.notified = $5",
+                {
+                    "0": "123",
+                    "1": "456",
+                    "2": "alice123",
+                    "3": "content-456",
+                    "4": True,
+                    "5": False,
+                },
             ),
             (
                 "Null property value",
                 Edge(
                     label="FRIEND_WITH",
                     properties={},
-                    node_src=Node(labels=["Person"], properties={}),
-                    node_dest=Node(labels=["Person"], properties={}),
+                    node_src=Node(id="123", labels=["Person"], properties={}),
+                    node_dest=Node(id="456", labels=["Person"], properties={}),
                 ),
                 "a",
                 "r",
                 "b",
                 {"a.name": "Alice", "b.name": "Bob"},
                 {"r.endDate": None},
-                " MATCH (a: Person)-[r: FRIEND_WITH]->(b: Person) WHERE a.name = $0 AND b.name = $1 SET r.endDate = $2",
-                {"0": "Alice", "1": "Bob", "2": None},
+                " MATCH (a: Person {`~id` : $0})-[r: FRIEND_WITH]->(b: Person {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.endDate = $4",
+                {"0": "123", "1": "456", "2": "Alice", "3": "Bob", "4": None},
             ),
             (
                 "Different reference names",
                 Edge(
                     label="ACTED_IN",
                     properties={},
-                    node_src=Node(labels=["Movie"], properties={}),
-                    node_dest=Node(labels=["Person"], properties={}),
+                    node_src=Node(id="123", labels=["Movie"], properties={}),
+                    node_dest=Node(id="456", labels=["Person"], properties={}),
                 ),
                 "movie",
                 "role",
                 "actor",
                 {"movie.title": "The Matrix", "actor.name": "Keanu Reeves"},
                 {"role.character": "Neo"},
-                " MATCH (movie: Movie)-[role: ACTED_IN]->(actor: Person) WHERE movie.title = $0 AND actor.name = $1 SET role.character = $2",
-                {"0": "The Matrix", "1": "Keanu Reeves", "2": "Neo"},
+                " MATCH (movie: Movie {`~id` : $0})-[role: ACTED_IN]->(actor: Person {`~id` : $1}) WHERE movie.title = $2 AND actor.name = $3 SET role.character = $4",
+                {
+                    "0": "123",
+                    "1": "456",
+                    "2": "The Matrix",
+                    "3": "Keanu Reeves",
+                    "4": "Neo",
+                },
             ),
         ]
 
@@ -484,72 +575,72 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "Single property update",
                 "Person",
                 "a",
-                {"a.name": "Alice"},
+                ["Alice"],
                 {"a.age": "25"},
-                " MATCH (a: Person) WHERE a.name = $0 SET a.age = $1",
+                " MATCH (a: Person) WHERE id(a)=$0 SET a.age = $1",
                 {"0": "Alice", "1": "25"},
             ),
             (
                 "Multiple properties update",
                 "Person",
                 "a",
-                {"a.id": "12345"},
+                ["12345"],
                 {"a.age": "30", "a.status": "Active", "a.updated": "true"},
-                " MATCH (a: Person) WHERE a.id = $0 SET a.age = $1, a.status = $2, a.updated = $3",
+                " MATCH (a: Person) WHERE id(a)=$0 SET a.age = $1, a.status = $2, a.updated = $3",
                 {"0": "12345", "1": "30", "2": "Active", "3": "true"},
             ),
             (
                 "Multiple labels",
                 ["Person", "Employee"],
                 "a",
-                {"a.email": "alice@example.com"},
+                ["alice@example.com"],
                 {"a.department": "Engineering"},
-                " MATCH (a: Person: Employee) WHERE a.email = $0 SET a.department = $1",
+                " MATCH (a: Person: Employee) WHERE id(a)=$0 SET a.department = $1",
                 {"0": "alice@example.com", "1": "Engineering"},
             ),
             (
-                "Multiple WHERE conditions",
+                "Multiple node ids",
                 "Person",
                 "a",
-                {"a.name": "Alice", "a.age": "25", "a.active": "true"},
+                ["Alice", "Bob"],
                 {"a.lastLogin": "2023-04-01"},
-                " MATCH (a: Person) WHERE a.name = $0 AND a.age = $1 AND a.active = $2 SET a.lastLogin = $3",
-                {"0": "Alice", "1": "25", "2": "true", "3": "2023-04-01"},
+                " MATCH (a: Person) WHERE id(a)=$0 OR id(a)=$1 SET a.lastLogin = $2",
+                {"0": "Alice", "1": "Bob", "2": "2023-04-01"},
             ),
             (
                 "Numeric property values",
                 "Product",
                 "p",
-                {"p.id": "1001"},
+                ["1001"],
                 {"p.price": 29.99, "p.stock": 100},
-                " MATCH (p: Product) WHERE p.id = $0 SET p.price = $1, p.stock = $2",
+                " MATCH (p: Product) WHERE id(p)=$0 SET p.price = $1, p.stock = $2",
                 {"0": "1001", "1": 29.99, "2": 100},
             ),
             (
                 "Boolean property values",
                 "User",
                 "u",
-                {"u.username": "alice123"},
+                ["alice123"],
                 {"u.verified": True, "u.active": False},
-                " MATCH (u: User) WHERE u.username = $0 SET u.verified = $1, u.active = $2",
+                " MATCH (u: User) WHERE id(u)=$0 SET u.verified = $1, u.active = $2",
                 {"0": "alice123", "1": True, "2": False},
             ),
             (
                 "Null property value",
                 "Person",
                 "a",
-                {"a.name": "Alice"},
+                ["Alice"],
                 {"a.previousJob": None},
-                " MATCH (a: Person) WHERE a.name = $0 SET a.previousJob = $1",
+                " MATCH (a: Person) WHERE id(a)=$0 SET a.previousJob = $1",
                 {"0": "Alice", "1": None},
             ),
             (
                 "Different reference name",
                 "Movie",
                 "movie",
-                {"movie.title": "The Matrix"},
+                ["The Matrix"],
                 {"movie.rating": 4.8},
-                " MATCH (movie: Movie) WHERE movie.title = $0 SET movie.rating = $1",
+                " MATCH (movie: Movie) WHERE id(movie)=$0 SET movie.rating = $1",
                 {"0": "The Matrix", "1": 4.8},
             ),
         ]
@@ -558,14 +649,14 @@ class TestOpencypherBuilder(unittest.TestCase):
             desc,
             match_labels,
             ref_name,
-            where_filters,
+            node_list,
             properties_set,
             expected_query,
             expected_params,
         ) in test_cases:
             with self.subTest(description=desc):
                 query_result = update_node(
-                    match_labels, ref_name, where_filters, properties_set
+                    match_labels, ref_name, node_list, properties_set
                 )
                 self.assertEqual(query_result[0], expected_query)
                 self.assertEqual(query_result[1], expected_params)
@@ -578,45 +669,55 @@ class TestOpencypherBuilder(unittest.TestCase):
             # (description, node, expected_query, expected_params)
             (
                 "Single label with properties",
-                Node(labels=["Person"], properties={"name": "Alice"}),
-                " MATCH (n: Person {name : $0}) DELETE n",
-                {"0": "Alice"},
+                Node(id="123", labels=["Person"], properties={"name": "Alice"}),
+                " MATCH (n: Person {name : $0, `~id` : $1}) DELETE n",
+                {"0": "Alice", "1": "123"},
             ),
             (
                 "Multiple labels with properties",
-                Node(labels=["Person", "Employee"], properties={"id": "12345"}),
-                " MATCH (n: Person: Employee {id : $0}) DELETE n",
-                {"0": "12345"},
+                Node(
+                    id="456", labels=["Person", "Employee"], properties={"id": "12345"}
+                ),
+                " MATCH (n: Person: Employee {id : $0, `~id` : $1}) DELETE n",
+                {"0": "12345", "1": "456"},
             ),
             (
                 "Single label without properties",
-                Node(labels=["Person"]),
-                " MATCH (n: Person) DELETE n",
-                {},
+                Node(id="789", labels=["Person"]),
+                " MATCH (n: Person {`~id` : $0}) DELETE n",
+                {"0": "789"},
             ),
             (
                 "No labels with properties",
-                Node(labels=[], properties={"name": "Alice"}),
-                " MATCH (n {name : $0}) DELETE n",
-                {"0": "Alice"},
+                Node(id="111", labels=[], properties={"name": "Alice"}),
+                " MATCH (n {name : $0, `~id` : $1}) DELETE n",
+                {"0": "Alice", "1": "111"},
             ),
             (
                 "Numeric property values",
-                Node(labels=["Product"], properties={"price": 29.99, "stock": 100}),
-                " MATCH (n: Product {price : $0, stock : $1}) DELETE n",
-                {"0": 29.99, "1": 100},
+                Node(
+                    id="222",
+                    labels=["Product"],
+                    properties={"price": 29.99, "stock": 100},
+                ),
+                " MATCH (n: Product {price : $0, stock : $1, `~id` : $2}) DELETE n",
+                {"0": 29.99, "1": 100, "2": "222"},
             ),
             (
                 "Boolean property values",
-                Node(labels=["User"], properties={"active": True, "verified": False}),
-                " MATCH (n: User {active : $0, verified : $1}) DELETE n",
-                {"0": True, "1": False},
+                Node(
+                    id="333",
+                    labels=["User"],
+                    properties={"active": True, "verified": False},
+                ),
+                " MATCH (n: User {active : $0, verified : $1, `~id` : $2}) DELETE n",
+                {"0": True, "1": False, "2": "333"},
             ),
             (
                 "Null property value",
-                Node(labels=["Person"], properties={"previousJob": None}),
-                " MATCH (n: Person {previousJob : $0}) DELETE n",
-                {"0": None},
+                Node(id="444", labels=["Person"], properties={"previousJob": None}),
+                " MATCH (n: Person {previousJob : $0, `~id` : $1}) DELETE n",
+                {"0": None, "1": "444"},
             ),
         ]
 
@@ -637,44 +738,56 @@ class TestOpencypherBuilder(unittest.TestCase):
                 Edge(
                     label="FRIEND_WITH",
                     properties={},
-                    node_src=Node(labels=["Person"], properties={"name": "Alice"}),
-                    node_dest=Node(labels=["Person"], properties={"name": "Bob"}),
+                    node_src=Node(
+                        id="123", labels=["Person"], properties={"name": "Alice"}
+                    ),
+                    node_dest=Node(
+                        id="456", labels=["Person"], properties={"name": "Bob"}
+                    ),
                 ),
-                " MATCH (a: Person {name : $0})-[r: FRIEND_WITH]->(b: Person {name : $1}) DELETE r",
-                {"0": "Alice", "1": "Bob"},
+                " MATCH (a: Person {name : $0, `~id` : $1})-[r: FRIEND_WITH]->(b: Person {name : $2, `~id` : $3}) DELETE r",
+                {"0": "Alice", "1": "123", "2": "Bob", "3": "456"},
             ),
             (
                 "Edge with properties",
                 Edge(
                     label="FRIEND_WITH",
                     properties={"since": "2020"},
-                    node_src=Node(labels=["Person"], properties={"name": "Alice"}),
-                    node_dest=Node(labels=["Person"], properties={"name": "Bob"}),
+                    node_src=Node(
+                        id="123", labels=["Person"], properties={"name": "Alice"}
+                    ),
+                    node_dest=Node(
+                        id="456", labels=["Person"], properties={"name": "Bob"}
+                    ),
                 ),
-                " MATCH (a: Person {name : $0})-[r: FRIEND_WITH]->(b: Person {name : $1}) DELETE r",
-                {"0": "Alice", "1": "Bob"},
+                " MATCH (a: Person {name : $0, `~id` : $1})-[r: FRIEND_WITH]->(b: Person {name : $2, `~id` : $3}) DELETE r",
+                {"0": "Alice", "1": "123", "2": "Bob", "3": "456"},
             ),
             (
                 "Edge between nodes with no properties",
                 Edge(
                     label="FRIEND_WITH",
                     properties={},
-                    node_src=Node(labels=["Person"]),
-                    node_dest=Node(labels=["Person"]),
+                    node_src=Node(id="123", labels=["Person"]),
+                    node_dest=Node(id="456", labels=["Person"]),
                 ),
-                " MATCH (a: Person)-[r: FRIEND_WITH]->(b: Person) DELETE r",
-                {},
+                " MATCH (a: Person {`~id` : $0})-[r: FRIEND_WITH]->(b: Person {`~id` : $1}) DELETE r",
+                {"0": "123", "1": "456"},
             ),
             (
                 "Edge between different node types",
                 Edge(
                     label="WORKS_FOR",
                     properties={"role": "Engineer"},
-                    node_src=Node(labels=["Person"], properties={"name": "Alice"}),
-                    node_dest=Node(labels=["Company"], properties={"name": "ACME Inc"}),
+                    node_src=Node(
+                        id="123", labels=["Person"], properties={"name": "Alice"}
+                    ),
+                    node_dest=Node(
+                        id="456", labels=["Company"], properties={"name": "ACME Inc"}
+                    ),
                 ),
-                " MATCH (a: Person {name : $0})-[r: WORKS_FOR]->(b: Company {name : $1}) DELETE r",
-                {"0": "Alice", "1": "ACME Inc"},
+                " MATCH (a: Person {name : $0, `~id` : $1})-[r: WORKS_FOR]->(b: Company {name : $2, `~id` : $3}) DELETE r",
+                {"0": "Alice", "1": "123", "2": "ACME Inc", "3": "456"},
             ),
             (
                 "Edge between nodes with multiple labels",
@@ -682,49 +795,63 @@ class TestOpencypherBuilder(unittest.TestCase):
                     label="REPORTS_TO",
                     properties={},
                     node_src=Node(
-                        labels=["Person", "Employee"], properties={"name": "Alice"}
+                        id="123",
+                        labels=["Person", "Employee"],
+                        properties={"name": "Alice"},
                     ),
                     node_dest=Node(
-                        labels=["Person", "Manager"], properties={"name": "Bob"}
+                        id="456",
+                        labels=["Person", "Manager"],
+                        properties={"name": "Bob"},
                     ),
                 ),
-                " MATCH (a: Person: Employee {name : $0})-[r: REPORTS_TO]->(b: Person: Manager {name : $1}) DELETE r",
-                {"0": "Alice", "1": "Bob"},
+                " MATCH (a: Person: Employee {name : $0, `~id` : $1})-[r: REPORTS_TO]->(b: Person: Manager {name : $2, `~id` : $3}) DELETE r",
+                {"0": "Alice", "1": "123", "2": "Bob", "3": "456"},
             ),
             (
                 "Edge with numeric property values",
                 Edge(
                     label="PURCHASED",
                     properties={"quantity": 5, "price": 29.99},
-                    node_src=Node(labels=["Person"], properties={"name": "Alice"}),
-                    node_dest=Node(labels=["Product"], properties={"id": "1001"}),
+                    node_src=Node(
+                        id="123", labels=["Person"], properties={"name": "Alice"}
+                    ),
+                    node_dest=Node(
+                        id="456", labels=["Product"], properties={"id": "1001"}
+                    ),
                 ),
-                " MATCH (a: Person {name : $0})-[r: PURCHASED]->(b: Product {id : $1}) DELETE r",
-                {"0": "Alice", "1": "1001"},
+                " MATCH (a: Person {name : $0, `~id` : $1})-[r: PURCHASED]->(b: Product {id : $2, `~id` : $3}) DELETE r",
+                {"0": "Alice", "1": "123", "2": "1001", "3": "456"},
             ),
             (
                 "Edge with boolean property values",
                 Edge(
                     label="LIKED",
                     properties={"public": True, "notified": False},
-                    node_src=Node(labels=["User"], properties={"username": "alice123"}),
+                    node_src=Node(
+                        id="123", labels=["User"], properties={"username": "alice123"}
+                    ),
                     node_dest=Node(
-                        labels=["Content"], properties={"id": "content-456"}
+                        id="456", labels=["Content"], properties={"id": "content-456"}
                     ),
                 ),
-                " MATCH (a: User {username : $0})-[r: LIKED]->(b: Content {id : $1}) DELETE r",
-                {"0": "alice123", "1": "content-456"},
+                " MATCH (a: User {username : $0, `~id` : $1})-[r: LIKED]->(b: Content {id : $2, `~id` : $3}) DELETE r",
+                {"0": "alice123", "1": "123", "2": "content-456", "3": "456"},
             ),
             (
                 "Edge with null property value",
                 Edge(
                     label="FRIEND_WITH",
                     properties={"endDate": None},
-                    node_src=Node(labels=["Person"], properties={"name": "Alice"}),
-                    node_dest=Node(labels=["Person"], properties={"name": "Bob"}),
+                    node_src=Node(
+                        id="123", labels=["Person"], properties={"name": "Alice"}
+                    ),
+                    node_dest=Node(
+                        id="456", labels=["Person"], properties={"name": "Bob"}
+                    ),
                 ),
-                " MATCH (a: Person {name : $0})-[r: FRIEND_WITH]->(b: Person {name : $1}) DELETE r",
-                {"0": "Alice", "1": "Bob"},
+                " MATCH (a: Person {name : $0, `~id` : $1})-[r: FRIEND_WITH]->(b: Person {name : $2, `~id` : $3}) DELETE r",
+                {"0": "Alice", "1": "123", "2": "Bob", "3": "456"},
             ),
         ]
 

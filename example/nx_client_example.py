@@ -1,7 +1,6 @@
 import networkx as nx
 from nx_neptune import NeptuneGraph
 from nx_neptune.clients import Node, Edge
-import logging
 import os
 
 """ 
@@ -20,8 +19,8 @@ g = NeptuneGraph(graph=nx_graph)
 g.clear_graph()
 
 """Populate the dataset by inserting nodes into the graph"""
-alice = Node(labels=['Person'], properties={'name': 'Alice'})
-bob = Node(labels=['Person'], properties={'name': 'Bob'})
+alice = Node(id='Alice', labels=['Person'], properties={'age': 24})
+bob = Node(id='Bob', labels=['Person'], properties={'hair': 'brown'})
 edge = Edge(label='FRIEND_WITH', properties={}, node_src=alice, node_dest=bob)
 
 g.add_node(alice)
@@ -29,10 +28,17 @@ g.add_node(bob)
 
 g.add_edge(edge)
 
-g.update_nodes(match_labels='a',
-               ref_name='a',
-               where_filters={'a.name': 'Alice'},
-               properties_set={'a.age': '25'})
+g.update_node(
+    match_labels='Person',
+    ref_name='a',
+    node=alice,
+    properties_set={'a.hair': 'black'})
+
+g.update_nodes(
+    match_labels='Person',
+    ref_name='a',
+    nodes=[alice, bob],
+    properties_set={'a.career': 'Flight Instructor'})
 
 """Update an edge"""
 g.update_edges('a', 'r', 'b',
@@ -44,7 +50,7 @@ g.update_edges('a', 'r', 'b',
 
 """List all nodes"""
 for item in g.get_all_nodes():
-    print(item)
+    print(Node.from_neptune_response(item))
 
 """List all edges"""
 for item in g.get_all_edges():
