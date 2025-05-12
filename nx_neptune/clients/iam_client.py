@@ -212,7 +212,7 @@ class IamClient:
         Returns:
             None
         """
-        s3_permissions = ["s3:PutObject", "s3:DeleteObject"]
+        s3_permissions = ["s3:PutObject", "s3:ListBucket"]
         kms_permissions = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
         operation_name = "S3-Export"
         self._s3_kms_permission_check(

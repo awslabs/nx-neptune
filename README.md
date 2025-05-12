@@ -59,7 +59,7 @@ These permissions are required to import/export between S3 and Neptune Analytics
 
  - s3:GetObject (for import)
  - s3:PutObject (for export)
- - s3:DeleteObject (for export)
+ - s3:ListBucket (for export)
  - kms:Decrypt
  - kms:GenerateDataKey
  - kms:DescribeKey

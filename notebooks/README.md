@@ -19,7 +19,7 @@ You can run these notebooks on AWS Neptune Notebook, which provides a flexible J
 3. ARN for an IAM role with s3 read/write permissions
    - `s3:GetObject (for import)`
    - `s3:PutObject (for export)`
-   - `s3:DeleteObject (for export)`
+   - `s3:ListBucket (for export)`
    - `kms:Decrypt`
    - `kms:GenerateDataKey`
    - `kms:DescribeKey`
@@ -85,7 +85,7 @@ If you prefer to create a Neptune Notebook instance manually, follow these steps
        - `neptune-graph:DeleteDataViaQuery`
        - `s3:GetObject (for import)`
        - `s3:PutObject (for export)`
-       - `s3:DeleteObject (for export)`
+       - `s3:ListBucket (for export)`
        - `kms:Decrypt`
        - `kms:GenerateDataKey`
        - `kms:DescribeKey`
