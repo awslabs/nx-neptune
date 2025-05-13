@@ -25,7 +25,7 @@ def test_aws_permission_check_invalid_arn(role_arn, resource_arn):
     with pytest.raises(ValueError, match="Invalid ARN format"):
         iam_client = IamClient(role_arn, None, mock_iam_client)
         iam_client.check_aws_permission(
-            ["neptune-graph:ReadDataViaQuery"], resource_arn
+            "Test operation", ["neptune-graph:ReadDataViaQuery"], resource_arn
         )
 
 

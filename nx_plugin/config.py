@@ -14,6 +14,9 @@ class NeptuneConfig(Config):
     prefer: bool = False
     require: bool = False
     graph_id: str = ""
+    s3_import_path: str = ""
+    create_instance: bool = False
+    role_arn: str = ""
 
 
 _config = NeptuneConfig()

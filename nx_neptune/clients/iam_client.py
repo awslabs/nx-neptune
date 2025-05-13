@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Optional
 
 import boto3
 import jmespath
@@ -19,6 +20,8 @@ class IamClient:
 
     The IAM role ARN can be provided as an argument. Otherwise, the ARN_IAM_ROLE environment variable is used.
     """
+
+    SERVICE_NA = "neptune-graph"
 
     def __init__(
         self,
@@ -93,7 +96,9 @@ class IamClient:
         except ClientError as e:
             raise e
 
-    def check_aws_permission(self, permissions: list, resource_arn: str) -> dict:
+    def check_aws_permission(
+        self, operation_name: str, permissions: list, resource_arn: str = "*"
+    ) -> dict:
         """
         Validates if the configured IAM role has the required permissions for a specified resource ARN.
 
@@ -112,7 +117,8 @@ class IamClient:
 
         try:
             # Validate ARN formats
-            self._validate_arns([self.role_arn, resource_arn])
+            if resource_arn != "*":
+                self._validate_arns([self.role_arn, resource_arn])
             self.logger.info(
                 f"Perform role permission check with: \n"
                 f" Role [{self.role_arn}], \n"
@@ -144,6 +150,10 @@ class IamClient:
                 if not action_name or not decision:
                     raise ValueError(f"Unexpected result structure: {result}")
 
+                if decision not in allowed_decisions:
+                    raise ValueError(
+                        f"Insufficient permission, {action_name} need to be grant for operation {operation_name}"
+                    )
                 # Map the decision to a boolean - check against list of allowed decisions
                 results[action_name] = decision in allowed_decisions
             self.logger.debug(
@@ -176,24 +186,16 @@ class IamClient:
             f"Permission check on ARN(s): {self.role_arn}, {bucket_arn}, {key_arn}"
         )
 
-        service_name = "neptune-graph"
         bucket_full_path = bucket_arn.replace("s3://", "arn:aws:s3:::", 1)
 
-        if not self.check_assume_role(service_name):
-            raise ValueError(f"Missing role assume on principle {service_name}")
+        if not self.check_assume_role(self.SERVICE_NA):
+            raise ValueError(f"Missing role assume on principle {self.SERVICE_NA}")
         # Check S3
-        check_result = self.check_aws_permission(s3_permissions, bucket_full_path)
+        self.check_aws_permission(operation_name, s3_permissions, bucket_full_path)
 
         # Check KMS
         if key_arn is not None:
-            kms_result = self.check_aws_permission(kms_permissions, key_arn)
-            check_result = check_result | kms_result
-
-        for name, value in check_result.items():
-            if value is False:
-                raise ValueError(
-                    f"Insufficient permission, {name} need to be grant for operation {operation_name}"
-                )
+            self.check_aws_permission(operation_name, kms_permissions, key_arn)
 
     def has_export_to_s3_permissions(self, bucket_arn, key_arn=None):
         """Check if the configured IAM role has permissions to export data to S3.
@@ -218,6 +220,21 @@ class IamClient:
         self._s3_kms_permission_check(
             operation_name, bucket_arn, key_arn, s3_permissions, kms_permissions
         )
+
+    def has_create_na_permissions(self):
+        """Check if the configured IAM role has permissions to create a Neptune Analytics instance.
+
+        Raises:
+            ValueError: If the role lacks required permissions
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        """
+        na_permissions = ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]
+        operation_name = "Create Neptune Instance"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
 
     def has_import_from_s3_permissions(self, bucket_arn, key_arn=None):
         """Check if the configured IAM role has permissions to import data from S3.

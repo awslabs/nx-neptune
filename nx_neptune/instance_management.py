@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from concurrent.futures import Future
 from datetime import datetime
 from enum import Enum
@@ -8,16 +9,34 @@ import boto3
 import jmespath
 from botocore.exceptions import ClientError
 
+from nx_neptune.clients import IamClient
 from nx_neptune.na_graph import NeptuneGraph
 
-__all__ = ["import_csv_from_s3", "export_csv_to_s3", "TaskFuture", "TaskType"]
+__all__ = [
+    "import_csv_from_s3",
+    "export_csv_to_s3",
+    "TaskFuture",
+    "TaskType",
+    "create_na_instance",
+]
 
 logger = logging.getLogger(__name__)
 
+_PROJECT_IDENTIFIER = "nx-neptune"
+
+_PERMISSIONS_CREATE = ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]
+
 
 class TaskType(Enum):
-    IMPORT = 1
-    EXPORT = 2
+    IMPORT = (1, ["INI", "IMPORTING"], "SUCCEEDED")
+    EXPORT = (2, ["INI", "EXPORTING"], "SUCCEEDED")
+    CREATE = (3, ["INI", "CREATING"], "AVAILABLE")
+    NOOP = (4, ["INI"], "AVAILABLE")
+
+    def __init__(self, num_value, permitted_statuses, status_complete):
+        self._value_ = num_value
+        self.permitted_statuses = permitted_statuses
+        self.status_complete = status_complete
 
 
 class TaskFuture(Future):
@@ -59,34 +78,32 @@ async def _wait_until_task_complete(client: boto3.client, future: TaskFuture):
     logger.debug(
         f"Perform Neptune Analytics job status check on Type: [{task_type}] with ID: [{task_id}]"
     )
-    status_list = [
-        "RUNNING",
-        "PENDING",
-        "INITIALIZING",
-        "IMPORTING",
-        "EXPORTING",
-        "INI",
-    ]
+
+    status_list = task_type.permitted_statuses
     status = "INI"
 
     while status in status_list:
         try:
-            if task_type == TaskType.IMPORT:
-                response = client.get_import_task(taskIdentifier=task_id)
-            elif task_type == TaskType.EXPORT:
-                response = client.get_export_task(taskIdentifier=task_id)
+            task_action_map = {
+                TaskType.IMPORT: lambda: client.get_import_task(taskIdentifier=task_id),
+                TaskType.EXPORT: lambda: client.get_export_task(taskIdentifier=task_id),
+                TaskType.CREATE: lambda: client.get_graph(graphIdentifier=task_id),
+            }
 
-            status = response.get("status")
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             logger.info(f"[{current_time}] Current status: {status}")
 
-            if status in status_list:
-                await asyncio.sleep(task_polling_interval)
-            elif status == "SUCCEEDED":
-                logger.info(f"Task [{task_id}] completed at [{current_time}]")
-                future.set_result(status)
-                return
+            response = task_action_map[task_type]()
+            status = response.get("status")
 
+            if status == task_type.status_complete:
+                logger.info(f"Task [{task_id}] completed at [{current_time}]")
+                future.set_result(task_id)
+                return
+            elif status in status_list:
+                await asyncio.sleep(task_polling_interval)
+            else:
+                logger.error(f"Unexpected status: {status} on type: {task_type}")
         except ClientError as e:
             raise e
 
@@ -189,6 +206,76 @@ def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn, polling_interval=30):
     na_graph.current_jobs.add(task)
     task.add_done_callback(na_graph.current_jobs.discard)
     return asyncio.wrap_future(future)
+
+
+def create_na_instance(graph_id: str, create_instance: bool):
+    """
+    Retrieve a graph ID in string format for algorithmic computations,
+    either by reusing an existing ID from the environment variables
+    or by provisioning a new Neptune Analytics instance on behalf of the user.
+
+    Returns:
+        asyncio.Future: A Future that resolves with the graph_id,
+        which represent a remote Neptune Analytics instance.
+
+    Raises:
+        Exception: If the Neptune Analytics instance creation fails
+    """
+    if graph_id != "" and graph_id is not None:
+        fut = TaskFuture("-1", TaskType.NOOP, 30)
+        fut.set_result(graph_id)
+        return asyncio.wrap_future(fut)
+    elif create_instance:
+        na_client = boto3.client("neptune-graph")
+        # Permissions check
+        user_arn = boto3.client("sts").get_caller_identity()["Arn"]
+        iam_client = IamClient(role_arn=user_arn)
+        iam_client.has_create_na_permissions()
+
+        response = _create_na_instance_task(na_client)
+        prospective_graph_id = _get_graph_id(response)
+
+        if _get_status_code(response) == 201:
+            fut = TaskFuture(prospective_graph_id, TaskType.CREATE, 30)
+            asyncio.create_task(
+                _wait_until_task_complete(na_client, fut), name=prospective_graph_id
+            )
+            return asyncio.wrap_future(fut)
+        else:
+            raise Exception(
+                f"Neptune instance creation failure with graph name {prospective_graph_id}"
+            )
+    else:
+        raise Exception(
+            "Instance provisioning was requested, but 'create_instance' is disabled. Cannot proceed with provisioning."
+        )
+
+
+def _create_na_instance_task(client):
+    """Create a new Neptune Analytics graph instance with default settings.
+
+    This function generates a unique name for the graph using a UUID suffix and
+    creates a new Neptune Analytics graph instance with public connectivity.
+
+    Args:
+        client (boto3.client): The Neptune Analytics boto3 client
+
+    Returns:
+        dict: The API response containing information about the created graph
+
+    Raises:
+        ClientError: If there's an issue with the AWS API call
+    """
+    graph_name = _create_random_graph_name()
+    response = client.create_graph(
+        graphName=graph_name,
+        tags={"agent": _PROJECT_IDENTIFIER},
+        publicConnectivity=True,
+        replicaCount=0,
+        deletionProtection=False,
+        provisionedMemory=16,
+    )
+    return response
 
 
 def _start_import_task(
@@ -354,3 +441,42 @@ def _clean_s3_path(s3_path):
 
     # If there's no '/', return the bucket name
     return parts[0]
+
+
+def _get_status_code(response: dict):
+    """
+    Extract the HTTP status code from an AWS API response.
+
+    Args:
+        response (dict): The AWS API response dictionary
+
+    Returns:
+        int or None: The HTTP status code if available, None otherwise
+    """
+    return (response.get("ResponseMetadata") or {}).get("HTTPStatusCode")
+
+
+def _get_graph_id(response: dict):
+    """
+    Extract the graph ID from a Neptune Analytics API response.
+
+    Args:
+        response (dict): The Neptune Analytics API response dictionary
+
+    Returns:
+        str or None: The graph ID if available, None otherwise
+    """
+    return response.get("id")
+
+
+def _create_random_graph_name() -> str:
+    """Generate a unique name for a Neptune Analytics graph instance.
+
+    This function creates a random graph name by combining the project identifier
+    with a UUID to ensure uniqueness across all graph instances.
+
+    Returns:
+        str: A unique graph name in the format '{PROJECT_IDENTIFIER}-{uuid}'
+    """
+    uuid_suffix = str(uuid.uuid4())
+    return f"{_PROJECT_IDENTIFIER}-{uuid_suffix}"

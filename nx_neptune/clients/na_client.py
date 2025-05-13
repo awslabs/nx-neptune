@@ -12,6 +12,9 @@ class NeptuneAnalyticsClient:
     backend data source using the AWS boto3 client.
     """
 
+    SERVICE_NA = "neptune-graph"
+    GRAPH_ID = "graph_id"
+
     def __init__(
         self,
         graph_id=None,
@@ -26,9 +29,9 @@ class NeptuneAnalyticsClient:
         TODO: Save a boto3 session instance once the client
         has connected
         """
-        self.graph_id = graph_id or os.getenv("GRAPH_ID")
+        self.graph_id = graph_id or os.getenv(self.GRAPH_ID)
         self.logger = logger or logging.getLogger(__name__)
-        self.client = client or boto3.client("neptune-graph")
+        self.client = client or boto3.client(self.SERVICE_NA)
 
     def create_na_instance(self):
         """

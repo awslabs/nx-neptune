@@ -42,7 +42,7 @@ class TestNeptuneAnalyticsClient:
         assert na_client.logger == logger
         assert na_client.client == boto3_client
 
-    @patch.dict(os.environ, {"GRAPH_ID": "env-graph-id"})
+    @patch.dict(os.environ, {"graph_id": "env-graph-id"})
     def test_init_with_env_var(self):
         """Test initialization with GRAPH_ID from environment variable."""
         mock_boto3_client = MagicMock()

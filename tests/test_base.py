@@ -32,6 +32,9 @@ def test_config_init():
         "prefer": False,
         "require": False,
         "graph_id": "",
+        "s3_import_path": "",
+        "create_instance": False,
+        "role_arn": "",
     }
 
     from nx_plugin.config import _config
