@@ -1,9 +1,9 @@
-import networkx as nx
-from nx_neptune import NeptuneGraph
-from nx_neptune.clients import Node, Edge
-import logging
 import os
-import sys
+
+import networkx as nx
+
+from nx_neptune import NeptuneGraph
+from nx_neptune.utils.utils import get_stdout_logger
 
 """ 
 Example script to demonstrate how PageRank algorithm computation can be offloaded into remote AWS Neptune Analytics instance.  
@@ -15,17 +15,9 @@ if not graph_id:
     raise Exception('Environment Variable GRAPH_ID is not defined')
 nx.config.warnings_to_ignore.add("cache")
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    stream=sys.stdout  # Explicitly set output to stdout
-)
-
-for logger_name in ['boto3', 'botocore', 'urllib3', 'matplotlib', 'networkx', 'nx_neptune.interface',
-                    'nx_neptune.algorithms.link_analysis.pagerank']:
-    logging.getLogger(logger_name).setLevel(logging.WARNING)
-logger = logging.getLogger(__name__)
+logger = get_stdout_logger(__name__,[
+                    'nx_neptune.algorithms.link_analysis.pagerank',
+                    'nx_neptune.na_graph', __name__])
 
 backend = "neptune"
 # Clean up remote graph and populate test data.

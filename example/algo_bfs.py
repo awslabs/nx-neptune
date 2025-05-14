@@ -1,7 +1,9 @@
-import networkx as nx
-from nx_neptune import NeptuneGraph
-import logging
 import os
+
+import networkx as nx
+
+from nx_neptune import NeptuneGraph
+from nx_neptune.utils.utils import get_stdout_logger
 
 """ 
 This sample script demonstrates how to use AWS Neptune Analytics 
@@ -10,8 +12,8 @@ In this example, a single graph is imported into Neptune Analytics.
 Once imported, a Breadth-First Search (BFS) algorithm is executed on Neptune Analytics 
 to determine which nodes (people) are connected as friends to Alice.
 """
-logger = logging.getLogger(__name__)
-logging.basicConfig(filename="out.log", level=os.getenv("LOGLEVEL", "DEBUG").upper())
+logger = get_stdout_logger(__name__,  ['nx_neptune.algorithms.traversal.bfs'])
+
 nx.config.warnings_to_ignore.add("cache")
 
 """Read and load graphId from environment variable. """ 

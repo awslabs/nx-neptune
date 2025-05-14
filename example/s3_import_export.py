@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 import asyncio
-import logging
 import os
-import sys
 
 import networkx as nx
 
 from nx_neptune import NeptuneGraph, import_csv_from_s3, export_csv_to_s3
+from nx_neptune.utils.utils import get_stdout_logger
 
 """
 Reset and Import Data for Neptune Analytics Graph.
@@ -21,16 +20,9 @@ functions to wait for operations to complete before proceeding.
 
 
 async def main():
-    logging.basicConfig(
-        level=logging.WARNING,
-        format='%(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        stream=sys.stdout  # Explicitly set output to stdout
-    )
-    for logger_name in ['IAMClient', 'nx_neptune.clients.instance_management']:
-        logging.getLogger(logger_name).setLevel(logging.DEBUG)
-    logger = logging.getLogger(__name__)
-
+    logger = get_stdout_logger(__name__, [
+        'IAMClient',
+        'nx_neptune.clients.instance_management', __name__])
 
     # Note: User will need to update the below variable ahead of running the example:
     # Role arn which authorise Neptune Analytics to perform S3 import and export on user behalf,
