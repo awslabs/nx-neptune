@@ -236,6 +236,21 @@ class IamClient:
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)
 
+    def has_delete_na_permissions(self):
+        """Check if the configured IAM role has permissions to delete Neptune Analytics instance.
+
+        Raises:
+            ValueError: If the role lacks required permissions
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        """
+        na_permissions = ["neptune-graph:DeleteGraph"]
+        operation_name = "Delete Neptune Instance"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
     def has_import_from_s3_permissions(self, bucket_arn, key_arn=None):
         """Check if the configured IAM role has permissions to import data from S3.
 

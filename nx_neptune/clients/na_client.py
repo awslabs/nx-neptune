@@ -13,7 +13,7 @@ class NeptuneAnalyticsClient:
     """
 
     SERVICE_NA = "neptune-graph"
-    GRAPH_ID = "graph_id"
+    GRAPH_ID = "GRAPH_ID"
 
     def __init__(
         self,

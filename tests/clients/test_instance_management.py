@@ -14,6 +14,7 @@ from nx_neptune.instance_management import (
     _get_graph_id,
     create_na_instance,
     _wait_until_task_complete,
+    delete_na_instance,
 )
 
 NX_CREATE_SUCCESS_FIXTURE = """{
@@ -145,6 +146,71 @@ VALID_ASSUME_ROLE_RESPONSE = {
                 }
             ]
         }
+    }
+}
+
+
+NX_DELETE_SUCCESS_FIXTURE = """{
+          "ResponseMetadata": {
+            "HTTPHeaders": {
+              "connection": "keep-alive",
+              "content-length": "402",
+              "content-type": "application/json",
+              "date": "Wed, 07 May 2025 22:57:49 GMT",
+              "x-amz-apigw-id": "test_api_id",
+              "x-amzn-requestid": "test_api_id",
+              "x-amzn-trace-id": "test_trace_id"
+            },
+            "HTTPStatusCode": 200,
+            "RequestId": "test_request_id",
+            "RetryAttempts": 0
+          },
+          "arn": "test_arn",
+          "createTime": "test_date",
+          "deletionProtection": false,
+          "endpoint": "test_endpoint",
+          "id": "test_graph_id",
+          "kmsKeyIdentifier": "AWS_OWNED_KEY",
+          "name": "test_graph_name",
+          "provisionedMemory": 16,
+          "publicConnectivity": true,
+          "replicaCount": 0,
+          "status": "DELETING"
+        }"""
+
+NX_DELETE_FAILURE_FIXTURE = """{
+          "ResponseMetadata": {
+            "HTTPHeaders": {
+              "connection": "keep-alive",
+              "content-length": "402",
+              "content-type": "application/json",
+              "date": "Wed, 07 May 2025 22:57:49 GMT",
+              "x-amz-apigw-id": "test_api_id",
+              "x-amzn-requestid": "test_api_id",
+              "x-amzn-trace-id": "test_trace_id"
+            },
+            "HTTPStatusCode": 503,
+            "RequestId": "test_request_id",
+            "RetryAttempts": 0
+          },
+          "arn": "test_arn",
+          "createTime": "test_date",
+          "deletionProtection": false,
+          "endpoint": "test_endpoint",
+          "id": "test_graph_id",
+          "kmsKeyIdentifier": "AWS_OWNED_KEY",
+          "name": "test_graph_name",
+          "provisionedMemory": 16,
+          "publicConnectivity": true,
+          "replicaCount": 0,
+          "status": "DELETING"
+        }"""
+
+NX_DELETE_STATUS_DELETED = {
+    "Error": {
+        "Code": "ResourceNotFoundException",
+        "Message": "The specified resource was not found",
+        "Type": "Sender",
     }
 }
 
@@ -382,14 +448,6 @@ def test_get_graph_id(json_str, expected_status_code):
 
 
 @pytest.mark.asyncio
-async def test_create_na_instance_graph_exist():
-    result = create_na_instance("test_graph_id", False)
-    await result
-    assert result.result() == "test_graph_id"
-    assert result.done()
-
-
-@pytest.mark.asyncio
 @patch("boto3.client")
 async def test_create_na_instance_graph_absent_create_fail(mock_boto3_client):
 
@@ -403,7 +461,7 @@ async def test_create_na_instance_graph_absent_create_fail(mock_boto3_client):
 
     with pytest.raises(Exception, match="Neptune instance creation failure"):
         # Make sure graph_id is absent.
-        result = create_na_instance(None, True)
+        result = create_na_instance()
         await result
 
 
@@ -424,7 +482,7 @@ async def test_create_na_instance_graph_absent_status_check_success(mock_boto3_c
     mock_nx_client.get_graph.return_value = test_status_response
 
     # Make sure graph_id is absent.
-    result = create_na_instance("", True)
+    result = create_na_instance()
     await result
     assert result.result() == "test_graph_id"
     assert result.done()
@@ -449,20 +507,7 @@ async def test_create_na_instance_graph_absent_status_check_failure(mock_boto3_c
     )
 
     with pytest.raises(ClientError, match="InvalidGraphId"):
-        result = create_na_instance(None, True)
-        await result
-
-
-@pytest.mark.asyncio
-@patch("boto3.client")
-async def test_create_na_instance_default_option_create_instance(mock_boto3_client):
-
-    # Mock boto client
-    mock_nx_client = MagicMock()
-    mock_boto3_client.return_value = mock_nx_client
-
-    with pytest.raises(Exception, match="Instance provisioning was requested"):
-        result = create_na_instance("", False)
+        result = create_na_instance()
         await result
 
 
@@ -485,7 +530,7 @@ async def test_create_na_instance_insufficient_permissions(mock_boto3_client):
     with pytest.raises(
         Exception, match="Insufficient permission, neptune-graph:TagResource"
     ):
-        result = create_na_instance("", True)
+        result = create_na_instance()
         await result
 
 
@@ -544,3 +589,60 @@ async def test_status_check_export(mock_boto3_client):
     await _wait_until_task_complete(mock_nx_client, future)
     assert future.done()
     assert future.result() == "test-export-job-id"
+
+
+@pytest.mark.asyncio
+@patch("boto3.client")
+async def test_delete_na_instance_success(mock_boto3_client):
+
+    # Mock boto client
+    mock_nx_client = MagicMock()
+    mock_boto3_client.return_value = mock_nx_client
+
+    test_status_response = json.loads(NX_DELETE_SUCCESS_FIXTURE)
+    mock_nx_client.delete_graph.return_value = test_status_response
+
+    # Configure the get_graph method to raise ResourceNotFoundException
+    mock_nx_client.get_graph.side_effect = ClientError(
+        error_response=NX_DELETE_STATUS_DELETED, operation_name="GetGraph"
+    )
+
+    result = await delete_na_instance("test-123")
+    assert result == "test-123"
+
+
+@pytest.mark.asyncio
+@patch("boto3.client")
+async def test_delete_na_instance_insufficient_permissions(mock_boto3_client):
+
+    # Mock boto client
+    mock_nx_client = MagicMock()
+    mock_boto3_client.return_value = mock_nx_client
+
+    #
+    mock_nx_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {"EvalActionName": "neptune-graph:DeleteGraph", "EvalDecision": "deny"}
+        ]
+    }
+
+    with pytest.raises(
+        Exception, match="Insufficient permission, neptune-graph:DeleteGraph"
+    ):
+        result = delete_na_instance("")
+        await result
+
+
+@pytest.mark.asyncio
+@patch("boto3.client")
+async def test_delete_na_instance_failure(mock_boto3_client):
+
+    # Mock boto client
+    mock_nx_client = MagicMock()
+    mock_boto3_client.return_value = mock_nx_client
+
+    test_status_response = json.loads(NX_DELETE_FAILURE_FIXTURE)
+    mock_nx_client.delete_graph.return_value = test_status_response
+
+    with pytest.raises(Exception, match="Invalid response status code"):
+        await delete_na_instance("test-123")

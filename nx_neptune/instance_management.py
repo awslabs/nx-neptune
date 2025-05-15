@@ -28,10 +28,11 @@ _PERMISSIONS_CREATE = ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]
 
 
 class TaskType(Enum):
-    IMPORT = (1, ["INI", "IMPORTING"], "SUCCEEDED")
+    IMPORT = (1, ["INI", "INITIALIZING", "IMPORTING"], "SUCCEEDED")
     EXPORT = (2, ["INI", "EXPORTING"], "SUCCEEDED")
     CREATE = (3, ["INI", "CREATING"], "AVAILABLE")
-    NOOP = (4, ["INI"], "AVAILABLE")
+    DELETE = (4, ["INI", "DELETING"], "DELETED")
+    NOOP = (5, ["INI"], "AVAILABLE")
 
     def __init__(self, num_value, permitted_statuses, status_complete):
         self._value_ = num_value
@@ -88,6 +89,7 @@ async def _wait_until_task_complete(client: boto3.client, future: TaskFuture):
                 TaskType.IMPORT: lambda: client.get_import_task(taskIdentifier=task_id),
                 TaskType.EXPORT: lambda: client.get_export_task(taskIdentifier=task_id),
                 TaskType.CREATE: lambda: client.get_graph(graphIdentifier=task_id),
+                TaskType.DELETE: lambda: delete_status_check_wrapper(client, task_id),
             }
 
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -208,47 +210,67 @@ def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn, polling_interval=30):
     return asyncio.wrap_future(future)
 
 
-def create_na_instance(graph_id: str, create_instance: bool):
+def create_na_instance():
     """
     Retrieve a graph ID in string format for algorithmic computations,
     either by reusing an existing ID from the environment variables
     or by provisioning a new Neptune Analytics instance on behalf of the user.
 
+    Raises:
+        Exception: If the Neptune Analytics instance creation fails
+    """
+    na_client = boto3.client("neptune-graph")
+    # Permissions check
+    user_arn = boto3.client("sts").get_caller_identity()["Arn"]
+    iam_client = IamClient(role_arn=user_arn)
+    iam_client.has_create_na_permissions()
+
+    response = _create_na_instance_task(na_client)
+    prospective_graph_id = _get_graph_id(response)
+
+    if _get_status_code(response) == 201:
+        fut = TaskFuture(prospective_graph_id, TaskType.CREATE, 30)
+        asyncio.create_task(
+            _wait_until_task_complete(na_client, fut), name=prospective_graph_id
+        )
+        return asyncio.wrap_future(fut)
+    else:
+        raise Exception(
+            f"Neptune instance creation failure with graph name {prospective_graph_id}"
+        )
+
+
+def delete_na_instance(graph_id: str):
+    """
+    Attempt to delete a remote Neptune Analytics instance with the provided graph_id,
+    on behalf of the configured IAM user.
+
     Returns:
         asyncio.Future: A Future that resolves with the graph_id,
-        which represent a remote Neptune Analytics instance.
+        represent the instance being deleted, or String literal Fail
+        in the case of exception.
 
     Raises:
         Exception: If the Neptune Analytics instance creation fails
     """
-    if graph_id != "" and graph_id is not None:
-        fut = TaskFuture("-1", TaskType.NOOP, 30)
-        fut.set_result(graph_id)
+    # Permission check
+    user_arn = boto3.client("sts").get_caller_identity()["Arn"]
+    iam_client = IamClient(role_arn=user_arn)
+    iam_client.has_delete_na_permissions()
+
+    # Instance deletion
+    na_client = boto3.client("neptune-graph")
+    response = _delete_na_instance_task(na_client, graph_id)
+
+    status_code = _get_status_code(response)
+    if status_code == 200:
+        fut = TaskFuture(graph_id, TaskType.DELETE, 30)
+        asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
         return asyncio.wrap_future(fut)
-    elif create_instance:
-        na_client = boto3.client("neptune-graph")
-        # Permissions check
-        user_arn = boto3.client("sts").get_caller_identity()["Arn"]
-        iam_client = IamClient(role_arn=user_arn)
-        iam_client.has_create_na_permissions()
-
-        response = _create_na_instance_task(na_client)
-        prospective_graph_id = _get_graph_id(response)
-
-        if _get_status_code(response) == 201:
-            fut = TaskFuture(prospective_graph_id, TaskType.CREATE, 30)
-            asyncio.create_task(
-                _wait_until_task_complete(na_client, fut), name=prospective_graph_id
-            )
-            return asyncio.wrap_future(fut)
-        else:
-            raise Exception(
-                f"Neptune instance creation failure with graph name {prospective_graph_id}"
-            )
     else:
-        raise Exception(
-            "Instance provisioning was requested, but 'create_instance' is disabled. Cannot proceed with provisioning."
-        )
+        fut = TaskFuture("-1", TaskType.NOOP, 30)
+        fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
+        return asyncio.wrap_future(fut)
 
 
 def _create_na_instance_task(client):
@@ -275,6 +297,23 @@ def _create_na_instance_task(client):
         deletionProtection=False,
         provisionedMemory=16,
     )
+    return response
+
+
+def _delete_na_instance_task(client, graph_id: str):
+    """Issue a Boto request to delete Neptune Analytics graph instance with graph_id.
+
+    Args:
+        client (boto3.client): The Neptune Analytics boto3 client
+        graph_id (str): The graph ID to Identify the remote Neptune Analytics instance
+
+    Returns:
+        dict: The API response containing information about the deleted graph
+
+    Raises:
+        ClientError: If there's an issue with the AWS API call
+    """
+    response = client.delete_graph(graphIdentifier=graph_id, skipSnapshot=True)
     return response
 
 
@@ -480,3 +519,26 @@ def _create_random_graph_name() -> str:
     """
     uuid_suffix = str(uuid.uuid4())
     return f"{_PROJECT_IDENTIFIER}-{uuid_suffix}"
+
+
+def delete_status_check_wrapper(client, graph_id):
+    """
+    Wrapper method to suppress error when graph_id not found,
+    as this is an indicator of successful deletion.
+
+    Args:
+        client (client): The boto client
+        graph_id (str): The String identify for the remote Neptune Analytics graph
+
+    Returns:
+        str: The original response from Boto or a mocked response to represent
+        successful deletion, in the case of resource not found.
+    """
+    try:
+        return client.get_graph(graphIdentifier=graph_id)
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code == "ResourceNotFoundException":
+            return {"status": "DELETED"}
+        else:
+            raise e

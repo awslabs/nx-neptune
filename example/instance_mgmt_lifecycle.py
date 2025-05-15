@@ -3,9 +3,12 @@ import logging
 import os
 import sys
 
+import boto3
 import networkx as nx
-
-from nx_neptune.instance_management import create_na_instance, import_csv_from_s3
+from nx_neptune import NeptuneGraph
+from nx_neptune.clients import NeptuneAnalyticsClient
+from nx_neptune.instance_management import create_na_instance, import_csv_from_s3, delete_na_instance, \
+    delete_status_check_wrapper
 
 """ 
 This is a sample script to demonstrate how nx-neptune can be used to handle 
@@ -29,20 +32,27 @@ async def main():
     role_arn = os.getenv('ARN_IAM_ROLE')
 
     # ---------------------- Create ---------------------------
+    graph_id = await create_na_instance()
+    logger.info(f"A new instance is created with graph-id: {graph_id}")
 
-    graph_id = await create_na_instance("", True)
-    logger.info(f"A new instance is created with graph-id: {graph_id.result()}")
+    # ---------------------- Import ---------------------------
+    os.environ['GRAPH_ID'] = graph_id
+    print(s3_location_import)
+    na_graph = NeptuneGraph()
+    future = import_csv_from_s3(
+        na_graph, s3_location_import)
+    import_blocking_status = await future
 
-    # # ---------------------- Import and Execute ---------------------------
-    # future = import_csv_from_s3(
-    #     na_graph, s3_location_import)
-    # import_blocking_status = await future
-    # os.environ['GRAPH_ID'] = graph_id
-    # # Initialize a directed graph
-    # # BFS on Air route
+    # Initialize a directed graph
+    # ---------------------- Execute ---------------------------
+    # BFS on Air route
     # r = list(nx.bfs_edges(nx.DiGraph(), source="48", backend=BACKEND))
     # print('BFS search on Neptune Analytics with source=48 (Vancouver international airport): ')
     # print(f"Total size of the result: {len(r)}")
+
+    # ------------------------- Delete --------------------------
+    fut = await delete_na_instance("g-rp4kn0iu05")
+    logger.info(f"Instance delete completed with status: {fut}")
 
 
 if __name__ == "__main__":
