@@ -40,13 +40,13 @@ dist: ## install the distribution
 
 .PHONY: fmt
 fmt:              ## Format code using black & isort.
-	$(ENV_PREFIX)isort nx_neptune/
+	$(ENV_PREFIX)isort nx_neptune/ nx_plugin/
 	$(ENV_PREFIX)black nx_neptune/ nx_plugin/ tests/
 
 .PHONY: lint
 lint:             ## Run flake8, black, mypy linters.
     ## import imports: plugin imports are available for external use
-	$(ENV_PREFIX)flake8 --ignore=F401,F403 nx_neptune/ nx_plugin/
+	$(ENV_PREFIX)flake8 nx_neptune/ nx_plugin/
 	$(ENV_PREFIX)black --check nx_neptune/ nx_plugin/
 	$(ENV_PREFIX)black --check tests/
 	$(ENV_PREFIX)mypy --ignore-missing-imports nx_neptune/ nx_plugin/

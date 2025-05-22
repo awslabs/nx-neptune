@@ -1,3 +1,5 @@
+import os
+
 import networkx
 import pytest
 from unittest.mock import MagicMock, patch
@@ -91,119 +93,132 @@ class TestBfsEdges:
 
     def test_bfs_edges_basic(self, mock_graph):
         """Test basic functionality of bfs_edges."""
-        source = "A"
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            source = "A"
 
-        # Execute
-        result = list(bfs_edges(mock_graph, source))
+            # Execute
+            result = list(bfs_edges(mock_graph, source))
 
-        # Verify the correct query was built and executed
-        source_node = "n"
-        where_filters = {"id(n)": source}
-        parameters = {PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_BOTH}
-        (expected_query, param_values) = bfs_query(
-            source_node, where_filters, parameters
-        )
+            # Verify the correct query was built and executed
+            source_node = "n"
+            where_filters = {"id(n)": source}
+            parameters = {PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_BOTH}
+            (expected_query, param_values) = bfs_query(
+                source_node, where_filters, parameters
+            )
 
-        # Verify the function called execute_algo_bfs with correct parameters
-        mock_graph.execute_call.assert_called_once_with(expected_query, param_values)
-        assert "neptune.algo.bfs.parents" in expected_query
-        assert (
-            f"{PARAM_TRAVERSAL_DIRECTION}:{PARAM_TRAVERSAL_DIRECTION_BOTH}"
-            in expected_query
-        )
+            # Verify the function called execute_algo_bfs with correct parameters
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+            assert "neptune.algo.bfs.parents" in expected_query
+            assert (
+                f"{PARAM_TRAVERSAL_DIRECTION}:{PARAM_TRAVERSAL_DIRECTION_BOTH}"
+                in expected_query
+            )
 
-        # Verify the result contains the expected nodes
-        assert result == [["A", "B"], ["A", "C"]]
+            # Verify the result contains the expected nodes
+            assert result == [["A", "B"], ["A", "C"]]
 
     def test_bfs_edges_with_reverse(self, mock_digraph):
         """Test bfs_edges with reverse parameter."""
-        source = "A"
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            source = "A"
 
-        # Execute
-        result = list(bfs_edges(mock_digraph, source, reverse=True))
+            # Execute
+            result = list(bfs_edges(mock_digraph, source, reverse=True))
 
-        # Verify the correct query was built and executed
-        source_node = "n"
-        where_filters = {"id(n)": source}
-        parameters = {PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_INBOUND}
-        (expected_query, param_values) = bfs_query(
-            source_node, where_filters, parameters
-        )
+            # Verify the correct query was built and executed
+            source_node = "n"
+            where_filters = {"id(n)": source}
+            parameters = {PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_INBOUND}
+            (expected_query, param_values) = bfs_query(
+                source_node, where_filters, parameters
+            )
 
-        # Verify the function called execute_algo_bfs with correct parameters
-        assert "neptune.algo.bfs.parents" in expected_query
-        assert (
-            f"{PARAM_TRAVERSAL_DIRECTION}:{PARAM_TRAVERSAL_DIRECTION_INBOUND}"
-            in expected_query
-        )
-        mock_digraph.execute_call.assert_called_once_with(expected_query, param_values)
+            # Verify the function called execute_algo_bfs with correct parameters
+            assert "neptune.algo.bfs.parents" in expected_query
+            assert (
+                f"{PARAM_TRAVERSAL_DIRECTION}:{PARAM_TRAVERSAL_DIRECTION_INBOUND}"
+                in expected_query
+            )
+            mock_digraph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
 
-        # Verify the result contains the expected nodes
-        assert result == [["A", "B"], ["A", "C"]]
+            # Verify the result contains the expected nodes
+            assert result == [["A", "B"], ["A", "C"]]
 
     def test_bfs_edges_with_depth_limit(self, mock_digraph):
         """Test bfs_edges with depth_limit parameter."""
-        source = "A"
-        depth_limit = 2
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            source = "A"
+            depth_limit = 2
 
-        # Execute
-        result = list(bfs_edges(mock_digraph, source, depth_limit=depth_limit))
+            # Execute
+            result = list(bfs_edges(mock_digraph, source, depth_limit=depth_limit))
 
-        # Verify the correct query was built and executed
-        source_node = "n"
-        where_filters = {"id(n)": source}
-        parameters = {
-            PARAM_MAX_DEPTH: depth_limit,
-            PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
-        }
-        (expected_query, param_values) = bfs_query(
-            source_node, where_filters, parameters
-        )
+            # Verify the correct query was built and executed
+            source_node = "n"
+            where_filters = {"id(n)": source}
+            parameters = {
+                PARAM_MAX_DEPTH: depth_limit,
+                PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
+            }
+            (expected_query, param_values) = bfs_query(
+                source_node, where_filters, parameters
+            )
 
-        # Verify the function called execute_algo_bfs with correct parameters
-        assert "neptune.algo.bfs.parents" in expected_query
-        assert (
-            f"{PARAM_TRAVERSAL_DIRECTION}:{PARAM_TRAVERSAL_DIRECTION_OUTBOUND}"
-            in expected_query
-        )
-        assert f"{PARAM_MAX_DEPTH}:{depth_limit}" in expected_query
-        mock_digraph.execute_call.assert_called_once_with(expected_query, param_values)
+            # Verify the function called execute_algo_bfs with correct parameters
+            assert "neptune.algo.bfs.parents" in expected_query
+            assert (
+                f"{PARAM_TRAVERSAL_DIRECTION}:{PARAM_TRAVERSAL_DIRECTION_OUTBOUND}"
+                in expected_query
+            )
+            assert f"{PARAM_MAX_DEPTH}:{depth_limit}" in expected_query
+            mock_digraph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
 
-        # Verify the result contains the expected nodes
-        assert result == [["A", "B"], ["A", "C"]]
+            # Verify the result contains the expected nodes
+            assert result == [["A", "B"], ["A", "C"]]
 
     def test_bfs_edges_with_sort_neighbors(self, mock_graph):
         """Test bfs_edges with sort_neighbors parameter."""
-        source = "A"
-        sort_neighbors = True
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            source = "A"
+            sort_neighbors = True
 
-        # Execute
-        result = list(bfs_edges(mock_graph, source, sort_neighbors=sort_neighbors))
+            # Execute
+            result = list(bfs_edges(mock_graph, source, sort_neighbors=sort_neighbors))
 
-        # Verify the correct query was built and executed
-        source_node = "n"
-        where_filters = {"id(n)": source}
-        parameters = {
-            # Note: sort_neighbours is not used in the query
-            PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_BOTH,
-        }
-        (expected_query, param_values) = bfs_query(
-            source_node, where_filters, parameters
-        )
+            # Verify the correct query was built and executed
+            source_node = "n"
+            where_filters = {"id(n)": source}
+            parameters = {
+                # Note: sort_neighbours is not used in the query
+                PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_BOTH,
+            }
+            (expected_query, param_values) = bfs_query(
+                source_node, where_filters, parameters
+            )
 
-        # Verify the function called execute_algo_bfs with correct parameters
-        assert "neptune.algo.bfs.parents" in expected_query
-        mock_graph.execute_call.assert_called_once_with(expected_query, param_values)
+            # Verify the function called execute_algo_bfs with correct parameters
+            assert "neptune.algo.bfs.parents" in expected_query
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
 
-        assert result == [["A", "B"], ["A", "C"]]
+            assert result == [["A", "B"], ["A", "C"]]
 
     def test_bfs_edges_empty_result(self, mock_graph):
         """Test bfs_edges when no results are returned."""
-        mock_graph.execute_call.return_value = []
-        source = "A"
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            mock_graph.execute_call.return_value = []
+            source = "A"
 
-        # Execute
-        result = list(bfs_edges(mock_graph, source))
+            # Execute
+            result = list(bfs_edges(mock_graph, source))
 
-        # Verify the result is an empty list
-        assert result == []
+            # Verify the result is an empty list
+            assert result == []

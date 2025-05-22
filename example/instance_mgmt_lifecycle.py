@@ -40,7 +40,7 @@ async def main():
     print(s3_location_import)
     na_graph = NeptuneGraph()
     future = import_csv_from_s3(
-        na_graph, s3_location_import)
+    na_graph, s3_location_import)
     import_blocking_status = await future
 
     # Initialize a directed graph

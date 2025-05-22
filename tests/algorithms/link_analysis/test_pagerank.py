@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -37,103 +39,116 @@ class TestPageRank:
 
     def test_pagerank_basic(self, mock_graph):
         """Test basic functionality of pagerank."""
-        result = pagerank(
-            mock_graph,
-            alpha=0.85,
-            personalization=None,
-            max_iter=100,
-            tol=1e-06,
-            nstart=None,
-            weight=None,
-            dangling=None,
-        )
+        # Set up the environment
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            result = pagerank(
+                mock_graph,
+                alpha=0.85,
+                personalization=None,
+                max_iter=100,
+                tol=1e-06,
+                nstart=None,
+                weight=None,
+                dangling=None,
+            )
 
-        # Verify the correct query was built and executed
-        parameters = {}
-        (expected_query, param_values) = pagerank_query(parameters)
+            # Verify the correct query was built and executed
+            parameters = {}
+            (expected_query, param_values) = pagerank_query(parameters)
 
-        # No conversion should happen if method receiving networkX default.
-        mock_graph.execute_call.assert_called_once_with(expected_query, param_values)
-        assert "neptune.algo.pageRank" in expected_query
+            # No conversion should happen if method receiving networkX default.
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+            assert "neptune.algo.pageRank" in expected_query
 
-        # Verify the result contains the expected nodes with their PageRank values
-        assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
+            # Verify the result contains the expected nodes with their PageRank values
+            assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
 
     def test_pagerank_with_alpha(self, mock_graph):
         """Test pagerank with custom alpha parameter (0.75)."""
-        damping_factor = 0.75
-        result = pagerank(
-            mock_graph,
-            alpha=damping_factor,
-            personalization=None,
-            max_iter=100,
-            tol=1e-06,
-            nstart=None,
-            weight=None,
-            dangling=None,
-        )
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            damping_factor = 0.75
+            result = pagerank(
+                mock_graph,
+                alpha=damping_factor,
+                personalization=None,
+                max_iter=100,
+                tol=1e-06,
+                nstart=None,
+                weight=None,
+                dangling=None,
+            )
 
-        # Verify the correct query was built and executed
-        parameters = {PARAM_DAMPING_FACTOR: damping_factor}
-        (expected_query, param_values) = pagerank_query(parameters)
+            # Verify the correct query was built and executed
+            parameters = {PARAM_DAMPING_FACTOR: damping_factor}
+            (expected_query, param_values) = pagerank_query(parameters)
 
-        # Verify the function called execute_call with correct parameters
-        mock_graph.execute_call.assert_called_once_with(expected_query, param_values)
-        assert "neptune.algo.pageRank" in expected_query
-        assert f"{PARAM_DAMPING_FACTOR}:{damping_factor}" in expected_query
+            # Verify the function called execute_call with correct parameters
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+            assert "neptune.algo.pageRank" in expected_query
+            assert f"{PARAM_DAMPING_FACTOR}:{damping_factor}" in expected_query
 
-        # Verify the result
-        assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
+            # Verify the result
+            assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
 
     def test_pagerank_with_max_iter(self, mock_graph):
         """Test pagerank with custom max_iter parameter (50)."""
-        num_of_iterations = 50
-        result = pagerank(
-            mock_graph,
-            alpha=0.85,
-            personalization=None,
-            max_iter=num_of_iterations,
-            tol=1e-06,
-            nstart=None,
-            weight=None,
-            dangling=None,
-        )
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            num_of_iterations = 50
+            result = pagerank(
+                mock_graph,
+                alpha=0.85,
+                personalization=None,
+                max_iter=num_of_iterations,
+                tol=1e-06,
+                nstart=None,
+                weight=None,
+                dangling=None,
+            )
 
-        # Verify the correct query was built and executed
-        parameters = {PARAM_NUM_OF_ITERATIONS: num_of_iterations}
-        (expected_query, param_values) = pagerank_query(parameters)
+            # Verify the correct query was built and executed
+            parameters = {PARAM_NUM_OF_ITERATIONS: num_of_iterations}
+            (expected_query, param_values) = pagerank_query(parameters)
 
-        # Verify the function called execute_call with correct parameters
-        mock_graph.execute_call.assert_called_once_with(expected_query, param_values)
-        assert "neptune.algo.pageRank" in expected_query
-        assert f"{PARAM_NUM_OF_ITERATIONS}:{num_of_iterations}" in expected_query
+            # Verify the function called execute_call with correct parameters
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+            assert "neptune.algo.pageRank" in expected_query
+            assert f"{PARAM_NUM_OF_ITERATIONS}:{num_of_iterations}" in expected_query
 
-        # Verify the result
-        assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
+            # Verify the result
+            assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
 
     def test_pagerank_with_tolerance(self, mock_graph):
         """Test pagerank with custom tolerance parameter (1e-04)."""
-        tolerance = 1e-04
-        result = pagerank(
-            mock_graph,
-            alpha=0.85,
-            personalization=None,
-            max_iter=100,
-            tol=tolerance,
-            nstart=None,
-            weight=None,
-            dangling=None,
-        )
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            tolerance = 1e-04
+            result = pagerank(
+                mock_graph,
+                alpha=0.85,
+                personalization=None,
+                max_iter=100,
+                tol=tolerance,
+                nstart=None,
+                weight=None,
+                dangling=None,
+            )
 
-        # Verify the correct query was built and executed
-        parameters = {PARAM_TOLERANCE: tolerance}
-        (expected_query, param_values) = pagerank_query(parameters)
+            # Verify the correct query was built and executed
+            parameters = {PARAM_TOLERANCE: tolerance}
+            (expected_query, param_values) = pagerank_query(parameters)
 
-        # Verify the function called execute_call with correct parameters
-        mock_graph.execute_call.assert_called_once_with(expected_query, param_values)
+            # Verify the function called execute_call with correct parameters
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
 
-        # Verify the result
-        assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
+            # Verify the result
+            assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
 
     def test_pagerank_empty_result(self, mock_graph):
         """
@@ -141,51 +156,53 @@ class TestPageRank:
         in the of method being called with networkX default value,
         no additional option should be passed as part of the openCypher call.
         """
-        mock_graph.execute_call.return_value = []
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            mock_graph.execute_call.return_value = []
 
-        result = pagerank(
-            mock_graph,
-            alpha=0.85,
-            personalization=None,
-            max_iter=100,
-            tol=1e-06,
-            nstart=None,
-            weight=None,
-            dangling=None,
-        )
+            result = pagerank(
+                mock_graph,
+                alpha=0.85,
+                personalization=None,
+                max_iter=100,
+                tol=1e-06,
+                nstart=None,
+                weight=None,
+                dangling=None,
+            )
 
-        # Verify the result is an empty dictionary
-        assert result == {}
+            # Verify the result is an empty dictionary
+            assert result == {}
 
     @patch("nx_neptune.algorithms.util.algorithm_utils.logger")
     def test_pagerank_unsupported_parameters_warning(self, mock_logger, mock_graph):
         """Test that warnings are logged for unsupported parameters."""
-        # Call pagerank with unsupported parameters
-        result = pagerank(
-            mock_graph,
-            alpha=0.85,
-            personalization={"A": 1.0},  # Unsupported
-            max_iter=100,
-            tol=1e-06,
-            nstart={"B": 0.5},  # Unsupported
-            weight="weight",  # Unsupported
-            dangling={"C": 0.3},  # Unsupported
-        )
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            # Call pagerank with unsupported parameters
+            result = pagerank(
+                mock_graph,
+                alpha=0.85,
+                personalization={"A": 1.0},  # Unsupported
+                max_iter=100,
+                tol=1e-06,
+                nstart={"B": 0.5},  # Unsupported
+                weight="weight",  # Unsupported
+                dangling={"C": 0.3},  # Unsupported
+            )
 
-        # Verify warnings were logged for each unsupported parameter
-        assert mock_logger.warning.call_count == 4
+            # Verify warnings were logged for each unsupported parameter
+            assert mock_logger.warning.call_count == 4
 
-        # Common warning message suffix
-        warning_suffix = (
-            " parameter is not supported in Neptune Analytics implementation. "
-            "This argument will be ignored and execution will proceed without it."
-        )
+            # Common warning message suffix
+            warning_suffix = (
+                " parameter is not supported in Neptune Analytics implementation. "
+                "This argument will be ignored and execution will proceed without it."
+            )
 
-        # Check specific warning messages
-        mock_logger.warning.assert_any_call(f"'personalization'{warning_suffix}")
-        mock_logger.warning.assert_any_call(f"'nstart'{warning_suffix}")
-        mock_logger.warning.assert_any_call(f"'weight'{warning_suffix}")
-        mock_logger.warning.assert_any_call(f"'dangling'{warning_suffix}")
+            # Check specific warning messages
+            mock_logger.warning.assert_any_call(f"'personalization'{warning_suffix}")
+            mock_logger.warning.assert_any_call(f"'nstart'{warning_suffix}")
+            mock_logger.warning.assert_any_call(f"'weight'{warning_suffix}")
+            mock_logger.warning.assert_any_call(f"'dangling'{warning_suffix}")
 
-        # Verify the result is still correct
-        assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
+            # Verify the result is still correct
+            assert result == {"1": 0.3, "2": 0.2, "3": 0.5}

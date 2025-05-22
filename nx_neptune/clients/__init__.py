@@ -8,6 +8,9 @@ from .neptune_constants import (
     PARAM_TRAVERSAL_DIRECTION_BOTH,
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
+    SERVICE_IAM,
+    SERVICE_NA,
+    SERVICE_STS,
 )
 from .opencypher_builder import (
     bfs_query,

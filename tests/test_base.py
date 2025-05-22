@@ -28,13 +28,19 @@ def test_config_init():
     assert dict(nx.config.backends.neptune) == {
         "active": False,
         "backend": "neptune",
-        "verbose": 0,
+        "create_new_instance": False,
+        "destroy_instance": False,
+        "export_s3_bucket": None,
+        "graph_id": None,
+        "import_s3_bucket": None,
         "prefer": False,
         "require": False,
-        "graph_id": "",
-        "s3_import_path": "",
-        "create_instance": False,
-        "role_arn": "",
+        "reset_graph": False,
+        "restore_snapshot": None,
+        "s3_iam_role": None,
+        "save_snapshot": False,
+        "skip_graph_reset": False,
+        "verbose": 0,
     }
 
     from nx_plugin.config import _config

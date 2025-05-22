@@ -102,7 +102,7 @@ profile = "black"
 [tool.flake8]
 max-complexity = 12
 max-line-length = 127
-extend-ignore = ['E203']
+extend-ignore = ['E203','F401','F403','W503']
 
 [tool.black]
 target-version = ['py311', 'py312', 'py313']

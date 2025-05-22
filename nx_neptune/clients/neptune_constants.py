@@ -2,6 +2,11 @@
 Neptune constants
 """
 
+# AWS boto3 client services
+SERVICE_NA = "neptune-graph"
+SERVICE_IAM = "iam"
+SERVICE_STS = "sts"
+
 # Internal constants for parameters
 PARAM_MAX_DEPTH = "maxDepth"
 PARAM_TRAVERSAL_DIRECTION = "traversalDirection"

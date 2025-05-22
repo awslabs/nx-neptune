@@ -1,18 +1,14 @@
-import os
-
 import networkx as nx
-
-from nx_neptune import NeptuneGraph
 from nx_neptune.utils.utils import get_stdout_logger
+from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID
 
 """ 
 Example script to demonstrate how PageRank algorithm computation can be offloaded into remote AWS Neptune Analytics instance.  
 """
 
 """Read and load graphId from environment variable. """
-graph_id = os.getenv('GRAPH_ID')
-if not graph_id:
-    raise Exception('Environment Variable GRAPH_ID is not defined')
+if not NETWORKX_GRAPH_ID:
+    raise Exception('Environment Variable "NETWORKX_GRAPH_ID" is not defined')
 nx.config.warnings_to_ignore.add("cache")
 
 logger = get_stdout_logger(__name__,[
@@ -22,7 +18,7 @@ logger = get_stdout_logger(__name__,[
 backend = "neptune"
 # Clean up remote graph and populate test data.
 g = nx.DiGraph()
-na_graph = NeptuneGraph(graph=g)
+na_graph = NeptuneGraph.from_config(graph=g)
 na_graph.clear_graph()
 # Test data - explicitly defining the graph with alphabetical nodes and directed edges
 # Add nodes
@@ -71,6 +67,6 @@ logger.info("\n-------------------\n")
 # INFO - X(DCd): 0.02912621
 # INFO - A: 0.02912621
 r = nx.pagerank(g, backend="neptune")
-logger.info("Algorithm execution - Neptun Analytics: ")
+logger.info("Algorithm execution - Neptune Analytics: ")
 for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
     logger.info(f"{key}: {value}")

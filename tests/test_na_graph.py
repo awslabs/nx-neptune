@@ -36,30 +36,30 @@ class TestNeptuneGraph:
     @pytest.fixture
     def neptune_graph(self, mock_client):
         """Create a NeptuneGraph instance with a mock client"""
-        return NeptuneGraph(client=mock_client, graph=nx.Graph())
+        return NeptuneGraph(
+            na_client=mock_client, iam_client=mock_client, graph=nx.Graph()
+        )
 
     @pytest.fixture
     def neptune_digraph(self, mock_client):
         """Create a NeptuneGraph instance with a mock client"""
-        return NeptuneGraph(client=mock_client, graph=nx.DiGraph())
+        return NeptuneGraph(
+            na_client=mock_client, iam_client=mock_client, graph=nx.DiGraph()
+        )
 
     @patch("logging.getLogger")
     @patch("boto3.client")
     def test_init_default(self, boto_client, getLogger):
         """Test initialization with default parameters"""
-        test_na_graph = NeptuneGraph()
+        graph = MagicMock()
+        test_na_graph = NeptuneGraph(boto_client, boto_client, graph)
 
         getLogger.is_called_once_with(__name__)
         assert test_na_graph.logger == getLogger.return_value
 
-        assert isinstance(test_na_graph.client, NeptuneAnalyticsClient)
-
-        # this should be tested in test_na_client not here
-        # TODO: move this check
-        boto_client.is_called_once_with("neptune-graph")
-        assert test_na_graph.client.client == boto_client.return_value
-
-        assert isinstance(test_na_graph.graph, nx.Graph)
+        assert test_na_graph.na_client == boto_client
+        assert test_na_graph.iam_client == boto_client
+        assert test_na_graph.graph == graph
 
     def test_init_custom(self, mock_client):
         """Test initialization with custom parameters"""
@@ -68,11 +68,14 @@ class TestNeptuneGraph:
         custom_graph.add_node("testNode")
 
         test_na_graph = NeptuneGraph(
-            graph=custom_graph, logger=custom_logger, client=mock_client
+            na_client=mock_client,
+            iam_client=mock_client,
+            graph=custom_graph,
+            logger=custom_logger,
         )
 
         assert test_na_graph.logger == custom_logger
-        assert test_na_graph.client == mock_client
+        assert test_na_graph.na_client == mock_client
         assert list(test_na_graph.graph_object().nodes) == ["testNode"]
 
     def test_graph_object(self, neptune_graph):

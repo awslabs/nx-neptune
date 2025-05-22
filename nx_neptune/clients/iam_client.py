@@ -1,13 +1,14 @@
 import logging
-import os
 from typing import Optional
 
-import boto3
 import jmespath
+from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 from botocore.utils import ArnParser
 
 __all__ = ["IamClient"]
+
+from .neptune_constants import SERVICE_NA
 
 
 class IamClient:
@@ -21,27 +22,23 @@ class IamClient:
     The IAM role ARN can be provided as an argument. Otherwise, the ARN_IAM_ROLE environment variable is used.
     """
 
-    SERVICE_NA = "neptune-graph"
-
     def __init__(
         self,
-        role_arn=None,
-        logger=None,
-        client=None,
+        role_arn: str,
+        client: BaseClient,
+        logger: Optional[logging.Logger] = None,
     ):
         """
-        Constructs an IAMClient object for AWS IAM service interaction,
-        with optional custom logger and boto client.
+        Constructs an IAM Client object for AWS IAM service interaction, with logger and boto client.
 
         Args:
-            role_arn (str, optional): The ARN of the IAM role to use. If None, will try to read from
-                                      the ARN_IAM_ROLE environment variable. Defaults to None.
-            logger (logging.Logger, optional): Custom logger. Creates a default logger if None is provided.
-            client (boto3.client, optional): Custom boto3 IAM client. Creates a default client if None is provided.
+            role_arn (str): The ARN of the IAM role to use.
+            client (BaseClient): Custom boto3 IAM client.
+            logger (logging.Logger): Custom logger. Creates a default logger if None is provided.
         """
-        self.role_arn = role_arn or os.getenv("ARN_IAM_ROLE")
+        self.role_arn = role_arn
+        self.client = client
         self.logger = logger or logging.getLogger(__name__)
-        self.client = client or boto3.client("iam")
 
     def check_assume_role(self, service_name: str) -> bool:
         """
@@ -67,7 +64,7 @@ class IamClient:
             iam_role_arn = self.role_arn.split("/")[-1]
 
             # Get role including assume role policy
-            response = self.client.get_role(RoleName=iam_role_arn)
+            response = self.client.get_role(RoleName=iam_role_arn)  # type: ignore[attr-defined]
 
             # Use jmespath to extract statements that allow AssumeRole for the service
             statements = jmespath.search(
@@ -126,7 +123,7 @@ class IamClient:
                 f" Resources: [{resource_arn}]\n"
             )
             # Execute the permission check
-            response = self.client.simulate_principal_policy(
+            response = self.client.simulate_principal_policy(  # type: ignore[attr-defined]
                 PolicySourceArn=self.role_arn,
                 ActionNames=permissions,
                 ResourceArns=[resource_arn],
@@ -188,8 +185,8 @@ class IamClient:
 
         bucket_full_path = bucket_arn.replace("s3://", "arn:aws:s3:::", 1)
 
-        if not self.check_assume_role(self.SERVICE_NA):
-            raise ValueError(f"Missing role assume on principle {self.SERVICE_NA}")
+        if not self.check_assume_role(SERVICE_NA):
+            raise ValueError(f"Missing role assume on principle {SERVICE_NA}")
         # Check S3
         self.check_aws_permission(operation_name, s3_permissions, bucket_full_path)
 

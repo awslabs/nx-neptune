@@ -1,7 +1,7 @@
 import networkx as nx
-from nx_neptune import NeptuneGraph
+
+from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID
 from nx_neptune.clients import Node, Edge
-import os
 
 """ 
 This is an sample script which demonstrate how class NeptuneGraph 
@@ -9,13 +9,12 @@ can be used to perform basic CRUD operation against an existing Neptune Analytic
 """
 
 """Read and load graphId from environment variable. """
-graph_id = os.getenv('GRAPH_ID')
-if not graph_id:
+if not NETWORKX_GRAPH_ID:
     raise Exception('Environment Variable GRAPH_ID is not defined')
 
 """Clear the Neptune Analytics graph"""
 nx_graph = nx.Graph()
-g = NeptuneGraph(graph=nx_graph)
+g = NeptuneGraph.from_config(graph=nx_graph)
 g.clear_graph()
 
 """Populate the dataset by inserting nodes into the graph"""

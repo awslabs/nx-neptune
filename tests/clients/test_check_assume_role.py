@@ -49,9 +49,10 @@ def test_check_assume_role_content(mock_response, expected_result):
     # Create a mock IAM client
     mock_iam_client = MagicMock()
     mock_iam_client.get_role.return_value = mock_response
+    logger = MagicMock()
 
     iam_client = IamClient(
-        "arn:aws:iam::123456789012:role/test-role", None, mock_iam_client
+        "arn:aws:iam::123456789012:role/test-role", mock_iam_client, logger
     )
     result = iam_client.check_assume_role("neptune-graph")
     # Verify the result matches expected
@@ -83,10 +84,12 @@ def test_check_assume_role_invalid_json(mock_response, error_message):
     # Set the mock response
     mock_iam_client.get_role.return_value = mock_response
 
+    logger = MagicMock()
+
     # Test with invalid JSON structure
     with pytest.raises(ValueError, match=error_message):
         iam_client = IamClient(
-            "arn:aws:iam::123456789012:role/test-role", None, mock_iam_client
+            "arn:aws:iam::123456789012:role/test-role", mock_iam_client, logger
         )
         iam_client.check_assume_role("neptune-graph")
 

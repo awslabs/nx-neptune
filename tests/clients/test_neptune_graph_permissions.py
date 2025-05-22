@@ -19,11 +19,12 @@ def test_aws_permission_check_invalid_arn(role_arn, resource_arn):
     """Test that aws_permission_check throws a ValueError when invalid ARNs are provided"""
     # Create a mock IAM client
     mock_iam_client = MagicMock()
-    iam_client = IamClient(role_arn, None, mock_iam_client)
+    logger = MagicMock()
+    iam_client = IamClient(role_arn, mock_iam_client, logger)
 
     # Test with the parametrized ARNs
     with pytest.raises(ValueError, match="Invalid ARN format"):
-        iam_client = IamClient(role_arn, None, mock_iam_client)
+        iam_client = IamClient(role_arn, mock_iam_client, logger)
         iam_client.check_aws_permission(
             "Test operation", ["neptune-graph:ReadDataViaQuery"], resource_arn
         )
@@ -54,10 +55,11 @@ def test_aws_permission_check_malformed_response(mock_response):
     # Create a mock IAM client that returns the parameterized malformed response
     mock_iam_client = MagicMock()
     mock_iam_client.simulate_principal_policy.return_value = mock_response
+    logger = MagicMock()
 
     with pytest.raises(ValueError, match="Unexpected result structure"):
         iam_client = IamClient(
-            "arn:aws:iam::123456789012:role/test-role", None, mock_iam_client
+            "arn:aws:iam::123456789012:role/test-role", mock_iam_client, logger
         )
         iam_client.check_aws_permission(
             ["neptune-graph:ReadDataViaQuery"],

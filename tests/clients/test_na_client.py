@@ -1,7 +1,5 @@
 import pytest
 import json
-import os
-import unittest
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
@@ -42,43 +40,19 @@ class TestNeptuneAnalyticsClient:
         assert na_client.logger == logger
         assert na_client.client == boto3_client
 
-    @patch.dict(os.environ, {"GRAPH_ID": "env-graph-id"})
-    def test_init_with_env_var(self):
-        """Test initialization with GRAPH_ID from environment variable."""
-        mock_boto3_client = MagicMock()
-        mock_logger = MagicMock()
-
-        # Exercise
-        client = NeptuneAnalyticsClient(logger=mock_logger, client=mock_boto3_client)
-
-        # Verify
-        assert client.graph_id == "env-graph-id"
-
-    @patch.dict(os.environ, {}, clear=True)
-    def test_init_without_graph_id(self):
-        """Test initialization without graph_id and without GRAPH_ID in environment."""
-        mock_boto3_client = MagicMock()
-        mock_logger = MagicMock()
-
-        # Exercise
-        client = NeptuneAnalyticsClient(logger=mock_logger, client=mock_boto3_client)
-
-        # Verify
-        assert client.graph_id is None
-
-    @patch("boto3.client")
+    @patch("botocore.client.BaseClient")
     def test_init_with_default_boto_client(self, mock_boto3_client):
         """Test initialization with default boto3 client."""
-        mock_boto3_client.return_value = MagicMock()
         mock_logger = MagicMock()
         mock_graph_id = "test-graph-id"
 
         # Exercise
-        client = NeptuneAnalyticsClient(logger=mock_logger, graph_id=mock_graph_id)
+        client = NeptuneAnalyticsClient(
+            logger=mock_logger, graph_id=mock_graph_id, client=mock_boto3_client
+        )
 
         # Verify
-        mock_boto3_client.assert_called_once_with("neptune-graph")
-        assert client.client == mock_boto3_client.return_value
+        assert client.client == mock_boto3_client
 
     @patch("logging.getLogger")
     def test_init_with_default_logger(self, mock_get_logger):
@@ -133,6 +107,7 @@ class TestNeptuneAnalyticsClient:
             graphIdentifier=mock_na_client.graph_id,
             queryString=query,
             language="OPEN_CYPHER",
+            parameters={},
         )
 
         # Verify logging

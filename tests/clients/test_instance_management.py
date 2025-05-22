@@ -1,5 +1,5 @@
 import json
-from concurrent.futures import Future
+import asyncio
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -14,6 +14,8 @@ from nx_neptune.instance_management import (
     _get_graph_id,
     create_na_instance,
     _wait_until_task_complete,
+    import_csv_from_s3,
+    export_csv_to_s3,
     delete_na_instance,
 )
 
@@ -128,6 +130,26 @@ NX_STATUS_CHECK_IMPORT_EXPORT_SUCCESS_FIXTURE = """{
               "publicConnectivity": true,
               "replicaCount": 0,
               "status": "SUCCEEDED"
+            }
+            """
+
+NX_IMPORT_TASK_SUCCESS_FIXTURE = """{
+              "ResponseMetadata": {
+                "HTTPHeaders": {
+                  "connection": "keep-alive",
+                  "content-length": "402",
+                  "content-type": "application/json",
+                  "date": "Wed, 07 May 2025 22:57:49 GMT",
+                  "x-amz-apigw-id": "test_api_id",
+                  "x-amzn-requestid": "test_api_id",
+                  "x-amzn-trace-id": "test_trace_id"
+                },
+                "HTTPStatusCode": 201,
+                "RequestId": "test_request_id",
+                "RetryAttempts": 0
+              },
+              "taskId": "test-import-task-id",
+              "status": "IMPORTING"
             }
             """
 
@@ -330,53 +352,6 @@ def test_get_bucket_encryption_key_arn_with_exception(mock_boto3_client):
 
 
 @pytest.mark.parametrize(
-    "task_id,task_type,polling_interval",
-    [
-        ("task-123", TaskType.IMPORT, 60),
-        ("task-456", TaskType.EXPORT, 60),
-    ],
-)
-def test_task_future_initialization(task_id, task_type, polling_interval):
-    """Test that TaskFuture correctly initializes with task_id and task_type."""
-    future = TaskFuture(task_id, task_type, polling_interval)
-
-    # Verify the attributes are set correctly
-    assert future.task_id == task_id
-    assert future.task_type == task_type
-
-    # Verify it's a proper Future subclass
-    assert isinstance(future, Future)
-    assert not future.done()  # Should start in not-done state
-
-
-def test_task_future_completion():
-    """Test that TaskFuture can be completed and results retrieved."""
-    future = TaskFuture("task-123", TaskType.IMPORT, 60)
-
-    # Set a result and verify it can be retrieved
-    test_result = "Operation completed successfully"
-    future.set_result(test_result)
-
-    assert future.done()
-    assert future.result() == test_result
-
-
-def test_task_future_exception():
-    """Test that TaskFuture can handle exceptions."""
-    future = TaskFuture("task-123", TaskType.IMPORT, 60)
-
-    # Set an exception and verify it's properly handled
-    test_exception = ValueError("Operation failed")
-    future.set_exception(test_exception)
-
-    assert future.done()
-    with pytest.raises(ValueError) as excinfo:
-        future.result()
-
-    assert str(excinfo.value) == "Operation failed"
-
-
-@pytest.mark.parametrize(
     "json_str,expected_status_code",
     [
         ("{ }", None),
@@ -519,7 +494,7 @@ async def test_create_na_instance_insufficient_permissions(mock_boto3_client):
     mock_nx_client = MagicMock()
     mock_boto3_client.return_value = mock_nx_client
 
-    #
+    # Mock setup
     mock_nx_client.simulate_principal_policy.return_value = {
         "EvaluationResults": [
             {"EvalActionName": "neptune-graph:CreateGraph", "EvalDecision": "allowed"},
@@ -589,6 +564,285 @@ async def test_status_check_export(mock_boto3_client):
     await _wait_until_task_complete(mock_nx_client, future)
     assert future.done()
     assert future.result() == "test-export-job-id"
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._start_import_task")
+@patch("nx_neptune.instance_management._reset_graph")
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("asyncio.create_task")
+async def test_import_csv_from_s3_success(
+    mock_create_task,
+    mock_get_bucket_encryption_key_arn,
+    mock_reset_graph,
+    mock_start_import_task,
+):
+    # Setup mocks
+    mock_get_bucket_encryption_key_arn.return_value = None
+    mock_reset_graph.return_value = True
+    mock_start_import_task.return_value = "test-import-task-id"
+
+    # Create mock NeptuneGraph
+    mock_na_graph = MagicMock()
+    mock_na_graph.na_client.graph_id = "test-graph-id"
+    mock_na_graph.na_client.client = MagicMock()
+    mock_na_graph.iam_client = MagicMock()
+    mock_na_graph.iam_client.role_arn = "test-role-arn"
+    mock_na_graph.current_jobs = set()
+
+    # Call the function
+    future = import_csv_from_s3(
+        mock_na_graph,
+        "s3://test-bucket/test-folder/",
+        reset_graph_ahead=True,
+        skip_snapshot=True,
+        polling_interval=10,
+    )
+
+    # Verify the function behavior
+    mock_get_bucket_encryption_key_arn.assert_called_once_with(
+        "s3://test-bucket/test-folder/"
+    )
+    mock_na_graph.iam_client.has_import_from_s3_permissions.assert_called_once_with(
+        "s3://test-bucket/test-folder/", None
+    )
+    mock_reset_graph.assert_called_once_with(
+        mock_na_graph.na_client.client, "test-graph-id", True
+    )
+    mock_start_import_task.assert_called_once_with(
+        mock_na_graph.na_client.client,
+        "test-graph-id",
+        "s3://test-bucket/test-folder/",
+        "test-role-arn",
+    )
+    mock_create_task.assert_called_once()
+
+    # Verify the future is properly set up
+    assert isinstance(future, asyncio.Future)
+    assert not future.done()
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._start_import_task")
+@patch("nx_neptune.instance_management._reset_graph")
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("asyncio.create_task")
+async def test_import_csv_from_s3_without_reset(
+    mock_create_task,
+    mock_get_bucket_encryption_key_arn,
+    mock_reset_graph,
+    mock_start_import_task,
+):
+    # Setup mocks
+    mock_get_bucket_encryption_key_arn.return_value = "test-kms-key-arn"
+    mock_start_import_task.return_value = "test-import-task-id"
+
+    # Create mock NeptuneGraph
+    mock_na_graph = MagicMock()
+    mock_na_graph.na_client.graph_id = "test-graph-id"
+    mock_na_graph.na_client.client = MagicMock()
+    mock_na_graph.iam_client = MagicMock()
+    mock_na_graph.iam_client.role_arn = "test-role-arn"
+    mock_na_graph.current_jobs = set()
+
+    # Call the function with reset_graph_ahead=False
+    future = import_csv_from_s3(
+        mock_na_graph,
+        "s3://test-bucket/test-folder/",
+        reset_graph_ahead=False,
+        skip_snapshot=True,
+        polling_interval=10,
+    )
+
+    # Verify the function behavior
+    mock_get_bucket_encryption_key_arn.assert_called_once_with(
+        "s3://test-bucket/test-folder/"
+    )
+    mock_na_graph.iam_client.has_import_from_s3_permissions.assert_called_once_with(
+        "s3://test-bucket/test-folder/", "test-kms-key-arn"
+    )
+    mock_reset_graph.assert_not_called()
+    mock_start_import_task.assert_called_once_with(
+        mock_na_graph.na_client.client,
+        "test-graph-id",
+        "s3://test-bucket/test-folder/",
+        "test-role-arn",
+    )
+    mock_create_task.assert_called_once()
+
+    # Verify the future is properly set up
+    assert isinstance(future, asyncio.Future)
+    assert not future.done()
+
+
+@pytest.mark.asyncio
+async def test_import_csv_from_s3_missing_role_arn():
+    # Create mock NeptuneGraph with missing role_arn
+    mock_na_graph = MagicMock()
+    mock_na_graph.iam_client = MagicMock()
+    mock_na_graph.iam_client.role_arn = None
+
+    # Call the function and expect ValueError
+    with pytest.raises(ValueError, match="Role ARN is required to export to S3"):
+        import_csv_from_s3(
+            mock_na_graph, "s3://test-bucket/test-folder/", reset_graph_ahead=True
+        )
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+async def test_import_csv_from_s3_permission_error(mock_get_bucket_encryption_key_arn):
+    # Setup mocks
+    mock_get_bucket_encryption_key_arn.return_value = None
+
+    # Create mock NeptuneGraph
+    mock_na_graph = MagicMock()
+    mock_na_graph.na_client.graph_id = "test-graph-id"
+    mock_na_graph.iam_client = MagicMock()
+    mock_na_graph.iam_client.role_arn = "test-role-arn"
+
+    # Configure permission check to fail
+    mock_na_graph.iam_client.has_import_from_s3_permissions.side_effect = ValueError(
+        "Insufficient permissions"
+    )
+
+    # Call the function and expect ValueError
+    with pytest.raises(ValueError, match="Insufficient permissions"):
+        import_csv_from_s3(
+            mock_na_graph, "s3://test-bucket/test-folder/", reset_graph_ahead=True
+        )
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._start_export_task")
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("asyncio.create_task")
+async def test_export_csv_to_s3_success(
+    mock_create_task,
+    mock_get_bucket_encryption_key_arn,
+    mock_start_export_task,
+):
+    # Setup mocks
+    mock_get_bucket_encryption_key_arn.return_value = None
+    mock_start_export_task.return_value = "test-export-task-id"
+
+    # Create mock NeptuneGraph
+    mock_na_graph = MagicMock()
+    mock_na_graph.na_client.graph_id = "test-graph-id"
+    mock_na_graph.na_client.client = MagicMock()
+    mock_na_graph.iam_client = MagicMock()
+    mock_na_graph.iam_client.role_arn = "test-role-arn"
+    mock_na_graph.current_jobs = set()
+
+    # Call the function
+    future = export_csv_to_s3(
+        mock_na_graph,
+        "s3://test-bucket/test-folder/",
+        polling_interval=10,
+    )
+
+    # Verify the function behavior
+    mock_get_bucket_encryption_key_arn.assert_called_once_with(
+        "s3://test-bucket/test-folder/"
+    )
+    mock_na_graph.iam_client.has_export_to_s3_permissions.assert_called_once_with(
+        "s3://test-bucket/test-folder/", None
+    )
+    mock_start_export_task.assert_called_once_with(
+        mock_na_graph.na_client.client,
+        "test-graph-id",
+        "s3://test-bucket/test-folder/",
+        "test-role-arn",
+        None,
+    )
+    mock_create_task.assert_called_once()
+
+    # Verify the future is properly set up
+    assert isinstance(future, asyncio.Future)
+    assert not future.done()
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._start_export_task")
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("asyncio.create_task")
+async def test_export_csv_to_s3_with_kms_key(
+    mock_create_task,
+    mock_get_bucket_encryption_key_arn,
+    mock_start_export_task,
+):
+    # Setup mocks
+    mock_get_bucket_encryption_key_arn.return_value = "test-kms-key-arn"
+    mock_start_export_task.return_value = "test-export-task-id"
+
+    # Create mock NeptuneGraph
+    mock_na_graph = MagicMock()
+    mock_na_graph.na_client.graph_id = "test-graph-id"
+    mock_na_graph.na_client.client = MagicMock()
+    mock_na_graph.iam_client = MagicMock()
+    mock_na_graph.iam_client.role_arn = "test-role-arn"
+    mock_na_graph.current_jobs = set()
+
+    # Call the function
+    future = export_csv_to_s3(
+        mock_na_graph,
+        "s3://test-bucket/test-folder/",
+        polling_interval=10,
+    )
+
+    # Verify the function behavior
+    mock_get_bucket_encryption_key_arn.assert_called_once_with(
+        "s3://test-bucket/test-folder/"
+    )
+    mock_na_graph.iam_client.has_export_to_s3_permissions.assert_called_once_with(
+        "s3://test-bucket/test-folder/", "test-kms-key-arn"
+    )
+    mock_start_export_task.assert_called_once_with(
+        mock_na_graph.na_client.client,
+        "test-graph-id",
+        "s3://test-bucket/test-folder/",
+        "test-role-arn",
+        "test-kms-key-arn",
+    )
+    mock_create_task.assert_called_once()
+
+    # Verify the future is properly set up
+    assert isinstance(future, asyncio.Future)
+    assert not future.done()
+
+
+@pytest.mark.asyncio
+async def test_export_csv_to_s3_missing_role_arn():
+    # Create mock NeptuneGraph with missing role_arn
+    mock_na_graph = MagicMock()
+    mock_na_graph.iam_client = MagicMock()
+    mock_na_graph.iam_client.role_arn = None
+
+    # Call the function and expect ValueError
+    with pytest.raises(ValueError, match="Role ARN is required to export to S3"):
+        export_csv_to_s3(mock_na_graph, "s3://test-bucket/test-folder/")
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+async def test_export_csv_to_s3_permission_error(mock_get_bucket_encryption_key_arn):
+    # Setup mocks
+    mock_get_bucket_encryption_key_arn.return_value = None
+
+    # Create mock NeptuneGraph
+    mock_na_graph = MagicMock()
+    mock_na_graph.na_client.graph_id = "test-graph-id"
+    mock_na_graph.iam_client = MagicMock()
+    mock_na_graph.iam_client.role_arn = "test-role-arn"
+
+    # Configure permission check to fail
+    mock_na_graph.iam_client.has_export_to_s3_permissions.side_effect = ValueError(
+        "Insufficient permissions"
+    )
+
+    # Call the function and expect ValueError
+    with pytest.raises(ValueError, match="Insufficient permissions"):
+        export_csv_to_s3(mock_na_graph, "s3://test-bucket/test-folder/")
 
 
 @pytest.mark.asyncio

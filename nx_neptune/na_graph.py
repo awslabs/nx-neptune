@@ -1,12 +1,21 @@
 import logging
+from asyncio import Task
 from typing import Any, List, Optional
 
+import boto3
+import networkx
 from networkx import DiGraph, Graph
+
+from nx_plugin import NeptuneConfig
+from nx_plugin.config import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN
 
 from .clients import (
     PARAM_TRAVERSAL_DIRECTION_BOTH,
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
+    SERVICE_IAM,
+    SERVICE_NA,
+    SERVICE_STS,
     Edge,
     IamClient,
     NeptuneAnalyticsClient,
@@ -24,6 +33,10 @@ from .clients import (
 
 __all__ = [
     "NeptuneGraph",
+    "NETWORKX_GRAPH_ID",
+    "NETWORKX_S3_IAM_ROLE_ARN",
+    "get_config",
+    "set_config_graph_id",
 ]
 
 
@@ -39,27 +52,46 @@ class NeptuneGraph:
 
     def __init__(
         self,
-        graph=None,
-        logger=None,
-        client=None,
-        iam_client=None,
+        na_client: NeptuneAnalyticsClient,
+        iam_client: IamClient,
+        graph: Graph,
+        logger: logging.Logger | None = None,
     ):
         """
         Constructs a NeptuneGraph object for AWS service interaction,
         with optional custom logger and boto client.
-        TODO: To have a create_client || connect_to_na_instance
-        for networkX backend integration.
-        TODO: Save a boto3 session instance once the client
-        has connected
         """
         self.logger = logger or logging.getLogger(__name__)
-        self.client = client or NeptuneAnalyticsClient(logger=self.logger)
+        self.na_client = na_client
+        self.iam_client = iam_client
+        self.graph = graph
+        self.current_jobs: set[Task] = set()
+
+    @classmethod
+    def from_config(cls, config: NeptuneConfig | None = None, graph=None, logger=None):
+        if config is None:
+            config = get_config()
+
+        assert config.graph_id is not None
+
         if graph is None:
-            self.graph = Graph()
-        else:
-            self.graph = graph
-        self.current_jobs = set()
-        self.iam_client = iam_client or IamClient(logger=self.logger)
+            graph = Graph()
+        if logger is None:
+            logger = logging.getLogger(__name__)
+        s3_iam_role = config.s3_iam_role
+        if s3_iam_role is None:
+            s3_iam_role = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
+
+        na_client = NeptuneAnalyticsClient(
+            config.graph_id, boto3.client(SERVICE_NA), logger
+        )
+        iam_client = IamClient(s3_iam_role, boto3.client(SERVICE_IAM), logger)
+        return cls(
+            graph=graph,
+            logger=logger,
+            na_client=na_client,
+            iam_client=iam_client,
+        )
 
     def graph_object(self) -> Graph | DiGraph:
         return self.graph
@@ -86,7 +118,7 @@ class NeptuneGraph:
         which this client hold references to.
         """
         query_str, para_map = insert_node(node)
-        return self.client.execute_generic_query(query_str, para_map)
+        return self.na_client.execute_generic_query(query_str, para_map)
 
     def update_node(
         self,
@@ -101,7 +133,7 @@ class NeptuneGraph:
         query_str, para_map = update_node(
             match_labels, ref_name, [node.id], properties_set
         )
-        return self.client.execute_generic_query(query_str, para_map)
+        return self.na_client.execute_generic_query(query_str, para_map)
 
     def update_nodes(
         self,
@@ -118,7 +150,7 @@ class NeptuneGraph:
         query_str, para_map = update_node(
             match_labels, ref_name, node_ids, properties_set
         )
-        return self.client.execute_generic_query(query_str, para_map)
+        return self.na_client.execute_generic_query(query_str, para_map)
 
     def delete_nodes(self, node: Node):
         """
@@ -131,14 +163,14 @@ class NeptuneGraph:
             _type_: Result from boto client in string format.
         """
         query_str, para_map = delete_node(node)
-        return self.client.execute_generic_query(query_str, para_map)
+        return self.na_client.execute_generic_query(query_str, para_map)
 
     def clear_graph(self):
         """
         To perform truncation to clear all nodes and edges on the graph.
         """
         query_str = clear_query()
-        return self.client.execute_generic_query(query_str)
+        return self.na_client.execute_generic_query(query_str)
 
     def add_edge(self, edge: Edge):
         """
@@ -151,7 +183,7 @@ class NeptuneGraph:
             _type_: Result from boto client in string format.
         """
         query_str, para_map = insert_edge(edge)
-        return self.client.execute_generic_query(query_str, para_map)
+        return self.na_client.execute_generic_query(query_str, para_map)
 
     def update_edges(
         self,
@@ -184,7 +216,7 @@ class NeptuneGraph:
             where_filters,
             properties_set,
         )
-        return self.client.execute_generic_query(query_str, para_map)
+        return self.na_client.execute_generic_query(query_str, para_map)
 
     def delete_edges(self, edge: Edge):
         """
@@ -198,7 +230,7 @@ class NeptuneGraph:
             _type_: Result from boto client in string format.
         """
         query_str, para_map = delete_edge(edge)
-        return self.client.execute_generic_query(query_str, para_map)
+        return self.na_client.execute_generic_query(query_str, para_map)
 
     def get_all_nodes(self):
         """
@@ -209,7 +241,7 @@ class NeptuneGraph:
             _type_: Nodes in JSON format.
         """
         query_str = match_all_nodes()
-        all_nodes = self.client.execute_generic_query(query_str)
+        all_nodes = self.na_client.execute_generic_query(query_str)
         return [node["n"] for node in all_nodes]
 
     def get_all_edges(self):
@@ -221,7 +253,7 @@ class NeptuneGraph:
             _type_: Edges in JSON format.
         """
         query_str = match_all_edges()
-        all_edges = self.client.execute_generic_query(query_str)
+        all_edges = self.na_client.execute_generic_query(query_str)
         return [edge["r"] for edge in all_edges]
 
     def execute_call(
@@ -231,6 +263,39 @@ class NeptuneGraph:
         Helper method to call a Neptune Function.
 
         Returns:
-            dict: Result from Boto client.
+            dict: Result from the Boto client.
         """
-        return self.client.execute_generic_query(query_string, parameter_map)
+        return self.na_client.execute_generic_query(query_string, parameter_map)
+
+
+def get_config() -> NeptuneConfig:
+    """
+    Helper method to retrieve the Neptune configuration with global variable overrides.
+
+    Returns:
+        dict: The Neptune configuration.
+    """
+    config = networkx.config.backends.neptune
+
+    if NETWORKX_GRAPH_ID is not None:
+        config.graph_id = NETWORKX_GRAPH_ID
+
+    if NETWORKX_S3_IAM_ROLE_ARN is not None:
+        config.role_arn = NETWORKX_S3_IAM_ROLE_ARN
+
+    return config
+
+
+def set_config_graph_id(graph_id: str | None) -> NeptuneConfig:
+    """
+    Helper method to set the graph_id in the Neptune configuration.
+
+    Returns:
+        dict: The updated Neptune configuration.
+    """
+    networkx.config.backends.neptune["graph_id"] = graph_id
+
+    # if graph_id is cleared, then create_new_instance is True, else False
+    networkx.config.backends.neptune["create_new_instance"] = graph_id is None
+
+    return get_config()

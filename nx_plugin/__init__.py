@@ -1,4 +1,4 @@
-from .config import _config, NeptuneConfig
+from .config import NeptuneConfig, _config
 
 __all__ = ["NeptuneConfig"]
 

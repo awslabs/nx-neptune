@@ -1,16 +1,18 @@
 import asyncio
 import logging
 import uuid
-from concurrent.futures import Future
+from asyncio import Future
 from datetime import datetime
 from enum import Enum
+from typing import Optional
 
 import boto3
 import jmespath
+from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 
-from nx_neptune.clients import IamClient
-from nx_neptune.na_graph import NeptuneGraph
+from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
+from .na_graph import NeptuneGraph
 
 __all__ = [
     "import_csv_from_s3",
@@ -18,6 +20,7 @@ __all__ = [
     "TaskFuture",
     "TaskType",
     "create_na_instance",
+    "delete_na_instance",
 ]
 
 logger = logging.getLogger(__name__)
@@ -28,8 +31,10 @@ _PERMISSIONS_CREATE = ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]
 
 
 class TaskType(Enum):
+    # Allow import to run against an "INITIALIZING" state - the graph is sometimes in this state after creating graph
     IMPORT = (1, ["INI", "INITIALIZING", "IMPORTING"], "SUCCEEDED")
-    EXPORT = (2, ["INI", "EXPORTING"], "SUCCEEDED")
+    # Allow export to run against an "INITIALIZING" state - the graph is sometimes in this state after running algorithms
+    EXPORT = (2, ["INI", "INITIALIZING", "EXPORTING"], "SUCCEEDED")
     CREATE = (3, ["INI", "CREATING"], "AVAILABLE")
     DELETE = (4, ["INI", "DELETING"], "DELETED")
     NOOP = (5, ["INI"], "AVAILABLE")
@@ -59,7 +64,7 @@ class TaskFuture(Future):
         self.polling_interval = polling_interval
 
 
-async def _wait_until_task_complete(client: boto3.client, future: TaskFuture):
+async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
     """Asynchronously monitor a Neptune Analytics task until completion.
 
     This function polls the status of an import or export task until it completes
@@ -86,10 +91,10 @@ async def _wait_until_task_complete(client: boto3.client, future: TaskFuture):
     while status in status_list:
         try:
             task_action_map = {
-                TaskType.IMPORT: lambda: client.get_import_task(taskIdentifier=task_id),
-                TaskType.EXPORT: lambda: client.get_export_task(taskIdentifier=task_id),
-                TaskType.CREATE: lambda: client.get_graph(graphIdentifier=task_id),
-                TaskType.DELETE: lambda: delete_status_check_wrapper(client, task_id),
+                TaskType.IMPORT: lambda: client.get_import_task(taskIdentifier=task_id),  # type: ignore[attr-defined]
+                TaskType.EXPORT: lambda: client.get_export_task(taskIdentifier=task_id),  # type: ignore[attr-defined]
+                TaskType.CREATE: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
+                TaskType.DELETE: lambda: delete_status_check_wrapper(client, task_id),  # type: ignore[attr-defined]
             }
 
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -116,7 +121,7 @@ def import_csv_from_s3(
     reset_graph_ahead=True,
     skip_snapshot=True,
     polling_interval=30,
-):
+) -> Future:
     """Import CSV data from S3 into a Neptune Analytics graph.
 
     This function handles the complete workflow for importing graph data:
@@ -138,10 +143,15 @@ def import_csv_from_s3(
     Raises:
         ValueError: If the role lacks required permissions
     """
-    graph_id = na_graph.client.graph_id
-    na_client = na_graph.client.client
+    graph_id = na_graph.na_client.graph_id
+    na_client = na_graph.na_client.client
     iam_client = na_graph.iam_client
     role_arn = iam_client.role_arn
+
+    if role_arn is None:
+        raise ValueError(
+            "Role ARN is required to export to S3. Define Role ARN in the configuration. "
+        )
 
     # Retrieve key_arn for the bucket and permission check if present
     key_arn = _get_bucket_encryption_key_arn(s3_arn)
@@ -167,7 +177,7 @@ def import_csv_from_s3(
     return asyncio.wrap_future(future)
 
 
-def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn, polling_interval=30):
+def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn, polling_interval=30) -> Future:
     """Export graph data from Neptune Analytics to S3 in CSV format.
 
     This function handles the complete workflow for exporting graph data:
@@ -186,10 +196,15 @@ def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn, polling_interval=30):
     Raises:
         ValueError: If the role lacks required permissions
     """
-    graph_id = na_graph.client.graph_id
-    na_client = na_graph.client.client
+    graph_id = na_graph.na_client.graph_id
+    na_client = na_graph.na_client.client
     iam_client = na_graph.iam_client
     role_arn = iam_client.role_arn
+
+    if role_arn is None:
+        raise ValueError(
+            "Role ARN is required to export to S3. Define Role ARN in the configuration. "
+        )
 
     # Retrieve key_arn for the bucket and permission check if present
     key_arn = _get_bucket_encryption_key_arn(s3_arn)
@@ -212,17 +227,16 @@ def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn, polling_interval=30):
 
 def create_na_instance():
     """
-    Retrieve a graph ID in string format for algorithmic computations,
-    either by reusing an existing ID from the environment variables
-    or by provisioning a new Neptune Analytics instance on behalf of the user.
+    Creates a new graph instance for Neptune Analytics.
 
     Raises:
         Exception: If the Neptune Analytics instance creation fails
     """
-    na_client = boto3.client("neptune-graph")
+    na_client = boto3.client(SERVICE_NA)
+
     # Permissions check
-    user_arn = boto3.client("sts").get_caller_identity()["Arn"]
-    iam_client = IamClient(role_arn=user_arn)
+    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
+    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
     iam_client.has_create_na_permissions()
 
     response = _create_na_instance_task(na_client)
@@ -255,7 +269,7 @@ def delete_na_instance(graph_id: str):
     """
     # Permission check
     user_arn = boto3.client("sts").get_caller_identity()["Arn"]
-    iam_client = IamClient(role_arn=user_arn)
+    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
     iam_client.has_delete_na_permissions()
 
     # Instance deletion
@@ -318,10 +332,10 @@ def _delete_na_instance_task(client, graph_id: str):
 
 
 def _start_import_task(
-    client: boto3.client,
+    client: BaseClient,
     graph_id: str,
     s3_location: str,
-    role_arn: str,
+    role_arn: Optional[str],
     format_type: str = "CSV",
 ) -> str:
     """Start an import task for the Neptune Analytics graph.
@@ -343,7 +357,7 @@ def _start_import_task(
         f"Import S3 graph data [{s3_location}] into Graph [{graph_id}], under IAM role [{role_arn}]"
     )
     try:
-        response = client.start_import_task(
+        response = client.start_import_task(  # type: ignore[attr-defined]
             graphIdentifier=graph_id,
             source=s3_location,
             format=format_type,
@@ -356,7 +370,7 @@ def _start_import_task(
 
 
 def _start_export_task(
-    client: boto3.client,
+    client: BaseClient,
     graph_id: str,
     s3_destination: str,
     role_arn: str,
@@ -380,7 +394,7 @@ def _start_export_task(
         f"Export S3 Graph [{graph_id}] data to S3 [{s3_destination}], under IAM role [{role_arn}]"
     )
     try:
-        response = client.start_export_task(
+        response = client.start_export_task(  # type: ignore[attr-defined]
             graphIdentifier=graph_id,
             roleArn=role_arn,
             format=filetype,
@@ -394,9 +408,7 @@ def _start_export_task(
         raise e
 
 
-def _reset_graph(
-    client: boto3.client, graph_id: str, skip_snapshot: bool = True
-) -> bool:
+def _reset_graph(client: BaseClient, graph_id: str, skip_snapshot: bool = True) -> bool:
     """Reset the Neptune Analytics graph.
 
     Args:
@@ -411,7 +423,7 @@ def _reset_graph(
         logger.info(
             f"Perform reset_graph action on graph: [{graph_id}] with skip_snapshot: [{skip_snapshot}]"
         )
-        client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)
+        client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
         waiter = client.get_waiter("graph_available")
         waiter.wait(
             graphIdentifier=graph_id, WaiterConfig={"Delay": 10, "MaxAttempts": 60}

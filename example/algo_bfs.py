@@ -1,8 +1,5 @@
-import os
-
 import networkx as nx
-
-from nx_neptune import NeptuneGraph
+from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID
 from nx_neptune.utils.utils import get_stdout_logger
 
 """ 
@@ -16,17 +13,16 @@ logger = get_stdout_logger(__name__,  ['nx_neptune.algorithms.traversal.bfs'])
 
 nx.config.warnings_to_ignore.add("cache")
 
-"""Read and load graphId from environment variable. """ 
-graph_id = os.getenv('GRAPH_ID')
-if not graph_id:
-    raise Exception('Environment Variable GRAPH_ID is not defined')
+"""Read and load graphId from environment variable. """
+if not NETWORKX_GRAPH_ID:
+    raise Exception('Environment Variable "NETWORKX_GRAPH_ID" is not defined')
 
 BACKEND = "neptune"
 print(f"Using backend={BACKEND}")
 
 """Clear the Neptune Analytics graph"""
 g = nx.Graph()
-na_graph = NeptuneGraph(graph=g)
+na_graph = NeptuneGraph.from_config(graph=g)
 na_graph.clear_graph()
 
 """

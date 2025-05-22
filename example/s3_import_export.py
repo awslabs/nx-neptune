@@ -34,7 +34,7 @@ async def main():
 
     # Clean up remote graph and populate test data.
     g = nx.DiGraph()
-    na_graph = NeptuneGraph(graph=g)
+    na_graph = NeptuneGraph.from_config(graph=g)
 
     # Import blocking
     future = import_csv_from_s3(

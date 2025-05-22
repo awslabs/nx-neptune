@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from operator import attrgetter
@@ -7,16 +8,27 @@ from operator import attrgetter
 import networkx as nx
 
 import nx_neptune.algorithms
+from nx_plugin import NeptuneConfig
+from nx_plugin.config import (
+    NETWORKX_GRAPH_ID,
+    NETWORKX_S3_IAM_ROLE_ARN,
+)
 
 from .clients import Edge, Node
-from .na_graph import NeptuneGraph
+from .instance_management import (
+    create_na_instance,
+    delete_na_instance,
+    export_csv_to_s3,
+    import_csv_from_s3,
+)
+from .na_graph import NeptuneGraph, get_config, set_config_graph_id
 
 logger = logging.getLogger(__name__)
 
 # Avoid infinite recursion when testing
 _IS_TESTING = os.environ.get("NETWORKX_TEST_BACKEND") in {"test"}
 
-__all__ = ["BackendInterface"]
+__all__ = ["BackendInterface", "NETWORKX_GRAPH_ID", "NETWORKX_S3_IAM_ROLE_ARN"]
 
 ALGORITHMS = [
     "bfs_edges",
@@ -39,42 +51,13 @@ def assign_algorithms(cls):
 class BackendInterface:
 
     @staticmethod
-    def convert_from_nx(graph: nx.Graph, *args, **kwargs) -> NeptuneGraph:
-
+    def convert_from_nx(graph: nx.Graph, *args, **kwargs):
         logger.debug("nx_neptune.convert_from_nx()")
-        logger.debug("graph=" + str(graph))
-        logger.debug(f"is_directed={graph.is_directed()}")
-        logger.debug("kwargs=" + str(args))
-
-        na_graph = NeptuneGraph(graph=graph)
-
-        """
-        Push all Nodes from NetworkX into Neptune Analytics
-        """
-        for node in graph.nodes().data():
-            na_node = Node.convert_from_nx(node)
-            logger.debug(f"add_node={na_node}")
-            na_graph.add_node(na_node)
-
-        """
-        Push all Edges from NetworkX into Neptune Analytics
-        """
-        for edge in graph.edges().data():
-            na_edge = Edge.convert_from_nx(edge)
-            logger.debug(f"add_edge={na_edge}")
-            na_graph.add_edge(na_edge)
-
-            # Push the reverse direction edge if the graph is un-directed
-            if not graph.is_directed():
-                na_reverse_edge = Edge.convert_from_nx(edge).to_reverse_edge()
-                logger.debug(f"add_edge={na_reverse_edge}")
-                na_graph.add_edge(na_reverse_edge)
-
-        return na_graph
+        return graph
 
     @staticmethod
-    def convert_to_nx(g, *args, **kwargs) -> nx.Graph | nx.DiGraph:
-        logger.debug("nx_neptune_analytics.convert_to_nx()")
+    def convert_to_nx(g, *args, **kwargs):
+        logger.debug("nx_neptune.convert_to_nx()")
         if isinstance(g, NeptuneGraph):
             return g.graph_object()
         return g

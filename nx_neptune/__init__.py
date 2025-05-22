@@ -8,12 +8,15 @@ from .instance_management import (
     import_csv_from_s3,
 )
 from .interface import BackendInterface
-from .na_graph import NeptuneGraph
+from .na_graph import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN, NeptuneGraph
 from .utils.decorators import configure_if_nx_active
 
 __version__ = "0.2.0"
 
 __all__ = [
+    # environment variables
+    "NETWORKX_GRAPH_ID",
+    "NETWORKX_S3_IAM_ROLE_ARN",
     # algorithms
     "bfs_edges",
     "pagerank",
