@@ -357,21 +357,21 @@ def test_get_bucket_encryption_key_arn_with_exception(mock_boto3_client):
         ("{ }", None),
         (
             """{
-          "ResponseMetadata": {
-            "HTTPHeaders": {
-              "connection": "keep-alive",
-              "content-length": "402",
-              "content-type": "application/json",
-              "date": "Wed, 07 May 2025 22:57:49 GMT",
-              "x-amz-apigw-id": "test_api_id",
-              "x-amzn-requestid": "test_api_id",
-              "x-amzn-trace-id": "test_trace_id"
-            },
-            "HTTPStatusCode": 201,
-            "RequestId": "test_request_id",
-            "RetryAttempts": 0
-          }
-        }""",
+              "ResponseMetadata": {
+                "HTTPHeaders": {
+                  "connection": "keep-alive",
+                  "content-length": "402",
+                  "content-type": "application/json",
+                  "date": "Wed, 07 May 2025 22:57:49 GMT",
+                  "x-amz-apigw-id": "test_api_id",
+                  "x-amzn-requestid": "test_api_id",
+                  "x-amzn-trace-id": "test_trace_id"
+                },
+                "HTTPStatusCode": 201,
+                "RequestId": "test_request_id",
+                "RetryAttempts": 0
+              }
+            }""",
             201,
         ),
     ],
@@ -387,32 +387,32 @@ def test_get_status_code(json_str, expected_status_code):
         ("{ }", None),
         (
             """{
-          "ResponseMetadata": {
-            "HTTPHeaders": {
-              "connection": "keep-alive",
-              "content-length": "402",
-              "content-type": "application/json",
-              "date": "Wed, 07 May 2025 22:57:49 GMT",
-              "x-amz-apigw-id": "test_api_id",
-              "x-amzn-requestid": "test_api_id",
-              "x-amzn-trace-id": "test_trace_id"
-            },
-            "HTTPStatusCode": 201,
-            "RequestId": "test_request_id",
-            "RetryAttempts": 0
-          },
-          "arn": "test_arn",
-          "createTime": "test_date",
-          "deletionProtection": false,
-          "endpoint": "test_endpoint",
-          "id": "test_graph_id",
-          "kmsKeyIdentifier": "AWS_OWNED_KEY",
-          "name": "test_graph_name",
-          "provisionedMemory": 16,
-          "publicConnectivity": true,
-          "replicaCount": 0,
-          "status": "CREATING"
-        }""",
+              "ResponseMetadata": {
+                "HTTPHeaders": {
+                  "connection": "keep-alive",
+                  "content-length": "402",
+                  "content-type": "application/json",
+                  "date": "Wed, 07 May 2025 22:57:49 GMT",
+                  "x-amz-apigw-id": "test_api_id",
+                  "x-amzn-requestid": "test_api_id",
+                  "x-amzn-trace-id": "test_trace_id"
+                },
+                "HTTPStatusCode": 201,
+                "RequestId": "test_request_id",
+                "RetryAttempts": 0
+              },
+              "arn": "test_arn",
+              "createTime": "test_date",
+              "deletionProtection": false,
+              "endpoint": "test_endpoint",
+              "id": "test_graph_id",
+              "kmsKeyIdentifier": "AWS_OWNED_KEY",
+              "name": "test_graph_name",
+              "provisionedMemory": 16,
+              "publicConnectivity": true,
+              "replicaCount": 0,
+              "status": "CREATING"
+            }""",
             "test_graph_id",
         ),
     ],
@@ -676,20 +676,6 @@ async def test_import_csv_from_s3_without_reset(
 
 
 @pytest.mark.asyncio
-async def test_import_csv_from_s3_missing_role_arn():
-    # Create mock NeptuneGraph with missing role_arn
-    mock_na_graph = MagicMock()
-    mock_na_graph.iam_client = MagicMock()
-    mock_na_graph.iam_client.role_arn = None
-
-    # Call the function and expect ValueError
-    with pytest.raises(ValueError, match="Role ARN is required to export to S3"):
-        import_csv_from_s3(
-            mock_na_graph, "s3://test-bucket/test-folder/", reset_graph_ahead=True
-        )
-
-
-@pytest.mark.asyncio
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
 async def test_import_csv_from_s3_permission_error(mock_get_bucket_encryption_key_arn):
     # Setup mocks
@@ -809,18 +795,6 @@ async def test_export_csv_to_s3_with_kms_key(
     # Verify the future is properly set up
     assert isinstance(future, asyncio.Future)
     assert not future.done()
-
-
-@pytest.mark.asyncio
-async def test_export_csv_to_s3_missing_role_arn():
-    # Create mock NeptuneGraph with missing role_arn
-    mock_na_graph = MagicMock()
-    mock_na_graph.iam_client = MagicMock()
-    mock_na_graph.iam_client.role_arn = None
-
-    # Call the function and expect ValueError
-    with pytest.raises(ValueError, match="Role ARN is required to export to S3"):
-        export_csv_to_s3(mock_na_graph, "s3://test-bucket/test-folder/")
 
 
 @pytest.mark.asyncio

@@ -13,7 +13,6 @@ from nx_neptune.instance_management import create_na_instance, import_csv_from_s
 """ 
 This is a sample script to demonstrate how nx-neptune can be used to handle 
 the lifecycle of a remote Neptune Analytics resources with create.
-TODO: destroy instance 
 """
 
 
@@ -36,12 +35,10 @@ async def main():
     logger.info(f"A new instance is created with graph-id: {graph_id}")
 
     # ---------------------- Import ---------------------------
-    os.environ['GRAPH_ID'] = graph_id
+    os.environ['NETWORK_GRAPH_ID'] = graph_id
     print(s3_location_import)
     na_graph = NeptuneGraph()
-    future = import_csv_from_s3(
-    na_graph, s3_location_import)
-    import_blocking_status = await future
+    await import_csv_from_s3(na_graph, s3_location_import)
 
     # Initialize a directed graph
     # ---------------------- Execute ---------------------------

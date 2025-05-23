@@ -10,7 +10,7 @@ can be used to perform basic CRUD operation against an existing Neptune Analytic
 
 """Read and load graphId from environment variable. """
 if not NETWORKX_GRAPH_ID:
-    raise Exception('Environment Variable GRAPH_ID is not defined')
+    raise Exception('Environment Variable NETWORKX_GRAPH_ID is not defined')
 
 """Clear the Neptune Analytics graph"""
 nx_graph = nx.Graph()

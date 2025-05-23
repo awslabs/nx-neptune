@@ -148,11 +148,6 @@ def import_csv_from_s3(
     iam_client = na_graph.iam_client
     role_arn = iam_client.role_arn
 
-    if role_arn is None:
-        raise ValueError(
-            "Role ARN is required to export to S3. Define Role ARN in the configuration. "
-        )
-
     # Retrieve key_arn for the bucket and permission check if present
     key_arn = _get_bucket_encryption_key_arn(s3_arn)
 
@@ -200,11 +195,6 @@ def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn, polling_interval=30) -> Fut
     na_client = na_graph.na_client.client
     iam_client = na_graph.iam_client
     role_arn = iam_client.role_arn
-
-    if role_arn is None:
-        raise ValueError(
-            "Role ARN is required to export to S3. Define Role ARN in the configuration. "
-        )
 
     # Retrieve key_arn for the bucket and permission check if present
     key_arn = _get_bucket_encryption_key_arn(s3_arn)

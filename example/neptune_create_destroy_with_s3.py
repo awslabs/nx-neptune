@@ -20,9 +20,9 @@ BACKEND = "neptune"
 print(f"Using backend={BACKEND}")
 
 nx.config.backends.neptune.create_new_instance = True
-# nx.config.backends.neptune.import_s3_bucket = "<your-s3-bucket>/cit-Patents"
-nx.config.backends.neptune.s3_iam_role = "<your-role>>"
-# nx.config.backends.neptune.export_s3_bucket = "<your-s3-bucket>/export"
+nx.config.backends.neptune.import_s3_bucket = "<your-s3-bucket>/cit-Patents"
+nx.config.backends.neptune.s3_iam_role = "<your-role>"
+nx.config.backends.neptune.export_s3_bucket = "<your-s3-bucket>/export"
 nx.config.backends.neptune.destroy_instance = True
 
 g = nx.DiGraph()

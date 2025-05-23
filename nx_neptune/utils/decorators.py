@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import logging
 import os
 from functools import wraps
@@ -34,6 +35,8 @@ def configure_if_nx_active():
             if "NX_ALGORITHM_TEST" in os.environ:
                 return func(*args, **kwargs)
 
+            loop = asyncio.get_running_loop()
+
             logger.debug(f"configure_if_nx_active: {func.__name__}")
             graph = args[0]
 
@@ -45,15 +48,28 @@ def configure_if_nx_active():
                 na_graph = NeptuneGraph.from_config(
                     config=neptune_config, graph=graph, logger=logger
                 )
-                neptune_config = asyncio.run(
-                    _execute_setup_routines_on_graph(na_graph, neptune_config)
-                )
+                if loop.is_running():
+                    pool = concurrent.futures.ThreadPoolExecutor()
+                    neptune_config = pool.submit(
+                        asyncio.run,
+                        _execute_setup_routines_on_graph(na_graph, neptune_config),
+                    ).result()
+                else:
+                    neptune_config = asyncio.run(
+                        _execute_setup_routines_on_graph(na_graph, neptune_config)
+                    )
 
             elif neptune_config.create_new_instance:
+                if loop.is_running():
+                    pool = concurrent.futures.ThreadPoolExecutor()
+                    neptune_config = pool.submit(
+                        asyncio.run, _execute_setup_new_graph(neptune_config, graph)
+                    ).result()
+                else:
+                    neptune_config = asyncio.run(
+                        _execute_setup_new_graph(neptune_config, graph)
+                    )
 
-                neptune_config = asyncio.run(
-                    _execute_setup_new_graph(neptune_config, graph)
-                )
                 na_graph = NeptuneGraph.from_config(
                     config=neptune_config, graph=graph, logger=logger
                 )
@@ -67,9 +83,17 @@ def configure_if_nx_active():
 
             # Execute teardown instructions
             if neptune_config.graph_id is not None:
-                asyncio.run(
-                    _execute_teardown_routines_on_graph(na_graph, neptune_config)
-                )
+                if loop.is_running():
+                    pool = concurrent.futures.ThreadPoolExecutor()
+                    pool.submit(
+                        asyncio.run,
+                        _execute_teardown_routines_on_graph(na_graph, neptune_config),
+                    ).result()
+                else:
+                    asyncio.run(
+                        _execute_teardown_routines_on_graph(na_graph, neptune_config)
+                    )
+
             return rv
 
         return wrapper
@@ -79,18 +103,14 @@ def configure_if_nx_active():
 
 async def _execute_setup_routines_on_graph(
     na_graph: NeptuneGraph, neptune_config: NeptuneConfig, *args, **kwargs
-) -> NeptuneGraph:
+) -> NeptuneConfig:
     # Restore graph data from S3
     if neptune_config.import_s3_bucket is not None:
         logger.debug(f"Restore graph data from S3: {neptune_config.import_s3_bucket}")
         await import_csv_from_s3(
             na_graph,
             neptune_config.import_s3_bucket,
-            (
-                neptune_config.skip_graph_reset
-                if hasattr(neptune_config, "skip_graph_reset")
-                else True
-            ),
+            neptune_config.skip_graph_reset,
         )
 
     # Restore graph data from a snapshot
@@ -104,7 +124,7 @@ async def _execute_setup_routines_on_graph(
 
 async def _execute_setup_new_graph(
     neptune_config: NeptuneConfig, graph: networkx.Graph, *args, **kwargs
-) -> NeptuneGraph:
+) -> NeptuneConfig:
     if neptune_config.import_s3_bucket is not None:
         # TODO: update this to do everything in one shot
 
@@ -175,7 +195,7 @@ def _sync_data_to_neptune(graph: networkx.Graph, neptune_graph: NeptuneGraph):
 
 async def _execute_teardown_routines_on_graph(
     na_graph: NeptuneGraph, neptune_config: NeptuneConfig, *args, **kwargs
-) -> NeptuneGraph:
+) -> NeptuneConfig:
     if neptune_config.graph_id is not None:
         if neptune_config.export_s3_bucket is not None:
             logger.debug("Export graph data to S3: " + neptune_config.export_s3_bucket)
@@ -194,6 +214,6 @@ async def _execute_teardown_routines_on_graph(
             await delete_na_instance(neptune_config.graph_id)
             # clear the graph id
             neptune_config = set_config_graph_id(None)
-            logger.debug(f"Instance destroyed: {neptune_config.graph_id}")
+            logger.debug("Instance destroyed")
 
     return neptune_config

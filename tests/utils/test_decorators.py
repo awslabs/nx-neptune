@@ -1,4 +1,5 @@
 import os
+import asyncio
 from asyncio import Future
 from unittest.mock import MagicMock, patch, call, ANY
 
@@ -13,6 +14,7 @@ from nx_neptune.utils.decorators import (
     _execute_teardown_routines_on_graph,
 )
 from nx_neptune.na_graph import NeptuneGraph
+from nx_neptune.clients import Edge, Node
 from nx_plugin import NeptuneConfig
 
 
@@ -47,6 +49,7 @@ class TestConfigureIfNxActive:
     @patch("nx_neptune.utils.decorators.get_config")
     @patch("nx_neptune.utils.decorators.NeptuneGraph")
     @patch("nx_neptune.utils.decorators.asyncio.run")
+    @patch("nx_neptune.utils.decorators.asyncio.get_running_loop")
     @patch("nx_neptune.utils.decorators._execute_teardown_routines_on_graph")
     @patch("nx_neptune.utils.decorators._execute_setup_routines_on_graph")
     @patch("nx_neptune.utils.decorators._sync_data_to_neptune")
@@ -55,6 +58,7 @@ class TestConfigureIfNxActive:
         mock_sync_data,
         mock_execute_setup_routines_on_graph,
         mock_execute_teardown_routines_on_graph,
+        mock_get_running_loop,
         mock_asyncio_run,
         mock_neptune_graph,
         mock_get_config,
@@ -70,7 +74,12 @@ class TestConfigureIfNxActive:
         # Setup mock NeptuneGraph
         mock_na_graph = MagicMock(spec=NeptuneGraph)
         mock_neptune_graph.from_config.return_value = mock_na_graph
-        g = nx.Graph
+        g = nx.Graph()
+
+        # Setup mock for event loop
+        mock_loop = MagicMock()
+        mock_loop.is_running.return_value = False
+        mock_get_running_loop.return_value = mock_loop
 
         # Setup mock for asyncio.run
         mock_asyncio_run.side_effect = [mock_config, None]  # For setup and teardown
@@ -110,6 +119,7 @@ class TestConfigureIfNxActive:
     @patch("nx_neptune.utils.decorators.get_config")
     @patch("nx_neptune.utils.decorators.NeptuneGraph")
     @patch("nx_neptune.utils.decorators.asyncio.run")
+    @patch("nx_neptune.utils.decorators.asyncio.get_running_loop")
     @patch("nx_neptune.utils.decorators._execute_teardown_routines_on_graph")
     @patch("nx_neptune.utils.decorators._execute_setup_new_graph")
     @patch("nx_neptune.utils.decorators._sync_data_to_neptune")
@@ -118,6 +128,7 @@ class TestConfigureIfNxActive:
         mock_sync_data,
         mock_execute_setup_new_graph,
         mock_execute_teardown_routines_on_graph,
+        mock_get_running_loop,
         mock_asyncio_run,
         mock_neptune_graph,
         mock_get_config,
@@ -132,6 +143,11 @@ class TestConfigureIfNxActive:
 
         mock_updated_config = MagicMock(spec=NeptuneConfig)
         mock_updated_config.graph_id = "new-graph-id"
+
+        # Setup mock for event loop
+        mock_loop = MagicMock()
+        mock_loop.is_running.return_value = False
+        mock_get_running_loop.return_value = mock_loop
 
         # Setup mock for asyncio.run
         mock_asyncio_run.side_effect = [
@@ -174,6 +190,63 @@ class TestConfigureIfNxActive:
             mock_na_graph, mock_updated_config
         )
 
+    @patch("nx_neptune.utils.decorators.get_config")
+    @patch("nx_neptune.utils.decorators.NeptuneGraph")
+    @patch("nx_neptune.utils.decorators.asyncio.get_running_loop")
+    @patch("nx_neptune.utils.decorators.concurrent.futures.ThreadPoolExecutor")
+    @patch("nx_neptune.utils.decorators._execute_setup_routines_on_graph")
+    @patch("nx_neptune.utils.decorators._sync_data_to_neptune")
+    def test_with_running_event_loop(
+        self,
+        mock_sync_data,
+        mock_execute_setup_routines_on_graph,
+        mock_thread_pool,
+        mock_get_running_loop,
+        mock_neptune_graph,
+        mock_get_config,
+    ):
+        """Test the decorator when an event loop is already running"""
+        # Setup mock config
+        mock_config = MagicMock(spec=NeptuneConfig)
+        mock_config.graph_id = "test-graph-id"
+        mock_config.create_new_instance = False
+        mock_get_config.return_value = mock_config
+        mock_config.validate_config.return_value = None
+
+        # Setup mock NeptuneGraph
+        mock_na_graph = MagicMock(spec=NeptuneGraph)
+        mock_neptune_graph.from_config.return_value = mock_na_graph
+        g = nx.Graph()
+
+        # Setup mock for event loop
+        mock_loop = MagicMock()
+        mock_loop.is_running.return_value = True
+        mock_get_running_loop.return_value = mock_loop
+
+        # Setup mock for ThreadPoolExecutor
+        mock_pool = MagicMock()
+        mock_thread_pool.return_value = mock_pool
+        mock_future = MagicMock()
+        mock_future.result.return_value = mock_config
+        mock_pool.submit.return_value = mock_future
+
+        # Create a test function
+        def test_func(graph, arg1, arg2=None):
+            return f"Function called with {graph}, {arg1}, {arg2}"
+
+        # Apply the decorator
+        decorated_func = configure_if_nx_active()(test_func)
+
+        # Call the decorated function
+        result = decorated_func(g, "test_arg", arg2="test_kwarg")
+
+        # Verify the function was called with the NeptuneGraph
+        assert result == f"Function called with {mock_na_graph}, test_arg, test_kwarg"
+
+        # Verify ThreadPoolExecutor was used
+        mock_thread_pool.assert_called()
+        mock_pool.submit.assert_called()
+
 
 class TestExecuteSetupRoutinesOnGraph:
     """Tests for _execute_setup_routines_on_graph function"""
@@ -187,30 +260,23 @@ class TestExecuteSetupRoutinesOnGraph:
         mock_config.skip_graph_reset = True
         mock_config.restore_snapshot = None
 
-        # Setup mock NeptuneGraph with proper IAM client
+        # Setup mock NeptuneGraph
         mock_na_graph = MagicMock(spec=NeptuneGraph)
-        mock_iam_client = MagicMock()
-        mock_iam_client.role_arn = "arn:aws:iam::123456789012:role/test-role"
-        mock_na_graph.iam_client = mock_iam_client
 
         # Mock import_csv_from_s3
         with patch("nx_neptune.utils.decorators.import_csv_from_s3") as mock_import:
-            future = Future()
-            future.set_result(mock_config)
-            mock_import.return_value = future
+            mock_import.return_value = asyncio.Future()
+            mock_import.return_value.set_result(None)
 
             # Call the function
             result = await _execute_setup_routines_on_graph(mock_na_graph, mock_config)
 
-            # Verify import_csv_from_s3 was called with correct parameters
+            # Verify import_csv_from_s3 was called
             mock_import.assert_called_once_with(
-                mock_na_graph,
-                "test-bucket",
-                mock_config.skip_graph_reset,
+                mock_na_graph, "test-bucket", mock_config.skip_graph_reset
             )
 
             # Verify the result is the config
-            assert result == future.result()
             assert result == mock_config
 
     @pytest.mark.asyncio
@@ -252,6 +318,68 @@ class TestExecuteSetupNewGraph:
     """Tests for _execute_setup_new_graph function"""
 
     @pytest.mark.asyncio
+    async def test_with_import_s3_bucket(self):
+        """Test with import_s3_bucket set"""
+        # Setup mock config
+        mock_config = MagicMock(spec=NeptuneConfig)
+        mock_config.import_s3_bucket = "test-bucket"
+        mock_config.restore_snapshot = None
+
+        # Setup mock graph
+        mock_graph = MagicMock(spec=nx.Graph)
+
+        # Mock create_na_instance
+        with patch("nx_neptune.utils.decorators.create_na_instance") as mock_create:
+            future = asyncio.Future()
+            future.set_result("new-graph-id")
+            mock_create.return_value = future
+
+            # Mock set_config_graph_id
+            with patch(
+                "nx_neptune.utils.decorators.set_config_graph_id"
+            ) as mock_set_config:
+                mock_updated_config = MagicMock(spec=NeptuneConfig)
+                mock_updated_config.import_s3_bucket = "test-bucket"
+                mock_set_config.return_value = mock_updated_config
+
+                # Mock NeptuneGraph
+                with patch(
+                    "nx_neptune.utils.decorators.NeptuneGraph"
+                ) as mock_neptune_graph:
+                    mock_na_graph = MagicMock(spec=NeptuneGraph)
+                    mock_neptune_graph.from_config.return_value = mock_na_graph
+
+                    # Mock import_csv_from_s3
+                    with patch(
+                        "nx_neptune.utils.decorators.import_csv_from_s3"
+                    ) as mock_import:
+                        future = asyncio.Future()
+                        future.set_result(None)
+                        mock_import.return_value = future
+
+                        # Call the function
+                        result = await _execute_setup_new_graph(mock_config, mock_graph)
+
+                        # Verify create_na_instance was called
+                        mock_create.assert_called_once()
+
+                        # Verify set_config_graph_id was called
+                        mock_set_config.assert_called_once_with("new-graph-id")
+
+                        # Verify NeptuneGraph.from_config was called
+                        mock_neptune_graph.from_config.assert_called_once_with(
+                            config=mock_updated_config, graph=mock_graph, logger=ANY
+                        )
+
+                        # Verify import_csv_from_s3 was called
+                        mock_import.assert_called_once_with(
+                            mock_na_graph, "test-bucket"
+                        )
+
+                        # Verify the result is the updated config
+                        assert result == mock_updated_config
+
+    @pytest.mark.asyncio
     async def test_with_restore_snapshot(self):
         """Test with restore_snapshot set"""
         # Setup mock config
@@ -259,12 +387,15 @@ class TestExecuteSetupNewGraph:
         mock_config.import_s3_bucket = None
         mock_config.restore_snapshot = "test-snapshot"
 
+        # Setup mock graph
+        mock_graph = MagicMock(spec=nx.Graph)
+
         # Call the function and expect exception
         with pytest.raises(
             Exception,
             match="Not implemented yet \\(workflow: create_new_instance w/ restore_snapshot\\)",
         ):
-            await _execute_setup_new_graph(mock_config, nx.Graph())
+            await _execute_setup_new_graph(mock_config, mock_graph)
 
     @pytest.mark.asyncio
     async def test_create_empty_instance(self):
@@ -274,9 +405,12 @@ class TestExecuteSetupNewGraph:
         mock_config.import_s3_bucket = None
         mock_config.restore_snapshot = None
 
+        # Setup mock graph
+        mock_graph = MagicMock(spec=nx.Graph)
+
         # Mock create_na_instance
         with patch("nx_neptune.utils.decorators.create_na_instance") as mock_create:
-            future = Future()
+            future = asyncio.Future()
             future.set_result("new-graph-id")
             mock_create.return_value = future
 
@@ -288,7 +422,16 @@ class TestExecuteSetupNewGraph:
                 mock_set_config.return_value = mock_updated_config
 
                 # Call the function
-                result = await _execute_setup_new_graph(mock_config, nx.Graph())
+                result = await _execute_setup_new_graph(mock_config, mock_graph)
+
+                # Verify create_na_instance was called
+                mock_create.assert_called_once()
+
+                # Verify set_config_graph_id was called
+                mock_set_config.assert_called_once_with("new-graph-id")
+
+                # Verify the result is the updated config
+                assert result == mock_updated_config
 
                 # Verify create_na_instance was called
                 mock_create.assert_called_once()
@@ -403,8 +546,8 @@ class TestExecuteTeardownRoutinesOnGraph:
 
         # Mock export_csv_to_s3
         with patch("nx_neptune.utils.decorators.export_csv_to_s3") as mock_export:
-            future = Future()
-            future.set_result(mock_config)
+            future = asyncio.Future()
+            future.set_result(None)
             mock_export.return_value = future
 
             # Call the function
@@ -480,8 +623,8 @@ class TestExecuteTeardownRoutinesOnGraph:
                 mock_updated_config = MagicMock(spec=NeptuneConfig)
                 mock_set_config.return_value = mock_updated_config
 
-                future = Future()
-                future.set_result(mock_updated_config)
+                future = asyncio.Future()
+                future.set_result(None)
                 mock_delete.return_value = future
 
                 # Call the function
@@ -515,7 +658,7 @@ class TestExecuteTeardownRoutinesOnGraph:
         # Call the function
         result = await _execute_teardown_routines_on_graph(mock_na_graph, mock_config)
 
-        # Verify the result is the config (no operations performed)
+        # Verify the result is the config
         assert result == mock_config
 
     @pytest.mark.asyncio
