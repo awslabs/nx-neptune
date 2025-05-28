@@ -183,8 +183,7 @@ class IamClient:
             f"Permission check on ARN(s): {self.role_arn}, {bucket_arn}, {key_arn}"
         )
 
-        bucket_full_path = bucket_arn.replace("s3://", "arn:aws:s3:::", 1)
-
+        bucket_full_path = _get_s3_in_arn(bucket_arn)
         if not self.check_assume_role(SERVICE_NA):
             raise ValueError(f"Missing role assume on principle {SERVICE_NA}")
         # Check S3
@@ -292,6 +291,8 @@ class IamClient:
         # Validate each ARN
         arn_parser = ArnParser()
         for arn in arn_list:
+            if arn and arn[-1] == "/":
+                raise ValueError(f"Invalid ARN, '{arn}' ended with /")
             try:
                 arn_parser.parse_arn(arn)
             except ValueError as e:
@@ -299,3 +300,24 @@ class IamClient:
 
         # All ARNs are valid if we reach here
         return True
+
+
+def _get_s3_in_arn(s3_path: str) -> str:
+    """
+    Converts a S3 path to an ARN format for use in IAM policy evaluation.
+
+    This method transforms S3 paths by:
+    1. Removing any trailing slashes
+    2. Replacing the 's3://' prefix with 'arn:aws:s3:::'
+
+    Args:
+        s3_path (str): The S3 path to convert.
+
+    Returns:
+        str: The S3 path converted to ARN format (arn:aws:s3:::bucket-name/folder)
+             or the original path with trailing slashes removed if it doesn't
+             start with 's3://'
+    """
+    s3_path = s3_path.rstrip("/")
+    s3_path = s3_path.replace("s3://", "arn:aws:s3:::", 1)
+    return s3_path
