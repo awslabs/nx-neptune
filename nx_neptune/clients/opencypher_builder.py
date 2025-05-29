@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from cymple import QueryBuilder
 
-from .na_models import Edge, Node
+from .na_models import Edge, ImmutableEdgeGroupBy, Node
 
 # Internal constants for reference names
 _SRC_NODE_REF = "a"
@@ -194,6 +194,32 @@ def insert_node(node: Node) -> Tuple[str, Dict[str, Any]]:
     ).query, param_builder.get_param_values()
 
 
+def insert_nodes(nodes: List[Node]) -> Tuple[List[str], List[Dict[str, Any]]]:
+    """
+    Create a list of nodes in the graph.
+
+    :param node: A Node object with labels and properties
+    :return: Tuple of (OpenCypher query string, parameter map) for node creation
+
+    """
+
+    group_by_buckets: dict[tuple, list] = {}
+
+    for node in nodes:
+        group_by_key = node.to_group_by()
+        group_by_buckets.setdefault(group_by_key, []).append(node.to_dict())
+
+    query_list = []
+    para_list = []
+
+    for key, value in group_by_buckets.items():
+        # Convert key to actual query_string
+        query_list.append(get_node_batch_query_str(key))
+        para_list.append({"nodes": value})
+
+    return query_list, para_list
+
+
 def insert_edge(edge: Edge) -> Tuple[str, Dict[str, Any]]:
     """
     Create an edge (relationship) in the graph.
@@ -233,6 +259,63 @@ def insert_edge(edge: Edge) -> Tuple[str, Dict[str, Any]]:
         ).node(ref_name=_DEST_NODE_REF)
 
     return qb.query, param_builder.get_param_values()
+
+
+def get_edge_batch_query_str(group_by_key: ImmutableEdgeGroupBy):
+    # TODO: Replace with cymple when it provide wider support of UNWIND.
+    src_labels = (
+        ":" + ":".join(group_by_key.labels_src_node)
+        if group_by_key.labels_src_node
+        else ""
+    )
+    dest_labels = (
+        ":" + ":".join(group_by_key.labels_dest_node)
+        if group_by_key.labels_dest_node
+        else ""
+    )
+
+    if group_by_key.directed:
+        return (
+            f"UNWIND $relations AS rel MATCH (a{src_labels} {{`~id`: rel.from}}), (b{dest_labels} {{`~id`: rel.to}}) "
+            f"CREATE (a)-[r:{group_by_key.label}]->(b) SET r += rel.properties"
+        )
+    else:
+        return (
+            f"UNWIND $relations AS rel MATCH (a{src_labels} {{`~id`: rel.from}}), (b{dest_labels} {{`~id`: rel.to}}) "
+            f"CREATE (a)-[r1:{group_by_key.label}]->(b), (b)-[r2:{group_by_key.label}]->(a)"
+            f"SET r1 += rel.properties, r2 += rel.properties"
+        )
+
+
+def get_node_batch_query_str(labels_tuple):
+    # TODO: Replace with cymple when it provide wider support of UNWIND.
+    labels = ":" + ":".join(labels_tuple) if labels_tuple else ""
+
+    return f"UNWIND $nodes as node CREATE (n{labels} {{`~id`: node.id}}) SET n += node"
+
+
+def insert_edges(edges: List[Edge]) -> Tuple[List[str], List[Dict[str, Any]]]:
+    """
+    Insert a list of edges in the graph.
+
+    :param edges: An list of Edge object with label, properties, node_src, node_dest, and is_directed flag
+    :return: Tuple of (OpenCypher query string, parameter map) for edge creation
+
+    """
+    group_by_buckets: dict[ImmutableEdgeGroupBy, list] = {}
+
+    for edge in edges:
+        group_by_key = edge.to_group_by()
+        group_by_buckets.setdefault(group_by_key, []).append(edge.to_dict())
+
+    query_list = []
+    para_list = []
+
+    for key, value in group_by_buckets.items():
+        query_list.append(get_edge_batch_query_str(key))
+        para_list.append({"relations": value})
+
+    return query_list, para_list
 
 
 def update_node(

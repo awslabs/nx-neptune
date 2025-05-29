@@ -106,6 +106,13 @@ class NeptuneConfig(Config):
     destroy_instance: bool = False
     reset_graph: bool = False
 
+    ############################################
+    # Configuration for batch inserts:
+    # When the number of incoming graph nodes or edges exceeds the specified thresholds,
+    # the update process will be performed in chunks to optimize performance and resource usage.
+    batch_update_node_size: int = 20000
+    batch_update_edge_size: int = 10000
+
     def validate_config(self):
         """Validate the Neptune configuration."""
         # Validate setup

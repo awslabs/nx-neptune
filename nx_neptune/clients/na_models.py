@@ -5,6 +5,8 @@ __all__ = [
 
 from typing import Any, Dict, List, Tuple
 
+from attr import dataclass
+
 DEFAULT_NODE_LABEL_TYPE = "Node"
 
 
@@ -22,7 +24,7 @@ class Node:
     """
 
     def __init__(self, id, labels=None, properties=None):
-        self.id = id
+        self.id = str(id)
         self.labels = labels if labels else []
         self.properties = properties if properties else {}
 
@@ -47,6 +49,20 @@ class Node:
             labels=json.get("~labels"),
             properties=json.get("~properties"),
         )
+
+    def to_dict(self) -> Dict:
+        """
+        Convert node to a Dict with in the format that is compatible with UNWIND operation.
+        """
+        node_in_dict = self.properties.copy()
+        node_in_dict["id"] = self.id
+        return node_in_dict
+
+    def to_group_by(self) -> tuple:
+        """
+        Return the group by key for UNWIND operation, in the form of tuple.
+        """
+        return tuple(self.labels)
 
     def __eq__(self, other):
         """
@@ -196,6 +212,28 @@ class Edge:
         """
         return [self.node_src.id, self.node_dest.id]
 
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Converts edge to a List with the src and destination Node ids
+        :return: (List): a pair of strings with the id of the Nodes
+        """
+        return {
+            "from": self.node_src.id,
+            "to": self.node_dest.id,
+            "properties": self.properties,
+        }
+
+    def to_group_by(self):
+        """
+        Return a group by key identifier to categorise the node during UNWIND operation.
+        """
+        return ImmutableEdgeGroupBy(
+            label=self.label,
+            labels_src_node=tuple(self.node_src.labels),
+            labels_dest_node=tuple(self.node_dest.labels),
+            directed=self.is_directed,
+        )
+
     def __eq__(self, other):
         """
         Comparison operator of an Edge
@@ -216,3 +254,15 @@ class Edge:
             f"Edge(label={self.label}, properties={self.properties}, node_src={self.node_src}, "
             f"node_dest={self.node_dest}, is_directed={self.is_directed})"
         )
+
+
+@dataclass(frozen=True)
+class ImmutableEdgeGroupBy:
+    """
+    Immutable data class to represent the group by key during the Edge UNWIND process.
+    """
+
+    labels_src_node: Tuple[str, ...]
+    labels_dest_node: Tuple[str, ...]
+    label: str
+    directed: bool

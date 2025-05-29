@@ -74,7 +74,7 @@ def configure_if_nx_active():
                     config=neptune_config, graph=graph, logger=logger
                 )
 
-            _sync_data_to_neptune(graph, na_graph)
+            _sync_data_to_neptune(graph, na_graph, neptune_config)
 
             converted_args = (na_graph,) + args[1:]
 
@@ -163,32 +163,45 @@ async def _execute_setup_new_graph(
     return neptune_config
 
 
-def _sync_data_to_neptune(graph: networkx.Graph, neptune_graph: NeptuneGraph):
+def _sync_data_to_neptune(
+    graph: networkx.Graph, neptune_graph: NeptuneGraph, neptune_config: NeptuneConfig
+):
     logger.debug(
         f"Sync data to instance: nodes:{len(graph.nodes())}, edges:{len(graph.edges())}"
     )
 
+    batch_size_node = neptune_config.batch_update_node_size
+    batch_size_edge = neptune_config.batch_update_edge_size
+
+    if not neptune_config.skip_graph_reset:
+        neptune_graph.clear_graph()
+
     """
     Push all Nodes from NetworkX into Neptune Analytics
     """
-    for node in graph.nodes().data():
-        na_node = Node.convert_from_nx(node)
-        logger.debug(f"add_node={na_node}")
-        neptune_graph.add_node(na_node)
+    nodes = [Node.convert_from_nx((n, d)) for n, d in graph.nodes(data=True)]
+    for i in range(0, len(nodes), batch_size_node):
+        last_node_pos = (
+            len(nodes) if (i + batch_size_node) > len(nodes) else i + batch_size_node
+        )
+        logger.debug(f"Adding nodes[{i} - {last_node_pos}]")
+        batch = nodes[i:last_node_pos]
+        neptune_graph.add_nodes(batch)
 
     """
     Push all Edges from NetworkX into Neptune Analytics
     """
-    for edge in graph.edges().data():
-        na_edge = Edge.convert_from_nx(edge)
-        logger.debug(f"add_edge={na_edge}")
-        neptune_graph.add_edge(na_edge)
-
-        # Push the reverse direction edge if the graph is undirected
-        if not graph.is_directed():
-            na_reverse_edge = Edge.convert_from_nx(edge).to_reverse_edge()
-            logger.debug(f"add_edge={na_reverse_edge}")
-            neptune_graph.add_edge(na_reverse_edge)
+    edges = [
+        Edge.convert_from_nx(edge=edge, is_directed=graph.is_directed())
+        for edge in graph.edges(data=True)
+    ]
+    for i in range(0, len(edges), batch_size_edge):
+        last_edge_pos = (
+            len(edges) if (i + batch_size_edge) > len(edges) else i + batch_size_edge
+        )
+        logger.debug(f"Adding edges[{i} - {last_edge_pos}]")
+        batch = edges[i:last_edge_pos]
+        neptune_graph.add_edges(batch)
 
     return neptune_graph
 

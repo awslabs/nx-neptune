@@ -2,8 +2,6 @@
 Tests for the ParameterMapBuilder class in the opencypher_builder module.
 """
 
-import pytest
-
 from nx_neptune.clients.opencypher_builder import ParameterMapBuilder
 
 

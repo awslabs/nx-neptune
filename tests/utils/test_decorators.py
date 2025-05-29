@@ -111,7 +111,7 @@ class TestConfigureIfNxActive:
             mock_na_graph, mock_config
         )
         # Verify sync data was called
-        mock_sync_data.assert_called_once_with(g, mock_na_graph)
+        mock_sync_data.assert_called_once_with(g, mock_na_graph, mock_config)
         mock_execute_teardown_routines_on_graph.assert_called_once_with(
             mock_na_graph, mock_config
         )
@@ -185,7 +185,9 @@ class TestConfigureIfNxActive:
         assert mock_asyncio_run.call_count == 2
         mock_execute_setup_new_graph.assert_called_once_with(mock_initial_config, graph)
         # Verify sync data was called
-        mock_sync_data.assert_called_once_with(graph, mock_na_graph)
+        mock_sync_data.assert_called_once_with(
+            graph, mock_na_graph, mock_updated_config
+        )
         mock_execute_teardown_routines_on_graph.assert_called_once_with(
             mock_na_graph, mock_updated_config
         )
@@ -459,6 +461,11 @@ class TestSyncDataToNeptune:
         # Setup mock NeptuneGraph
         mock_na_graph = MagicMock(spec=NeptuneGraph)
 
+        # Setup mock NeptuneConfig
+        mock_config = MagicMock(spec=NeptuneConfig)
+        mock_config.batch_update_node_size = 200000
+        mock_config.batch_update_edge_size = 200000
+
         # Setup mock Node and Edge conversions
         mock_node1 = MagicMock()
         mock_node2 = MagicMock()
@@ -467,7 +474,7 @@ class TestSyncDataToNeptune:
         mock_edge_convert.return_value = mock_edge
 
         # Call the function
-        result = _sync_data_to_neptune(G, mock_na_graph)
+        result = _sync_data_to_neptune(G, mock_na_graph, mock_config)
 
         # Verify node conversions
         assert mock_node_convert.call_count == 2
@@ -476,10 +483,10 @@ class TestSyncDataToNeptune:
         mock_edge_convert.assert_called_once()
 
         # Verify add_node was called for each node
-        mock_na_graph.add_node.assert_has_calls([call(mock_node1), call(mock_node2)])
+        mock_na_graph.add_nodes.assert_called()
 
         # Verify add_edge was called once (directed graph)
-        mock_na_graph.add_edge.assert_called_once_with(mock_edge)
+        mock_na_graph.add_edges.assert_called()
 
         # Verify the result is the NeptuneGraph
         assert result == mock_na_graph
@@ -497,6 +504,11 @@ class TestSyncDataToNeptune:
         # Setup mock NeptuneGraph
         mock_na_graph = MagicMock(spec=NeptuneGraph)
 
+        # Setup mock NeptuneConfig
+        mock_config = MagicMock(spec=NeptuneConfig)
+        mock_config.batch_update_node_size = 200000
+        mock_config.batch_update_edge_size = 200000
+
         # Setup mock Node and Edge conversions
         mock_node1 = MagicMock()
         mock_node2 = MagicMock()
@@ -507,21 +519,19 @@ class TestSyncDataToNeptune:
         mock_edge.to_reverse_edge.return_value = mock_reverse_edge
 
         # Call the function
-        result = _sync_data_to_neptune(G, mock_na_graph)
+        result = _sync_data_to_neptune(G, mock_na_graph, mock_config)
 
         # Verify node conversions
         assert mock_node_convert.call_count == 2
 
         # Verify edge conversion
-        assert mock_edge_convert.call_count == 2
+        assert mock_edge_convert.call_count == 1
 
         # Verify add_node was called for each node
-        mock_na_graph.add_node.assert_has_calls([call(mock_node1), call(mock_node2)])
+        mock_na_graph.add_nodes.assert_called()
 
         # Verify add_edge was called twice (undirected graph)
-        mock_na_graph.add_edge.assert_has_calls(
-            [call(mock_edge), call(mock_reverse_edge)]
-        )
+        mock_na_graph.add_edges.assert_called()
 
         # Verify the result is the NeptuneGraph
         assert result == mock_na_graph

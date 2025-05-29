@@ -39,6 +39,8 @@ __all__ = [
     "set_config_graph_id",
 ]
 
+from .clients.opencypher_builder import insert_edges, insert_nodes
+
 
 class NeptuneGraph:
     """
@@ -120,6 +122,15 @@ class NeptuneGraph:
         query_str, para_map = insert_node(node)
         return self.na_client.execute_generic_query(query_str, para_map)
 
+    def add_nodes(self, nodes: List[Node]):
+        """
+        Method to add nodes into the existing graph,
+        which this client hold references to.
+        """
+        query_strs, para_maps = insert_nodes(nodes)
+        for query, params in zip(query_strs, para_maps):
+            self.na_client.execute_generic_query(query, params)
+
     def update_node(
         self,
         match_labels: str,
@@ -168,6 +179,7 @@ class NeptuneGraph:
     def clear_graph(self):
         """
         To perform truncation to clear all nodes and edges on the graph.
+
         """
         query_str = clear_query()
         return self.na_client.execute_generic_query(query_str)
@@ -184,6 +196,19 @@ class NeptuneGraph:
         """
         query_str, para_map = insert_edge(edge)
         return self.na_client.execute_generic_query(query_str, para_map)
+
+    def add_edges(self, edges: List[Edge]):
+        """
+        Perform an insertion to add a list of  relationships into the graph.
+
+        Args:
+            edges: List of Edges (Edge object)
+
+        """
+        query_strs, para_maps = insert_edges(edges)
+
+        for query, params in zip(query_strs, para_maps):
+            self.na_client.execute_generic_query(query, params)
 
     def update_edges(
         self,

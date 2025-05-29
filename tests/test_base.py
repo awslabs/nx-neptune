@@ -41,6 +41,8 @@ def test_config_init():
         "save_snapshot": False,
         "skip_graph_reset": False,
         "verbose": 0,
+        "batch_update_node_size": 20000,
+        "batch_update_edge_size": 10000,
     }
 
     from nx_plugin.config import _config
