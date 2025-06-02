@@ -55,15 +55,15 @@ for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
 
 
 logger.info("\n-------------------\n")
-# scenario: AWS - vertexLabel
-r = nx.pagerank(g, backend="neptune", vertexLabel="A")
+# scenario: AWS - vertex_label
+r = nx.pagerank(g, backend="neptune", vertex_label="A")
 logger.info("Algorithm execution - Neptune Analytics: ")
 for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
     logger.info(f"{key}: {value}")
 
 logger.info("\n-------------------\n")
-# scenario: AWS - edgeLabels
-r = nx.pagerank(g, backend="neptune", edgeLabels=["RELATES_TO"])
+# scenario: AWS - edge_labels
+r = nx.pagerank(g, backend="neptune", edge_labels=["RELATES_TO"])
 logger.info("Algorithm execution - Neptune Analytics: ")
 for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
     logger.info(f"{key}: {value}")
@@ -76,23 +76,23 @@ for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
     logger.info(f"{key}: {value}")
 
 logger.info("\n-------------------\n")
-# scenario: AWS - traversalDirection
-r = nx.pagerank(g, backend="neptune", traversalDirection="inbound")
+# scenario: AWS - traversal_direction
+r = nx.pagerank(g, backend="neptune", traversal_direction="inbound")
 logger.info("Algorithm execution - Neptune Analytics: ")
 for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
     logger.info(f"{key}: {value}")
 
 
 logger.info("\n-------------------\n")
-# scenario: AWS - edgeWeightType & edgeWeightProperty
-r = nx.pagerank(g, backend="neptune", edgeWeightType="int", edgeWeightProperty="weight")
+# scenario: AWS - edge_weight_type & edge_weight_property
+r = nx.pagerank(g, backend="neptune", edge_weight_type="int", edge_weight_property="weight")
 logger.info("Algorithm execution - Neptune Analytics: ")
 for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
     logger.info(f"{key}: {value}")
 
 logger.info("\n-------------------\n")
-# scenario: AWS - sourceNodes & sourceWeights
-r = nx.pagerank(g, backend="neptune", sourceNodes=["A", "B"], sourceWeights=[1, 1.5])
+# scenario: AWS - source_nodes & source_weights
+r = nx.pagerank(g, backend="neptune", source_nodes=["A", "B"], source_weights=[1, 1.5])
 logger.info("Algorithm execution - Neptune Analytics: ")
 for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
     logger.info(f"{key}: {value}")
