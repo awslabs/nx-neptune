@@ -1,14 +1,22 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from nx_neptune.algorithms.util import process_unsupported_param
 from nx_neptune.clients.neptune_constants import (
+    PARAM_CURRENCY,
     PARAM_DAMPING_FACTOR,
     PARAM_DANGLING,
+    PARAM_EDGE_LABELS,
+    PARAM_EDGE_WEIGHT_PROPERTY,
+    PARAM_EDGE_WEIGHT_TYPE,
     PARAM_NSTART,
     PARAM_NUM_OF_ITERATIONS,
     PARAM_PERSONALIZATION,
+    PARAM_SOURCE_NODES,
+    PARAM_SOURCE_WEIGHTS,
     PARAM_TOLERANCE,
+    PARAM_TRAVERSAL_DIRECTION,
+    PARAM_VERTEX_LABEL,
     PARAM_WEIGHT,
     RESPONSE_RANK,
 )
@@ -31,6 +39,14 @@ def pagerank(
     nstart: Optional[Dict],
     weight: Optional[str] = None,
     dangling: Optional[Dict] = None,
+    vertex_label: Optional[str] = None,
+    edge_labels: Optional[List] = None,
+    concurrency: Optional[int] = None,
+    traversal_direction: Optional[str] = None,
+    edge_weight_property: Optional[str] = None,
+    edge_weight_type: Optional[str] = None,
+    source_nodes: Optional[List] = None,
+    source_weights: Optional[List] = None,
 ):
     """
     Executes PageRank algorithm on the graph.
@@ -44,9 +60,16 @@ def pagerank(
     :param nstart: Dict with nodes as keys and initial PageRank values (not supported in Neptune Analytics)
     :param weight: Edge attribute to use as weight (not supported in Neptune Analytics)
     :param dangling: Dict with nodes as keys and dangling values (not supported in Neptune Analytics)
-    :return: Dict of nodes with PageRank as value
-
-    Note: The parameters personalization, nstart, weight, and dangling are not supported
+    :param vertex_label: A vertex label for vertex filtering.
+    :param edge_labels: To filter on one more edge labels, provide a list of the ones to filter on.
+    If no edgeLabels field is provided then all edge labels are processed during traversal.
+    :param concurrency: Controls the number of concurrent threads used to run the algorithm.
+    :param traversal_direction: The direction of edge to follow. Must be one of: "outbound" or "inbound".
+    :param edge_weight_property: The weight property to consider for weighted pageRank computation.
+    :param edge_weight_type: required if edgeWeightProperty is present, valid values: "int", "long", "float", "double".
+    :param source_nodes: If a vertexLabel is provided, nodes that do not have the given vertexLabel are ignored.
+    :param source_weights: A personalization weight list. The weight distribution among the personalized vertices.
+    Note: The parameters personalization, nstart, and dangling are not supported
     in the Neptune Analytics implementation and will be ignored if provided.
     """
     logger.debug(f"nx_neptune.pagerank() with: \nneptune_graph={neptune_graph}")
@@ -64,10 +87,40 @@ def pagerank(
     if tol and tol != 1e-06:
         parameters[PARAM_TOLERANCE] = tol
 
+    # Process NA specific parameters
+    if vertex_label:
+        parameters[PARAM_VERTEX_LABEL] = vertex_label
+
+    if edge_labels:
+        parameters[PARAM_EDGE_LABELS] = edge_labels
+
+    if concurrency is not None:
+        parameters[PARAM_CURRENCY] = concurrency
+
+    if traversal_direction is not None:
+        parameters[PARAM_TRAVERSAL_DIRECTION] = traversal_direction
+
+    # AWS options always take precedence
+    if edge_weight_property:
+        parameters[PARAM_EDGE_WEIGHT_PROPERTY] = edge_weight_property
+    elif weight:
+        parameters[PARAM_EDGE_WEIGHT_PROPERTY] = weight
+
+    # AWS options always take precedence
+    if edge_weight_type:
+        parameters[PARAM_EDGE_WEIGHT_TYPE] = edge_weight_type
+    elif edge_weight_property or weight:
+        parameters[PARAM_EDGE_WEIGHT_TYPE] = "float"
+
+    if source_nodes:
+        parameters[PARAM_SOURCE_NODES] = source_nodes
+
+    if source_weights:
+        parameters[PARAM_SOURCE_WEIGHTS] = source_weights
+
     # Process unsupported parameters (for warnings only)
     process_unsupported_param(
         {
-            PARAM_WEIGHT: weight,
             PARAM_PERSONALIZATION: personalization,
             PARAM_NSTART: nstart,
             PARAM_DANGLING: dangling,

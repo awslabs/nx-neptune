@@ -8,6 +8,14 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_DAMPING_FACTOR,
     PARAM_NUM_OF_ITERATIONS,
     PARAM_TOLERANCE,
+    PARAM_VERTEX_LABEL,
+    PARAM_EDGE_LABELS,
+    PARAM_CURRENCY,
+    PARAM_TRAVERSAL_DIRECTION,
+    PARAM_EDGE_WEIGHT_PROPERTY,
+    PARAM_EDGE_WEIGHT_TYPE,
+    PARAM_SOURCE_NODES,
+    PARAM_SOURCE_WEIGHTS,
 )
 from nx_neptune.na_graph import NeptuneGraph
 from nx_neptune.algorithms.link_analysis.pagerank import pagerank
@@ -150,6 +158,51 @@ class TestPageRank:
             # Verify the result
             assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
 
+    def test_pagerank_with_na_parameters(self, mock_graph, traversalDirection=None):
+        """Test pagerank with custom Neptune Analytics parameters"""
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            tolerance = 1e-04
+            result = pagerank(
+                mock_graph,
+                alpha=0.85,
+                personalization=None,
+                max_iter=100,
+                tol=tolerance,
+                nstart=None,
+                weight=None,
+                dangling=None,
+                vertex_label="A",
+                edge_labels=["RELATES_TO"],
+                concurrency=0,
+                traversal_direction="inbound",
+                edge_weight_property="weight",
+                edge_weight_type="int",
+                source_nodes=["A", "B"],
+                source_weights=[1, 1.5],
+            )
+
+            # Verify the correct query was built and executed
+            parameters = {
+                PARAM_TOLERANCE: tolerance,
+                PARAM_VERTEX_LABEL: "A",
+                PARAM_EDGE_LABELS: ["RELATES_TO"],
+                PARAM_CURRENCY: 0,
+                PARAM_TRAVERSAL_DIRECTION: "inbound",
+                PARAM_EDGE_WEIGHT_PROPERTY: "weight",
+                PARAM_EDGE_WEIGHT_TYPE: "int",
+                PARAM_SOURCE_NODES: ["A", "B"],
+                PARAM_SOURCE_WEIGHTS: [1, 1.5],
+            }
+            (expected_query, param_values) = pagerank_query(parameters)
+
+            # Verify the function called execute_call with correct parameters
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+
+            # Verify the result
+            assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
+
     def test_pagerank_empty_result(self, mock_graph):
         """
         Test pagerank when no results are returned,
@@ -190,7 +243,7 @@ class TestPageRank:
             )
 
             # Verify warnings were logged for each unsupported parameter
-            assert mock_logger.warning.call_count == 4
+            assert mock_logger.warning.call_count == 3
 
             # Common warning message suffix
             warning_suffix = (
@@ -201,7 +254,6 @@ class TestPageRank:
             # Check specific warning messages
             mock_logger.warning.assert_any_call(f"'personalization'{warning_suffix}")
             mock_logger.warning.assert_any_call(f"'nstart'{warning_suffix}")
-            mock_logger.warning.assert_any_call(f"'weight'{warning_suffix}")
             mock_logger.warning.assert_any_call(f"'dangling'{warning_suffix}")
 
             # Verify the result is still correct

@@ -1,10 +1,12 @@
 import networkx as nx
-from nx_neptune.utils.utils import get_stdout_logger
+
 from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID
+from nx_neptune.utils.utils import get_stdout_logger
 
 """ 
 Example script to demonstrate how PageRank algorithm computation can be offloaded into remote AWS Neptune Analytics instance.  
 """
+
 
 """Read and load graphId from environment variable. """
 if not NETWORKX_GRAPH_ID:
@@ -13,7 +15,7 @@ nx.config.warnings_to_ignore.add("cache")
 
 logger = get_stdout_logger(__name__,[
                     'nx_neptune.algorithms.link_analysis.pagerank',
-                    'nx_neptune.na_graph', __name__])
+                    'nx_neptune.na_graph', 'nx_neptune.utils.decorators', __name__])
 
 backend = "neptune"
 # Clean up remote graph and populate test data.
@@ -38,35 +40,59 @@ g.add_edge('B', 'C')
 g.add_edge('C', 'D')
 g.add_edge('D', 'E')
 # Add a cycle by connecting E back to C
-g.add_edge('E', 'C')
+g.add_edge('E', 'C', weight=1)
 # Add an isolated node
 g.add_node("X(DCd)")
 
-# Scenario: Local execution
-# Expected result:
-# INFO - C: 0.31286951643922406
-# INFO - D: 0.2950649889212595
-# INFO - E: 0.27992957230941956
-# INFO - B: 0.053883495145631066
-# INFO - X(DCd): 0.02912621359223301
-# INFO - A: 0.02912621359223301
-r = nx.pagerank(g)
-logger.info("Algorithm execution - NetworkX: ")
+nx.config.backends.neptune.skip_graph_reset = False
+
+logger.info("\n-------------------\n")
+# scenario: AWS
+r = nx.pagerank(g, backend="neptune")
+logger.info("Algorithm execution - Neptune Analytics: ")
 for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
     logger.info(f"{key}: {value}")
 
 
 logger.info("\n-------------------\n")
-# scenario: AWS
-# Note: PageRank values may differ between NetworkX and Neptune Analytics due to implementation differences
-# Expected result:
-# INFO - C: 0.3152066
-# INFO - D: 0.2962857
-# INFO - E: 0.276372
-# INFO - B: 0.05388349
-# INFO - X(DCd): 0.02912621
-# INFO - A: 0.02912621
-r = nx.pagerank(g, backend="neptune")
+# scenario: AWS - vertexLabel
+r = nx.pagerank(g, backend="neptune", vertexLabel="A")
+logger.info("Algorithm execution - Neptune Analytics: ")
+for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
+    logger.info(f"{key}: {value}")
+
+logger.info("\n-------------------\n")
+# scenario: AWS - edgeLabels
+r = nx.pagerank(g, backend="neptune", edgeLabels=["RELATES_TO"])
+logger.info("Algorithm execution - Neptune Analytics: ")
+for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
+    logger.info(f"{key}: {value}")
+
+logger.info("\n-------------------\n")
+# scenario: AWS - concurrency
+r = nx.pagerank(g, backend="neptune", concurrency=0)
+logger.info("Algorithm execution - Neptune Analytics: ")
+for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
+    logger.info(f"{key}: {value}")
+
+logger.info("\n-------------------\n")
+# scenario: AWS - traversalDirection
+r = nx.pagerank(g, backend="neptune", traversalDirection="inbound")
+logger.info("Algorithm execution - Neptune Analytics: ")
+for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
+    logger.info(f"{key}: {value}")
+
+
+logger.info("\n-------------------\n")
+# scenario: AWS - edgeWeightType & edgeWeightProperty
+r = nx.pagerank(g, backend="neptune", edgeWeightType="int", edgeWeightProperty="weight")
+logger.info("Algorithm execution - Neptune Analytics: ")
+for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
+    logger.info(f"{key}: {value}")
+
+logger.info("\n-------------------\n")
+# scenario: AWS - sourceNodes & sourceWeights
+r = nx.pagerank(g, backend="neptune", sourceNodes=["A", "B"], sourceWeights=[1, 1.5])
 logger.info("Algorithm execution - Neptune Analytics: ")
 for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
     logger.info(f"{key}: {value}")

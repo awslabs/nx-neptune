@@ -21,6 +21,13 @@ PARAM_WEIGHT = "weight"
 PARAM_PERSONALIZATION = "personalization"
 PARAM_NSTART = "nstart"
 PARAM_DANGLING = "dangling"
+PARAM_VERTEX_LABEL = "vertexLabel"
+PARAM_EDGE_LABELS = "edgeLabels"
+PARAM_CURRENCY = "concurrency"
+PARAM_EDGE_WEIGHT_PROPERTY = "edgeWeightProperty"
+PARAM_EDGE_WEIGHT_TYPE = "edgeWeightType"
+PARAM_SOURCE_NODES = "sourceNodes"
+PARAM_SOURCE_WEIGHTS = "sourceWeights"
 
-# Internal constants for json results results
+# Internal constants for json results
 RESPONSE_RANK = "rank"

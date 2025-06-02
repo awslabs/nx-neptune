@@ -32,6 +32,44 @@ _info = {
         "bfs": {
             "nodeList : test additional parameters ",
         },
+        "pagerank": {
+            "edgeLabels : list[str], optional": "A list of edge label strings; "
+            """To filter on one more edge labels, provide a list of the ones to filter on.
+            If no edgeLabels field is provided then all edge labels are processed during traversal.""",
+            "vertexLabel : str, optional": "A vertex label for vertex filtering.; "
+            """If a vertex label is provided, vertices matching the label are the only vertices that are included,
+            including vertices in the input list.""",
+            "concurrency : int, optional": "Controls the number of concurrent threads used to run the algorithm.; "
+            """If set to 0, uses all available threads to complete execution of the individual algorithm invocation.
+            If set to 1, uses a single thread.
+            This can be useful when requiring the invocation of many algorithms concurrently.""",
+            "traversalDirection : str, optional": "The direction of edge to follow.; "
+            """Must be one of: "outbound" or "inbound".""",
+            "edgeWeightProperty : str, optional": "The weight property to consider for weighted pageRank computation.; "
+            """""",
+            "edgeWeightType : str, optional": "required if edgeWeightProperty is present; "
+            """The type of values associated with the edgeWeightProperty argument, specified as a string.
+            valid values: "int", "long", "float", "double".
+            If the edgeWeightProperty is not given,
+            the algorithm runs unweighted no matter if the edgeWeightType is given or not.
+            Note that if multiple properties exist on the edge with the name specified by edgeWeightProperty,
+            one of those property values will be sampled at random.""",
+            "sourceNodes : list[str], optional": "required if running personalized PageReank; "
+            """A personalization vertex list ["101", ...]
+            Can include 1 to 8192 vertices.
+            If a vertexLabel is provided, nodes that do not have the given vertexLabel are ignored.
+            """,
+            "sourceWeights : list[numeric], optional": "A personalization weight list.; "
+            """The weight distribution among the personalized vertices.
+            If not provided, the default behavior is uniform distribution among the vertices given in sourceNodes.
+            There must be at least one non-zero weight in the list.
+            The length of the sourceWeights list must match the sourceNodes list.
+            The mapping of personalization vertex and weight lists are one to one.
+            The first value in the weight list corresponds to the weight of first vertex in the vertex list,
+            second value is for the second vertex, etc.
+            The weights can be one of int, long, float, or double types.
+            """,
+        },
         # END: additional_parameters
     },
 }
