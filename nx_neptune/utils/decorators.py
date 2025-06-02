@@ -35,7 +35,10 @@ def configure_if_nx_active():
             if "NX_ALGORITHM_TEST" in os.environ:
                 return func(*args, **kwargs)
 
-            loop = asyncio.get_running_loop()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
 
             logger.debug(f"configure_if_nx_active: {func.__name__}")
             graph = args[0]
@@ -48,7 +51,7 @@ def configure_if_nx_active():
                 na_graph = NeptuneGraph.from_config(
                     config=neptune_config, graph=graph, logger=logger
                 )
-                if loop.is_running():
+                if loop and loop.is_running():
                     pool = concurrent.futures.ThreadPoolExecutor()
                     neptune_config = pool.submit(
                         asyncio.run,
@@ -60,7 +63,7 @@ def configure_if_nx_active():
                     )
 
             elif neptune_config.create_new_instance:
-                if loop.is_running():
+                if loop and loop.is_running():
                     pool = concurrent.futures.ThreadPoolExecutor()
                     neptune_config = pool.submit(
                         asyncio.run, _execute_setup_new_graph(neptune_config, graph)
@@ -83,7 +86,7 @@ def configure_if_nx_active():
 
             # Execute teardown instructions
             if neptune_config.graph_id is not None:
-                if loop.is_running():
+                if loop and loop.is_running():
                     pool = concurrent.futures.ThreadPoolExecutor()
                     pool.submit(
                         asyncio.run,
