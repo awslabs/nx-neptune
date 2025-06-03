@@ -4,6 +4,9 @@ This directory contains Jupyter notebooks demonstrating the integration between 
 
 - `pagerank_demo.ipynb`: Demonstrates PageRank algorithm implementation and visualization
 - `bfs_demo.ipynb`: Shows Breadth-First Search traversal with different parameters
+- `s3_import_export_demo.ipynb`: Demonstrates S3 import / export workflow
+- `instance_mgmt_lifecycle_demo.ipynb`: Demonstrates the usage of explicit instance management
+- `instance_mgmt_with_configuration.ipynb`: Demonstrates the usage of implicit instance management
 
 ## Running on AWS Neptune Notebooks
 
@@ -143,7 +146,7 @@ Once your Neptune notebook instance is running:
      cd ./nx-neptune-analytics
      # On your local machine run:
      python -m pip wheel -w dist .
-     # creates dist/nx_neptune-0.1.0-py3-none-any.whl
+     # creates dist/nx_neptune-0.2.1-py3-none-any.whl
      ```
    - In JupyterLab, use the upload button (↑) in the file browser to upload:
      - The `.whl` file from your local `dist/` directory
@@ -166,7 +169,7 @@ Once your Neptune notebook instance is running:
      python -m pip install ipykernel jupyterlab matplotlib scipy
      
      # Install the uploaded wheel file
-     pip install /home/ec2-user/SageMaker/nx_neptune-0.1.0-py3-none-any.whl
+     pip install /home/ec2-user/SageMaker/nx_neptune-0.2.1-py3-none-any.whl
      
      # Verify the installation
      pip list | grep nx-neptune
@@ -190,12 +193,12 @@ Once your Neptune notebook instance is running:
 3. **Set Your Graph ID**:
    - In a notebook cell, set your Neptune Analytics Graph ID:
      ```python
-     %env GRAPH_ID=<your-neptune-analytics-graph-id>
+     %env NETWORKX_GRAPH_ID=<your-neptune-analytics-graph-id>
      ```
    - Or you can set it directly in your code:
      ```python
      import os
-     os.environ['GRAPH_ID'] = '<your-neptune-analytics-graph-id>'
+     os.environ['NETWORKX_GRAPH_ID'] = '<your-neptune-analytics-graph-id>'
      ```
 
 4. **Run the notebook**:

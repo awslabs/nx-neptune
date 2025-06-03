@@ -28,7 +28,7 @@ pip install nx_neptune
 python -m pip wheel -w dist .
 
 # Install with Jupyter dependencies from wheel: 
-pip install "dist/nx_neptune-0.1.0-py3-none-any.whl"
+pip install "dist/nx_neptune-0.2.1-py3-none-any.whl"
 ```
 
 ### Installation
@@ -109,6 +109,18 @@ The notebooks directory contains interactive demonstrations of using Neptune Ana
   - Running BFS with different parameters, like depth_limit and reverse
   - Visualizing BFS traversal paths
 
+- `s3_import_export_demo.ipynb`: A notebook demonstrating the process of importing from and exporting to an S3 bucket.
+  - Executes data transfer operations using a pre-configured S3 bucket.
+
+- `instance_mgmt_lifecycle_demo.ipynb`: A notebook to demonstrates the explicit workflow for managing the lifecycle of an instance.   
+  - Explicitly create an instance and import the necessary data
+  - Run the desired algorithm
+  - Cleanly terminate the instance using the provided graph ID
+
+- `instance_mgmt_with_configuration.ipynb`: A notebook to demonstrates a simplified approach to instance lifecycle management.   
+  - Execute the PageRank algorithm with minimal configuration by leveraging automatic instance management provided by the module
+
+
 ### Building a package wheel
 
 We recommend uploading your package as a wheel to Jupyter Notebooks. 
@@ -116,7 +128,7 @@ We recommend uploading your package as a wheel to Jupyter Notebooks.
 ```bash
 # Package the project from source:
 python -m pip wheel -w dist .
-# creates dist/nx_neptune-0.1.0-py3-none-any.whl
+# creates dist/nx_neptune-0.2.1-py3-none-any.whl
 ```
 
 ### Installation
@@ -125,7 +137,7 @@ To install the required dependencies for the Jupyter notebook (including the `Ju
 
 ```bash
 # Install with Jupyter dependencies from wheel: 
-pip install "dist/nx_neptune-0.1.0-py3-none-any.whl[jupyter]"
+pip install "dist/nx_neptune-0.2.1-py3-none-any.whl[jupyter]"
 ```
 
 ### Running the Jupyter Notebook
@@ -136,7 +148,7 @@ To run the Jupyter notebooks:
 
 1. Set your Neptune Analytics Graph ID as an environment variable:
    ```bash
-   export GRAPH_ID=your-neptune-analytics-graph-id
+   export NETWORKX_GRAPH_ID=your-neptune-analytics-graph-id
    ```
 
 2. You will also need to specify the IAM roles that will execute S3 import or export:
@@ -154,7 +166,7 @@ To run the Jupyter notebooks:
 
 4. You can also set the Graph ID directly in the notebook using:
    ```python
-   %env GRAPH_ID=your-neptune-analytics-graph-id
+   %env NETWORKX_GRAPH_ID=your-neptune-analytics-graph-id
    ```
 
 ## Examples
@@ -162,20 +174,20 @@ Before running the examples, you must specify your Neptune Analytics Graph ID
 as an environment variable:
 
 ```bash
-# Set the GRAPH_ID environment variable
-export GRAPH_ID=your-neptune-analytics-graph-id
+# Set the NETWORKX_GRAPH_ID environment variable
+export NETWORKX_GRAPH_ID=your-neptune-analytics-graph-id
 
 # Then run the example
 .venv/bin/python ./example/nx_client_example.py
 ```
 
-Alternatively, you can pass the GRAPH_ID directly when running the example:
+Alternatively, you can pass the NETWORKX_GRAPH_ID directly when running the example:
 
 ```bash
 GRAPH_ID=your-neptune-analytics-graph-id .venv/bin/python ./example/nx_client_example.py
 ````
 
-Without a valid GRAPH_ID, the examples will fail to connect to your Neptune 
+Without a valid NETWORKX_GRAPH_ID, the examples will fail to connect to your Neptune 
 Analytics instance. Make sure your AWS credentials are properly configured and 
 your IAM role/user has the required permissions (ReadDataViaQuery, 
 WriteDataViaQuery, DeleteDataViaQuery).
