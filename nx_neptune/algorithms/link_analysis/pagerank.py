@@ -103,13 +103,17 @@ def pagerank(
     # AWS options always take precedence
     if edge_weight_property:
         parameters[PARAM_EDGE_WEIGHT_PROPERTY] = edge_weight_property
-    elif weight:
+    elif weight and weight != "weight":
+        # Submit the weight-related property only when a custom value is provided in NX's field,
+        # ensuring backward compatibility.
         parameters[PARAM_EDGE_WEIGHT_PROPERTY] = weight
 
     # AWS options always take precedence
     if edge_weight_type:
         parameters[PARAM_EDGE_WEIGHT_TYPE] = edge_weight_type
-    elif edge_weight_property or weight:
+    elif edge_weight_property or (weight and weight != "weight"):
+        # Submit the weight-related property only when a custom value is provided in NX's field,
+        # ensuring backward compatibility.
         parameters[PARAM_EDGE_WEIGHT_TYPE] = "float"
 
     if source_nodes:

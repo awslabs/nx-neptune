@@ -22,6 +22,10 @@ functions to wait for operations to complete before proceeding.
 async def main():
     logger = get_stdout_logger(__name__, [
         'IAMClient',
+        'nx_neptune.instance_management',
+        'nx_neptune.utils.decorators',
+        'nx_neptune.interface',
+        'nx_neptune.na_graph',
         'nx_neptune.clients.instance_management', __name__])
 
     # Note: User will need to update the below variable ahead of running the example:
