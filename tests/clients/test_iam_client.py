@@ -1,6 +1,10 @@
 import pytest
 
-from nx_neptune.clients.iam_client import IamClient, _get_s3_in_arn
+from nx_neptune.clients.iam_client import (
+    IamClient,
+    _get_s3_in_arn,
+    convert_sts_to_iam_arn,
+)
 
 
 @pytest.mark.parametrize(
@@ -43,3 +47,22 @@ def test_get_s3_in_arn(s3_path, expected):
 def test_validate_arns(arn):
     with pytest.raises(ValueError, match="Invalid ARN"):
         IamClient._validate_arns(arn)
+
+
+@pytest.mark.parametrize(
+    "arn, expected",
+    [
+        (
+            "arn:aws:sts::ACCOUNT_ID:assumed-role/ROLE_NAME/SESSION_NAME",
+            "arn:aws:iam::ACCOUNT_ID:role/ROLE_NAME",
+        )
+    ],
+)
+def test_sts_to_iam_arn(arn, expected):
+    result = convert_sts_to_iam_arn(arn)
+    assert result == expected
+
+
+def test_sts_to_iam_arn_with_invalid_str():
+    with pytest.raises(ValueError, match="Input is not a valid STS assumed-role ARN"):
+        convert_sts_to_iam_arn("INVALID_PREFIX::ACCOUNT_ID:assumed-role/ROLE_NAME/SESSION_NAME")

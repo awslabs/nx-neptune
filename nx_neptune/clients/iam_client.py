@@ -36,7 +36,10 @@ class IamClient:
             client (BaseClient): Custom boto3 IAM client.
             logger (logging.Logger): Custom logger. Creates a default logger if None is provided.
         """
-        self.role_arn = role_arn
+        if "sts" in role_arn:
+            self.role_arn = convert_sts_to_iam_arn(role_arn)
+        else:
+            self.role_arn = role_arn
         self.client = client
         self.logger = logger or logging.getLogger(__name__)
 
@@ -86,7 +89,7 @@ class IamClient:
                     # Only check allow at the end.
                     service = jmespath.search("Principal.Service", statement)
                     services = [service] if isinstance(service, str) else service
-                    if service_principal in services:
+                    if services and service_principal in services:
                         return True
             return False
 
@@ -159,7 +162,14 @@ class IamClient:
             return results
 
         except ClientError as e:
-            raise e
+            error_code = e.response["Error"]["Code"]
+            if error_code == "AccessDenied":
+                self.logger.warning(
+                    "Missing permission [iam:SimulatePrincipalPolicy] for current IAM user role, skipping permission check."
+                )
+                return {}
+            else:
+                raise e
 
     def _s3_kms_permission_check(
         self, operation_name, bucket_arn, key_arn, s3_permissions, kms_permissions
@@ -321,3 +331,26 @@ def _get_s3_in_arn(s3_path: str) -> str:
     s3_path = s3_path.rstrip("/")
     s3_path = s3_path.replace("s3://", "arn:aws:s3:::", 1)
     return s3_path
+
+
+def convert_sts_to_iam_arn(sts_arn):
+    """
+    Convert an STS assumed-role ARN to an IAM role ARN.
+
+    Example:
+    arn:aws:sts::ACCOUNT:assumed-role/ROLE/SESSION
+    to
+    arn:aws:iam::ACCOUNT:role/ROLE
+    """
+    sts_prefix = "arn:aws:sts::"
+    if not sts_arn.startswith(sts_prefix):
+        raise ValueError("Input is not a valid STS assumed-role ARN")
+
+    account_part = sts_arn[len(sts_prefix) :]
+    account_id = account_part.split(":")[0]
+    role_name = sts_arn.split(":")[5].split("/")[1]
+
+    # Compose the IAM ARN
+    iam_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+
+    return iam_arn
