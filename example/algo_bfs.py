@@ -9,7 +9,9 @@ In this example, a single graph is imported into Neptune Analytics.
 Once imported, a Breadth-First Search (BFS) algorithm is executed on Neptune Analytics 
 to determine which nodes (people) are connected as friends to Alice.
 """
-logger = get_stdout_logger(__name__,  ['nx_neptune.algorithms.traversal.bfs'])
+logger = get_stdout_logger(__name__,  ['nx_neptune.algorithms.traversal.bfs',
+                                       'nx_neptune.na_graph',
+                                       'nx_neptune.utils.decorators'])
 
 nx.config.warnings_to_ignore.add("cache")
 
@@ -113,3 +115,18 @@ for i in [6, 7, 8, 9, 10]:
     assert[str(i), str(i+1)] in r
 for i in [6, 5, 4, 3, 2, 1]:
     assert[str(i), str(i-1)] in r
+
+na_graph.clear_graph()
+G = nx.Graph()
+G.add_node("Alice")
+G.add_node("Bob")
+G.add_node("Carl")
+G.add_edge("Alice", "Bob")
+G.add_edge("Alice", "Carl")
+
+logger.info("\n-------------------\n")
+# scenario: AWS - vertex_label, edge_labels and concurrency
+r = list(nx.bfs_edges(G, source="Alice", backend=BACKEND, vertex_label="Node" ,edge_labels=["RELATES_TO"], concurrency=0))
+print('Edges from BFS search from source=Alice: ')
+for value in sorted(r, reverse=True):
+    logger.info(value)

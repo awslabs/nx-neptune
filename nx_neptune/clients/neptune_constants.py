@@ -10,9 +10,9 @@ SERVICE_STS = "sts"
 # Internal constants for parameters
 PARAM_MAX_DEPTH = "maxDepth"
 PARAM_TRAVERSAL_DIRECTION = "traversalDirection"
-PARAM_TRAVERSAL_DIRECTION_BOTH = '"both"'
-PARAM_TRAVERSAL_DIRECTION_INBOUND = '"inbound"'
-PARAM_TRAVERSAL_DIRECTION_OUTBOUND = '"outbound"'
+PARAM_TRAVERSAL_DIRECTION_BOTH = "both"
+PARAM_TRAVERSAL_DIRECTION_INBOUND = "inbound"
+PARAM_TRAVERSAL_DIRECTION_OUTBOUND = "outbound"
 
 PARAM_DAMPING_FACTOR = "dampingFactor"
 PARAM_NUM_OF_ITERATIONS = "numOfIterations"
@@ -28,6 +28,7 @@ PARAM_EDGE_WEIGHT_PROPERTY = "edgeWeightProperty"
 PARAM_EDGE_WEIGHT_TYPE = "edgeWeightType"
 PARAM_SOURCE_NODES = "sourceNodes"
 PARAM_SOURCE_WEIGHTS = "sourceWeights"
+PARAM_SORT_NEIGHBORS = "sort_neighbors"
 
 # Internal constants for json results
 RESPONSE_RANK = "rank"

@@ -65,4 +65,6 @@ def test_sts_to_iam_arn(arn, expected):
 
 def test_sts_to_iam_arn_with_invalid_str():
     with pytest.raises(ValueError, match="Input is not a valid STS assumed-role ARN"):
-        convert_sts_to_iam_arn("INVALID_PREFIX::ACCOUNT_ID:assumed-role/ROLE_NAME/SESSION_NAME")
+        convert_sts_to_iam_arn(
+            "INVALID_PREFIX::ACCOUNT_ID:assumed-role/ROLE_NAME/SESSION_NAME"
+        )

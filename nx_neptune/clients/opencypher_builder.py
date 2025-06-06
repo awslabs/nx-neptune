@@ -499,9 +499,7 @@ def bfs_query(
 
     bfs_params = f"{source_node}"
     if parameters:
-        parameters_list_str = ", ".join(
-            ["%s:%s" % (key, value) for (key, value) in parameters.items()]
-        )
+        parameters_list_str = _to_parameter_list(parameters)
         bfs_params = f"{bfs_params}, {{{parameters_list_str}}}"
 
     # for a query that returns the source and node for each traversal

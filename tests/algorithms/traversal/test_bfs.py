@@ -14,6 +14,11 @@ from nx_neptune.clients import (
 )
 from nx_neptune import NeptuneGraph
 from nx_neptune.algorithms.traversal.bfs import bfs_edges
+from nx_neptune.clients.neptune_constants import (
+    PARAM_VERTEX_LABEL,
+    PARAM_EDGE_LABELS,
+    PARAM_CURRENCY,
+)
 
 
 class TestBfsEdges:
@@ -38,7 +43,7 @@ class TestBfsEdges:
                 "parent": {"~id": "A", "~properties": {"name": "A-name"}},
             },
         ]
-        graph.traversal_direction.return_value = '"both"'
+        graph.traversal_direction.return_value = "both"
         return graph
 
     @pytest.fixture
@@ -87,7 +92,7 @@ class TestBfsEdges:
         # TODO fix
         graph.traversal_direction.return_value = '"both"'
         graph.traversal_direction.side_effect = lambda r: (
-            '"inbound"' if r else '"outbound"'
+            "inbound" if r else "outbound"
         )
         return graph
 
@@ -113,7 +118,7 @@ class TestBfsEdges:
             )
             assert "neptune.algo.bfs.parents" in expected_query
             assert (
-                f"{PARAM_TRAVERSAL_DIRECTION}:{PARAM_TRAVERSAL_DIRECTION_BOTH}"
+                f'{PARAM_TRAVERSAL_DIRECTION}:"{PARAM_TRAVERSAL_DIRECTION_BOTH}"'
                 in expected_query
             )
 
@@ -139,7 +144,7 @@ class TestBfsEdges:
             # Verify the function called execute_algo_bfs with correct parameters
             assert "neptune.algo.bfs.parents" in expected_query
             assert (
-                f"{PARAM_TRAVERSAL_DIRECTION}:{PARAM_TRAVERSAL_DIRECTION_INBOUND}"
+                f'{PARAM_TRAVERSAL_DIRECTION}:"{PARAM_TRAVERSAL_DIRECTION_INBOUND}"'
                 in expected_query
             )
             mock_digraph.execute_call.assert_called_once_with(
@@ -172,7 +177,7 @@ class TestBfsEdges:
             # Verify the function called execute_algo_bfs with correct parameters
             assert "neptune.algo.bfs.parents" in expected_query
             assert (
-                f"{PARAM_TRAVERSAL_DIRECTION}:{PARAM_TRAVERSAL_DIRECTION_OUTBOUND}"
+                f'{PARAM_TRAVERSAL_DIRECTION}:"{PARAM_TRAVERSAL_DIRECTION_OUTBOUND}"'
                 in expected_query
             )
             assert f"{PARAM_MAX_DEPTH}:{depth_limit}" in expected_query
@@ -222,3 +227,65 @@ class TestBfsEdges:
 
             # Verify the result is an empty list
             assert result == []
+
+    @patch("nx_neptune.algorithms.util.algorithm_utils.logger")
+    def test_bfs_edges_unsupported_parameters_warning(self, mock_logger, mock_graph):
+        """Test basic functionality of bfs_edges."""
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            source = "A"
+
+            # Execute
+            result = list(bfs_edges(mock_graph, source=source, sort_neighbors="test"))
+
+            # Verify warnings were logged for each unsupported parameter
+            assert mock_logger.warning.call_count == 1
+
+            # Common warning message suffix
+            warning_suffix = (
+                " parameter is not supported in Neptune Analytics implementation. "
+                "This argument will be ignored and execution will proceed without it."
+            )
+
+            # Check specific warning messages
+            mock_logger.warning.assert_any_call(f"'sort_neighbors'{warning_suffix}")
+
+            # Verify the result contains the expected nodes
+            assert result == [["A", "B"], ["A", "C"]]
+
+    def test_bfs_edges_with_na_parameters(self, mock_graph):
+        """Test basic functionality of bfs_edges."""
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            source = "A"
+
+            # Execute
+            result = list(
+                bfs_edges(
+                    mock_graph,
+                    source=source,
+                    vertex_label="A",
+                    edge_labels=["RELATES_TO"],
+                    concurrency=0,
+                )
+            )
+
+            # Verify the correct query was built and executed
+            source_node = "n"
+            where_filters = {"id(n)": source}
+            parameters = {
+                # Note: sort_neighbours is not used in the query
+                PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_BOTH,
+                PARAM_VERTEX_LABEL: "A",
+                PARAM_EDGE_LABELS: ["RELATES_TO"],
+                PARAM_CURRENCY: 0,
+            }
+            (expected_query, param_values) = bfs_query(
+                source_node, where_filters, parameters
+            )
+
+            # Verify the function called execute_call with correct parameters
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+
+            # Verify the result contains the expected nodes
+            assert result == [["A", "B"], ["A", "C"]]

@@ -30,7 +30,16 @@ _info = {
     "additional_parameters": {
         # BEGIN: additional_parameters
         "bfs": {
-            "nodeList : test additional parameters ",
+            "edgeLabels : list[str], optional": "A list of edge label strings; "
+            """To filter on one more edge labels, provide a list of the ones to filter on.
+            If no edgeLabels field is provided then all edge labels are processed during traversal.""",
+            "vertexLabel : str, optional": "A vertex label for vertex filtering.; "
+            """If a vertex label is provided, vertices matching the label are the only vertices that are included,
+            including vertices in the input list.""",
+            "concurrency : int, optional": "Controls the number of concurrent threads used to run the algorithm.; "
+            """If set to 0, uses all available threads to complete execution of the individual algorithm invocation.
+            If set to 1, uses a single thread.
+            This can be useful when requiring the invocation of many algorithms concurrently.""",
         },
         "pagerank": {
             "edgeLabels : list[str], optional": "A list of edge label strings; "
