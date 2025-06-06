@@ -17,7 +17,7 @@ from nx_neptune.algorithms.traversal.bfs import bfs_edges
 from nx_neptune.clients.neptune_constants import (
     PARAM_VERTEX_LABEL,
     PARAM_EDGE_LABELS,
-    PARAM_CURRENCY,
+    PARAM_CONCURRENCY,
 )
 
 
@@ -276,7 +276,7 @@ class TestBfsEdges:
                 PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_BOTH,
                 PARAM_VERTEX_LABEL: "A",
                 PARAM_EDGE_LABELS: ["RELATES_TO"],
-                PARAM_CURRENCY: 0,
+                PARAM_CONCURRENCY: 0,
             }
             (expected_query, param_values) = bfs_query(
                 source_node, where_filters, parameters

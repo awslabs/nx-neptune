@@ -63,6 +63,7 @@ test = [
     'numpy>=1.23',
     'scipy>=1.9,!=1.11.0,!=1.11.1',
     "pytest-cov",
+    "pandas"
 ]
 jupyter = [
     "jupyter>=1.0.0",

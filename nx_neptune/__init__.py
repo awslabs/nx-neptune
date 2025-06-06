@@ -1,3 +1,8 @@
+from .algorithms.centrality.degree_centrality import (
+    degree_centrality,
+    in_degree_centrality,
+    out_degree_centrality,
+)
 from .algorithms.link_analysis.pagerank import pagerank
 from .algorithms.traversal.bfs import bfs_edges
 from .clients import Edge, Node
@@ -20,6 +25,9 @@ __all__ = [
     # algorithms
     "bfs_edges",
     "pagerank",
+    "degree_centrality",
+    "in_degree_centrality",
+    "out_degree_centrality",
     # graphs
     "Node",
     "Edge",

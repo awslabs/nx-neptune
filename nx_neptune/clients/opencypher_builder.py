@@ -13,7 +13,9 @@ _NODE_FULL_FORM_REF = "node"
 _PARENT_FULL_FORM_REF = "parent"
 _BFS_PARENTS_ALG = "neptune.algo.bfs.parents"
 _PAGE_RANK_ALG = "neptune.algo.pageRank"
+_DEGREE_ALG = "neptune.algo.degree"
 _RANK_REF = "rank"
+_DEGREE_REF = "degree"
 
 __all__ = [
     "match_all_nodes",
@@ -548,6 +550,33 @@ def pagerank_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
         .procedure(f"{_PAGE_RANK_ALG}({pagerank_params})")
         .yield_((_RANK_REF, _RANK_REF))
         .return_literal(_NODE_REF + ", " + _RANK_REF)
+        .query
+    ), {}
+
+
+def degree_centrality_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the Degree algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to Degree Centrality algorithm execution
+    :return: Tuple of (OpenCypher query string, parameter map) for Degree Centrality algorithm execution
+
+    Example:
+        >>> degree_centrality_query()
+        (' MATCH(n) CALL neptune.algo.degree(n) YIELD degree AS degree RETURN n.id , degree', {})
+    """
+    degree_params = f"{_NODE_REF}"
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        degree_params = f"{degree_params}, {{{parameters_list_str}}}"
+    return (
+        QueryBuilder()
+        .match()
+        .node(ref_name=_NODE_REF)
+        .call()
+        .procedure(f"{_DEGREE_ALG}({degree_params})")
+        .yield_((_DEGREE_REF, _DEGREE_REF))
+        .return_literal(f"n.id , {_DEGREE_REF}")
         .query
     ), {}
 

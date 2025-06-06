@@ -4,7 +4,7 @@ from typing import List, Optional
 from nx_neptune.algorithms.util import process_unsupported_param
 from nx_neptune.clients import Edge
 from nx_neptune.clients.neptune_constants import (
-    PARAM_CURRENCY,
+    PARAM_CONCURRENCY,
     PARAM_EDGE_LABELS,
     PARAM_MAX_DEPTH,
     PARAM_SORT_NEIGHBORS,
@@ -94,7 +94,7 @@ def bfs_edges(
         parameters[PARAM_EDGE_LABELS] = edge_labels
 
     if concurrency is not None:
-        parameters[PARAM_CURRENCY] = concurrency
+        parameters[PARAM_CONCURRENCY] = concurrency
 
     # Process unsupported parameters (for warnings only)
     process_unsupported_param(

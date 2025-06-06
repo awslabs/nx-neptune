@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from nx_neptune.algorithms.util import process_unsupported_param
 from nx_neptune.clients.neptune_constants import (
-    PARAM_CURRENCY,
+    PARAM_CONCURRENCY,
     PARAM_DAMPING_FACTOR,
     PARAM_DANGLING,
     PARAM_EDGE_LABELS,
@@ -95,7 +95,7 @@ def pagerank(
         parameters[PARAM_EDGE_LABELS] = edge_labels
 
     if concurrency is not None:
-        parameters[PARAM_CURRENCY] = concurrency
+        parameters[PARAM_CONCURRENCY] = concurrency
 
     if traversal_direction is not None:
         parameters[PARAM_TRAVERSAL_DIRECTION] = traversal_direction
