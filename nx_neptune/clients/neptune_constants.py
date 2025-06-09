@@ -29,6 +29,7 @@ PARAM_EDGE_WEIGHT_TYPE = "edgeWeightType"
 PARAM_SOURCE_NODES = "sourceNodes"
 PARAM_SOURCE_WEIGHTS = "sourceWeights"
 PARAM_SORT_NEIGHBORS = "sort_neighbors"
+PARAM_WRITE_PROPERTY = "writeProperty"
 
 # Internal constants for json results
 RESPONSE_RANK = "rank"

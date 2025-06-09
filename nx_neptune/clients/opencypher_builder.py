@@ -9,11 +9,13 @@ _SRC_NODE_REF = "a"
 _DEST_NODE_REF = "b"
 _RELATION_REF = "r"
 _NODE_REF = "n"
+_SUCCESS_REF = "success"
 _NODE_FULL_FORM_REF = "node"
 _PARENT_FULL_FORM_REF = "parent"
 _BFS_PARENTS_ALG = "neptune.algo.bfs.parents"
 _PAGE_RANK_ALG = "neptune.algo.pageRank"
 _DEGREE_ALG = "neptune.algo.degree"
+_DEGREE_MUTATE_ALG = "neptune.algo.degree.mutate"
 _RANK_REF = "rank"
 _DEGREE_REF = "degree"
 
@@ -577,6 +579,30 @@ def degree_centrality_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
         .procedure(f"{_DEGREE_ALG}({degree_params})")
         .yield_((_DEGREE_REF, _DEGREE_REF))
         .return_literal(f"n.id , {_DEGREE_REF}")
+        .query
+    ), {}
+
+
+def degree_centrality_mutation_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the mutated version of Degree algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to Degree Centrality algorithm execution
+    :return: Tuple of (OpenCypher query string, parameter map) for Degree Centrality algorithm execution
+
+    Example:
+        >>> degree_centrality_query()
+        (' CALL neptune.algo.degree.mutate({writeProperty:"degree"}) YIELD success AS success RETURN success', {})
+    """
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        degree_params = f"{{{parameters_list_str}}}"
+    return (
+        QueryBuilder()
+        .call()
+        .procedure(f"{_DEGREE_MUTATE_ALG}({degree_params})")
+        .yield_((_SUCCESS_REF, _SUCCESS_REF))
+        .return_literal(_SUCCESS_REF)
         .query
     ), {}
 

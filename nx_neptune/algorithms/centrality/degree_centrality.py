@@ -8,11 +8,15 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
     PARAM_VERTEX_LABEL,
+    PARAM_WRITE_PROPERTY,
     RESPONSE_DEGREE,
     RESPONSE_ID,
 )
-from nx_neptune.clients.opencypher_builder import degree_centrality_query
-from nx_neptune.na_graph import NeptuneGraph
+from nx_neptune.clients.opencypher_builder import (
+    degree_centrality_mutation_query,
+    degree_centrality_query,
+)
+from nx_neptune.na_graph import NeptuneGraph, get_config
 from nx_neptune.utils.decorators import configure_if_nx_active
 
 logger = logging.getLogger(__name__)
@@ -26,6 +30,7 @@ def degree_centrality(
     vertex_label: Optional[str] = None,
     edge_labels: Optional[List] = None,
     concurrency: Optional[int] = None,
+    write_property: Optional[str] = None,
 ):
     """
     Compute the degree centrality for nodes.
@@ -36,13 +41,12 @@ def degree_centrality(
     :param edge_labels: To filter on one more edge labels, provide a list of the ones to filter on.
     If no edgeLabels field is provided then all edge labels are processed during traversal.
     :param concurrency: Controls the number of concurrent threads used to run the algorithm.
+    :param write_property: Specifies the name of the node property that will store the computed degree values.
+    For comprehensive usage details,
+    refer to: https://docs.aws.amazon.com/neptune-analytics/latest/userguide/degree-mutate.html
     """
     return _degree_centrality(
-        neptune_graph,
-        None,
-        vertex_label,
-        edge_labels,
-        concurrency,
+        neptune_graph, None, vertex_label, edge_labels, concurrency, write_property
     )
 
 
@@ -52,6 +56,7 @@ def in_degree_centrality(
     vertex_label: Optional[str] = None,
     edge_labels: Optional[List] = None,
     concurrency: Optional[int] = None,
+    write_property: Optional[str] = None,
 ):
     """
     Executes Degree algorithm on the graph with inbound edges.
@@ -62,6 +67,9 @@ def in_degree_centrality(
     :param edge_labels: To filter on one more edge labels, provide a list of the ones to filter on.
     If no edgeLabels field is provided then all edge labels are processed during traversal.
     :param concurrency: Controls the number of concurrent threads used to run the algorithm.
+    :param write_property: Specifies the name of the node property that will store the computed degree values.
+    For comprehensive usage details,
+    refer to: https://docs.aws.amazon.com/neptune-analytics/latest/userguide/degree-mutate.html
     """
     return _degree_centrality(
         neptune_graph,
@@ -69,6 +77,7 @@ def in_degree_centrality(
         vertex_label,
         edge_labels,
         concurrency,
+        write_property,
     )
 
 
@@ -78,6 +87,7 @@ def out_degree_centrality(
     vertex_label: Optional[str] = None,
     edge_labels: Optional[List] = None,
     concurrency: Optional[int] = None,
+    write_property: Optional[str] = None,
 ):
     """
     Executes Degree algorithm on the graph with inbound edges.
@@ -88,6 +98,9 @@ def out_degree_centrality(
     :param edge_labels: To filter on one more edge labels, provide a list of the ones to filter on.
     If no edgeLabels field is provided then all edge labels are processed during traversal.
     :param concurrency: Controls the number of concurrent threads used to run the algorithm.
+    :param write_property: Specifies the name of the node property that will store the computed degree values.
+    For comprehensive usage details,
+    refer to: https://docs.aws.amazon.com/neptune-analytics/latest/userguide/degree-mutate.html
     """
     return _degree_centrality(
         neptune_graph,
@@ -95,6 +108,7 @@ def out_degree_centrality(
         vertex_label,
         edge_labels,
         concurrency,
+        write_property,
     )
 
 
@@ -104,6 +118,7 @@ def _degree_centrality(
     vertex_label: Optional[str] = None,
     edge_labels: Optional[List] = None,
     concurrency: Optional[int] = None,
+    write_property: Optional[str] = None,
 ):
     """
     Compute the degree centrality for nodes.
@@ -115,6 +130,9 @@ def _degree_centrality(
     :param edge_labels: To filter on one more edge labels, provide a list of the ones to filter on.
     If no edgeLabels field is provided then all edge labels are processed during traversal.
     :param concurrency: Controls the number of concurrent threads used to run the algorithm.
+    :param write_property: Specifies the name of the node property that will store the computed degree values.
+    For comprehensive usage details,
+    refer to: https://docs.aws.amazon.com/neptune-analytics/latest/userguide/degree-mutate.html
     """
     logger.debug(
         f"nx_neptune.degree_centrality() with: \nneptune_graph={neptune_graph}"
@@ -139,14 +157,34 @@ def _degree_centrality(
     # Execute PageRank algorithm
     if parameters is None:
         parameters = {}
-    query_str, para_map = degree_centrality_query(parameters)
-    json_result = neptune_graph.execute_call(query_str, para_map)
-    node_count = neptune_graph.graph.number_of_nodes()
 
-    # Convert the result to a dictionary of node.id:degree pairs
-    result = {}
-    for item in json_result:
-        # Normalised value to be compatible with NX implementation
-        result[item[RESPONSE_ID]] = item[RESPONSE_DEGREE] / (node_count - 1)
+    if write_property:
+        parameters[PARAM_WRITE_PROPERTY] = write_property
 
-    return result
+        query_str, para_map = degree_centrality_mutation_query(parameters)
+        json_result = neptune_graph.execute_call(query_str, para_map)
+
+        execution_result = json_result[0].get("status")
+        if get_config().export_s3_bucket is None:
+            logger.warning(
+                "The graph has been mutated with degree centrality results. "
+                "Please export the graph contents if you want to preserve the changes. "
+                "Subsequent modifications may overwrite or discard this state."
+            )
+        if not execution_result:
+            logger.error(
+                "Algorithm execution [neptune.algo.degree.mutate] failed, refer to AWS console for more detail."
+            )
+        return {}
+    else:
+        query_str, para_map = degree_centrality_query(parameters)
+        json_result = neptune_graph.execute_call(query_str, para_map)
+
+        # Convert the result to a dictionary of node.id:degree pairs
+        result = {}
+        node_count = neptune_graph.graph.number_of_nodes()
+        for item in json_result:
+            # Normalised value to be compatible with NX implementation
+            result[item[RESPONSE_ID]] = item[RESPONSE_DEGREE] / (node_count - 1)
+
+        return result

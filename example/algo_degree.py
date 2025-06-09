@@ -1,6 +1,6 @@
 import networkx as nx
 
-from nx_neptune import NETWORKX_GRAPH_ID
+from nx_neptune import NETWORKX_GRAPH_ID, Node, NeptuneGraph
 from nx_neptune.utils.utils import get_stdout_logger
 
 """ 
@@ -111,4 +111,27 @@ r = nx.out_degree_centrality(g, backend="neptune", vertex_label="Node", edge_lab
 logger.info("Algorithm execution - Neptune Analytics: ")
 for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
     logger.info(f"{key}: {value}")
+
+na_graph = NeptuneGraph.from_config()
+
+logger.info("\n---------scenario: AWS - Degree - Mutation----------\n")
+# scenario: AWS
+nx.degree_centrality(g, backend="neptune", write_property="degree")
+logger.info("Algorithm execution - Neptune Analytics: ")
+for item in na_graph.get_all_nodes()[:10]:
+    logger.info(Node.from_neptune_response(item))
+
+logger.info("\n---------scenario: AWS - In Degree - Mutation----------\n")
+# scenario: AWS
+nx.in_degree_centrality(g, backend="neptune", write_property="degree")
+logger.info("Algorithm execution - Neptune Analytics: ")
+for item in na_graph.get_all_nodes()[:10]:
+    logger.info(Node.from_neptune_response(item))
+
+logger.info("\n---------scenario: AWS - Out Degree - Mutation----------\n")
+# scenario: AWS
+nx.out_degree_centrality(g, backend="neptune", write_property="degree")
+logger.info("Algorithm execution - Neptune Analytics: ")
+for item in na_graph.get_all_nodes()[:10]:
+    logger.info(Node.from_neptune_response(item))
 

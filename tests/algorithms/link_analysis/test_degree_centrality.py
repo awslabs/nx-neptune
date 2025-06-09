@@ -12,8 +12,12 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_CONCURRENCY,
     PARAM_EDGE_LABELS,
     PARAM_VERTEX_LABEL,
+    PARAM_WRITE_PROPERTY,
 )
-from nx_neptune.clients.opencypher_builder import degree_centrality_query
+from nx_neptune.clients.opencypher_builder import (
+    degree_centrality_query,
+    degree_centrality_mutation_query,
+)
 from nx_neptune.na_graph import NeptuneGraph
 
 
@@ -124,3 +128,25 @@ class TestDegreeCentrality:
 
             # Verify the result contains the expected nodes with their degree values
             assert result == {"A": 0.5, "B": 1.0, "C": 1.5, "D": 1.0, "E": 1.0}
+
+    def test_degree_centrality_mutation(self, mock_graph):
+        """Test Degree Centrality Mutation with writeProperty"""
+        # Set up the environment
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            result = degree_centrality(mock_graph, write_property="degree")
+
+            # Verify the correct query was built and executed
+            parameters = {PARAM_WRITE_PROPERTY: "degree"}
+
+            (expected_query, param_values) = degree_centrality_mutation_query(
+                parameters
+            )
+
+            # No conversion should happen if method receiving networkX default.
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+            assert "neptune.algo.degree.mutate" in expected_query
+
+            # Verify the result contains the expected nodes with their degree values
+            assert result == {}
