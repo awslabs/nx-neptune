@@ -147,6 +147,34 @@ _info = {
             To preserve the mutated graph state, you must either avoid setting `write_property`,
             or ensure the option `nx.config.backends.neptune.export_s3_bucket` is properly configured for automatic export.""",
         },
+        "descendants_at_distance": {
+            "traversalDirection : str, optional": "The direction of edge to follow.; "
+            """Must be one of: "outbound" or "inbound".""",
+            "edgeLabels : list[str], optional": "A list of edge label strings; "
+            """To filter on one more edge labels, provide a list of the ones to filter on.
+            If no edgeLabels field is provided then all edge labels are processed during traversal.""",
+            "vertexLabel : str, optional": "A vertex label for vertex filtering.; "
+            """If a vertex label is provided, vertices matching the label are the only vertices that are included,
+            including vertices in the input list.""",
+            "concurrency : int, optional": "Controls the number of concurrent threads used to run the algorithm.; "
+            """If set to 0, uses all available threads to complete execution of the individual algorithm invocation.
+            If set to 1, uses a single thread.
+            This can be useful when requiring the invocation of many algorithms concurrently.""",
+        },
+        "bfs_layers": {
+            "traversalDirection : str, optional": "The direction of edge to follow.; "
+            """Must be one of: "outbound" or "inbound".""",
+            "edgeLabels : list[str], optional": "A list of edge label strings; "
+            """To filter on one more edge labels, provide a list of the ones to filter on.
+            If no edgeLabels field is provided then all edge labels are processed during traversal.""",
+            "vertexLabel : str, optional": "A vertex label for vertex filtering.; "
+            """If a vertex label is provided, vertices matching the label are the only vertices that are included,
+            including vertices in the input list.""",
+            "concurrency : int, optional": "Controls the number of concurrent threads used to run the algorithm.; "
+            """If set to 0, uses all available threads to complete execution of the individual algorithm invocation.
+            If set to 1, uses a single thread.
+            This can be useful when requiring the invocation of many algorithms concurrently.""",
+        },
         # END: additional_parameters
     },
 }

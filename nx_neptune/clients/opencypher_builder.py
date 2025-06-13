@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from cymple import QueryBuilder
 
+from . import PARAM_MAX_DEPTH
 from .na_models import Edge, ImmutableEdgeGroupBy, Node
 
 # Internal constants for reference names
@@ -9,10 +10,15 @@ _SRC_NODE_REF = "a"
 _DEST_NODE_REF = "b"
 _RELATION_REF = "r"
 _NODE_REF = "n"
+_LEVEL_REF = "level"
+_MIN_LEVEL_REF = "minLevel"
 _SUCCESS_REF = "success"
 _NODE_FULL_FORM_REF = "node"
+_NODE_FULL_FORM_ID_REF = "nodeId"
+_NODE_FULL_FORM_ID_FUNC_REF = f"id({_NODE_FULL_FORM_REF})"
 _PARENT_FULL_FORM_REF = "parent"
 _BFS_PARENTS_ALG = "neptune.algo.bfs.parents"
+_BFS_LEVELS_ALG = "neptune.algo.bfs.levels"
 _PAGE_RANK_ALG = "neptune.algo.pageRank"
 _DEGREE_ALG = "neptune.algo.degree"
 _DEGREE_MUTATE_ALG = "neptune.algo.degree.mutate"
@@ -525,6 +531,85 @@ def bfs_query(
         .query
     )
     return query_str, param_builder.get_param_values()
+
+
+def descendants_at_distance_query(
+    source_node: str, parameters=None
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the BFS-Levels algorithm on Neptune Analytics to compute descendants_at_distance result.
+
+    :param source_node: The variable name for the source node
+    :param parameters: Optional dictionary of algorithm parameters to pass to BFS-Levels
+    :return: Tuple of (OpenCypher query string, parameter map) for BFS-Levels algorithm execution
+
+    Example:
+        >>> descendants_at_distance_query("Alice", {})
+        (' CALL neptune.algo.bfs.levels(["Alice"], {maxDepth:1})
+        YIELD node AS node, level AS level
+        WHERE level = 1 RETURN id(node)', {})
+    """
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        distance_params = f'["{source_node}"], {{{parameters_list_str}}}'
+
+    return (
+        QueryBuilder()
+        .call()
+        .procedure(f"{_BFS_LEVELS_ALG}({distance_params})")
+        .yield_([(_NODE_FULL_FORM_REF, _NODE_FULL_FORM_REF), (_LEVEL_REF, _LEVEL_REF)])
+        .where(_LEVEL_REF, "=", parameters[PARAM_MAX_DEPTH])
+        .return_literal(_NODE_FULL_FORM_ID_FUNC_REF)
+        .query
+    ), {}
+
+
+def bfs_layers_query(
+    source_nodes: list[str], parameters=None
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the BFS-Levels algorithm on Neptune Analytics to compute bfs_layers result.
+
+    :param source_nodes: The variable name for the source node
+    :param parameters: Optional dictionary of algorithm parameters to pass to BFS-Levels
+    :return: Tuple of (OpenCypher query string, parameter map) for BFS-Levels algorithm execution
+
+    Example:
+        >>> bfs_layers_query(["Alice"], {})
+        (' CALL neptune.algo.bfs.levels(['Alice'])
+        YIELD node AS node, level AS level
+        WITH id(node) AS nodeId, level
+        WITH nodeId, min(level) AS minLevel
+        RETURN collect(nodeId) AS id, minLevel AS level
+        ORDER BY minLevel ASC', {})
+    """
+    distance_params = (
+        "["
+        + ",".join(
+            f"'{s}'"
+            for s in ([source_nodes] if isinstance(source_nodes, str) else source_nodes)
+        )
+        + "]"
+    )
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        distance_params = f"{distance_params}, {{{parameters_list_str}}}"
+
+    return (
+        QueryBuilder()
+        .call()
+        .procedure(f"{_BFS_LEVELS_ALG}({distance_params})")
+        .yield_([(_NODE_FULL_FORM_REF, _NODE_FULL_FORM_REF), (_LEVEL_REF, _LEVEL_REF)])
+        .with_(
+            f"{_NODE_FULL_FORM_ID_FUNC_REF} AS {_NODE_FULL_FORM_ID_REF}, {_LEVEL_REF}"
+        )
+        .with_(f"{_NODE_FULL_FORM_ID_REF}, min({_LEVEL_REF}) AS {_MIN_LEVEL_REF}")
+        .return_mapping(
+            [(f"collect({_NODE_FULL_FORM_ID_REF})", "id"), (_MIN_LEVEL_REF, _LEVEL_REF)]
+        )
+        .order_by(_MIN_LEVEL_REF)
+        .query
+    ), {}
 
 
 def pagerank_query(parameters=None) -> Tuple[str, Dict[str, Any]]:

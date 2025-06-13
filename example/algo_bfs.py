@@ -11,7 +11,8 @@ to determine which nodes (people) are connected as friends to Alice.
 """
 logger = get_stdout_logger(__name__,  ['nx_neptune.algorithms.traversal.bfs',
                                        'nx_neptune.na_graph',
-                                       'nx_neptune.utils.decorators'])
+                                       'nx_neptune.utils.decorators',
+                                       __name__])
 
 nx.config.warnings_to_ignore.add("cache")
 
@@ -130,3 +131,35 @@ r = list(nx.bfs_edges(G, source="Alice", backend=BACKEND, vertex_label="Node" ,e
 print('Edges from BFS search from source=Alice: ')
 for value in sorted(r, reverse=True):
     logger.info(value)
+
+# descendants_at_distance
+g = nx.Graph()
+g.add_node("Alice", age=30, role="Engineer")
+g.add_node("Bob", age=25, role="Designer")
+g.add_node("Carl", age=35, role="Manager")
+g.add_edge("Alice", "Bob", weight=5, relationship="colleague")
+g.add_edge("Alice", "Carl", weight=2, relationship="manager")
+
+logger.info("\n---------scenario: AWS - descendants_at_distance----------\n")
+r = nx.descendants_at_distance(g, backend=BACKEND, source="Alice", distance=1)
+logger.info(r)
+assert r == {'Bob', 'Carl'}
+
+logger.info("\n---------scenario: AWS - descendants_at_distance - AWS-specific Options----------\n")
+r = nx.descendants_at_distance(g, backend=BACKEND, source="Alice", distance=1, vertex_label="Node", edge_labels=["RELATES_TO"], concurrency=0)
+logger.info(r)
+assert r == {'Bob', 'Carl'}
+
+
+# bfs_layers
+g = nx.path_graph(5)
+logger.info("\n---------scenario: AWS - bfs_layers----------\n")
+result = list(nx.bfs_layers(g, backend=BACKEND, sources=[1, 4]))
+logger.info(result)
+assert result == [['4', '1'], ['0', '3', '2']]
+
+logger.info("\n---------scenario: AWS - bfs_layers - AWS-specific Options----------\n")
+result = list(nx.bfs_layers(g, backend=BACKEND, sources=[1, 4], edge_labels=["RELATES_TO"], traversal_direction="both", concurrency=0))
+logger.info(result)
+assert result == [['4', '1'], ['0', '3', '2']]
+

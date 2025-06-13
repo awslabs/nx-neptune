@@ -5,6 +5,6 @@ from .centrality.degree_centrality import (
     out_degree_centrality,
 )
 from .link_analysis.pagerank import pagerank
-from .traversal.bfs import bfs_edges
+from .traversal.bfs import bfs_edges, bfs_layers, descendants_at_distance
 
 # import modules

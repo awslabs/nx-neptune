@@ -32,6 +32,8 @@ __all__ = ["BackendInterface", "NETWORKX_GRAPH_ID", "NETWORKX_S3_IAM_ROLE_ARN"]
 
 ALGORITHMS = [
     "bfs_edges",
+    "bfs_layers",
+    "descendants_at_distance",
     "pagerank",
     "degree_centrality",
     "in_degree_centrality",

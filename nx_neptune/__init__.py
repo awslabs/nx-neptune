@@ -4,7 +4,7 @@ from .algorithms.centrality.degree_centrality import (
     out_degree_centrality,
 )
 from .algorithms.link_analysis.pagerank import pagerank
-from .algorithms.traversal.bfs import bfs_edges
+from .algorithms.traversal.bfs import bfs_edges, bfs_layers, descendants_at_distance
 from .clients import Edge, Node
 from .instance_management import (
     TaskFuture,
@@ -24,6 +24,8 @@ __all__ = [
     "NETWORKX_S3_IAM_ROLE_ARN",
     # algorithms
     "bfs_edges",
+    "bfs_layers",
+    "descendants_at_distance",
     "pagerank",
     "degree_centrality",
     "in_degree_centrality",

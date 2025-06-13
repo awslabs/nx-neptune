@@ -13,11 +13,19 @@ from nx_neptune.clients import (
     PARAM_MAX_DEPTH,
 )
 from nx_neptune import NeptuneGraph
-from nx_neptune.algorithms.traversal.bfs import bfs_edges
+from nx_neptune.algorithms.traversal.bfs import (
+    bfs_edges,
+    descendants_at_distance,
+    bfs_layers,
+)
 from nx_neptune.clients.neptune_constants import (
     PARAM_VERTEX_LABEL,
     PARAM_EDGE_LABELS,
     PARAM_CONCURRENCY,
+)
+from nx_neptune.clients.opencypher_builder import (
+    descendants_at_distance_query,
+    bfs_layers_query,
 )
 
 
@@ -94,6 +102,28 @@ class TestBfsEdges:
         graph.traversal_direction.side_effect = lambda r: (
             "inbound" if r else "outbound"
         )
+        return graph
+
+    @pytest.fixture
+    def mock_distance_graph(self):
+        """Create a mock NeptuneGraph for testing."""
+        graph = MagicMock(spec=NeptuneGraph)
+        # Mock the execute_call method to return a predefined result
+        graph.execute_call.return_value = [
+            {"id(node)": "Alice"},
+            {"id(node)": "Bob"},
+        ]
+        return graph
+
+    @pytest.fixture
+    def mock_bfs_layers_graph(self):
+        """Create a mock NeptuneGraph for testing."""
+        graph = MagicMock(spec=NeptuneGraph)
+        # Mock the execute_call method to return a predefined result
+        graph.execute_call.return_value = [
+            {"id": ["4", "1"], "level": 0},
+            {"id": ["0", "3", "2"], "level": 1},
+        ]
         return graph
 
     def test_bfs_edges_basic(self, mock_graph):
@@ -289,3 +319,138 @@ class TestBfsEdges:
 
             # Verify the result contains the expected nodes
             assert result == [["A", "B"], ["A", "C"]]
+
+    def test_descendants_at_distance_base(self, mock_distance_graph):
+        """Test basic functionality of descendants_at_distance."""
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            source = "A"
+            distance = 1
+
+            # Execute
+            result = descendants_at_distance(mock_distance_graph, source, distance)
+
+            # Verify the correct query was built and executed
+            parameters = {"maxDepth": distance}
+            (expected_query, param_values) = descendants_at_distance_query(
+                source, parameters
+            )
+
+            # Verify the function called execute_algo_bfs with correct parameters
+            mock_distance_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+            assert "neptune.algo.bfs.levels" in expected_query
+
+            # Verify the result contains the expected nodes
+            assert result == {"Alice", "Bob"}
+
+    def test_descendants_at_distance_na_parameters(self, mock_distance_graph):
+        """Test descendants_at_distance with Neptune Analytics parameters."""
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            source = "A"
+            distance = 1
+
+            # Execute
+            result = descendants_at_distance(
+                mock_distance_graph,
+                source,
+                distance,
+                vertex_label="A",
+                edge_labels=["RELATES_TO"],
+                concurrency=0,
+            )
+
+            # Verify the correct query was built and executed
+            parameters = {
+                "maxDepth": distance,
+                PARAM_VERTEX_LABEL: "A",
+                PARAM_EDGE_LABELS: ["RELATES_TO"],
+                PARAM_CONCURRENCY: 0,
+            }
+            (expected_query, param_values) = descendants_at_distance_query(
+                source, parameters
+            )
+
+            # Verify the function called execute_algo_bfs with correct parameters
+            mock_distance_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+            assert "neptune.algo.bfs.levels" in expected_query
+
+            # Verify the result contains the expected nodes
+            assert result == {"Alice", "Bob"}
+
+    def test_bfs_layers_single_source(self, mock_bfs_layers_graph):
+        """Test basic functionality of descendants_at_distance."""
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            source = ["A"]
+
+            # Execute
+            result = list(bfs_layers(mock_bfs_layers_graph, source))
+
+            # Verify the correct query was built and executed
+            parameters = {}
+            (expected_query, param_values) = bfs_layers_query(source, parameters)
+
+            # Verify the function called execute_algo_bfs with correct parameters
+            mock_bfs_layers_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+            assert "neptune.algo.bfs.levels" in expected_query
+
+            # Verify the result contains the expected nodes
+            assert result == [["4", "1"], ["0", "3", "2"]]
+
+    def test_bfs_layers_multiple_sources(self, mock_bfs_layers_graph):
+        """Test basic functionality of descendants_at_distance."""
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            source = ["A", "B"]
+
+            # Execute
+            result = list(bfs_layers(mock_bfs_layers_graph, source))
+
+            # Verify the correct query was built and executed
+            parameters = {}
+            (expected_query, param_values) = bfs_layers_query(source, parameters)
+
+            # Verify the function called execute_algo_bfs with correct parameters
+            mock_bfs_layers_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+            assert "neptune.algo.bfs.levels" in expected_query
+
+            # Verify the result contains the expected nodes
+            assert result == [["4", "1"], ["0", "3", "2"]]
+
+    def test_bfs_layers_na_parameters(self, mock_bfs_layers_graph):
+        """Test basic functionality of descendants_at_distance."""
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            sources = ["A", "B"]
+
+            # Execute
+            result = list(
+                bfs_layers(
+                    mock_bfs_layers_graph,
+                    sources,
+                    vertex_label="A",
+                    edge_labels=["RELATES_TO"],
+                    concurrency=0,
+                )
+            )
+
+            # Verify the correct query was built and executed
+            parameters = {
+                PARAM_VERTEX_LABEL: "A",
+                PARAM_EDGE_LABELS: ["RELATES_TO"],
+                PARAM_CONCURRENCY: 0,
+            }
+            (expected_query, param_values) = bfs_layers_query(sources, parameters)
+
+            # Verify the function called execute_algo_bfs with correct parameters
+            mock_bfs_layers_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+            assert "neptune.algo.bfs.levels" in expected_query
+
+            # Verify the result contains the expected nodes
+            assert result == [["4", "1"], ["0", "3", "2"]]
