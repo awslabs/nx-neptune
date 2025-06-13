@@ -1,6 +1,6 @@
 import networkx as nx
 
-from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID
+from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID, Node
 from nx_neptune.utils.utils import get_stdout_logger
 
 """ 
@@ -96,3 +96,10 @@ r = nx.pagerank(g, backend="neptune", source_nodes=["A", "B"], source_weights=[1
 logger.info("Algorithm execution - Neptune Analytics: ")
 for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
     logger.info(f"{key}: {value}")
+
+logger.info("\n-------------------\n")
+# scenario: AWS - write_property
+r = nx.pagerank(g, backend="neptune", write_property="rank")
+logger.info("Algorithm execution - Neptune Analytics: ")
+for item in na_graph.get_all_nodes()[:10]:
+    logger.info(Node.from_neptune_response(item))

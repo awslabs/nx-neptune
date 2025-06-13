@@ -78,6 +78,14 @@ _info = {
             second value is for the second vertex, etc.
             The weights can be one of int, long, float, or double types.
             """,
+            "write_property : string, optional": "Determines whether to execute the standard or mutated version "
+            + "of the algorithm.; "
+            """If `write_property` is specified, the mutated version will be used.
+            In this mode, the algorithm writes the result directly into the remote graph under the specified property name.
+
+            **Important:** No execution result will be returned to the user in this mode.
+            To preserve the mutated graph state, you must either avoid setting `write_property`,
+            or ensure the option `nx.config.backends.neptune.export_s3_bucket` is properly configured for automatic export.""",
         },
         "degree_centrality": {
             "edgeLabels : list[str], optional": "A list of edge label strings; "

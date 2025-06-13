@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from nx_neptune.algorithms.util import process_unsupported_param
+from nx_neptune.algorithms.util.algorithm_utils import execute_mutation_query
 from nx_neptune.clients.neptune_constants import (
     PARAM_CONCURRENCY,
     PARAM_DAMPING_FACTOR,
@@ -17,10 +18,15 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_TOLERANCE,
     PARAM_TRAVERSAL_DIRECTION,
     PARAM_VERTEX_LABEL,
-    PARAM_WEIGHT,
+    PARAM_WRITE_PROPERTY,
     RESPONSE_RANK,
 )
-from nx_neptune.clients.opencypher_builder import Node, pagerank_query
+from nx_neptune.clients.opencypher_builder import (
+    _PAGERANK_MUTATE_ALG,
+    Node,
+    pagerank_mutation_query,
+    pagerank_query,
+)
 from nx_neptune.na_graph import NeptuneGraph
 from nx_neptune.utils.decorators import configure_if_nx_active
 
@@ -47,6 +53,7 @@ def pagerank(
     edge_weight_type: Optional[str] = None,
     source_nodes: Optional[List] = None,
     source_weights: Optional[List] = None,
+    write_property: Optional[str] = None,
 ):
     """
     Executes PageRank algorithm on the graph.
@@ -69,6 +76,12 @@ def pagerank(
     :param edge_weight_type: required if edgeWeightProperty is present, valid values: "int", "long", "float", "double".
     :param source_nodes: If a vertexLabel is provided, nodes that do not have the given vertexLabel are ignored.
     :param source_weights: A personalization weight list. The weight distribution among the personalized vertices.
+    :param write_property: Specifies the name of the node property that will store the computed pageRank values.
+    For comprehensive usage details,
+    refer to: https://docs.aws.amazon.com/neptune-analytics/latest/userguide/page-rank-mutate.html
+
+    :return: Computation result of pagerank algorithm, or an empty dictionary when `write_property` is specified.
+
     Note: The parameters personalization, nstart, and dangling are not supported
     in the Neptune Analytics implementation and will be ignored if provided.
     """
@@ -134,6 +147,16 @@ def pagerank(
     # Execute PageRank algorithm
     if parameters is None:
         parameters = {}
+
+    if write_property:
+        parameters[PARAM_WRITE_PROPERTY] = write_property
+        return execute_mutation_query(
+            neptune_graph,
+            parameters,
+            _PAGERANK_MUTATE_ALG,
+            pagerank_mutation_query,
+        )
+
     query_str, para_map = pagerank_query(parameters)
     json_result = neptune_graph.execute_call(query_str, para_map)
 

@@ -1,6 +1,7 @@
 import logging
 from typing import Any, List, Optional
 
+from nx_neptune.algorithms.util.algorithm_utils import execute_mutation_query
 from nx_neptune.clients.neptune_constants import (
     PARAM_CONCURRENCY,
     PARAM_EDGE_LABELS,
@@ -13,6 +14,7 @@ from nx_neptune.clients.neptune_constants import (
     RESPONSE_ID,
 )
 from nx_neptune.clients.opencypher_builder import (
+    _DEGREE_MUTATE_ALG,
     degree_centrality_mutation_query,
     degree_centrality_query,
 )
@@ -160,22 +162,12 @@ def _degree_centrality(
 
     if write_property:
         parameters[PARAM_WRITE_PROPERTY] = write_property
-
-        query_str, para_map = degree_centrality_mutation_query(parameters)
-        json_result = neptune_graph.execute_call(query_str, para_map)
-
-        execution_result = json_result[0].get("status")
-        if get_config().export_s3_bucket is None:
-            logger.warning(
-                "The graph has been mutated with degree centrality results. "
-                "Please export the graph contents if you want to preserve the changes. "
-                "Subsequent modifications may overwrite or discard this state."
-            )
-        if not execution_result:
-            logger.error(
-                "Algorithm execution [neptune.algo.degree.mutate] failed, refer to AWS console for more detail."
-            )
-        return {}
+        return execute_mutation_query(
+            neptune_graph,
+            parameters,
+            _DEGREE_MUTATE_ALG,
+            degree_centrality_mutation_query,
+        )
     else:
         query_str, para_map = degree_centrality_query(parameters)
         json_result = neptune_graph.execute_call(query_str, para_map)

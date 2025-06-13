@@ -164,5 +164,14 @@ class NeptuneConfig(Config):
                 "be True in the configuration."
             )
 
+    def validate_mutate_execution_config(self):
+        """Validate the Neptune configuration to make sure mutated graph's state stay after the execution."""
+        if self.destroy_instance is True and self.export_s3_bucket is None:
+            raise ValueError(
+                "Configuration error: The mutate variant of the algorithm does not support persisting changes."
+                "To maintain the mutated graph's state, "
+                "either disable the destroy_instance option or enable the export_s3_bucket option."
+            )
+
 
 _config = NeptuneConfig()

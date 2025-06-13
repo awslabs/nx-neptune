@@ -16,7 +16,9 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_EDGE_WEIGHT_TYPE,
     PARAM_SOURCE_NODES,
     PARAM_SOURCE_WEIGHTS,
+    PARAM_WRITE_PROPERTY,
 )
+from nx_neptune.clients.opencypher_builder import pagerank_mutation_query
 from nx_neptune.na_graph import NeptuneGraph
 from nx_neptune.algorithms.link_analysis.pagerank import pagerank
 
@@ -258,3 +260,32 @@ class TestPageRank:
 
             # Verify the result is still correct
             assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
+
+    def test_pagerank_mutation(self, mock_graph):
+        """Test pagerank with custom Neptune Analytics parameters"""
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            result = pagerank(
+                mock_graph,
+                alpha=0.85,
+                personalization=None,
+                max_iter=100,
+                tol=1e-06,
+                nstart=None,
+                weight=None,
+                dangling=None,
+                write_property="pageRank",
+            )
+
+            # Verify the correct query was built and executed
+            parameters = {PARAM_WRITE_PROPERTY: "pageRank"}
+            (expected_query, param_values) = pagerank_mutation_query(parameters)
+
+            # Verify the function called execute_call with correct parameters
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+
+            assert "neptune.algo.pageRank.mutate" in expected_query
+
+            # Verify the result contains the expected nodes with their degree values
+            assert result == {}

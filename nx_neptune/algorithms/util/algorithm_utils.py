@@ -5,6 +5,8 @@ Utility functions for Neptune Analytics algorithms.
 import logging
 from typing import Any, Dict
 
+from nx_neptune.na_graph import get_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,3 +23,26 @@ def process_unsupported_param(params: Dict[str, Any]) -> None:
                 f"'{param_name}' parameter is not supported in Neptune Analytics implementation. "
                 f"This argument will be ignored and execution will proceed without it."
             )
+
+
+def execute_mutation_query(neptune_graph, parameters, algo_name, algo_query_call):
+    """
+    Responsible to handle the execution flow of mutate variant of Neptune Analytics Algorithm.
+
+    :param neptune_graph: A NeptuneGraph instance
+    :param parameters: Dictionary with parameter names as keys and parameter values as values
+    :param algo_name: Name of the algorithm which will be printed on the log statement.
+    :param algo_query_call: Function call, which responsible to read an parameters Dict and composite
+    the associated query string and parameter map for given algorithm.
+    """
+    get_config().validate_mutate_execution_config()
+
+    query_str, para_map = algo_query_call(parameters)
+    json_result = neptune_graph.execute_call(query_str, para_map)
+    execution_result = json_result[0].get("status")
+
+    if not execution_result:
+        logger.error(
+            f"Algorithm execution [{algo_name}] failed, refer to AWS console for more detail."
+        )
+    return {}

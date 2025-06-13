@@ -16,6 +16,7 @@ _BFS_PARENTS_ALG = "neptune.algo.bfs.parents"
 _PAGE_RANK_ALG = "neptune.algo.pageRank"
 _DEGREE_ALG = "neptune.algo.degree"
 _DEGREE_MUTATE_ALG = "neptune.algo.degree.mutate"
+_PAGERANK_MUTATE_ALG = "neptune.algo.pageRank.mutate"
 _RANK_REF = "rank"
 _DEGREE_REF = "degree"
 
@@ -552,6 +553,32 @@ def pagerank_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
         .procedure(f"{_PAGE_RANK_ALG}({pagerank_params})")
         .yield_((_RANK_REF, _RANK_REF))
         .return_literal(_NODE_REF + ", " + _RANK_REF)
+        .query
+    ), {}
+
+
+def pagerank_mutation_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the mutated version of PageRank algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to PageRank
+    :return: Tuple of (OpenCypher query string, parameter map) for PageRank algorithm execution
+
+    Example:
+        >>> pagerank_mutation_query()
+        (' CALL neptune.algo.pageRank.mutate({ write_property:"pageRank"}) YIELD success AS success RETURN success)')
+    """
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        pagerank_params = f"{{{parameters_list_str}}}"
+    return (
+        QueryBuilder()
+        .match()
+        .node(ref_name=_NODE_REF)
+        .call()
+        .procedure(f"{_PAGERANK_MUTATE_ALG}({pagerank_params})")
+        .yield_((_SUCCESS_REF, _SUCCESS_REF))
+        .return_literal(_SUCCESS_REF)
         .query
     ), {}
 
