@@ -25,6 +25,16 @@ _info = {
             based on your specific convergence requirements. Please note that the
             personalization, nstart, weight, and dangling parameters are not supported at
             the moment.""",
+        "asyn_lpa_communities": """
+        Please note that the seed parameter is not supported at the moment,
+        also label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm,
+        using a fixed label update strategy.
+        Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.""",
+        "fast_label_propagation_communities": """
+        Please note that the seed parameter is not supported at the moment,
+        also label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm,
+        using a fixed label update strategy.
+        Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.""",
         # END: additional_docs
     },
     "additional_parameters": {
@@ -170,6 +180,108 @@ _info = {
             "vertexLabel : str, optional": "A vertex label for vertex filtering.; "
             """If a vertex label is provided, vertices matching the label are the only vertices that are included,
             including vertices in the input list.""",
+            "concurrency : int, optional": "Controls the number of concurrent threads used to run the algorithm.; "
+            """If set to 0, uses all available threads to complete execution of the individual algorithm invocation.
+            If set to 1, uses a single thread.
+            This can be useful when requiring the invocation of many algorithms concurrently.""",
+        },
+        "label_propagation_communities": {
+            "edge_labels : list[str], optional": "A list of edge label strings; "
+            """To filter on one more edge labels, provide a list of the ones to filter on.
+            If no edgeLabels field is provided then all edge labels are processed during traversal.""",
+            "vertex_label : str, optional": "A vertex label for vertex filtering.; "
+            """If a vertex label is provided, vertices matching the label are the only vertices that are included,
+           including vertices in the input list.""",
+            "vertex_weight_property : str, optional": "The vertex's weight property for algorithm computation.; "
+            """""",
+            "vertex_weight_type : str, optional": "required if vertex_weight_property is present; "
+            """The type of values associated with the vertex_weight_property argument, specified as a string.
+            valid values: "int", "long", "float", "double".
+            If the vertex_weight_property is not given,
+            the algorithm runs unweighted no matter if the vertex_weight_type is given or not.
+            Note that if multiple properties exist on the edge with the name specified by vertex_weight_property,
+            one of those property values will be sampled at random.""",
+            "edge_weight_property : str, optional": "The weight property to consider for weighted computation.; "
+            """""",
+            "edge_weight_type : str, optional": "required if edgeWeightProperty is present; "
+            """The type of values associated with the edgeWeightProperty argument, specified as a string.
+            valid values: "int", "long", "float", "double".
+            If the edgeWeightProperty is not given,
+            the algorithm runs unweighted no matter if the edgeWeightType is given or not.
+            Note that if multiple properties exist on the edge with the name specified by edgeWeightProperty,
+            one of those property values will be sampled at random.""",
+            "max_iterations : int, optional": "default: 10.; "
+            """The maximum number of iterations to run.""",
+            "traversal_direction : str, optional": "The direction of edge to follow.; "
+            """Must be one of: "outbound" or "inbound".""",
+            "concurrency : int, optional": "Controls the number of concurrent threads used to run the algorithm.; "
+            """If set to 0, uses all available threads to complete execution of the individual algorithm invocation.
+            If set to 1, uses a single thread.
+            This can be useful when requiring the invocation of many algorithms concurrently.""",
+        },
+        "asyn_lpa_communities": {
+            "edge_labels : list[str], optional": "A list of edge label strings; "
+            """To filter on one more edge labels, provide a list of the ones to filter on.
+            If no edgeLabels field is provided then all edge labels are processed during traversal.""",
+            "vertex_label : str, optional": "A vertex label for vertex filtering.; "
+            """If a vertex label is provided, vertices matching the label are the only vertices that are included,
+           including vertices in the input list.""",
+            "vertex_weight_property : str, optional": "The vertex's weight property for algorithm computation.; "
+            """""",
+            "vertex_weight_type : str, optional": "required if vertex_weight_property is present; "
+            """The type of values associated with the vertex_weight_property argument, specified as a string.
+            valid values: "int", "long", "float", "double".
+            If the vertex_weight_property is not given,
+            the algorithm runs unweighted no matter if the vertex_weight_type is given or not.
+            Note that if multiple properties exist on the edge with the name specified by vertex_weight_property,
+            one of those property values will be sampled at random.""",
+            "edge_weight_property : str, optional": "The weight property to consider for weighted computation.; "
+            """""",
+            "edge_weight_type : str, optional": "required if edgeWeightProperty is present; "
+            """The type of values associated with the edgeWeightProperty argument, specified as a string.
+            valid values: "int", "long", "float", "double".
+            If the edgeWeightProperty is not given,
+            the algorithm runs unweighted no matter if the edgeWeightType is given or not.
+            Note that if multiple properties exist on the edge with the name specified by edgeWeightProperty,
+            one of those property values will be sampled at random.""",
+            "max_iterations : int, optional": "default: 10.; "
+            """The maximum number of iterations to run.""",
+            "traversal_direction : str, optional": "The direction of edge to follow.; "
+            """Must be one of: "outbound" or "inbound".""",
+            "concurrency : int, optional": "Controls the number of concurrent threads used to run the algorithm.; "
+            """If set to 0, uses all available threads to complete execution of the individual algorithm invocation.
+            If set to 1, uses a single thread.
+            This can be useful when requiring the invocation of many algorithms concurrently.""",
+        },
+        "fast_label_propagation_communities": {
+            "edge_labels : list[str], optional": "A list of edge label strings; "
+            """To filter on one more edge labels, provide a list of the ones to filter on.
+            If no edgeLabels field is provided then all edge labels are processed during traversal.""",
+            "vertex_label : str, optional": "A vertex label for vertex filtering.; "
+            """If a vertex label is provided, vertices matching the label are the only vertices that are included,
+           including vertices in the input list.""",
+            "vertex_weight_property : str, optional": "The vertex's weight property for algorithm computation.; "
+            """""",
+            "vertex_weight_type : str, optional": "required if vertex_weight_property is present; "
+            """The type of values associated with the vertex_weight_property argument, specified as a string.
+            valid values: "int", "long", "float", "double".
+            If the vertex_weight_property is not given,
+            the algorithm runs unweighted no matter if the vertex_weight_type is given or not.
+            Note that if multiple properties exist on the edge with the name specified by vertex_weight_property,
+            one of those property values will be sampled at random.""",
+            "edge_weight_property : str, optional": "The weight property to consider for weighted computation.; "
+            """""",
+            "edge_weight_type : str, optional": "required if edgeWeightProperty is present; "
+            """The type of values associated with the edgeWeightProperty argument, specified as a string.
+            valid values: "int", "long", "float", "double".
+            If the edgeWeightProperty is not given,
+            the algorithm runs unweighted no matter if the edgeWeightType is given or not.
+            Note that if multiple properties exist on the edge with the name specified by edgeWeightProperty,
+            one of those property values will be sampled at random.""",
+            "max_iterations : int, optional": "default: 10.; "
+            """The maximum number of iterations to run.""",
+            "traversal_direction : str, optional": "The direction of edge to follow.; "
+            """Must be one of: "outbound" or "inbound".""",
             "concurrency : int, optional": "Controls the number of concurrent threads used to run the algorithm.; "
             """If set to 0, uses all available threads to complete execution of the individual algorithm invocation.
             If set to 1, uses a single thread.

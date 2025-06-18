@@ -81,6 +81,9 @@ target/
 # Notebook dataset
 notebooks/resources
 
+# Example dataset
+example/resources
+
 # IPython
 profile_default/
 ipython_config.py

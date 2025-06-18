@@ -12,6 +12,7 @@ _RELATION_REF = "r"
 _NODE_REF = "n"
 _LEVEL_REF = "level"
 _MIN_LEVEL_REF = "minLevel"
+_MEMBERS_REF = "members"
 _SUCCESS_REF = "success"
 _NODE_FULL_FORM_REF = "node"
 _NODE_FULL_FORM_ID_REF = "nodeId"
@@ -23,8 +24,10 @@ _PAGE_RANK_ALG = "neptune.algo.pageRank"
 _DEGREE_ALG = "neptune.algo.degree"
 _DEGREE_MUTATE_ALG = "neptune.algo.degree.mutate"
 _PAGERANK_MUTATE_ALG = "neptune.algo.pageRank.mutate"
+_LABEL_ALG = "neptune.algo.labelPropagation"
 _RANK_REF = "rank"
 _DEGREE_REF = "degree"
+_COMMUNITY_REF = "community"
 
 __all__ = [
     "match_all_nodes",
@@ -664,6 +667,52 @@ def pagerank_mutation_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
         .procedure(f"{_PAGERANK_MUTATE_ALG}({pagerank_params})")
         .yield_((_SUCCESS_REF, _SUCCESS_REF))
         .return_literal(_SUCCESS_REF)
+        .query
+    ), {}
+
+
+def label_propagation_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the Label Propagation algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to Label Propagation
+    :return: Tuple of (OpenCypher query string, parameter map) for Label Propagation algorithm execution
+
+    Example:
+        >>> label_propagation_query()
+        (' MATCH (n) CALL neptune.algo.labelPropagation(n)
+        YIELD node AS node, community AS community WITH community, id(node) AS nodeId
+        RETURN community AS community, collect(nodeId) AS members', {})
+        >>> label_propagation_query({'maxIterations': 50})
+        (' MATCH (n) CALL neptune.algo.labelPropagation(n, {maxIterations:50 })
+        YIELD node AS node, community AS community WITH community, id(node) AS nodeId
+        RETURN community AS community, collect(nodeId) AS members', {})
+    """
+    params = f"{_NODE_REF}"
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        params = f"{params}, {{{parameters_list_str}}}"
+    return (
+        QueryBuilder()
+        .match()
+        .node(ref_name=_NODE_REF)
+        .call()
+        .procedure(f"{_LABEL_ALG}({params})")
+        .yield_(
+            [
+                (_NODE_FULL_FORM_REF, _NODE_FULL_FORM_REF),
+                (_COMMUNITY_REF, _COMMUNITY_REF),
+            ]
+        )
+        .with_(
+            f"{_COMMUNITY_REF}, {_NODE_FULL_FORM_ID_FUNC_REF} AS {_NODE_FULL_FORM_ID_REF}"
+        )
+        .return_mapping(
+            [
+                (_COMMUNITY_REF, _COMMUNITY_REF),
+                (f"collect({_NODE_FULL_FORM_ID_REF})", _MEMBERS_REF),
+            ]
+        )
         .query
     ), {}
 

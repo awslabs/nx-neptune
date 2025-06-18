@@ -3,6 +3,11 @@ from .algorithms.centrality.degree_centrality import (
     in_degree_centrality,
     out_degree_centrality,
 )
+from .algorithms.communities.label_propagation import (
+    asyn_lpa_communities,
+    fast_label_propagation_communities,
+    label_propagation_communities,
+)
 from .algorithms.link_analysis.pagerank import pagerank
 from .algorithms.traversal.bfs import bfs_edges, bfs_layers, descendants_at_distance
 from .clients import Edge, Node
@@ -30,6 +35,9 @@ __all__ = [
     "degree_centrality",
     "in_degree_centrality",
     "out_degree_centrality",
+    "label_propagation_communities",
+    "asyn_lpa_communities",
+    "fast_label_propagation_communities",
     # graphs
     "Node",
     "Edge",
