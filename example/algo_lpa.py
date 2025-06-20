@@ -4,7 +4,7 @@ import networkx as nx
 import pandas as pd
 import requests
 
-from nx_neptune import NETWORKX_GRAPH_ID
+from nx_neptune import NETWORKX_GRAPH_ID, Node, NeptuneGraph
 from nx_neptune.utils.utils import get_stdout_logger
 
 """ 
@@ -72,3 +72,28 @@ result = nx.community.asyn_lpa_communities(air_route_graph, backend="neptune")
 # Print the first group
 logger.info(list(result)[:1])
 
+
+na_graph = NeptuneGraph.from_config()
+
+logger.info("\n---------scenario: AWS - label_propagation_communities - Mutation----------\n")
+# scenario: AWS
+result = nx.community.label_propagation_communities(air_route_graph, backend="neptune", write_property="communities")
+logger.info("Algorithm execution - Neptune Analytics: ")
+for item in na_graph.get_all_nodes()[:10]:
+    logger.info(Node.from_neptune_response(item))
+
+
+logger.info("\n---------scenario: AWS - fast_label_propagation_communities - Mutation----------\n")
+# scenario: AWS
+result = nx.community.fast_label_propagation_communities(air_route_graph, backend="neptune", write_property="communities")
+logger.info("Algorithm execution - Neptune Analytics: ")
+for item in na_graph.get_all_nodes()[:10]:
+    logger.info(Node.from_neptune_response(item))
+
+
+logger.info("\n---------scenario: AWS - asyn_lpa_communities - Mutation----------\n")
+# scenario: AWS
+result = nx.community.asyn_lpa_communities(air_route_graph, backend="neptune", write_property="communities")
+logger.info("Algorithm execution - Neptune Analytics: ")
+for item in na_graph.get_all_nodes()[:10]:
+    logger.info(Node.from_neptune_response(item))

@@ -25,6 +25,7 @@ _DEGREE_ALG = "neptune.algo.degree"
 _DEGREE_MUTATE_ALG = "neptune.algo.degree.mutate"
 _PAGERANK_MUTATE_ALG = "neptune.algo.pageRank.mutate"
 _LABEL_ALG = "neptune.algo.labelPropagation"
+_LABEL_MUTATE_ALG = "neptune.algo.labelPropagation.mutate"
 _RANK_REF = "rank"
 _DEGREE_REF = "degree"
 _COMMUNITY_REF = "community"
@@ -713,6 +714,34 @@ def label_propagation_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
                 (f"collect({_NODE_FULL_FORM_ID_REF})", _MEMBERS_REF),
             ]
         )
+        .query
+    ), {}
+
+
+def label_propagation_mutation_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the mutated version of Label Propagation algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to Degree Centrality algorithm execution
+    :return: Tuple of (OpenCypher query string, parameter map) for Degree Centrality algorithm execution
+
+    Example:
+        >>> label_propagation_query()
+        (' CALL neptune.algo.labelPropagation.mutate({writeProperty:"degree"})
+        YIELD success AS success RETURN success', {})
+        >>> label_propagation_query({'maxIterations': 50})
+        (' CALL neptune.algo.labelPropagation.mutate({writeProperty:"degree", 'maxIterations': 50})
+        YIELD success AS success RETURN success', {})
+    """
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        params = f"{{{parameters_list_str}}}"
+    return (
+        QueryBuilder()
+        .call()
+        .procedure(f"{_LABEL_MUTATE_ALG}({params})")
+        .yield_((_SUCCESS_REF, _SUCCESS_REF))
+        .return_literal(_SUCCESS_REF)
         .query
     ), {}
 

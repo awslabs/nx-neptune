@@ -19,14 +19,16 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_EDGE_WEIGHT_TYPE,
     PARAM_MAX_ITERATIONS,
     PARAM_TRAVERSAL_DIRECTION,
+    PARAM_WRITE_PROPERTY,
 )
 from nx_neptune.clients.opencypher_builder import (
     label_propagation_query,
+    label_propagation_mutation_query,
 )
 from nx_neptune.na_graph import NeptuneGraph
 
 
-class TestDegreeCentrality:
+class TestLabelPropagation:
     """Test suite for all three variants of labels propagation algorithms in nx_neptune."""
 
     PARSED_RESULT_SET = [
@@ -326,3 +328,46 @@ class TestDegreeCentrality:
             mock_logger.warning.assert_any_call(f"'seed'{warning_suffix}")
 
             assert list(result) == self.PARSED_RESULT_SET
+
+    def test_label_propagation_communities_mutation(self, mock_graph):
+        """Test functionality of label_propagation_communities Mutation with writeProperty"""
+        # Set up the environment
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            result = asyn_lpa_communities(
+                mock_graph,
+                vertex_label="test_vertex_label",
+                edge_labels=["test_edge_label"],
+                vertex_weight_property="test_weight_property",
+                vertex_weight_type="int",
+                edge_weight_property="test_weight_property",
+                edge_weight_type="int",
+                max_iterations=100,
+                traversal_direction="both",
+                concurrency=0,
+                write_property="communities",
+            )
+
+            # Verify the correct query was built and executed
+            parameters = {
+                PARAM_EDGE_LABELS: ["test_edge_label"],
+                PARAM_VERTEX_LABEL: "test_vertex_label",
+                PARAM_VERTEX_WEIGHT_PROPERTY: "test_weight_property",
+                PARAM_VERTEX_WEIGHT_TYPE: "int",
+                PARAM_EDGE_WEIGHT_PROPERTY: "test_weight_property",
+                PARAM_EDGE_WEIGHT_TYPE: "int",
+                PARAM_MAX_ITERATIONS: 100,
+                PARAM_TRAVERSAL_DIRECTION: "both",
+                PARAM_CONCURRENCY: 0,
+                PARAM_WRITE_PROPERTY: "communities",
+            }
+
+            (expected_query, param_values) = label_propagation_mutation_query(
+                parameters
+            )
+
+            # No conversion should happen if method receiving networkX default.
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+            assert "neptune.algo.labelPropagation.mutate" in expected_query
+            assert result == {}
