@@ -160,6 +160,37 @@ class TestPageRank:
             # Verify the result
             assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
 
+    def test_pagerank_with_personalisation(self, mock_graph):
+        """Test pagerank with personalization parameter."""
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            tolerance = 1e-04
+            result = pagerank(
+                mock_graph,
+                alpha=0.85,
+                personalization={"A": 1, "B": 2.4},
+                max_iter=100,
+                tol=tolerance,
+                nstart=None,
+                weight=None,
+                dangling=None,
+            )
+
+            # Verify the correct query was built and executed
+            parameters = {
+                PARAM_TOLERANCE: tolerance,
+                PARAM_SOURCE_NODES: ["A", "B"],
+                PARAM_SOURCE_WEIGHTS: [1, 2.4],
+            }
+            (expected_query, param_values) = pagerank_query(parameters)
+
+            # Verify the function called execute_call with correct parameters
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+
+            # Verify the result
+            assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
+
     def test_pagerank_with_na_parameters(self, mock_graph, traversalDirection=None):
         """Test pagerank with custom Neptune Analytics parameters"""
         with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
@@ -245,7 +276,7 @@ class TestPageRank:
             )
 
             # Verify warnings were logged for each unsupported parameter
-            assert mock_logger.warning.call_count == 3
+            assert mock_logger.warning.call_count == 2
 
             # Common warning message suffix
             warning_suffix = (
@@ -254,12 +285,93 @@ class TestPageRank:
             )
 
             # Check specific warning messages
-            mock_logger.warning.assert_any_call(f"'personalization'{warning_suffix}")
             mock_logger.warning.assert_any_call(f"'nstart'{warning_suffix}")
             mock_logger.warning.assert_any_call(f"'dangling'{warning_suffix}")
 
             # Verify the result is still correct
             assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
+
+    @patch("nx_neptune.algorithms.link_analysis.pagerank.logger")
+    def test_pagerank_with_personalisation_option_conflict(
+        self, mock_logger, mock_graph
+    ):
+        """Test pagerank when personalization and [source_nodes,source_weights] present."""
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            tolerance = 1e-04
+            result = pagerank(
+                mock_graph,
+                alpha=0.85,
+                personalization={"A": 1, "B": 2.4},
+                source_nodes=["C", "D"],
+                source_weights=[3, 4],
+                max_iter=100,
+                tol=tolerance,
+                nstart=None,
+                weight=None,
+                dangling=None,
+            )
+
+            # Verify the correct query was built and executed
+            parameters = {
+                PARAM_TOLERANCE: tolerance,
+                PARAM_SOURCE_NODES: ["C", "D"],
+                PARAM_SOURCE_WEIGHTS: [3, 4],
+            }
+            (expected_query, param_values) = pagerank_query(parameters)
+
+            # Verify the function called execute_call with correct parameters
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+
+            # Verify warnings were logged for each unsupported parameter
+            assert mock_logger.warning.call_count == 1
+            # Make sure user receive warning about it.
+            mock_logger.warning.assert_any_call(
+                "Since personalization and both source_nodes and source_weights are provided, "
+                "Neptune Analytics options will take precedence."
+            )
+
+            # Verify the result
+            assert result == {"1": 0.3, "2": 0.2, "3": 0.5}
+
+    @patch("nx_neptune.algorithms.link_analysis.pagerank.logger")
+    def test_pagerank_with_incomplete_aws_personalisation_option(
+        self, mock_logger, mock_graph
+    ):
+        """Test pagerank either source_nodes or source_weights present but not both."""
+        with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
+            tolerance = 1e-04
+            pagerank(
+                mock_graph,
+                alpha=0.85,
+                personalization=None,
+                source_nodes=["C", "D"],
+                max_iter=100,
+                tol=tolerance,
+                nstart=None,
+                weight=None,
+                dangling=None,
+            )
+
+            # Verify the correct query was built and executed
+            parameters = {
+                PARAM_TOLERANCE: tolerance,
+            }
+            (expected_query, param_values) = pagerank_query(parameters)
+
+            # Verify the function called execute_call with correct parameters
+            mock_graph.execute_call.assert_called_once_with(
+                expected_query, param_values
+            )
+
+            # Verify warnings were logged for each unsupported parameter
+            assert mock_logger.warning.call_count == 1
+            # Make sure user receive warning about it.
+            mock_logger.warning.assert_any_call(
+                "source_nodes and source_weights must be provided together. "
+                "If only one is specified, both parameters will be ignored"
+            )
 
     def test_pagerank_mutation(self, mock_graph):
         """Test pagerank with custom Neptune Analytics parameters"""

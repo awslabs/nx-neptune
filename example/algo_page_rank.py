@@ -103,3 +103,14 @@ r = nx.pagerank(g, backend="neptune", write_property="rank")
 logger.info("Algorithm execution - Neptune Analytics: ")
 for item in na_graph.get_all_nodes()[:10]:
     logger.info(Node.from_neptune_response(item))
+
+logger.info("\n-------------------\n")
+# scenario: AWS
+# Apply personalized PageRank using Neptune backend.
+# Here, node "B" is heavily favored (weight 100), while "A" has a very small preference (weight 0.1).
+# As a result, node "B" receives a significantly higher PageRank score, while "A" sees a drop.
+r = nx.pagerank(g, backend="neptune", personalization={"A": 0.1, "B": 100})
+logger.info("Algorithm execution - Neptune Analytics: ")
+for key, value in sorted(r.items(), key=lambda x: (x[1], x[0]), reverse=True):
+    logger.info(f"{key}: {value}")
+

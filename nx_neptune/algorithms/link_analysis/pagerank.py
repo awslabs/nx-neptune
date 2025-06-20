@@ -129,16 +129,29 @@ def pagerank(
         # ensuring backward compatibility.
         parameters[PARAM_EDGE_WEIGHT_TYPE] = "float"
 
-    if source_nodes:
-        parameters[PARAM_SOURCE_NODES] = source_nodes
+    if personalization and source_nodes and source_weights:
+        logger.warning(
+            "Since personalization and both source_nodes and source_weights are provided, "
+            "Neptune Analytics options will take precedence."
+        )
 
-    if source_weights:
+    if (source_nodes is None) != (source_weights is None):
+        logger.warning(
+            "source_nodes and source_weights must be provided together. "
+            "If only one is specified, both parameters will be ignored"
+        )
+
+    if source_nodes and source_weights:
+        parameters[PARAM_SOURCE_NODES] = source_nodes
         parameters[PARAM_SOURCE_WEIGHTS] = source_weights
+
+    elif personalization:
+        parameters[PARAM_SOURCE_NODES] = list(personalization.keys())
+        parameters[PARAM_SOURCE_WEIGHTS] = list(personalization.values())
 
     # Process unsupported parameters (for warnings only)
     process_unsupported_param(
         {
-            PARAM_PERSONALIZATION: personalization,
             PARAM_NSTART: nstart,
             PARAM_DANGLING: dangling,
         }
