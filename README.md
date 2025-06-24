@@ -101,23 +101,29 @@ For interactive exploration and visualization, you can use the Jupyter notebook 
 
 The notebooks directory contains interactive demonstrations of using Neptune Analytics with NetworkX:
 
-- `pagerank_demo.ipynb`: Focused demonstration of the PageRank algorithm
+- [pagerank_demo.ipynb](./notebooks/pagerank_demo.ipynb): Focused demonstration of the PageRank algorithm
   - Comparing PageRank results between NetworkX and Neptune Analytics
   - Visualizing PageRank values on a directed graph
 
-- `bfs_demo.ipynb`: Demonstration of Breadth-First Search traversal
+- [bfs_demo.ipynb](./notebooks/bfs_demo.ipynb): Demonstration of Breadth-First Search traversal
   - Running BFS with different parameters, like depth_limit and reverse
   - Visualizing BFS traversal paths
 
-- `s3_import_export_demo.ipynb`: A notebook demonstrating the process of importing from and exporting to an S3 bucket.
+- [degree_demo.ipynb](./notebooks/degree_demo.ipynb): Demonstration of Degree Centrality algorithm
+  - Running all variant of Degree Centrality algorithms (in / out degree)
+
+- [label_propagation_demo.ipynb](./notebooks/label_propagation_demo.ipynb): Demonstration of Label Propagation algorithm
+  - Running Label Propagation algorithm with different parameters
+
+- [s3_import_export_demo.ipynb](./notebooks/s3_import_export_demo.ipynb): A notebook demonstrating the process of importing from and exporting to an S3 bucket.
   - Executes data transfer operations using a pre-configured S3 bucket.
 
-- `instance_mgmt_lifecycle_demo.ipynb`: A notebook to demonstrates the explicit workflow for managing the lifecycle of an instance.   
+- [instance_mgmt_lifecycle_demo.ipynb](./notebooks/instance_mgmt_lifecycle_demo.ipynb): A notebook to demonstrates the explicit workflow for managing the lifecycle of an instance.   
   - Explicitly create an instance and import the necessary data
   - Run the desired algorithm
   - Cleanly terminate the instance using the provided graph ID
 
-- `instance_mgmt_with_configuration.ipynb`: A notebook to demonstrates a simplified approach to instance lifecycle management.   
+- [instance_mgmt_with_configuration.ipynb](./notebooks/instance_mgmt_with_configuration.ipynb): A notebook to demonstrates a simplified approach to instance lifecycle management.   
   - Execute the PageRank algorithm with minimal configuration by leveraging automatic instance management provided by the module
 
 

@@ -2,11 +2,13 @@
 
 This directory contains Jupyter notebooks demonstrating the integration between NetworkX and Neptune Analytics:
 
-- `pagerank_demo.ipynb`: Demonstrates PageRank algorithm implementation and visualization
-- `bfs_demo.ipynb`: Shows Breadth-First Search traversal with different parameters
-- `s3_import_export_demo.ipynb`: Demonstrates S3 import / export workflow
-- `instance_mgmt_lifecycle_demo.ipynb`: Demonstrates the usage of explicit instance management
-- `instance_mgmt_with_configuration.ipynb`: Demonstrates the usage of implicit instance management
+- [pagerank_demo.ipynb](./pagerank_demo.ipynb): Demonstrates PageRank algorithm implementation and visualization
+- [bfs_demo.ipynb](./bfs_demo.ipynb): Shows Breadth-First Search traversal with different parameters
+- [degree_demo.ipynb](./degree_demo.ipynb): Demonstrates Degree Centrality algorithm implementation 
+- [label_propagation_demo.ipynb](./label_propagation_demo.ipynb): Demonstrates Label Propagation algorithm implementation 
+- [s3_import_export_demo.ipynb](./s3_import_export_demo.ipynb): Demonstrates S3 import / export workflow
+- [instance_mgmt_lifecycle_demo.ipynb](./instance_mgmt_lifecycle_demo.ipynb): Demonstrates the usage of explicit instance management
+- [instance_mgmt_with_configuration.ipynb](./instance_mgmt_with_configuration.ipynb): Demonstrates the usage of implicit instance management
 
 ## Running on AWS Neptune Notebooks
 
