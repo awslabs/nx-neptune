@@ -5,6 +5,7 @@ Utility functions for Neptune Analytics algorithms.
 import logging
 from typing import Any, Dict
 
+from nx_neptune.clients.neptune_constants import RESPONSE_SUCCESS
 from nx_neptune.na_graph import get_config
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ def execute_mutation_query(neptune_graph, parameters, algo_name, algo_query_call
 
     query_str, para_map = algo_query_call(parameters)
     json_result = neptune_graph.execute_call(query_str, para_map)
-    execution_result = json_result[0].get("status")
+    execution_result = json_result[0].get(RESPONSE_SUCCESS) == True
 
     if not execution_result:
         logger.error(

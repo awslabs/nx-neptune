@@ -4,6 +4,7 @@ from cymple import QueryBuilder
 
 from . import PARAM_MAX_DEPTH
 from .na_models import Edge, ImmutableEdgeGroupBy, Node
+from .neptune_constants import RESPONSE_SUCCESS
 
 # Internal constants for reference names
 _SRC_NODE_REF = "a"
@@ -667,7 +668,7 @@ def pagerank_mutation_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
         .call()
         .procedure(f"{_PAGERANK_MUTATE_ALG}({pagerank_params})")
         .yield_((_SUCCESS_REF, _SUCCESS_REF))
-        .return_literal(_SUCCESS_REF)
+        .return_literal(RESPONSE_SUCCESS)
         .query
     ), {}
 
@@ -741,7 +742,7 @@ def label_propagation_mutation_query(parameters=None) -> Tuple[str, Dict[str, An
         .call()
         .procedure(f"{_LABEL_MUTATE_ALG}({params})")
         .yield_((_SUCCESS_REF, _SUCCESS_REF))
-        .return_literal(_SUCCESS_REF)
+        .return_literal(RESPONSE_SUCCESS)
         .query
     ), {}
 
@@ -792,7 +793,7 @@ def degree_centrality_mutation_query(parameters=None) -> Tuple[str, Dict[str, An
         .call()
         .procedure(f"{_DEGREE_MUTATE_ALG}({degree_params})")
         .yield_((_SUCCESS_REF, _SUCCESS_REF))
-        .return_literal(_SUCCESS_REF)
+        .return_literal(RESPONSE_SUCCESS)
         .query
     ), {}
 
