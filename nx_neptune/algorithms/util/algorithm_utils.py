@@ -40,7 +40,7 @@ def execute_mutation_query(neptune_graph, parameters, algo_name, algo_query_call
 
     query_str, para_map = algo_query_call(parameters)
     json_result = neptune_graph.execute_call(query_str, para_map)
-    execution_result = json_result[0].get(RESPONSE_SUCCESS) == True
+    execution_result = json_result[0].get(RESPONSE_SUCCESS) is True
 
     if not execution_result:
         logger.error(

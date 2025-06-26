@@ -15,6 +15,7 @@ _LEVEL_REF = "level"
 _MIN_LEVEL_REF = "minLevel"
 _MEMBERS_REF = "members"
 _SUCCESS_REF = "success"
+_SCORE_REF = "score"
 _NODE_FULL_FORM_REF = "node"
 _NODE_FULL_FORM_ID_REF = "nodeId"
 _NODE_FULL_FORM_ID_FUNC_REF = f"id({_NODE_FULL_FORM_REF})"
@@ -27,6 +28,7 @@ _DEGREE_MUTATE_ALG = "neptune.algo.degree.mutate"
 _PAGERANK_MUTATE_ALG = "neptune.algo.pageRank.mutate"
 _LABEL_ALG = "neptune.algo.labelPropagation"
 _LABEL_MUTATE_ALG = "neptune.algo.labelPropagation.mutate"
+_CLOSENESS_ALG = "neptune.algo.closenessCentrality"
 _RANK_REF = "rank"
 _DEGREE_REF = "degree"
 _COMMUNITY_REF = "community"
@@ -588,14 +590,7 @@ def bfs_layers_query(
         RETURN collect(nodeId) AS id, minLevel AS level
         ORDER BY minLevel ASC', {})
     """
-    distance_params = (
-        "["
-        + ",".join(
-            f"'{s}'"
-            for s in ([source_nodes] if isinstance(source_nodes, str) else source_nodes)
-        )
-        + "]"
-    )
+    distance_params = _get_nodes_in_list(source_nodes)
     if parameters:
         parameters_list_str = _to_parameter_list(parameters)
         distance_params = f"{distance_params}, {{{parameters_list_str}}}"
@@ -747,6 +742,54 @@ def label_propagation_mutation_query(parameters=None) -> Tuple[str, Dict[str, An
     ), {}
 
 
+def closeness_centrality_query(
+    parameters=None,
+    source_nodes: Optional[List] = None,
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the Closenss Centrality algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to Closeness Centrality algorithm
+    :param source_nodes: If a vertexLabel is provided, nodes that do not have the given vertexLabel are ignored.
+    :return: Tuple of (OpenCypher query string, parameter map) for Closeness Centrality algorithm execution
+
+    Example:
+        >>> closeness_centrality_query()
+        (' CALL neptune.algo.closenessCentrality(
+        {numSources:9223372036854775807, normalize:True})
+        YIELD node AS node, score AS score RETURN score AS score, id(node) AS nodeId, {})
+    """
+
+    if source_nodes:
+        params = _get_nodes_in_list(source_nodes)
+        qb = QueryBuilder()
+    else:
+        params = f"{_NODE_REF}"
+        qb = QueryBuilder().match().node(ref_name=_NODE_REF)
+
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        params = f"{params}, {{{parameters_list_str}}}"
+
+    return (
+        qb.call()
+        .procedure(f"{_CLOSENESS_ALG}({params})")
+        .yield_(
+            [
+                (_NODE_FULL_FORM_REF, _NODE_FULL_FORM_REF),
+                (_SCORE_REF, _SCORE_REF),
+            ]
+        )
+        .return_mapping(
+            [
+                (_SCORE_REF, _SCORE_REF),
+                (_NODE_FULL_FORM_ID_FUNC_REF, _NODE_FULL_FORM_ID_REF),
+            ]
+        )
+        .query
+    ), {}
+
+
 def degree_centrality_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
     """
     Create a query to execute the Degree algorithm on Neptune Analytics.
@@ -835,3 +878,20 @@ def _append_node(
     )
 
     return query_builder
+
+
+def _get_nodes_in_list(source_nodes: list[str]):
+    """
+    Converts a list of node IDs into a formatted string representation.
+
+    :param source_nodes: A list of node IDs or a single node ID as a string.
+    :return: A string with node IDs enclosed in square brackets and single quotes, e.g., "['A','B','C']".
+    """
+    return (
+        "["
+        + ",".join(
+            f"'{s}'"
+            for s in ([source_nodes] if isinstance(source_nodes, str) else source_nodes)
+        )
+        + "]"
+    )

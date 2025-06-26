@@ -1,3 +1,4 @@
+from .algorithms.centrality.closeness import closeness_centrality
 from .algorithms.centrality.degree_centrality import (
     degree_centrality,
     in_degree_centrality,

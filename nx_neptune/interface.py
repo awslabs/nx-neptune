@@ -38,6 +38,7 @@ ALGORITHMS = [
     "degree_centrality",
     "in_degree_centrality",
     "out_degree_centrality",
+    "closeness_centrality",
     "label_propagation_communities",
     "asyn_lpa_communities",
     "fast_label_propagation_communities",

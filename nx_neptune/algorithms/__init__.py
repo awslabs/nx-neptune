@@ -1,4 +1,5 @@
 # import subpackages
+from .centrality.closeness import closeness_centrality
 from .centrality.degree_centrality import (
     degree_centrality,
     in_degree_centrality,

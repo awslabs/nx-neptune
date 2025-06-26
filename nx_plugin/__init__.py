@@ -35,6 +35,8 @@ _info = {
         also label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm,
         using a fixed label update strategy.
         Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.""",
+        "closeness_centrality": """
+        Please note that the distance parameter is not supported.""",
         # END: additional_docs
     },
     "additional_parameters": {
@@ -310,6 +312,27 @@ _info = {
             **Important:** No execution result will be returned to the user in this mode.
             To preserve the mutated graph state, you must either avoid setting `write_property`,
             or ensure the option `nx.config.backends.neptune.export_s3_bucket` is properly configured for automatic export.""",
+        },
+        "closeness_centrality": {
+            "numSources : int, optional, default to maxInt": "The number of sources to compute approximate Closeness result.;"
+            """To compute exact closeness centrality, set numSources to a number larger than number of nodes,
+            such as maxInt.""",
+            "edge_labels : list[str], optional": "A list of edge label strings; "
+            """To filter on one more edge labels, provide a list of the ones to filter on.
+            If no edgeLabels field is provided then all edge labels are processed during traversal.""",
+            "vertex_label : str, optional": "A vertex label for vertex filtering.; "
+            """If a vertex label is provided, vertices matching the label are the only vertices that are included,
+           including vertices in the input list.""",
+            "traversal_direction : str, optional": "The direction of edge to follow.; "
+            """Must be one of: "outbound" or "inbound".""",
+            "normalize : Boolean, optional": "Normalization feature switch always overrides wf_improved when enabled."
+            """You can use this field to turn off normalization, which is on by default. Without normalization,
+            only centrality scores of nodes within the same component can be meaningfully compared.
+            Normalized scores can be compared across different connected components.""",
+            "concurrency : int, optional": "Controls the number of concurrent threads used to run the algorithm.; "
+            """If set to 0, uses all available threads to complete execution of the individual algorithm invocation.
+            If set to 1, uses a single thread.
+            This can be useful when requiring the invocation of many algorithms concurrently.""",
         },
         # END: additional_parameters
     },
