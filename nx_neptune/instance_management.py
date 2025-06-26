@@ -215,9 +215,18 @@ def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn, polling_interval=30) -> Fut
     return asyncio.wrap_future(future)
 
 
-def create_na_instance():
+def create_na_instance(config: Optional[dict] = None):
     """
     Creates a new graph instance for Neptune Analytics.
+
+    Args:
+        config (Optional[dict]): Optional dictionary of custom configuration parameters
+            to use when creating the Neptune Analytics instance. If not provided,
+            default settings will be applied.
+            All options listed under boto3 documentations are supported.
+
+            Reference:
+            https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph.html
 
     Raises:
         Exception: If the Neptune Analytics instance creation fails
@@ -229,7 +238,7 @@ def create_na_instance():
     iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
     iam_client.has_create_na_permissions()
 
-    response = _create_na_instance_task(na_client)
+    response = _create_na_instance_task(na_client, config)
     prospective_graph_id = _get_graph_id(response)
 
     if _get_status_code(response) == 201:
@@ -277,7 +286,37 @@ def delete_na_instance(graph_id: str):
         return asyncio.wrap_future(fut)
 
 
-def _create_na_instance_task(client):
+def _get_create_instance_config(graph_name, config=None):
+    """
+    Build and sanitize the configuration dictionary for creating a graph instance.
+
+    This function filters the provided `config` to include only permitted keys,
+    fills in default values for required parameters if they are missing, and
+    ensures the presence of the 'agent' tag and the graph name.
+
+    Args:
+        graph_name (str): The name of the graph to create. This is always included in the result.
+        config (dict, optional): An optional dictionary of user-provided configuration values.
+
+    Returns:
+        dict: A sanitized and completed configuration dictionary with required keys and values.
+    """
+
+    config = config or {}
+    # Ensure mandatory config present.
+    config.setdefault("publicConnectivity", True)
+    config.setdefault("replicaCount", 0)
+    config.setdefault("deletionProtection", False)
+    config.setdefault("provisionedMemory", 16)
+
+    # Make sure agent tag shows regardless
+    config["graphName"] = graph_name
+    config.setdefault("tags", {}).setdefault("agent", _PROJECT_IDENTIFIER)
+
+    return config
+
+
+def _create_na_instance_task(client, config: Optional[dict] = None):
     """Create a new Neptune Analytics graph instance with default settings.
 
     This function generates a unique name for the graph using a UUID suffix and
@@ -292,15 +331,10 @@ def _create_na_instance_task(client):
     Raises:
         ClientError: If there's an issue with the AWS API call
     """
+
     graph_name = _create_random_graph_name()
-    response = client.create_graph(
-        graphName=graph_name,
-        tags={"agent": _PROJECT_IDENTIFIER},
-        publicConnectivity=True,
-        replicaCount=0,
-        deletionProtection=False,
-        provisionedMemory=16,
-    )
+    kwargs = _get_create_instance_config(graph_name, config)
+    response = client.create_graph(**kwargs)
     return response
 
 

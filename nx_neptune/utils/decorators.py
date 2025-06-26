@@ -62,7 +62,9 @@ def configure_if_nx_active():
                         _execute_setup_routines_on_graph(na_graph, neptune_config)
                     )
 
-            elif neptune_config.create_new_instance:
+            elif neptune_config.create_new_instance is True or isinstance(
+                neptune_config.create_new_instance, dict
+            ):
                 if loop and loop.is_running():
                     pool = concurrent.futures.ThreadPoolExecutor()
                     neptune_config = pool.submit(
@@ -132,7 +134,10 @@ async def _execute_setup_new_graph(
         # TODO: update this to do everything in one shot
 
         logger.debug("Create empty instance")
-        graph_id = await create_na_instance()
+        config = neptune_config.create_new_instance
+        graph_id = await create_na_instance(
+            config if isinstance(config, dict) else None
+        )
 
         # once done: save the graph id and update the config
         neptune_config = set_config_graph_id(graph_id)
@@ -157,7 +162,10 @@ async def _execute_setup_new_graph(
         )
     else:
         logger.debug("Create empty instance")
-        graph_id = await create_na_instance()
+        config = neptune_config.create_new_instance
+        graph_id = await create_na_instance(
+            config if isinstance(config, dict) else None
+        )
 
         # once done: save the graph id and update the config
         neptune_config = set_config_graph_id(graph_id)

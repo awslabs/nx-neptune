@@ -39,8 +39,19 @@ class NeptuneConfig(Config):
     ----------------------------------
     These settings are used for instance creation and data restoration.
 
-    create_instance: bool
+    create_instance: bool | dict
         If True and if graph_id is not provided, create a new instance before call. Defaults to False.
+        If set to a dictionary, it will be used as the custom configuration for instance creation.
+        For configuration details, refer to:
+        https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph.html
+
+        Example:
+
+        nx.config.backends.neptune.create_new_instance = {
+            "provisionedMemory": 32,
+            "tags": {"additional_tag": "custom_tag"},
+        }
+
 
     import_s3_bucket: Optional[str]
         S3 bucket with files to import before call. Defaults to None.
@@ -93,7 +104,12 @@ class NeptuneConfig(Config):
 
     ############################################
     # Settings for Neptune Analytics setup:
-    create_new_instance: bool = False
+
+    # Feature flag to control whether the module should create a Neptune Analytics instance on the user's behalf.
+    # If custom configuration is needed, the user can provide a dictionary instead of a boolean.
+    # For detailed configuration options, see:
+    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph.html
+    create_new_instance: bool | dict = False
     # create_instance
     restore_snapshot: Optional[str] = None
     import_s3_bucket: Optional[str] = None

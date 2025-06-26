@@ -36,13 +36,17 @@ async def main():
     # 4. Export the dataset to S3 - to capture any mutations
     # 5. Destroy the neptune-graph instance
     #
-    nx.config.backends.neptune.create_new_instance = True
+    nx.config.backends.neptune.create_new_instance = {
+        "provisionedMemory": 32,
+        "tags": {"additional_tag": "test_with_default_route"},
+    }
     nx.config.backends.neptune.s3_iam_role = "<your-role>"
     nx.config.backends.neptune.import_s3_bucket = "<your-s3-bucket>/cit-Patents"
     nx.config.backends.neptune.export_s3_bucket = "<your-s3-bucket>/export"
     nx.config.backends.neptune.destroy_instance = True
 
     # ---------------------- RUN WORKFLOW ---------------------------
+    g = nx.barabasi_albert_graph(n=5000, m=1)
     r_neptune = nx.pagerank(g, backend="neptune")
     print("PageRank results using Neptune Analytics:")
     sorted_results = sorted(r_neptune.items(), key=lambda x: (x[1], x[0]), reverse=True)

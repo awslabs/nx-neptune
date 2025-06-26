@@ -17,6 +17,7 @@ from nx_neptune.instance_management import (
     import_csv_from_s3,
     export_csv_to_s3,
     delete_na_instance,
+    _get_create_instance_config,
 )
 
 NX_CREATE_SUCCESS_FIXTURE = """{
@@ -874,3 +875,62 @@ async def test_delete_na_instance_failure(mock_boto3_client):
 
     with pytest.raises(Exception, match="Invalid response status code"):
         await delete_na_instance("test-123")
+
+
+@pytest.mark.asyncio
+async def test_create_graph_config_base():
+    result = _get_create_instance_config("test")
+    expected = {
+        "graphName": "test",
+        "publicConnectivity": True,
+        "replicaCount": 0,
+        "deletionProtection": False,
+        "provisionedMemory": 16,
+        "tags": {"agent": "nx-neptune"},
+    }
+    assert expected == result
+
+
+@pytest.mark.asyncio
+async def test_create_graph_config_custom_parameters():
+    # Unrelated parameters will be discarded.
+    config = {
+        "custom_parameter": 123,
+        "kmsKeyIdentifier": "test_kms",
+        "vectorSearchConfiguration": 1024,
+    }
+    result = _get_create_instance_config("test", config)
+    expected = {
+        "graphName": "test",
+        "publicConnectivity": True,
+        "replicaCount": 0,
+        "deletionProtection": False,
+        "provisionedMemory": 16,
+        "tags": {"agent": "nx-neptune"},
+        "custom_parameter": 123,
+        "kmsKeyIdentifier": "test_kms",
+        "vectorSearchConfiguration": 1024,
+    }
+    assert expected == result
+
+
+@pytest.mark.asyncio
+async def test_create_graph_config_override_default_options():
+    # Only permitted parameters will be considered and default will always present regardless.
+    config = {
+        "publicConnectivity": False,
+        "replicaCount": 3,
+        "deletionProtection": True,
+        "provisionedMemory": 32,
+        "tags": {"additional_tag": "test_value"},
+    }
+    result = _get_create_instance_config("test", config)
+    expected = {
+        "graphName": "test",
+        "publicConnectivity": False,
+        "replicaCount": 3,
+        "deletionProtection": True,
+        "provisionedMemory": 32,
+        "tags": {"agent": "nx-neptune", "additional_tag": "test_value"},
+    }
+    assert expected == result
