@@ -37,6 +37,9 @@ _info = {
         Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.""",
         "closeness_centrality": """
         Please note that the distance parameter is not supported.""",
+        "louvain_communities": """
+        Please note that the resolution and seed parameters are not supported at the moment.
+        """,
         # END: additional_docs
     },
     "additional_parameters": {
@@ -333,6 +336,36 @@ _info = {
             """If set to 0, uses all available threads to complete execution of the individual algorithm invocation.
             If set to 1, uses a single thread.
             This can be useful when requiring the invocation of many algorithms concurrently.""",
+        },
+        "louvain_communities": {
+            "edge_labels : list[str], optional": "A list of edge label strings; "
+            """To filter on one more edge labels, provide a list of the ones to filter on.
+            If no edgeLabels field is provided then all edge labels are processed during traversal.""",
+            "edge_weight_property : str, optional": "The weight property to consider for weighted computation.; "
+            """""",
+            "edge_weight_type : str, optional": "required if edgeWeightProperty is present; "
+            """The type of values associated with the edgeWeightProperty argument, specified as a string.
+            valid values: "int", "long", "float", "double".
+            If the edgeWeightProperty is not given,
+            the algorithm runs unweighted no matter if the edgeWeightType is given or not.
+            Note that if multiple properties exist on the edge with the name specified by edgeWeightProperty,
+            one of those property values will be sampled at random.""",
+            "max_iterations : int, optional": "default: 10.; "
+            """The maximum number of iterations to run.""",
+            "concurrency : int, optional": "Controls the number of concurrent threads used to run the algorithm.; "
+            """If set to 0, uses all available threads to complete execution of the individual algorithm invocation.
+           If set to 1, uses a single thread.
+           This can be useful when requiring the invocation of many algorithms concurrently.""",
+            "level_tolerance : float, optional": "Minimum modularity change to continue to next level.; "
+            """""",
+            "write_property : string, optional": "Determines whether to execute the standard or mutated version "
+            + "of the algorithm.; "
+            """If `write_property` is specified, the mutation version will be used.
+            In mutation mode, the algorithm writes the result directly into the remote graph under the specified property name.
+
+            **Important:** No execution result will be returned to the user in mutation mode.
+            To preserve the mutated graph state, you must either avoid setting `write_property`,
+            or ensure the option `nx.config.backends.neptune.export_s3_bucket` is properly configured for automatic export.""",
         },
         # END: additional_parameters
     },

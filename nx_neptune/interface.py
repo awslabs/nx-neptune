@@ -42,6 +42,7 @@ ALGORITHMS = [
     "label_propagation_communities",
     "asyn_lpa_communities",
     "fast_label_propagation_communities",
+    "louvain_communities",
 ]
 
 

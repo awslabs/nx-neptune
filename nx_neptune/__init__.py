@@ -1,3 +1,4 @@
+from .algorithms import louvain_communities
 from .algorithms.centrality.closeness import closeness_centrality
 from .algorithms.centrality.degree_centrality import (
     degree_centrality,
@@ -39,6 +40,7 @@ __all__ = [
     "label_propagation_communities",
     "asyn_lpa_communities",
     "fast_label_propagation_communities",
+    "louvain_communities",
     # graphs
     "Node",
     "Edge",

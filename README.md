@@ -111,6 +111,8 @@ The notebooks directory contains interactive demonstrations of using Neptune Ana
 
 - [closeness_centrality_demo.ipynb](./notebooks/closeness_centrality_demo.ipynb): Focused demonstration of the Closeness Centrality algorithm
 
+- [louvain_demo.ipynb](./notebooks/louvain_demo.ipynb): Demonstration of Louvain algorithm
+
 - [s3_import_export_demo.ipynb](./notebooks/s3_import_export_demo.ipynb): A notebook demonstrating the process of importing from and exporting to an S3 bucket.
 
 - [instance_mgmt_lifecycle_demo.ipynb](./notebooks/instance_mgmt_lifecycle_demo.ipynb): A notebook to demonstrates the explicit workflow for managing the lifecycle of an instance.   

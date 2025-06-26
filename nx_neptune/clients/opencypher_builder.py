@@ -23,12 +23,14 @@ _PARENT_FULL_FORM_REF = "parent"
 _BFS_PARENTS_ALG = "neptune.algo.bfs.parents"
 _BFS_LEVELS_ALG = "neptune.algo.bfs.levels"
 _PAGE_RANK_ALG = "neptune.algo.pageRank"
+_PAGERANK_MUTATE_ALG = "neptune.algo.pageRank.mutate"
 _DEGREE_ALG = "neptune.algo.degree"
 _DEGREE_MUTATE_ALG = "neptune.algo.degree.mutate"
-_PAGERANK_MUTATE_ALG = "neptune.algo.pageRank.mutate"
 _LABEL_ALG = "neptune.algo.labelPropagation"
 _LABEL_MUTATE_ALG = "neptune.algo.labelPropagation.mutate"
 _CLOSENESS_ALG = "neptune.algo.closenessCentrality"
+_LOUVAIN_ALG = "neptune.algo.louvain"
+_LOUVAIN_MUTATE_ALG = "neptune.algo.louvain.mutate"
 _RANK_REF = "rank"
 _DEGREE_REF = "degree"
 _COMMUNITY_REF = "community"
@@ -710,6 +712,80 @@ def label_propagation_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
                 (f"collect({_NODE_FULL_FORM_ID_REF})", _MEMBERS_REF),
             ]
         )
+        .query
+    ), {}
+
+
+def louvain_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the Louvain algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to Louvain algorithm
+    :return: Tuple of (OpenCypher query string, parameter map) for Louvain algorithm execution
+
+    Example:
+        >>> louvain_query()
+        (' MATCH (n) CALL neptune.algo.louvain(n)
+        YIELD node AS node, community AS community WITH community, id(node) AS nodeId
+        RETURN community AS community, collect(nodeId) AS members', {})
+        >>> louvain_query({'iterationTolerance': 1e-07})
+        (' MATCH (n) CALL neptune.algo.louvain(n, {iterationTolerance:1e-07 })
+        YIELD node AS node, community AS community WITH community, id(node) AS nodeId
+        RETURN community AS community, collect(nodeId) AS members', {})
+    """
+    params = f"{_NODE_REF}"
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        params = f"{params}, {{{parameters_list_str}}}"
+    return (
+        QueryBuilder()
+        .match()
+        .node(ref_name=_NODE_REF)
+        .call()
+        .procedure(f"{_LOUVAIN_ALG}({params})")
+        .yield_(
+            [
+                (_NODE_FULL_FORM_REF, _NODE_FULL_FORM_REF),
+                (_COMMUNITY_REF, _COMMUNITY_REF),
+            ]
+        )
+        .with_(
+            f"{_COMMUNITY_REF}, {_NODE_FULL_FORM_ID_FUNC_REF} AS {_NODE_FULL_FORM_ID_REF}"
+        )
+        .return_mapping(
+            [
+                (_COMMUNITY_REF, _COMMUNITY_REF),
+                (f"collect({_NODE_FULL_FORM_ID_REF})", _MEMBERS_REF),
+            ]
+        )
+        .query
+    ), {}
+
+
+def louvain_mutation_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the mutated version of Louvain algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to Louvain algorithm execution
+    :return: Tuple of (OpenCypher query string, parameter map) for Louvain algorithm execution
+
+    Example:
+        >>> louvain_mutation_query()
+        (' CALL neptune.algo.louvain.mutate()
+        YIELD success AS success RETURN success', {})
+        >>> louvain_mutation_query({'writeProperty': 'community_id'})
+        (' CALL neptune.algo.louvain.mutate({writeProperty:"community_id", iterationTolerance:1e-07 })
+        YIELD success AS success RETURN success', {})
+    """
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        params = f"{{{parameters_list_str}}}"
+    return (
+        QueryBuilder()
+        .call()
+        .procedure(f"{_LOUVAIN_MUTATE_ALG}({params})")
+        .yield_((_SUCCESS_REF, _SUCCESS_REF))
+        .return_literal(RESPONSE_SUCCESS)
         .query
     ), {}
 

@@ -7,6 +7,7 @@ This directory contains Jupyter notebooks demonstrating the integration between 
 - [degree_demo.ipynb](./degree_demo.ipynb): Demonstrates Degree Centrality algorithm implementation 
 - [label_propagation_demo.ipynb](./label_propagation_demo.ipynb): Demonstrates Label Propagation algorithm implementation
 - [closeness_centrality_demo.ipynb](./closeness_centrality_demo.ipynb): Shows Closeness Centrality traversal with different parameters
+- [louvain_demo.ipynb](./louvain_demo.ipynb): Demonstrates Louvain algorithm implementation
 - [s3_import_export_demo.ipynb](./s3_import_export_demo.ipynb): Demonstrates S3 import / export workflow
 - [instance_mgmt_lifecycle_demo.ipynb](./instance_mgmt_lifecycle_demo.ipynb): Demonstrates the usage of explicit instance management
 - [instance_mgmt_with_configuration.ipynb](./instance_mgmt_with_configuration.ipynb): Demonstrates the usage of implicit instance management
