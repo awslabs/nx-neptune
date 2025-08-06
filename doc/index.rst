@@ -1,9 +1,9 @@
-.. nx-neptune-analytics documentation master file, created by
+.. nx-neptune documentation master file, created by
    sphinx-quickstart on Mon Mar  3 11:18:58 2025.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-nx-neptune-analytics documentation
+nx-neptune documentation
 ==================================
 
 Add your content using ``reStructuredText`` syntax. See the

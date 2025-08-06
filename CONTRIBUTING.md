@@ -9,9 +9,9 @@ This instructions are for linux base systems. (Linux, MacOS, BSD, etc.)
 ## Setting up your own fork of this repo.
 
 - On github interface click on `Fork` button.
-- Clone your fork of this repo. `git clone git@github.com:YOUR_GIT_USERNAME/nx-neptune-analytics.git`
-- Enter the directory `cd nx-neptune-analytics`
-- Add upstream repo `git remote add upstream https://github.com/Bit-Quill/nx-neptune-analytics`
+- Clone your fork of this repo. `git clone git@github.com:YOUR_GIT_USERNAME/nx-neptune.git`
+- Enter the directory `cd nx-neptune`
+- Add upstream repo `git remote add upstream https://github.com/awslabs/nx-neptune`
 
 ## Setting up your own virtual environment
 

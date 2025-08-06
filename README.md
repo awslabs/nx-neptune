@@ -2,8 +2,8 @@
 ---
 # nx_neptune
 
-[![CI](https://github.com/Bit-Quill/nx-neptune-analytics/actions/workflows/main.yml/badge.svg)](https://github.com/Bit-Quill/nx-neptune-analytics/actions/workflows/main.yml)
-[![Upload Python Package](https://github.com/Bit-Quill/nx-neptune-analytics/actions/workflows/release.yml/badge.svg)](https://github.com/Bit-Quill/nx-neptune-analytics/actions/workflows/release.yml)
+[![CI](https://github.com/awslabs/nx-neptune/actions/workflows/main.yml/badge.svg)](https://github.com/awslabs/nx-neptune/actions/workflows/main.yml)
+[![Upload Python Package](https://github.com/awslabs/nx-neptune/actions/workflows/release.yml/badge.svg)](https://github.com/awslabs/nx-neptune/actions/workflows/release.yml)
 
 This project offers a NetworkX-compatible backend for Neptune Analytics, enabling users to offload graph algorithm workloads to AWS with no code changes. By using familiar NetworkX APIs, developers can seamlessly scale graph computations on-demand through Neptune Analytics. This approach combines the simplicity of local development with the performance and scalability of a fully managed AWS graph analytics service.
 
@@ -36,8 +36,8 @@ pip install "dist/nx_neptune-0.4.0-py3-none-any.whl"
 To install the required nx_neptune dependencies:
 
 ```bash
-git clone git@github.com:Bit-Quill/nx-neptune-analytics.git
-cd nx-neptune-analytics
+git clone git@github.com:awslabs/nx-neptune.git
+cd nx-neptune
 
 # install from source directly
 make install

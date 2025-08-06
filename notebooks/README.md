@@ -147,7 +147,7 @@ Once your Neptune notebook instance is running:
 1. **Upload the package and notebooks**:
    - First, build the wheel file locally:
      ```bash
-     cd ./nx-neptune-analytics
+     cd ./nx-neptune
      # On your local machine run:
      python -m pip wheel -w dist .
      # creates dist/nx_neptune-0.4.0-py3-none-any.whl

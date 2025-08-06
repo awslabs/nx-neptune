@@ -6,9 +6,9 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'nx-neptune-analytics'
-copyright = '2025, Improving'
-author = 'Improving'
+project = 'nx-neptune'
+copyright = '2025, AWS'
+author = 'AWS'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

@@ -37,8 +37,8 @@ name = "TBD"
 email = "TBD@TBD.com"
 
 [project.urls]
-"Bug Tracker" = 'https://github.com/bq/nx-neptune-analytics/issues'
-"Source Code" = 'https://github.com/bq/nx-neptune-analytics'
+"Bug Tracker" = 'https://github.com/awslabs/nx-neptune/issues'
+"Source Code" = 'https://github.com/awslabs/nx-neptune'
 
 [project.entry-points."networkx.backends"]
 neptune = "nx_neptune.interface:BackendInterface"
