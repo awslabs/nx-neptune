@@ -1,116 +1,59 @@
-# How to develop on this project
+# Contributing Guidelines
 
-nx_neptune welcomes contributions from the community.
+Thank you for your interest in contributing to our project. Whether it's a bug report, new feature, correction, or additional
+documentation, we greatly value feedback and contributions from our community.
 
-**You need PYTHON3!**
-TODO: Compatibility table on NetworkX and Python.
-
-This instructions are for linux base systems. (Linux, MacOS, BSD, etc.)
-## Setting up your own fork of this repo.
-
-- On github interface click on `Fork` button.
-- Clone your fork of this repo. `git clone git@github.com:YOUR_GIT_USERNAME/nx-neptune.git`
-- Enter the directory `cd nx-neptune`
-- Add upstream repo `git remote add upstream https://github.com/awslabs/nx-neptune`
-
-## Setting up your own virtual environment
-
-Run `make virtualenv` to create a virtual environment.
-then activate it with `source .venv/bin/activate`.
-
-## Install the project in develop mode
-
-Run `make install-dev` to install the project in developer mode (this installs developer and test optional requirements)
-
-## Run the tests to ensure everything is working
-
-Run `make test` to run the tests.
-
-## Create a new branch to work on your contribution
-
-Run `git checkout -b my_contribution`
-
-## Make your changes
-
-Edit the files using your preferred editor. (we recommend VIM or VSCode)
-
-## Format the code
-
-Run `make fmt` to format the code.
-
-## Run the linter
-
-Run `make lint` to run the linter.
-
-## Test your changes
-
-Run `make test` to run the tests.
-
-This will print a report with one line for each file in `nx_neptune`,
-detailing the test coverage::
-
-  Name                                             Stmts   Miss Branch BrPart  Cover
-  ----------------------------------------------------------------------------------
-  networkx/__init__.py                                33      2      2      1    91%
-  networkx/algorithms/__init__.py                    114      0      0      0   100%
-  networkx/algorithms/approximation/__init__.py       12      0      0      0   100%
-  networkx/algorithms/approximation/clique.py         42      1     18      1    97%
-  ...
+Please read through this document before submitting any issues or pull requests to ensure we have all the necessary
+information to effectively respond to your bug report or contribution.
 
 
-Ensure code coverage report shows `80%` coverage, add tests to your PR.
+## Reporting Bugs/Feature Requests
 
-## Makefile utilities
+We welcome you to use the GitHub issue tracker to report bugs or suggest features.
 
-This project comes with a `Makefile` that contains a number of useful utility.
+When filing an issue, please check existing open, or recently closed, issues to make sure somebody else hasn't already
+reported the issue. Please try to include as much information as you can. Details like these are incredibly useful:
 
-```bash 
-❯ make
-Usage: make <target>
-
-Targets:
-help:             ## Show the help.
-install:          ## Install the project to run examples.
-install-dev:      ## Install the project in dev mode.
-fmt:              ## Format code using black & isort.
-lint:             ## Run pep8, black, mypy linters.
-test: lint        ## Run tests and generate coverage report.
-watch:            ## Run tests on every change.
-clean:            ## Clean unused files.
-virtualenv:       ## Create a virtual environment.
-license-check     ## run the license checker.
-release:          ## Create a new tag for release.
-switch-to-poetry: ## Switch to poetry package manager.
-init:             ## Initialize the project based on an application template.
-```
-
-## Checking licenses
-
-This project uses `pip-licenses` to check for license violations in dependencies. The license checker will check
-the current environment for any non-open source licenses (or unknowns).  
-
-Run `make clean` to clean your environment first and remove unused dependencies.
-
-Run `make license-check` install dependencies and check licenses.
+* A reproducible test case or series of steps
+* The version of our code being used
+* Any modifications you've made relevant to the bug
+* Anything unusual about your environment or deployment
 
 
-## Making a new release
+## Contributing via Pull Requests
+Contributions via pull requests are much appreciated. Before sending us a pull request, please ensure that:
 
-This project uses [semantic versioning](https://semver.org/) and tags releases with `X.Y.Z`
-Every time a new tag is created and pushed to the remote repo, github actions will
-automatically create a new release on github and trigger a release on PyPI.
+1. You are working against the latest source on the *main* branch.
+2. You check existing open, and recently merged, pull requests to make sure someone else hasn't addressed the problem already.
+3. You open an issue to discuss any significant work - we would hate for your time to be wasted.
 
-For this to work you need to setup a secret called `PIPY_API_TOKEN` on the project settings>secrets, 
-this token can be generated on [pypi.org](https://pypi.org/account/).
+To send us a pull request, please:
 
-To trigger a new release all you need to do is:
+1. Fork the repository.
+2. Modify the source; please focus on the specific change you are contributing. If you also reformat all the code, it will be hard for us to focus on your change.
+3. Ensure local tests pass.
+4. Commit to your fork using clear commit messages.
+5. Send us a pull request, answering any default questions in the pull request interface.
+6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
 
-1. If you have changes to add to the repo
-    * Make your changes following the steps described above.
-    * Commit your changes following the [conventional git commit messages](https://www.conventionalcommits.org/en/v1.0.0/).
-2. Run the tests to ensure everything is working.
-4. Run `make release` to create a new tag and push it to the remote repo.
+GitHub provides additional document on [forking a repository](https://help.github.com/articles/fork-a-repo/) and
+[creating a pull request](https://help.github.com/articles/creating-a-pull-request/).
 
-the `make release` will ask you the version number to create the tag, ex: type `0.1.1` when you are asked.
 
-> **CAUTION**:  The make release will change local changelog files and commit all the unstaged changes you have.
+## Finding contributions to work on
+Looking at the existing issues is a great way to find something to contribute on. As our projects, by default, use the default GitHub issue labels (enhancement/bug/duplicate/help wanted/invalid/question/wontfix), looking at any 'help wanted' issues is a great place to start.
+
+
+## Code of Conduct
+This project has adopted the [Amazon Open Source Code of Conduct](https://aws.github.io/code-of-conduct).
+For more information see the [Code of Conduct FAQ](https://aws.github.io/code-of-conduct-faq) or contact
+opensource-codeofconduct@amazon.com with any additional questions or comments.
+
+
+## Security issue notifications
+If you discover a potential security issue in this project we ask that you notify AWS/Amazon Security via our [vulnerability reporting page](http://aws.amazon.com/security/vulnerability-reporting/). Please do **not** create a public github issue.
+
+
+## Licensing
+
+See the [LICENSE](LICENSE) file for our project's licensing. We will ask you to confirm the licensing of your contribution.

@@ -191,10 +191,11 @@ Analytics instance. Make sure your AWS credentials are properly configured and
 your IAM role/user has the required permissions (ReadDataViaQuery, 
 WriteDataViaQuery, DeleteDataViaQuery).
 
-## Development
+## Security
 
-Please read the [contributing documentation](CONTRIBUTING.md) for more information.
-
+See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
 
 ## License
-This project is licensed under the [Apache-2.0 License](LICENSE).
+
+This project is licensed under the Apache-2.0 License.
+
