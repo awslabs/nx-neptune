@@ -3,6 +3,7 @@ from asyncio import Task
 from typing import Any, List, Optional
 
 import boto3
+from botocore.config import Config
 import networkx
 from networkx import DiGraph, Graph
 
@@ -38,6 +39,8 @@ __all__ = [
     "get_config",
     "set_config_graph_id",
 ]
+
+from .clients.neptune_constants import APP_ID_NX
 
 from .clients.opencypher_builder import insert_edges, insert_nodes
 
@@ -85,7 +88,8 @@ class NeptuneGraph:
             s3_iam_role = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
 
         na_client = NeptuneAnalyticsClient(
-            config.graph_id, boto3.client(SERVICE_NA), logger
+            config.graph_id, boto3.client(service_name = SERVICE_NA,
+                                          config = Config(user_agent_appid=APP_ID_NX)), logger
         )
         iam_client = IamClient(s3_iam_role, boto3.client(SERVICE_IAM), logger)
         return cls(

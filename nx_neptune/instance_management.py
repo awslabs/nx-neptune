@@ -8,10 +8,12 @@ from typing import Optional
 
 import boto3
 import jmespath
+from botocore.config import Config
 from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
+from .clients.neptune_constants import APP_ID_NX
 from .na_graph import NeptuneGraph
 
 __all__ = [
@@ -231,7 +233,8 @@ def create_na_instance(config: Optional[dict] = None):
     Raises:
         Exception: If the Neptune Analytics instance creation fails
     """
-    na_client = boto3.client(SERVICE_NA)
+    na_client = boto3.client(service_name = SERVICE_NA,
+                             config = Config(user_agent_appid=APP_ID_NX))
 
     # Permissions check
     user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
