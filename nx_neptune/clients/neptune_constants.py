@@ -7,6 +7,9 @@ SERVICE_NA = "neptune-graph"
 SERVICE_IAM = "iam"
 SERVICE_STS = "sts"
 
+# APP_ID
+APP_ID_NX = "nx-neptune"
+
 # Internal constants for parameters
 PARAM_MAX_DEPTH = "maxDepth"
 PARAM_TRAVERSAL_DIRECTION = "traversalDirection"
