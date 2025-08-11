@@ -53,7 +53,7 @@ jobs:
     - name: Upload artifact to run
       uses: actions/upload-artifact@v4
       with:
-        name: build-output
+        name: nx_neptune_project_binary
         path: ./dist/nx_neptune-*.whl
 
 
