@@ -31,7 +31,7 @@ jobs:
 #          body_path: release_message.md
 
   deploy:
-    needs: release
+#    needs: release
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
