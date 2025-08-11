@@ -12,23 +12,23 @@ on:
   workflow_dispatch:
 
 jobs:
-  release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          # by default, it uses a depth of 1
-          # this fetches all history so that we can read each commit
-          fetch-depth: 0
-      - name: Generate Changelog
-        run: .github/release_message.sh > release_message.md
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        with:
-          body_path: release_message.md
+#  release:
+#    name: Create Release
+#    runs-on: ubuntu-latest
+#    permissions:
+#      contents: write
+#    steps:
+#      - uses: actions/checkout@v4
+#        with:
+#          # by default, it uses a depth of 1
+#          # this fetches all history so that we can read each commit
+#          fetch-depth: 0
+#      - name: Generate Changelog
+#        run: .github/release_message.sh > release_message.md
+#      - name: Release
+#        uses: softprops/action-gh-release@v2
+#        with:
+#          body_path: release_message.md
 
   deploy:
     needs: release
