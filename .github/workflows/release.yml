@@ -50,12 +50,18 @@ jobs:
       run: |
         make dist 
 
-    - name: Upload artifact to run
-      uses: actions/upload-artifact@v4
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      if: github.ref_type == 'tag'
       with:
-        name: nx_neptune_project_binary
-        path: ./dist/nx_neptune-*.whl
+        files: ./dist/nx_neptune-*.whl
 
+#    - name: Upload artifact to run
+#      uses: actions/upload-artifact@v4
+#      with:
+#        name: nx_neptune_project_binary
+#        path: ./dist/nx_neptune-*.whl
+#
 
 #    - name: Build and publish
 #      env:
