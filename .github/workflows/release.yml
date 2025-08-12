@@ -12,56 +12,51 @@ on:
   workflow_dispatch:
 
 jobs:
-#  release:
-#    name: Create Release
-#    runs-on: ubuntu-latest
-#    permissions:
-#      contents: write
-#    steps:
-#      - uses: actions/checkout@v4
-#        with:
-#          # by default, it uses a depth of 1
-#          # this fetches all history so that we can read each commit
-#          fetch-depth: 0
-#      - name: Generate Changelog
-#        run: .github/release_message.sh > release_message.md
-#      - name: Release
-#        uses: softprops/action-gh-release@v2
-#        with:
-#          body_path: release_message.md
-
-  deploy:
-#    needs: release
+  release:
+    name: Create Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          # by default, it uses a depth of 1
+          # this fetches all history so that we can read each commit
+          fetch-depth: 0
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install setuptools wheel twine
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel twine
 
-    - name: Build artifact
-      run: |
-        make dist 
+      - name: Build artifact
+        run: |
+          make dist 
 
-    - name: Release
-      uses: softprops/action-gh-release@v2
-      if: github.ref_type == 'tag'
-      with:
-        files: ./dist/nx_neptune-*.whl
+      - name: Generate Changelog
+        run: .github/release_message.sh > release_message.md
 
-#    - name: Upload artifact to run
-#      uses: actions/upload-artifact@v4
-#      with:
-#        name: nx_neptune_project_binary
-#        path: ./dist/nx_neptune-*.whl
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_message.md
+          files: ./dist/nx_neptune-*.whl
+
+#  deploy:
+#    needs: release
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v4
 #
+#    - name: Set up Python
+#      uses: actions/setup-python@v5
+#      with:
+#        python-version: '3.x'
 
 #    - name: Build and publish
 #      env:
