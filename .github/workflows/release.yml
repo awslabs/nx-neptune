@@ -47,3 +47,9 @@ jobs:
           body_path: release_message.md
           files: ./dist/nx_neptune-*.whl
 
+      - name: Publish
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          twine upload dist/*
