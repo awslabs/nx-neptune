@@ -31,6 +31,7 @@ _info = {
     "additional_docs": {
         # BEGIN: additional_docs
         "bfs": "limited version of nx.shortest_path",
+
         "pagerank": """Neptune Analytics recommends using a max_iter value of 20 for PageRank
             calculations, which balances computational efficiency with result accuracy. This
             default setting is optimized for most graph workloads, though you can adjust it
@@ -42,13 +43,16 @@ _info = {
         also label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm,
         using a fixed label update strategy.
         Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.""",
+
         "fast_label_propagation_communities": """
         Please note that the seed parameter is not supported at the moment,
         also label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm,
         using a fixed label update strategy.
         Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.""",
+
         "closeness_centrality": """
         Please note that the distance parameter is not supported.""",
+
         "louvain_communities": """
         Please note that the resolution and seed parameters are not supported at the moment.
         """,
@@ -425,6 +429,11 @@ def get_info():
         "description": "Scale graph algorithms on AWS Neptune Analytics platform.",
         "functions": {
             "asyn_lpa_communities": {
+                "additional_docs":
+                """Please note that the seed parameter is not supported at the moment,
+        also label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm,
+        using a fixed label update strategy.
+        Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.""",
                 "extra_parameters": {
                     "edge_labels : list[str], optional": "A list of edge label strings; "
                                                          """To filter on one more edge labels, provide a list of the ones to filter on.
@@ -500,6 +509,8 @@ def get_info():
                 }
             },
             "closeness_centrality": {
+                "additional_docs": """
+        Please note that the distance parameter is not supported.""",
                 "extra_parameters": {
                     "numSources : int, optional, default to maxInt": "The number of sources to compute approximate Closeness result.;"
                                                                      """To compute exact closeness centrality, set numSources to a number larger than number of nodes,
@@ -561,6 +572,11 @@ def get_info():
                 }
             },
             "fast_label_propagation_communities": {
+                "additional_docs":
+                    """Please note that the seed parameter is not supported at the moment,
+        also label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm,
+        using a fixed label update strategy.
+        Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.""",
                 "extra_parameters": {
                     "edge_labels : list[str], optional": "A list of edge label strings; "
                                                          """To filter on one more edge labels, provide a list of the ones to filter on.
@@ -671,6 +687,9 @@ def get_info():
                 }
             },
             "louvain_communities": {
+                "additional_docs":
+                """Please note that the resolution and seed parameters are not supported at the moment.
+                        """,
                 "extra_parameters": {
                     "edge_labels : list[str], optional": "A list of edge label strings; "
                                                          """To filter on one more edge labels, provide a list of the ones to filter on.
