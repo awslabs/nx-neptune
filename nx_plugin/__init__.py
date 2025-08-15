@@ -108,7 +108,7 @@ def get_info():
         Please note that the distance parameter is not supported.""",
                 "extra_parameters": {
                     "numSources : int, optional, default to maxInt": "The number of sources"
-                                                                     "to compute approximate Closeness result.;"
+                    "to compute approximate Closeness result.;"
                     """To compute exact closeness centrality, set numSources to a number larger than number of nodes,
                            such as maxInt.""",
                     "edge_labels : list[str], optional": "A list of edge label strings; "
@@ -366,7 +366,7 @@ def get_info():
                     "traversalDirection : str, optional": "The direction of edge to follow.; "
                     """Must be one of: "outbound" or "inbound".""",
                     "edgeWeightProperty : str, optional": "The weight property to consider "
-                                                          "for weighted pageRank computation.; "
+                    "for weighted pageRank computation.; "
                     """""",
                     "edgeWeightType : str, optional": "required if edgeWeightProperty is present; "
                     """The type of values associated with the edgeWeightProperty argument, specified as a string.
