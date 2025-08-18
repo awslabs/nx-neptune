@@ -11,8 +11,6 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 import pytest
-
-import nx_plugin
 from nx_neptune import NeptuneGraph
 from importlib.metadata import entry_points, EntryPoint
 
