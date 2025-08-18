@@ -15,8 +15,12 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/bq-test-package
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,3 +51,5 @@ jobs:
           body_path: release_message.md
           files: ./dist/nx_neptune-*.whl
 
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
