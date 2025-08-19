@@ -16,8 +16,8 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     environment:
-      name: testpypi
-      url: https://test.pypi.org/p/bq-test-package
+      name: PYPI_ENV
+      url: PYPI_PACKAGE_URL
     permissions:
       contents: write
       id-token: write
