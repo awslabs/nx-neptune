@@ -43,6 +43,19 @@ GitHub provides additional document on [forking a repository](https://help.githu
 ## Finding contributions to work on
 Looking at the existing issues is a great way to find something to contribute on. As our projects, by default, use the default GitHub issue labels (enhancement/bug/duplicate/help wanted/invalid/question/wontfix), looking at any 'help wanted' issues is a great place to start.
 
+## Validate user-facing documentation
+When introducing support for a new algorithm, you may need to add custom parameters that are not part of the original NetworkX API. If this is the case:
+
+1. Update the plugin entry point.
+Modify `./nx_plugin/__init__.py` to include the new parameters and ensure they are properly integrated.
+2. Build the documentation.
+Follow the [NetworkX documentation guidelines](https://networkx.org/documentation/stable/developer/contribute.html#documentation) to generate the documentation locally.
+3. Verify the output
+   - Confirm that the new parameters and behaviors are clearly documented.
+   - Ensure the formatting is consistent with existing documentation.
+   - Check that the new content is visible and accessible to end users.
+
+
 
 ## Code of Conduct
 This project has adopted the [Amazon Open Source Code of Conduct](https://aws.github.io/code-of-conduct).

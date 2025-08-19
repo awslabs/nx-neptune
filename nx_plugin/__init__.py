@@ -19,18 +19,28 @@ _info = {
     "backend_name": "neptune",
     "project": "nx-neptune",
     "package": "nx_neptune",
-    "url": "https://github.com/",
+    "url": "https://github.com/awslabs/nx-neptune",
     "short_summary": "Neptune computation backend for NetworkX.",
     "description": "Scale graph algorithms on AWS Neptune Analytics platform.",
     "functions": {
         # BEGIN: functions
-        "bfs",
+        "bfs_edges",
         "pagerank",
+        "degree_centrality",
+        "in_degree_centrality",
+        "out_degree_centrality",
+        "descendants_at_distance",
+        "bfs_layers",
+        "label_propagation_communities",
+        "fast_label_propagation_communities",
+        "closeness_centrality",
+        "louvain_communities",
+        "asyn_lpa_communities",
         # END: functions
     },
     "additional_docs": {
         # BEGIN: additional_docs
-        "bfs": "limited version of nx.shortest_path",
+        "bfs_edges": "limited version of nx.shortest_path",
         "pagerank": """Neptune Analytics recommends using a max_iter value of 20 for PageRank
             calculations, which balances computational efficiency with result accuracy. This
             default setting is optimized for most graph workloads, though you can adjust it
