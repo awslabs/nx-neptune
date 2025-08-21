@@ -36,7 +36,7 @@ install-dev: install          ## Install the project in dev mode.
 dist: ## install the distribution
 	@echo "Building distribution:"
 	$(ENV_PREFIX)pip install -e .
-	$(ENV_PREFIX)python -m pip wheel -w dist .
+	$(ENV_PREFIX)python -m pip wheel -w dist . --no-deps
 
 .PHONY: fmt
 fmt:              ## Format code using black & isort.
