@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dynamic = ['version']
 keywords = ["networkx", "graphs", "algorithms", "neptune"]
-license = {text = "BSD-3-Clause"}
+license = {text = "Apache-2.0"}
 classifiers = [
     'Intended Audience :: Developers',
     'Intended Audience :: Science/Research',
@@ -123,7 +123,8 @@ ignore-packages = [
 ]
 
 allow-only = """
-Apache Software License;Apache-2.0;
+Apache Software License;
+Apache-2.0;
 BSD License;
 CC0 1.0 Universal (CC0 1.0) Public Domain Dedication;
 GNU General Public License (GPL);
