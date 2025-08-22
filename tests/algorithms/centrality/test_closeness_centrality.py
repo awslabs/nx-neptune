@@ -24,10 +24,12 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_VERTEX_LABEL,
     PARAM_NUM_SOURCES,
     PARAM_NORMALIZE,
-    MAX_INT, PARAM_WRITE_PROPERTY,
+    MAX_INT,
+    PARAM_WRITE_PROPERTY,
 )
 from nx_neptune.clients.opencypher_builder import (
-    closeness_centrality_query, closeness_centrality_mutation_query,
+    closeness_centrality_query,
+    closeness_centrality_mutation_query,
 )
 from nx_neptune.na_graph import NeptuneGraph
 
@@ -163,7 +165,6 @@ class TestClosenessCentrality:
             # Verify the result contains the expected nodes with their score values
             assert result == {"YVR": 0.16, "HKG": 0.23, "SYD": 0.11, "AXT": 0.45}
 
-
     def test_closeness_centrality_mutation(self, mock_graph):
         """Test functionality of closeness centrality Mutation with writeProperty"""
         # Set up the environment
@@ -180,7 +181,7 @@ class TestClosenessCentrality:
             parameters = {
                 PARAM_NUM_SOURCES: 9223372036854775807,
                 PARAM_NORMALIZE: False,
-                PARAM_WRITE_PROPERTY: "score"
+                PARAM_WRITE_PROPERTY: "score",
             }
             (expected_query, param_values) = closeness_centrality_query(
                 parameters, ["YVR"]

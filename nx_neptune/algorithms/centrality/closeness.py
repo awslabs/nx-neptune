@@ -13,7 +13,10 @@
 import logging
 from typing import Any, List, Optional
 
-from nx_neptune.algorithms.util.algorithm_utils import process_unsupported_param, execute_mutation_query
+from nx_neptune.algorithms.util.algorithm_utils import (
+    execute_mutation_query,
+    process_unsupported_param,
+)
 from nx_neptune.clients.neptune_constants import (
     MAX_INT,
     PARAM_CONCURRENCY,
@@ -22,10 +25,13 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_NORMALIZE,
     PARAM_NUM_SOURCES,
     PARAM_TRAVERSAL_DIRECTION,
-    PARAM_VERTEX_LABEL, PARAM_WRITE_PROPERTY,
+    PARAM_VERTEX_LABEL,
+    PARAM_WRITE_PROPERTY,
 )
 from nx_neptune.clients.opencypher_builder import (
-    closeness_centrality_query, _CLOSENESS_MUTATE_ALG, closeness_centrality_mutation_query,
+    _CLOSENESS_MUTATE_ALG,
+    closeness_centrality_mutation_query,
+    closeness_centrality_query,
 )
 from nx_neptune.na_graph import NeptuneGraph
 from nx_neptune.utils.decorators import configure_if_nx_active
@@ -113,7 +119,6 @@ def closeness_centrality(
             _CLOSENESS_MUTATE_ALG,
             closeness_centrality_mutation_query,
         )
-
 
     query_str, para_map = closeness_centrality_query(parameters, u)
     json_result = neptune_graph.execute_call(query_str, para_map)

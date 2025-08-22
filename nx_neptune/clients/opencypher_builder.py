@@ -879,7 +879,6 @@ def closeness_centrality_query(
     ), {}
 
 
-
 def closeness_centrality_mutation_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
     """
     Create a query to execute the mutated version of Closeness Centrality algorithm on Neptune Analytics.
@@ -906,6 +905,7 @@ def closeness_centrality_mutation_query(parameters=None) -> Tuple[str, Dict[str,
         .return_literal(RESPONSE_SUCCESS)
         .query
     ), {}
+
 
 def degree_centrality_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
     """
