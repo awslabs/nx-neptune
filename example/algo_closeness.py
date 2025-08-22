@@ -66,10 +66,10 @@ for key, value in sorted(result.items(), key=lambda x: (x[1], x[0]), reverse=Tru
 
 logger.info("\n---------scenario: AWS - closeness_centrality - Selected node----------\n")
 result = nx.closeness_centrality(air_route_graph, backend="neptune", u="YVR")
+
 logger.info(result)
 
 logger.info("\n---------scenario: AWS - closeness_centrality - Mutation----------\n")
-# scenario: AWS
 nx.closeness_centrality(air_route_graph, backend="neptune", write_property="ccScore")
 na_graph = NeptuneGraph.from_config()
 logger.info("Algorithm execution - Neptune Analytics: ")
