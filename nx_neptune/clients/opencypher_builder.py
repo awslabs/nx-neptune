@@ -41,6 +41,7 @@ _DEGREE_MUTATE_ALG = "neptune.algo.degree.mutate"
 _LABEL_ALG = "neptune.algo.labelPropagation"
 _LABEL_MUTATE_ALG = "neptune.algo.labelPropagation.mutate"
 _CLOSENESS_ALG = "neptune.algo.closenessCentrality"
+_CLOSENESS_MUTATE_ALG = "neptune.algo.closenessCentrality.mutate"
 _LOUVAIN_ALG = "neptune.algo.louvain"
 _LOUVAIN_MUTATE_ALG = "neptune.algo.louvain.mutate"
 _RANK_REF = "rank"
@@ -877,6 +878,34 @@ def closeness_centrality_query(
         .query
     ), {}
 
+
+
+def closeness_centrality_mutation_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the mutated version of Closeness Centrality algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to Closeness Centrality algorithm execution
+    :return: Tuple of (OpenCypher query string, parameter map) for Closeness Centrality algorithm execution
+
+    Example:
+        >>> closeness_centrality_mutation_query()
+        (' CALL neptune.algo.closenessCentrality.mutate()
+        YIELD success AS success RETURN success', {})
+        >>> closeness_centrality_mutation_query({'writeProperty': 'community_id'})
+        (' CALL neptune.algo.closenessCentrality.mutate({writeProperty:"community_id" })
+        YIELD success AS success RETURN success', {})
+    """
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        params = f"{{{parameters_list_str}}}"
+    return (
+        QueryBuilder()
+        .call()
+        .procedure(f"{_CLOSENESS_MUTATE_ALG}({params})")
+        .yield_((_SUCCESS_REF, _SUCCESS_REF))
+        .return_literal(RESPONSE_SUCCESS)
+        .query
+    ), {}
 
 def degree_centrality_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
     """
