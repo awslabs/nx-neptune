@@ -16,8 +16,7 @@ __all__ = [
 ]
 
 from typing import Any, Dict, List, Tuple
-
-from attr import dataclass
+from dataclasses import dataclass
 
 DEFAULT_NODE_LABEL_TYPE = "Node"
 
