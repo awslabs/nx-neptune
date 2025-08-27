@@ -83,7 +83,7 @@ G.add_node("John")
 G.add_edge("Bill", "John")
 
 nx.shortest_path(
-    G, source="John", target="Bill", backend="neptune_analytics"
+    G, source="John", target="Bill", backend="neptune"
 )
 ```
 
