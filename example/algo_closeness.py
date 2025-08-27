@@ -16,7 +16,7 @@ import networkx as nx
 import pandas as pd
 import requests
 
-from nx_neptune import NETWORKX_GRAPH_ID
+from nx_neptune import NETWORKX_GRAPH_ID, NeptuneGraph, Node
 from nx_neptune.utils.utils import get_stdout_logger
 
 """ 
@@ -69,5 +69,10 @@ result = nx.closeness_centrality(air_route_graph, backend="neptune", u="YVR")
 
 logger.info(result)
 
-
+logger.info("\n---------scenario: AWS - closeness_centrality - Mutation----------\n")
+nx.closeness_centrality(air_route_graph, backend="neptune", write_property="ccScore")
+na_graph = NeptuneGraph.from_config()
+logger.info("Algorithm execution - Neptune Analytics: ")
+for item in na_graph.get_all_nodes()[:10]:
+    logger.info(Node.from_neptune_response(item))
 

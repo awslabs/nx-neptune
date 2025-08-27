@@ -358,6 +358,14 @@ _info = {
             """If set to 0, uses all available threads to complete execution of the individual algorithm invocation.
             If set to 1, uses a single thread.
             This can be useful when requiring the invocation of many algorithms concurrently.""",
+            "write_property : string, optional": "Determines whether to execute the standard or mutated version "
+            + "of the algorithm.; "
+            """If `write_property` is specified, the mutation version will be used.
+            In mutation mode, the algorithm writes the result directly into the remote graph under the specified property name.
+
+            **Important:** No execution result will be returned to the user in mutation mode.
+            To preserve the mutated graph state, you must either avoid setting `write_property`,
+            or ensure the option `nx.config.backends.neptune.export_s3_bucket` is properly configured for automatic export.""",
         },
         "louvain_communities": {
             "edge_labels : list[str], optional": "A list of edge label strings; "
