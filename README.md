@@ -82,16 +82,27 @@ G.add_node("Bill")
 G.add_node("John")
 G.add_edge("Bill", "John")
 
-nx.shortest_path(
-    G, source="John", target="Bill", backend="neptune_analytics"
-)
+r = nx.pagerank(G, backend="neptune")
 ```
 
+And run with:
+
 ```bash
-$ python -m nx_neptune
-#or
-$ nx_neptune
+# Set the NETWORKX_GRAPH_ID environment variable
+export NETWORKX_GRAPH_ID=your-neptune-analytics-graph-id
+python ./nx_example.py
 ```
+
+Alternatively, you can pass the `NETWORKX_GRAPH_ID` directly:
+
+```bash
+NETWORKX_GRAPH_ID=your-neptune-analytics-graph-id python ./nx_example.py
+````
+
+Without a valid `NETWORKX_GRAPH_ID`, the examples will fail to connect to your Neptune
+Analytics instance. Make sure your AWS credentials are properly configured and
+your IAM role/user has the required permissions (ReadDataViaQuery,
+WriteDataViaQuery, DeleteDataViaQuery).
 
 ## Jupyter Notebook Integration
 
@@ -120,7 +131,7 @@ The notebooks directory contains interactive demonstrations of using Neptune Ana
 - [instance_mgmt_with_configuration.ipynb](./notebooks/instance_mgmt_with_configuration.ipynb): A notebook to demonstrates a simplified approach to instance lifecycle management.   
 
 
-### Building a package wheel
+### Uploading a package wheel
 
 We recommend uploading your package as a wheel to Jupyter Notebooks. 
 
@@ -167,29 +178,6 @@ To run the Jupyter notebooks:
    ```python
    %env NETWORKX_GRAPH_ID=your-neptune-analytics-graph-id
    ```
-
-## Examples
-Before running the examples, you must specify your Neptune Analytics Graph ID 
-as an environment variable:
-
-```bash
-# Set the NETWORKX_GRAPH_ID environment variable
-export NETWORKX_GRAPH_ID=your-neptune-analytics-graph-id
-
-# Then run the example
-.venv/bin/python ./example/nx_client_example.py
-```
-
-Alternatively, you can pass the NETWORKX_GRAPH_ID directly when running the example:
-
-```bash
-GRAPH_ID=your-neptune-analytics-graph-id .venv/bin/python ./example/nx_client_example.py
-````
-
-Without a valid NETWORKX_GRAPH_ID, the examples will fail to connect to your Neptune 
-Analytics instance. Make sure your AWS credentials are properly configured and 
-your IAM role/user has the required permissions (ReadDataViaQuery, 
-WriteDataViaQuery, DeleteDataViaQuery).
 
 ## Security
 
