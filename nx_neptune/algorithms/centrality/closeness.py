@@ -13,7 +13,10 @@
 import logging
 from typing import Any, List, Optional
 
-from nx_neptune.algorithms.util.algorithm_utils import process_unsupported_param
+from nx_neptune.algorithms.util.algorithm_utils import (
+    execute_mutation_query,
+    process_unsupported_param,
+)
 from nx_neptune.clients.neptune_constants import (
     MAX_INT,
     PARAM_CONCURRENCY,
@@ -23,8 +26,11 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_NUM_SOURCES,
     PARAM_TRAVERSAL_DIRECTION,
     PARAM_VERTEX_LABEL,
+    PARAM_WRITE_PROPERTY,
 )
 from nx_neptune.clients.opencypher_builder import (
+    _CLOSENESS_MUTATE_ALG,
+    closeness_centrality_mutation_query,
     closeness_centrality_query,
 )
 from nx_neptune.na_graph import NeptuneGraph
@@ -46,6 +52,7 @@ def closeness_centrality(
     vertex_label: Optional[str] = None,
     traversal_direction: Optional[str] = None,
     concurrency: Optional[int] = None,
+    write_property: Optional[str] = None,
 ):
     """
     Compute the closeness centrality for nodes.
@@ -65,6 +72,9 @@ def closeness_centrality(
     :param vertex_label: A vertex label for vertex filtering.
     :param traversal_direction: The direction of edge to follow. Must be one of: "outbound" or "inbound".
     :param concurrency: Controls the number of concurrent threads used to run the algorithm.
+    :param write_property: Specifies the name of the node property that will store the computed group id values.
+    For comprehensive usage details,
+    refer to: https://docs.aws.amazon.com/neptune-analytics/latest/userguide/closeness-centrality-mutate.html
 
     :return: Dictionary with the pair of node ID as key and closeness centrality score as value.
 
@@ -100,6 +110,15 @@ def closeness_centrality(
 
     if wf_improved is not None:
         parameters[PARAM_NORMALIZE] = wf_improved
+
+    if write_property:
+        parameters[PARAM_WRITE_PROPERTY] = write_property
+        return execute_mutation_query(
+            neptune_graph,
+            parameters,
+            _CLOSENESS_MUTATE_ALG,
+            closeness_centrality_mutation_query,
+        )
 
     query_str, para_map = closeness_centrality_query(parameters, u)
     json_result = neptune_graph.execute_call(query_str, para_map)
