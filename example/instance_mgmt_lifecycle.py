@@ -18,9 +18,7 @@ import sys
 import boto3
 import networkx as nx
 from nx_neptune import NeptuneGraph
-from nx_neptune.clients import NeptuneAnalyticsClient
-from nx_neptune.instance_management import create_na_instance, import_csv_from_s3, delete_na_instance, \
-    delete_status_check_wrapper
+from nx_neptune.instance_management import create_na_instance, import_csv_from_s3, delete_na_instance
 
 """ 
 This is a sample script to demonstrate how nx-neptune can be used to handle 
@@ -39,15 +37,15 @@ async def main():
         logging.getLogger(logger_name).setLevel(logging.DEBUG)
     logger = logging.getLogger(__name__)
     BACKEND = "neptune"
-    s3_location_import = os.getenv('ARN_IMPORT_BUCKET')
-    role_arn = os.getenv('ARN_IAM_ROLE')
+    s3_location_import = os.getenv('NETWORKX_S3_IMPORT_BUCKET_PATH')
+    role_arn = os.getenv('NETWORKX_ARN_IAM_ROLE')
 
     # ---------------------- Create ---------------------------
     graph_id = await create_na_instance()
     logger.info(f"A new instance is created with graph-id: {graph_id}")
 
     # ---------------------- Import ---------------------------
-    os.environ['NETWORK_GRAPH_ID'] = graph_id
+    os.environ['NETWORKX_GRAPH_ID'] = graph_id
     print(s3_location_import)
     na_graph = NeptuneGraph()
     await import_csv_from_s3(na_graph, s3_location_import)
@@ -60,7 +58,7 @@ async def main():
     # print(f"Total size of the result: {len(r)}")
 
     # ------------------------- Delete --------------------------
-    fut = await delete_na_instance("g-rp4kn0iu05")
+    fut = await delete_na_instance(graph_id)
     logger.info(f"Instance delete completed with status: {fut}")
 
 

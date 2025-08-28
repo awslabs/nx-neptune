@@ -164,9 +164,9 @@ To run the Jupyter notebooks:
 2. You will also need to specify the IAM roles that will execute S3 import or export:
 
    ```bash
-   export ARN_IAM_ROLE=your-iam-arn
-   export ARN_S3_IMPORT=your-s3-bucket-for-import
-   export ARN_S3_EXPORT=your-s3-bucket-to-export
+   export NETWORKX_ARN_IAM_ROLE=arn:aws:iam::AWS_ACCOUNT:role/IAM_ROLE_NAME
+   export NETWORKX_S3_IMPORT_BUCKET_PATH=s://S3_BUCKET_PATH
+   export NETWORKX_S3_EXPORT_BUCKET_PATH=s://S3_BUCKET_PATH
    ```
 
 3. Launch Jupyter Notebook:

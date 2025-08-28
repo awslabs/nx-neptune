@@ -45,8 +45,8 @@ async def main():
     # in the format of: arn:aws:iam::AWS_ACCOUNT:role/IAM_ROLE_NAME
     # S3 bucket path for import and export location, which in the format of:
     # s3://BUCKET_NAME/FOLDER_NAME
-    s3_location_import = os.getenv('ARN_IMPORT_BUCKET')
-    s3_location_export = os.getenv('ARN_EXPORT_BUCKET')
+    s3_location_import = os.getenv('NETWORKX_S3_IMPORT_BUCKET_PATH')
+    s3_location_export = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
 
     # Clean up remote graph and populate test data.
     g = nx.DiGraph()

@@ -31,7 +31,7 @@ class IamClient:
     This client provides methods to verify IAM role permissions for S3 operations,
     check trust relationships for service principals, and validate ARNs.
 
-    The IAM role ARN can be provided as an argument. Otherwise, the ARN_IAM_ROLE environment variable is used.
+    The IAM role ARN can be provided as an argument. Otherwise, the NETWORKX_ARN_IAM_ROLE environment variable is used.
     """
 
     def __init__(
