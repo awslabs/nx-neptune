@@ -49,7 +49,7 @@ async def main():
     # ---------------------- Import ---------------------------
     os.environ['NETWORK_GRAPH_ID'] = graph_id
     print(s3_location_import)
-    na_graph = NeptuneGraph()
+    na_graph = NeptuneGraph.from_config()
     await import_csv_from_s3(na_graph, s3_location_import)
 
     # Initialize a directed graph
