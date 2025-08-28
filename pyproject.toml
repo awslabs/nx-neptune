@@ -27,8 +27,6 @@ dependencies = [
     "networkx>=3.4.2,<4.0.0",
     "boto3>=1.37,<2.0",
     "cymple>=0.12.0,<1.0.0",
-    "boto3>=1.37,<=2.0",
-    "cymple>=0.12.0,<=1.0.0",
 ]
 
 [project.urls]
