@@ -5,15 +5,16 @@ requires = ['setuptools>=61.2']
 [project]
 name = "nx-neptune"
 description = "Neptune computation backend for NetworkX"
+authors = [{name = "Amazon Web Services"}]
 readme = "README.md"
 requires-python = ">=3.11"
 dynamic = ['version']
 keywords = ["networkx", "graphs", "algorithms", "neptune"]
-license = {text = "BSD-3-Clause"}
+license = {text = "Apache-2.0"}
 classifiers = [
     'Intended Audience :: Developers',
     'Intended Audience :: Science/Research',
-    'License :: OSI Approved :: BSD License',
+    'License :: OSI Approved :: Apache Software License',
     'Operating System :: OS Independent',
     'Programming Language :: Python :: 3',
     'Programming Language :: Python :: 3.11',
@@ -23,18 +24,10 @@ classifiers = [
 ]
 
 dependencies = [
-    "networkx>=3.4.2",
-    "boto3>=1.37",
-    "cymple>=0.12.0",
+    "networkx>=3.4.2,<4.0.0",
+    "boto3>=1.37,<2.0",
+    "cymple>=0.12.0,<1.0.0",
 ]
-
-[[project.authors]]
-name = "TBD"
-email = "TBD@TBD.com"
-
-[[project.maintainers]]
-name = "TBD"
-email = "TBD@TBD.com"
 
 [project.urls]
 "Bug Tracker" = 'https://github.com/awslabs/nx-neptune/issues'
@@ -123,7 +116,8 @@ ignore-packages = [
 ]
 
 allow-only = """
-Apache Software License;Apache-2.0;
+Apache Software License;
+Apache-2.0;
 BSD License;
 CC0 1.0 Universal (CC0 1.0) Public Domain Dedication;
 GNU General Public License (GPL);

@@ -86,7 +86,7 @@ def bfs_edges(
         Edges in the breadth-first search starting from `source`.
     """
     logger.debug(
-        f"nx_neptune_analytics.bfs_edges() with: \nneptune_graph={neptune_graph}\nsource={source}\n"
+        f"nx_neptune.bfs_edges() with: \nneptune_graph={neptune_graph}\nsource={source}\n"
         f"reverse={reverse}\n"
         f"depth_limit={depth_limit}\n"
         f"sort_neighbors={sort_neighbors}\n"
