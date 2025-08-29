@@ -3,7 +3,6 @@
 # nx_neptune
 
 [![CI](https://github.com/awslabs/nx-neptune/actions/workflows/main.yml/badge.svg)](https://github.com/awslabs/nx-neptune/actions/workflows/main.yml)
-[![Upload Python Package](https://github.com/awslabs/nx-neptune/actions/workflows/release.yml/badge.svg)](https://github.com/awslabs/nx-neptune/actions/workflows/release.yml)
 
 This project offers a NetworkX-compatible backend for Neptune Analytics, enabling users to offload graph algorithm workloads to AWS with no code changes. By using familiar NetworkX APIs, developers can seamlessly scale graph computations on-demand through Neptune Analytics. This approach combines the simplicity of local development with the performance and scalability of a fully managed AWS graph analytics service.
 
