@@ -3,7 +3,7 @@
 # nx_neptune
 
 [![CI](https://github.com/awslabs/nx-neptune/actions/workflows/main.yml/badge.svg)](https://github.com/awslabs/nx-neptune/actions/workflows/main.yml)
-[![Upload Python Package](https://github.com/awslabs/nx-neptune/actions/workflows/release.yml/badge.svg)](https://github.com/awslabs/nx-neptune/actions/workflows/release.yml)
+[![Upload Python Package](https://github.com/awslabs/nx-neptune/actions/workflows/python-publish.yml/badge.svg)](https://github.com/awslabs/nx-neptune/actions/workflows/python-publish.yml)
 
 This project offers a NetworkX-compatible backend for Neptune Analytics, enabling users to offload graph algorithm workloads to AWS with no code changes. By using familiar NetworkX APIs, developers can seamlessly scale graph computations on-demand through Neptune Analytics. This approach combines the simplicity of local development with the performance and scalability of a fully managed AWS graph analytics service.
 
@@ -112,23 +112,23 @@ For interactive exploration and visualization, you can use the Jupyter notebook 
 
 The notebooks directory contains interactive demonstrations of using Neptune Analytics with NetworkX:
 
-- [pagerank_demo.ipynb](./notebooks/pagerank_demo.ipynb): Focused demonstration of the PageRank algorithm
+- [pagerank_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/pagerank_demo.ipynb): Focused demonstration of the PageRank algorithm
 
-- [bfs_demo.ipynb](./notebooks/bfs_demo.ipynb): Demonstration of Breadth-First Search traversal
+- [bfs_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/bfs_demo.ipynb): Demonstration of Breadth-First Search traversal
 
-- [degree_demo.ipynb](./notebooks/degree_demo.ipynb): Demonstration of Degree Centrality algorithm
+- [degree_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/degree_demo.ipynb): Demonstration of Degree Centrality algorithm
 
-- [label_propagation_demo.ipynb](./notebooks/label_propagation_demo.ipynb): Demonstration of Label Propagation algorithm
+- [label_propagation_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/label_propagation_demo.ipynb): Demonstration of Label Propagation algorithm
 
-- [closeness_centrality_demo.ipynb](./notebooks/closeness_centrality_demo.ipynb): Focused demonstration of the Closeness Centrality algorithm
+- [closeness_centrality_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/closeness_centrality_demo.ipynb): Focused demonstration of the Closeness Centrality algorithm
 
-- [louvain_demo.ipynb](./notebooks/louvain_demo.ipynb): Demonstration of Louvain algorithm
+- [louvain_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/louvain_demo.ipynb): Demonstration of Louvain algorithm
 
-- [s3_import_export_demo.ipynb](./notebooks/s3_import_export_demo.ipynb): A notebook demonstrating the process of importing from and exporting to an S3 bucket.
+- [s3_import_export_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/s3_import_export_demo.ipynb): A notebook demonstrating the process of importing from and exporting to an S3 bucket.
 
-- [instance_mgmt_lifecycle_demo.ipynb](./notebooks/instance_mgmt_lifecycle_demo.ipynb): A notebook to demonstrates the explicit workflow for managing the lifecycle of an instance.   
+- [instance_mgmt_lifecycle_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_lifecycle_demo.ipynb): A notebook to demonstrates the explicit workflow for managing the lifecycle of an instance.   
 
-- [instance_mgmt_with_configuration.ipynb](./notebooks/instance_mgmt_with_configuration.ipynb): A notebook to demonstrates a simplified approach to instance lifecycle management.   
+- [instance_mgmt_with_configuration.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_with_configuration.ipynb): A notebook to demonstrates a simplified approach to instance lifecycle management.   
 
 
 ### Uploading a package wheel
@@ -152,7 +152,7 @@ pip install "dist/nx_neptune-0.4.0-py3-none-any.whl[jupyter]"
 
 ### Running the Jupyter Notebook
 
-[A full tutorial is available to run in Neptune Jupyter Notebooks](./notebooks/README.md).
+[A full tutorial is available to run in Neptune Jupyter Notebooks](https://github.com/awslabs/nx-neptune/blob/main/notebooks/README.md).
 
 To run the Jupyter notebooks:
 
