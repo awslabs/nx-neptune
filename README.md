@@ -28,7 +28,7 @@ pip install nx_neptune
 python -m pip wheel -w dist .
 
 # Install with Jupyter dependencies from wheel: 
-pip install "dist/nx_neptune-0.4.0-py3-none-any.whl"
+pip install "dist/nx_neptune-0.4.1-py3-none-any.whl"
 ```
 
 ### Installation
@@ -138,7 +138,7 @@ We recommend uploading your package as a wheel to Jupyter Notebooks.
 ```bash
 # Package the project from source:
 python -m pip wheel -w dist .
-# creates dist/nx_neptune-0.4.0-py3-none-any.whl
+# creates dist/nx_neptune-0.4.1-py3-none-any.whl
 ```
 
 ### Installation
@@ -147,7 +147,7 @@ To install the required dependencies for the Jupyter notebook (including the `Ju
 
 ```bash
 # Install with Jupyter dependencies from wheel: 
-pip install "dist/nx_neptune-0.4.0-py3-none-any.whl[jupyter]"
+pip install "dist/nx_neptune-0.4.1-py3-none-any.whl[jupyter]"
 ```
 
 ### Running the Jupyter Notebook
