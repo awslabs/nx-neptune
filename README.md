@@ -181,7 +181,7 @@ To run the Jupyter notebooks:
 
 ## Security
 
-See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+See [CONTRIBUTING](https://github.com/awslabs/nx-neptune/blob/main/CONTRIBUTING.md#security-issue-notifications) for more information.
 
 ## License
 
