@@ -13,8 +13,6 @@ We're making the `nx_neptune` plugin library an open-source project, and are rel
 
 ## Installation
 
-_Note, as part of the preview status, the project is not yet published to PyPI. Please install from wheel or source_. 
-
 ### Install it from PyPI
 
 ```bash
