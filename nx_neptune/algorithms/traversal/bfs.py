@@ -62,7 +62,7 @@ def bfs_edges(
        iterates over only those edges in the component reachable from
        this node.
     reverse : bool, optional
-       If True traverse a directed graph in the reverse direction
+       If `True` traverse a directed graph in the reverse direction
     depth_limit : int, optional(default=len(G))
         Specify the maximum search depth
     sort_neighbors : function (default=None)
@@ -73,7 +73,7 @@ def bfs_edges(
     vertex_label : str, optional
         A vertex label for vertex filtering.
     edge_labels : list, optional
-        To filter on one more edge labels, provide a list of the ones to filter on.
+        To filter on one more edge label, provides a list of the ones to filter on.
         If no edgeLabels field is provided then all edge labels are processed during traversal.
     concurrency : int, optional
         Controls the number of concurrent threads used to run the algorithm.
