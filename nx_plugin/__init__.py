@@ -14,6 +14,8 @@ from .config import NeptuneConfig, _config
 
 __all__ = ["NeptuneConfig"]
 
+algorithms_url = "https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md"
+
 # Entries between BEGIN and END are automatically generated
 _info = {
     "backend_name": "neptune",
@@ -40,67 +42,45 @@ _info = {
     },
     "additional_docs": {
         # BEGIN: additional_docs
-        "pagerank": """Neptune Analytics recommends using a max_iter value of 20 for PageRank
+        "bfs_edges": f"For additional details, see {algorithms_url}#bfs_edges)",
+        "descendants_at_distance": f"For additional details, see {algorithms_url}#descendants_at_distance)",
+        "bfs_layers": f"For additional details, see {algorithms_url}#bfs_layers)",
+        "pagerank": f"""Neptune Analytics recommends using a max_iter value of 20 for PageRank
             calculations, which balances computational efficiency with result accuracy. This
             default setting is optimized for most graph workloads, though you can adjust it
             based on your specific convergence requirements. Please note that the
             personalization, nstart, weight, and dangling parameters are not supported at
-            the moment.""",
-        "asyn_lpa_communities": """
+            the moment.
+            For additional parameters, see {algorithms_url}#pagerank)
+            """,
+        "degree_centrality": f"For additional details, see {algorithms_url}#degree_centrality)",
+        "in_degree_centrality": f"For additional details, see {algorithms_url}#in_degree_centrality)",
+        "out_degree_centrality": f"For additional details, see {algorithms_url}#out_degree_centrality)",
+        "asyn_lpa_communities": f"""
         The seed parameter is not supported at the moment.
         Also, label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm,
         using a fixed label update strategy.
-        Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.""",
-        "fast_label_propagation_communities": """
+        Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.
+        For additional parameters, see {algorithms_url}#asyn_lpa_communities)
+        """,
+        "fast_label_propagation_communities": f"""
         Please note that the seed parameter is not supported at the moment,
         also label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm,
         using a fixed label update strategy.
-        Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.""",
-        "closeness_centrality": """
-        Please note that the distance parameter is not supported.""",
-        "louvain_communities": """
+        Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.
+        For additional parameters, see {algorithms_url}#fast_label_propagation_communities)
+        """,
+        "closeness_centrality": f"For additional details, see {algorithms_url}#closeness_centrality)",
+        "label_propagation_communities": f"For additional details, "
+        f"see {algorithms_url}#label_propagation_communities)",
+        "louvain_communities": f"""
         Please note that the resolution and seed parameters are not supported at the moment.
+        For additional parameters, see {algorithms_url}#louvain_communities)
         """,
         # END: additional_docs
     },
     "additional_parameters": {
         # BEGIN: additional_parameters
-        "bfs_edges": """
-        For additional parameters, see [nx-neptune](https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md#bfs_edges)
-        """,
-        "descendants_at_distance": """
-        For additional parameters, see [nx-neptune](https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md#descendants_at_distance)
-        """,
-        "bfs_layers": """
-        For additional parameters, see [nx-neptune](https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md#bfs_layers)
-        """,
-        "pagerank": """
-        For additional parameters, see [nx-neptune](https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md#pagerank)
-        """,
-        "degree_centrality": """
-        For additional parameters, see [nx-neptune](https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md#degree_centrality)
-        """,
-        "in_degree_centrality": """
-        For additional parameters, see [nx-neptune](https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md#in_degree_centrality)
-        """,
-        "out_degree_centrality": """
-        For additional parameters, see [nx-neptune](https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md#out_degree_centrality)
-        """,
-        "closeness_centrality": """
-        For additional parameters, see [nx-neptune](https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md#closeness_centrality)
-        """,
-        "label_propagation_communities": """
-        For additional parameters, see [nx-neptune](https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md#label_propagation_communities)
-        """,
-        "fast_label_propagation_communities": """
-        For additional parameters, see [nx-neptune](https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md#fast_label_propagation_communities)
-        """,
-        "asyn_lpa_communities": """
-        For additional parameters, see [nx-neptune](https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md#asyn_lpa_communities)
-        """,
-        "louvain_communities": """
-        For additional parameters, see [nx-neptune](https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md#louvain_communities)
-        """
         # END: additional_parameters
     },
 }
