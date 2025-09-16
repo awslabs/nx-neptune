@@ -14,7 +14,7 @@ from .config import NeptuneConfig, _config
 
 __all__ = ["NeptuneConfig"]
 
-algorithms_url = "https://github.com/awslabs/nx-neptune/blob/main/Algorithms.md"
+algorithms_url = "https://github.com/awslabs/nx-neptune/blob/main/algorithms.md"
 
 # Entries between BEGIN and END are automatically generated
 _info = {
