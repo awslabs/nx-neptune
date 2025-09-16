@@ -35,7 +35,7 @@ from .interface import BackendInterface
 from .na_graph import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN, NeptuneGraph
 from .utils.decorators import configure_if_nx_active
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 __all__ = [
     # environment variables
