@@ -7,6 +7,10 @@
 
 This project offers a NetworkX-compatible backend for Neptune Analytics, enabling users to offload graph algorithm workloads to AWS with no code changes. By using familiar NetworkX APIs, developers can seamlessly scale graph computations on-demand through Neptune Analytics. This approach combines the simplicity of local development with the performance and scalability of a fully managed AWS graph analytics service.
 
+## Supported Algorithms
+
+For details of all supported NetworkX algorithms see [algorithms.md](https://github.com/awslabs/nx-neptune/blob/main/algorithms.md)
+
 ## Preview Status: Alpha Release
 
 We're making the `nx_neptune` plugin library an open-source project, and are releasing it now as an Alpha Preview to the community to gather feedback, and actively collaborate on the project roadmap. We welcome questions, suggestions, and contributions from all community members. At this point in development, the project has not been fully released to the public and is recommended for testing purposes only.  We're tracking its production readiness for general availability on the roadmap.   
