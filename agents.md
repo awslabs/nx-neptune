@@ -13,11 +13,11 @@ nx-neptune is a NetworkX-compatible backend for Amazon Neptune Analytics that en
   - `instance_management.py` - Neptune Analytics instance lifecycle management
 
 ### Algorithm Categories
-- `algorithms/centrality/` - Centrality algorithms (PageRank, degree, closeness, betweenness)
+- `algorithms/centrality/` - Centrality algorithms (PageRank, degree, closeness)
 - `algorithms/communities/` - Community detection (Louvain, label propagation)
 - `algorithms/link_analysis/` - Link analysis algorithms
 - `algorithms/traversal/` - Graph traversal (BFS, DFS)
-- `algorithms/util/` - Utility algorithms
+- `algorithms/util/` - Utility methods for algorithms
 
 ### Client Integration
 - `clients/` - AWS service clients and authentication handling
@@ -28,8 +28,8 @@ nx-neptune is a NetworkX-compatible backend for Amazon Neptune Analytics that en
 ## Development Context
 
 ### Technology Stack
-- **Python**: 3.11+ required
-- **Dependencies**: NetworkX (>=3.4.2), boto3 (>=1.37), cymple (>=0.12.0)
+- **Python**: Check `pyproject.toml` for current version requirements
+- **Dependencies**: Check `pyproject.toml` for current version requirements
 - **AWS Services**: Neptune Analytics, S3, IAM
 - **Testing**: pytest with coverage reporting
 
@@ -90,6 +90,7 @@ def algorithm_name(neptune_graph: NeptuneGraph, **kwargs):
 - **Traversal**: `nx_neptune/algorithms/traversal/` (BFS, DFS)
 - **Link Analysis**: `nx_neptune/algorithms/link_analysis/` (HITS, authority)
 - **Utilities**: `nx_neptune/algorithms/util/` (Helper algorithms)
+- **Create new category**: If algorithm doesn't fit existing categories, create new directory under `nx_neptune/algorithms/`
 
 #### Step 2: Create Algorithm Implementation File
 Create `{algorithm_name}.py` in the appropriate category directory with:
@@ -172,7 +173,5 @@ Add to main `nx_neptune/__init__.py`:
 - Parameter validation and transformation
 
 ## Project Status
-- **Alpha Preview** - Testing purposes only
 - Open source project seeking community feedback
-- Production readiness tracked on roadmap
 - Active development and collaboration encouraged
