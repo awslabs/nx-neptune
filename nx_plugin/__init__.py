@@ -42,41 +42,30 @@ _info = {
     },
     "additional_docs": {
         # BEGIN: additional_docs
-        "bfs_edges": f"For additional details, see {algorithms_url}#bfs_edges)",
-        "descendants_at_distance": f"For additional details, see {algorithms_url}#descendants_at_distance)",
-        "bfs_layers": f"For additional details, see {algorithms_url}#bfs_layers)",
-        "pagerank": f"""Neptune Analytics recommends using a max_iter value of 20 for PageRank
-            calculations, which balances computational efficiency with result accuracy. This
-            default setting is optimized for most graph workloads, though you can adjust it
-            based on your specific convergence requirements. Please note that the
-            personalization, nstart, weight, and dangling parameters are not supported at
-            the moment.
-            For additional parameters, see {algorithms_url}#pagerank)
-            """,
-        "degree_centrality": f"For additional details, see {algorithms_url}#degree_centrality)",
-        "in_degree_centrality": f"For additional details, see {algorithms_url}#in_degree_centrality)",
-        "out_degree_centrality": f"For additional details, see {algorithms_url}#out_degree_centrality)",
-        "asyn_lpa_communities": f"""
-        The seed parameter is not supported at the moment.
-        Also, label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm,
-        using a fixed label update strategy.
-        Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.
-        For additional parameters, see {algorithms_url}#asyn_lpa_communities)
-        """,
-        "fast_label_propagation_communities": f"""
-        Please note that the seed parameter is not supported at the moment,
-        also label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm,
-        using a fixed label update strategy.
-        Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.
-        For additional parameters, see {algorithms_url}#fast_label_propagation_communities)
-        """,
-        "closeness_centrality": f"For additional details, see {algorithms_url}#closeness_centrality)",
-        "label_propagation_communities": f"For additional details, "
-        f"see {algorithms_url}#label_propagation_communities)",
-        "louvain_communities": f"""
-        Please note that the resolution and seed parameters are not supported at the moment.
-        For additional parameters, see {algorithms_url}#louvain_communities)
-        """,
+        "bfs_edges": f"For additional details, see {algorithms_url}#bfs_edges",
+        "descendants_at_distance": f"For additional details, see {algorithms_url}#descendants_at_distance",
+        "bfs_layers": f"For additional details, see {algorithms_url}#bfs_layers",
+        "pagerank": f"""- Neptune Analytics recommends using a `max_iter` value of `20` for PageRank calculations, \
+which balances computational efficiency with result accuracy. This default setting is optimized for most graph \
+workloads, though you can adjust it based on your specific convergence requirements. 
+- Please note that the `personalization`, `nstart`, `weight`, and `dangling` parameters are not supported at the moment.
+- For additional parameters, see {algorithms_url}#pagerank""",
+        "degree_centrality": f"For additional details, see {algorithms_url}#degree_centrality",
+        "in_degree_centrality": f"For additional details, see {algorithms_url}#in_degree_centrality",
+        "out_degree_centrality": f"For additional details, see {algorithms_url}#out_degree_centrality",
+        "asyn_lpa_communities": f"""- The `seed` parameter is not supported at the moment.
+- Label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm, using a fixed label update \
+strategy. Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.  
+- For additional parameters, see {algorithms_url}#asyn_lpa_communities""",
+        "fast_label_propagation_communities": f"""- The `seed` parameter is not supported at the moment.
+- Label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm, using a fixed label update \
+strategy. Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.
+- For additional parameters, see {algorithms_url}#fast_label_propagation_communities""",
+        "closeness_centrality": f"For additional details, see {algorithms_url}#closeness_centrality",
+        "label_propagation_communities": f"For additional details, see {algorithms_url}#label_propagation_communities",
+        "louvain_communities": f"""- Please note that the `resolution` and `seed` parameters are not supported at the \
+moment.
+- For additional parameters, see {algorithms_url}#louvain_communities""",
         # END: additional_docs
     },
     "additional_parameters": {
