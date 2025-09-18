@@ -150,7 +150,7 @@ Once your Neptune notebook instance is running:
      cd ./nx-neptune
      # On your local machine run:
      python -m pip wheel -w dist .
-     # creates dist/nx_neptune-0.4.3-py3-none-any.whl
+     # creates dist/nx_neptune-0.4.4-py3-none-any.whl
      ```
    - In JupyterLab, use the upload button (↑) in the file browser to upload:
      - The `.whl` file from your local `dist/` directory
@@ -173,7 +173,7 @@ Once your Neptune notebook instance is running:
      python -m pip install ipykernel jupyterlab matplotlib scipy
      
      # Install the uploaded wheel file
-     pip install /home/ec2-user/SageMaker/nx_neptune-0.4.3-py3-none-any.whl
+     pip install /home/ec2-user/SageMaker/nx_neptune-0.4.4-py3-none-any.whl
      
      # Verify the installation
      pip list | grep nx-neptune
