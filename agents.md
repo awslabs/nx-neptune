@@ -8,6 +8,9 @@ nx-neptune is a NetworkX-compatible backend for Amazon Neptune Analytics that en
 ### Core Module Structure
 - `nx_neptune/` - Main package directory containing core backend implementation and Neptune Analytics integration
 
+### Plugin Integration
+- `nx_plugin/` - NetworkX plugin integration and backend registration
+
 ### Algorithm Implementation
 - `algorithms/` - Algorithm implementations organized by category folders (centrality, communities, link_analysis, traversal)
 - `algorithms/util/` - Utility methods and helper functions for algorithms
