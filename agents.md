@@ -72,6 +72,7 @@ def algorithm_name(neptune_graph: NeptuneGraph, **kwargs):
 - `algorithms.md` - Comprehensive algorithm documentation
 - `notebooks/` - Interactive Jupyter demonstrations
 - `CONTRIBUTING.md` - Development guidelines
+- `AGENTS.md` - Agent context and development guidance (update when making architectural changes, discovering new development patterns, or implementing reusable solutions)
 
 ## Common Development Tasks
 
