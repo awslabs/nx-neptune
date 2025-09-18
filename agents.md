@@ -6,24 +6,20 @@ nx-neptune is a NetworkX-compatible backend for Amazon Neptune Analytics that en
 ## Key Architecture Components
 
 ### Core Module Structure
-- `nx_neptune/` - Main package directory
-  - `__init__.py` - Package initialization and backend registration
-  - `interface.py` - NetworkX backend interface implementation
-  - `na_graph.py` - Neptune Analytics graph wrapper class
-  - `instance_management.py` - Neptune Analytics instance lifecycle management
+- `nx_neptune/` - Main package directory containing core backend implementation and Neptune Analytics integration
 
-### Algorithm Categories
-- `algorithms/centrality/` - Centrality algorithms (PageRank, degree, closeness)
-- `algorithms/communities/` - Community detection (Louvain, label propagation)
-- `algorithms/link_analysis/` - Link analysis algorithms
-- `algorithms/traversal/` - Graph traversal (BFS, DFS)
-- `algorithms/util/` - Utility methods for algorithms
+### Algorithm Implementation
+- `algorithms/` - Algorithm implementations organized by category folders (centrality, communities, link_analysis, traversal)
+- `algorithms/util/` - Utility methods and helper functions for algorithms
+- **Development Note**: Add new algorithms here, organized by appropriate category folder. For example, when implementing betweenness centrality, create `algorithms/centrality/betweenness_centrality.py`. When adding shortest path algorithms, create files under `algorithms/traversal/`. Also update the corresponding `__init__.py` files to export new algorithms.
 
 ### Client Integration
 - `clients/` - AWS service clients and authentication handling
+- **Development Note**: Add new AWS service connections and API integrations here. For example, when adding support for Neptune Database (in addition to Neptune Analytics), create new client classes in this module. When implementing new authentication methods or API wrappers for other AWS services like CloudWatch or Lambda, add them here.
 
 ### Utilities
 - `utils/` - Helper functions and common utilities
+- **Development Note**: Add shared utility functions and common helpers here. For example, when creating graph data transformation utilities, parameter validation helpers, or common error handling functions that are used across multiple algorithms, place them in this module.
 
 ## Development Context
 
@@ -34,17 +30,10 @@ nx-neptune is a NetworkX-compatible backend for Amazon Neptune Analytics that en
 - **Testing**: pytest with coverage reporting
 
 ### Environment Requirements
-- `NETWORKX_GRAPH_ID` - Neptune Analytics graph identifier
-- `NETWORKX_ARN_IAM_ROLE` - IAM role ARN for S3 operations
-- `NETWORKX_S3_IMPORT_BUCKET_PATH` - S3 bucket for data import
-- `NETWORKX_S3_EXPORT_BUCKET_PATH` - S3 bucket for data export
+- Refer to README.md for required environment variables and configuration
 
 ### Required AWS Permissions
-- `neptune-graph:ReadDataViaQuery`
-- `neptune-graph:WriteDataViaQuery` 
-- `neptune-graph:DeleteDataViaQuery`
-- `s3:GetObject`, `s3:PutObject`, `s3:ListBucket`
-- `kms:Decrypt`, `kms:GenerateDataKey`, `kms:DescribeKey`
+- Refer to README.md for detailed AWS IAM permissions and setup requirements
 
 ## Code Patterns
 
