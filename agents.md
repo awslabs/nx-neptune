@@ -65,6 +65,7 @@ def algorithm_name(neptune_graph: NeptuneGraph, **kwargs):
 - Integration tests with mock Neptune Analytics responses
 - Coverage reporting with pytest-cov
 - CI/CD via GitHub Actions
+- **Documentation and Examples**: For new user-facing features, create or update practical examples in `/examples` directory and corresponding interactive demonstrations in `/notebooks` to showcase functionality and usage patterns
 
 ## Documentation
 - `README.md` - Installation and usage guide
