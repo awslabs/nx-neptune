@@ -16,7 +16,6 @@ __all__ = ["NeptuneConfig"]
 
 algorithms_url = "https://github.com/awslabs/nx-neptune/blob/main/algorithms.md"
 
-# Entries between BEGIN and END are automatically generated
 _info = {
     "backend_name": "neptune",
     "project": "nx-neptune",
@@ -25,7 +24,6 @@ _info = {
     "short_summary": "Neptune computation backend for NetworkX.",
     "description": "Scale graph algorithms on AWS Neptune Analytics platform.",
     "functions": {
-        # BEGIN: functions
         "bfs_edges",
         "descendants_at_distance",
         "bfs_layers",
@@ -38,10 +36,8 @@ _info = {
         "fast_label_propagation_communities",
         "asyn_lpa_communities",
         "louvain_communities",
-        # END: functions
     },
     "additional_docs": {
-        # BEGIN: additional_docs
         "bfs_edges": f"For additional details, see {algorithms_url}#bfs_edges",
         "descendants_at_distance": f"For additional details, see {algorithms_url}#descendants_at_distance",
         "bfs_layers": f"For additional details, see {algorithms_url}#bfs_layers",
@@ -66,12 +62,8 @@ strategy. Variant-specific control over the update method (e.g., synchronous vs.
         "louvain_communities": f"""- Please note that the `resolution` and `seed` parameters are not supported at the \
 moment.
 - For additional parameters, see {algorithms_url}#louvain_communities""",
-        # END: additional_docs
     },
-    "additional_parameters": {
-        # BEGIN: additional_parameters
-        # END: additional_parameters
-    },
+    "additional_parameters": {},
 }
 
 
