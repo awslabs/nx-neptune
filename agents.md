@@ -147,6 +147,11 @@ Add to main `nx_neptune/__init__.py`:
 - Add to main package `__all__` list
 - Ensure proper backend registration
 
+### Step 10: Update exported documentation
+Update `nx_plugin/__init__.py` with new or updated information on the algorithm.
+- Include new algorithm in the list of `functions`.
+- Include `additional_docs` if necessary, and link to algorithm in the repository.
+
 #### Parameter Compatibility Requirements
 - **NetworkX Parameters**: All parameters from NetworkX must be included in the method with the same defaults
 - **Neptune Analytics Parameters**: All parameters defined in the Neptune Analytics algorithm must be included
