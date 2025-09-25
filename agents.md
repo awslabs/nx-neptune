@@ -14,15 +14,12 @@ nx-neptune is a NetworkX-compatible backend for Amazon Neptune Analytics that en
 ### Algorithm Implementation
 - `algorithms/` - Algorithm implementations organized by category folders (centrality, communities, link_analysis, traversal)
 - `algorithms/util/` - Utility methods and helper functions for algorithms
-- **Development Note**: Add new algorithms here, organized by appropriate category folder. For example, when implementing betweenness centrality, create `algorithms/centrality/betweenness_centrality.py`. When adding shortest path algorithms, create files under `algorithms/traversal/`. Also update the corresponding `__init__.py` files to export new algorithms.
 
 ### Client Integration
 - `clients/` - AWS service clients and authentication handling
-- **Development Note**: Add new AWS service connections and API integrations here. For example, when adding support for Neptune Database (in addition to Neptune Analytics), create new client classes in this module. When implementing new authentication methods or API wrappers for other AWS services like CloudWatch or Lambda, add them here.
 
 ### Utilities
 - `utils/` - Helper functions and common utilities
-- **Development Note**: Add shared utility functions and common helpers here. For example, when creating graph data transformation utilities, parameter validation helpers, or common error handling functions that are used across multiple algorithms, place them in this module.
 
 ## Development Context
 
@@ -31,12 +28,8 @@ nx-neptune is a NetworkX-compatible backend for Amazon Neptune Analytics that en
 - **Dependencies**: Check `pyproject.toml` for current version requirements
 - **AWS Services**: Neptune Analytics, S3, IAM
 - **Testing**: pytest with coverage reporting
-
-### Environment Requirements
-- Refer to README.md for required environment variables and configuration
-
-### Required AWS Permissions
-- Refer to README.md for detailed AWS IAM permissions and setup requirements
+  - Run full test suite: `pytest tests/`
+  - Run specific test: `pytest tests/algorithms/{category}/test_{algorithm_name}.py`
 
 ## Code Patterns
 
@@ -65,26 +58,34 @@ def algorithm_name(neptune_graph: NeptuneGraph, **kwargs):
 - Integration tests with mock Neptune Analytics responses
 - Coverage reporting with pytest-cov
 - CI/CD via GitHub Actions
-- **Documentation and Examples**: For new user-facing features, create or update practical examples in `/examples` directory and corresponding interactive demonstrations in `/notebooks` to showcase functionality and usage patterns
 
 ## Documentation
 - `README.md` - Installation and usage guide
 - `algorithms.md` - Comprehensive algorithm documentation
 - `notebooks/` - Interactive Jupyter demonstrations
 - `CONTRIBUTING.md` - Development guidelines
-- `AGENTS.md` - Agent context and development guidance (update when making architectural changes, discovering new development patterns, or implementing reusable solutions)
+- `AGENTS.md` - Agent context and development guidance
 
 ## Common Development Tasks
 
-### Adding New Algorithms
+### Adding New Algorithms to Algorithm Implementation Module
+Add new algorithms to `algorithms/` directory, organized by appropriate category folder. For example, when implementing betweenness centrality, create `algorithms/centrality/betweenness_centrality.py`. When adding shortest path algorithms, create files under `algorithms/traversal/`. Also update the corresponding `__init__.py` files to export new algorithms.
 
 #### Step 1: Choose Algorithm Category and Location
+Directory structure under `algorithms/` must match NetworkX's algorithms directory structure. Method names must also match NetworkX exactly.
+
+To determine the correct location:
+1. Find the algorithm in NetworkX source code at `networkx/algorithms/`
+2. Use the same directory structure and file name
+3. Use the exact same function name as NetworkX
+
+Existing categories:
 - **Centrality**: `nx_neptune/algorithms/centrality/` (PageRank, degree, closeness, betweenness)
 - **Communities**: `nx_neptune/algorithms/communities/` (Louvain, label propagation)
 - **Traversal**: `nx_neptune/algorithms/traversal/` (BFS, DFS)
 - **Link Analysis**: `nx_neptune/algorithms/link_analysis/` (HITS, authority)
 - **Utilities**: `nx_neptune/algorithms/util/` (Helper algorithms)
-- **Create new category**: If algorithm doesn't fit existing categories, create new directory under `nx_neptune/algorithms/`
+- **Create new category**: If algorithm doesn't fit existing categories, create new directory under `nx_neptune/algorithms/` matching NetworkX structure
 
 #### Step 2: Create Algorithm Implementation File
 Create `{algorithm_name}.py` in the appropriate category directory with:
@@ -146,6 +147,13 @@ Add to main `nx_neptune/__init__.py`:
 - Add to main package `__all__` list
 - Ensure proper backend registration
 
+#### Parameter Compatibility Requirements
+- **NetworkX Parameters**: All parameters from NetworkX must be included in the method with the same defaults
+- **Neptune Analytics Parameters**: All parameters defined in the Neptune Analytics algorithm must be included
+- **Unsupported Parameters**: If any parameters cannot be supported by the mapping:
+  - Document the parameter as "not supported" in the algorithm documentation
+  - Raise a warning when the unsupported parameter is used
+
 #### Key Implementation Guidelines
 - **Parameter Mapping**: Map NetworkX parameters to Neptune Analytics equivalents
 - **Result Transformation**: Convert Neptune Analytics JSON results to NetworkX format
@@ -156,7 +164,26 @@ Add to main `nx_neptune/__init__.py`:
 - **Performance**: Consider result size and memory usage for large graphs
 - **Compatibility**: Ensure results match NetworkX behavior and format expectations
 
+#### Parameter Compatibility
+Ensuring complete parameter compatibility between NetworkX and Neptune Analytics is critical for seamless backend integration. All NetworkX parameters must be preserved with identical defaults to maintain API compatibility. Additionally, Neptune Analytics-specific parameters should be exposed to leverage the full capabilities of the service. When parameters cannot be mapped due to fundamental differences between the implementations, clear documentation and runtime warnings help users understand limitations and make informed decisions about parameter usage.
+
+### Adding New AWS Service Integrations to Client Module
+Add new AWS service connections and API integrations to `clients/` directory. For example, when adding support for Neptune Database (in addition to Neptune Analytics), create new client classes in this module. When implementing new authentication methods or API wrappers for other AWS services like CloudWatch or Lambda, add them here.
+
+### Adding Shared Utilities
+Add shared utility functions and common helpers to `utils/` directory. For example, when creating graph data transformation utilities, parameter validation helpers, or common error handling functions that are used across multiple algorithms, place them in this module.
+
+### Creating Documentation and Examples
+For new user-facing features, create or update practical examples in `/examples` directory and corresponding interactive demonstrations in `/notebooks` to showcase functionality and usage patterns.
+
+### Updating Agent Context
+Update `AGENTS.md` when making architectural changes, discovering new development patterns, or implementing reusable solutions.
+
 ### Instance Management
+Configuration settings for Neptune instances are handled through the NeptuneConfig class found in `nx-plugin/config.py`. When adding new instance management workflows, they should be documented within this configuration class.
+
+The core implementation of instance management operations resides in `nx_neptune/instance_management.py`. Task orchestration and control flow are managed through decorators located in `nx_neptune/utils/decorators.py`.
+
 - Programmatic creation/deletion of Neptune Analytics instances
 - Configuration-based lifecycle management
 - S3 import/export capabilities
