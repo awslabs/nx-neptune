@@ -571,9 +571,10 @@ def descendants_at_distance_query(
         YIELD node AS node, level AS level
         WHERE level = 1 RETURN id(node)', {})
     """
+    distance_params = f"{source_node}"
     if parameters:
         parameters_list_str = _to_parameter_list(parameters)
-        distance_params = f'["{source_node}"], {{{parameters_list_str}}}'
+        distance_params = f"{distance_params}, {{{parameters_list_str}}}"
 
     return (
         QueryBuilder()
