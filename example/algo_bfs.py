@@ -10,6 +10,9 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
+from dotenv import load_dotenv
+load_dotenv()
+
 import networkx as nx
 from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID
 from nx_neptune.utils.utils import get_stdout_logger
@@ -64,6 +67,13 @@ print(r) # [("Bob", "Alice")]
 assert isinstance(r, list)
 assert len(r) == 1
 assert ["Bob", "Alice"] in r
+
+print('Layers for BFS search from source="Alice" and source="Bob";')
+r = list(nx.bfs_layers(G, ["Alice", "Bob"], backend=BACKEND))
+print(r) # [['Bob', 'Alice'], ['Carl']]
+assert "Alice" in r[0]
+assert "Bob" in r[0]
+assert 'Carl' in r[1]
 
 na_graph.clear_graph()
 
@@ -166,12 +176,12 @@ assert r == {'Bob', 'Carl'}
 # bfs_layers
 g = nx.path_graph(5)
 logger.info("\n---------scenario: AWS - bfs_layers----------\n")
-result = list(nx.bfs_layers(g, backend=BACKEND, sources=[1, 4]))
+result = list(nx.bfs_layers(g, backend=BACKEND, sources=["1", "4"]))
 logger.info(result)
-assert result == [['4', '1'], ['0', '3', '2']]
+assert result == [['4', '1'], ['2', '3', '0']]
 
 logger.info("\n---------scenario: AWS - bfs_layers - AWS-specific Options----------\n")
-result = list(nx.bfs_layers(g, backend=BACKEND, sources=[1, 4], edge_labels=["RELATES_TO"], traversal_direction="both", concurrency=0))
+result = list(nx.bfs_layers(g, backend=BACKEND, sources=["1", "4"], edge_labels=["RELATES_TO"], traversal_direction="both", concurrency=0))
 logger.info(result)
-assert result == [['4', '1'], ['0', '3', '2']]
+assert result == [['4', '1'], ['2', '3', '0']]
 
