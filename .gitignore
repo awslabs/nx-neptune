@@ -84,6 +84,10 @@ notebooks/resources
 # Example dataset
 example/resources
 
+# Benchmarks dataset
+benchmarks/logs
+benchmarks/resources
+
 # IPython
 profile_default/
 ipython_config.py
