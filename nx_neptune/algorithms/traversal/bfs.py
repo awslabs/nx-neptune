@@ -180,9 +180,7 @@ def descendants_at_distance(
 
     source_node = "n"
 
-    query_str, para_map = descendants_at_distance_query(
-        source_node, {f"id({source_node})": source}, parameters
-    )
+    query_str, para_map = descendants_at_distance_query(source, parameters)
     json_result = neptune_graph.execute_call(query_str, para_map)
 
     # Transform response from list of dict to set.
@@ -232,11 +230,7 @@ def bfs_layers(
     if concurrency is not None:
         parameters[PARAM_CONCURRENCY] = concurrency
 
-    source_node = "n"
-
-    query_str, para_map = bfs_layers_query(
-        source_node, {f"id({source_node})": sources}, parameters
-    )
+    query_str, para_map = bfs_layers_query(sources, parameters)
     json_result = neptune_graph.execute_call(query_str, para_map)
 
     for json_item in json_result:

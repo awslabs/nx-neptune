@@ -556,18 +556,17 @@ def bfs_query(
 
 
 def descendants_at_distance_query(
-    source_node: str, where_filters: dict, parameters=None
+    source_node: str, parameters: dict
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Create a query to execute the BFS-Levels algorithm on Neptune Analytics to compute descendants_at_distance result.
 
-    :param source_node: The variable name for the source node
-    :param where_filters: Dictionary of filters to apply in the WHERE clause
-    :param parameters: Optional dictionary of algorithm parameters to pass to BFS-Levels
+    :param source_node: The source node ID
+    :param parameters: Dictionary of algorithm parameters including maxDepth
     :return: Tuple of (OpenCypher query string, parameter map) for BFS-Levels algorithm execution
 
     Example:
-        >>> descendants_at_distance_query("Alice", {'n.name': 'Alice'}, {maxDepth:2})
+        >>> descendants_at_distance_query("Alice", {"maxDepth": 2})
         MATCH (n)
         WHERE id(n) = 'Alice'
         CALL neptune.algo.bfs.levels(n, {maxDepth:2})
@@ -577,39 +576,41 @@ def descendants_at_distance_query(
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
+    # Create where filters for the source node
+    node_var = "n"
+    where_filters = {f"id({node_var})": source_node}
     masked_where_filters = param_builder.read_map(where_filters)
 
-    distance_params = f"{source_node}"
+    distance_params = f"{node_var}"
     if parameters:
         parameters_list_str = _to_parameter_list(parameters)
         distance_params = f"{distance_params}, {{{parameters_list_str}}}"
 
+    # Extract maxDepth from parameters
+    max_depth = parameters.get("maxDepth") if parameters else None
+
     query_str = (
         QueryBuilder()
         .match()
-        .node(ref_name=source_node)
+        .node(ref_name=node_var)
         .where_multiple(masked_where_filters, escape=False)
         .call()
         .procedure(f"{_BFS_LEVELS_ALG}({distance_params})")
         .yield_([(_NODE_FULL_FORM_REF, _NODE_FULL_FORM_REF), (_LEVEL_REF, _LEVEL_REF)])
-        .where(_LEVEL_REF, "=", parameters[PARAM_MAX_DEPTH])
+        .where(_LEVEL_REF, "=", max_depth)
         .return_literal(_NODE_FULL_FORM_ID_FUNC_REF)
         .query
     )
-    print(f"query_str={query_str}")
-    params = param_builder.get_param_values()
-    print(f"params={params}")
-    return query_str, params
+    return query_str, param_builder.get_param_values()
 
 
 def bfs_layers_query(
-    source_node: str, where_in_filters: dict, parameters=None
+    source_nodes: List[str], parameters=None
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Create a query to execute the BFS-Levels algorithm on Neptune Analytics to compute bfs_layers result.
 
-    :param source_node: Source node variable
-    :param where_filters: Dictionary of filters to apply in the WHERE clauseß
+    :param source_nodes: List of source node IDs
     :param parameters: Optional dictionary of algorithm parameters to pass to BFS-Levels
     :return: Tuple of (OpenCypher query string, parameter map) for BFS-Levels algorithm execution
 
@@ -627,9 +628,12 @@ def bfs_layers_query(
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
-    masked_where_filters = param_builder.read_map(where_in_filters)
+    # Handle source nodes
+    source_node_var = "n"
+    where_filters = {f"id({source_node_var})": source_nodes}
+    masked_where_filters = param_builder.read_map(where_filters)
 
-    bfs_params = f"{source_node}"
+    bfs_params = f"{source_node_var}"
     if parameters:
         parameters_list_str = _to_parameter_list(parameters)
         bfs_params = f"{bfs_params}, {{{parameters_list_str}}}"
@@ -637,7 +641,7 @@ def bfs_layers_query(
     query_str = (
         QueryBuilder()
         .match()
-        .node(ref_name=source_node)
+        .node(ref_name=source_node_var)
         .where_multiple(masked_where_filters, comparison_operator="IN", escape=False)
         .call()
         .procedure(f"{_BFS_LEVELS_ALG}({bfs_params})")
