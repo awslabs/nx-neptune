@@ -596,10 +596,7 @@ def descendants_at_distance_query(
         .return_literal(_NODE_FULL_FORM_ID_FUNC_REF)
         .query
     )
-    print(f"query_str={query_str}")
-    params = param_builder.get_param_values()
-    print(f"params={params}")
-    return query_str, params
+    return query_str, param_builder.get_param_values()
 
 
 def bfs_layers_query(
