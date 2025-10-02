@@ -73,15 +73,32 @@ nx.config.warnings_to_ignore.add("cache")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-RUN_COUNT = 10
+RUN_COUNT = 1
 MAX_WORKERS = 1
 BACKEND = os.getenv("BACKEND")
 
-def setup_test_data(G: nx.Graph):
+def setup_cit_patents_data(g: nx.Graph):
+    url = "https://data.rapids.ai/cugraph/datasets/cit-Patents.csv"
+    routes_file = "resources/cit-Patents.csv"
+
+    os.makedirs(os.path.dirname(routes_file), exist_ok=True)
+
+    if not os.path.isfile(routes_file):
+        logger.info("Downloading test data...")
+        with open(routes_file, "wb") as f:
+            f.write(requests.get(url).content)
+
+    df = pd.read_csv(routes_file, sep=" ", names=["src", "dst"], dtype="int32")
+    g = nx.from_pandas_edgelist(df, source="src", target="dst", create_using=g)
+
+    logger.info(f"Graph created with {g.number_of_nodes()} nodes and {g.number_of_edges()} edges")
+
+    return g
+
+def setup_air_routes_data(G: nx.Graph):
     """Download and prepare test data."""
     routes_url = "https://raw.githubusercontent.com/jpatokal/openflights/master/data/routes.dat"
     routes_file = "resources/notebook_test_data_routes.dat"
-    
     os.makedirs(os.path.dirname(routes_file), exist_ok=True)
     
     if not os.path.isfile(routes_file):
@@ -94,7 +111,7 @@ def setup_test_data(G: nx.Graph):
         "dest_airport", "dest_airport_id", "codeshare", "stops", "equipment"
     ]
     
-    routes_df = pd.read_csv("resources/notebook_test_data_routes.dat", names=cols, header=None)
+    routes_df = pd.read_csv(routes_file, names=cols, header=None)
 
     for _, row in routes_df.iterrows():
         src = row["source_airport"]
@@ -177,7 +194,8 @@ def pipeline(graph: nx.Graph, graph_description: str, alg_list: list, is_neptune
         na_graph.clear_graph()
 
     logger.info("Setting up test data...")
-    graph = setup_test_data(graph)
+    # graph = setup_air_routes_data(graph)
+    graph = setup_cit_patents_data(graph)
 
     if is_neptune:
         logger.info(f"load data into graph {os.getenv("NETWORKX_GRAPH_ID")}")
