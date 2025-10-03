@@ -17,7 +17,7 @@ import pytest
 from networkx.classes import Graph
 
 from nx_neptune import degree_centrality, in_degree_centrality, out_degree_centrality
-from nx_neptune.clients import pagerank_query, PARAM_TRAVERSAL_DIRECTION
+from nx_neptune.clients import PARAM_TRAVERSAL_DIRECTION
 from nx_neptune.clients.neptune_constants import (
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
