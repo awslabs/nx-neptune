@@ -66,9 +66,8 @@ class TestBFS:
         
         assert isinstance(r, list)
         assert len(r) == 2
-        result_tuples = [tuple(edge) for edge in r]
-        assert ("Alice", "Bob") in result_tuples
-        assert ("Alice", "Carl") in result_tuples
+        assert ["Alice", "Bob"] in r
+        assert ["Alice", "Carl"] in r
 
     def test_bfs_edges_reverse_with_depth_limit(self, digraph):
         """Test BFS edges with reverse=True and depth_limit=1"""
@@ -82,13 +81,12 @@ class TestBFS:
         
         assert isinstance(r, list)
         assert len(r) == 1
-        result_tuples = [tuple(edge) for edge in r]
-        assert ("Bob", "Alice") in result_tuples
+        assert ["Bob", "Alice"] in r
 
     def test_bfs_layers_multiple_sources(self, digraph):
         """Test BFS layers with multiple sources"""
         r = list(nx.bfs_layers(digraph, ["Alice", "Bob"], backend=BACKEND))
-        
+
         assert "Alice" in r[0]
         assert "Bob" in r[0]
         assert "Carl" in r[1]
@@ -101,9 +99,8 @@ class TestBFS:
         
         assert isinstance(r, list)
         assert len(r) == 2
-        result_tuples = [tuple(edge) for edge in r]
-        assert ("0", "1") in result_tuples
-        assert ("1", "2") in result_tuples
+        assert ["0", "1"] in r
+        assert ["1", "2"] in r
 
     def test_bfs_edges_with_depth_limit_1(self):
         """Test BFS edges with depth_limit=1"""
@@ -112,7 +109,7 @@ class TestBFS:
         r = list(nx.bfs_edges(G, source="0", depth_limit=1, backend=BACKEND))
         
         assert len(r) == 1
-        assert tuple(r[0]) == ("0", "1")
+        assert ["0", "1"] in r
 
     def test_bfs_edges_from_middle_node(self):
         """Test BFS edges starting from the middle node"""
@@ -121,9 +118,8 @@ class TestBFS:
         r = list(nx.bfs_edges(G, source="1", backend=BACKEND))
         
         assert len(r) == 2
-        result_tuples = [tuple(edge) for edge in r]
-        assert ("1", "0") in result_tuples
-        assert ("1", "2") in result_tuples
+        assert ["1", "0"] in r
+        assert ["1", "2"] in r
 
     def test_bfs_edges_reverse_true(self):
         """Test BFS edges with reverse=True"""
@@ -133,9 +129,8 @@ class TestBFS:
         
         assert isinstance(r, list)
         assert len(r) == 2
-        result_tuples = [tuple(edge) for edge in r]
-        assert ("1", "0") in result_tuples
-        assert ("1", "2") in result_tuples
+        assert ["1", "0"] in r
+        assert ["1", "2"] in r
 
     def test_bfs_edges_reverse_false(self):
         """Test BFS edges with reverse=False"""
@@ -145,9 +140,8 @@ class TestBFS:
         
         assert isinstance(r, list)
         assert len(r) == 2
-        result_tuples = [tuple(edge) for edge in r]
-        assert ("1", "0") in result_tuples
-        assert ("1", "2") in result_tuples
+        assert ["1", "0"] in r
+        assert ["1", "2"] in r
 
     def test_bfs_edges_12_node_path(self):
         """Test BFS edges on 12-node path graph"""
@@ -173,6 +167,8 @@ class TestBFS:
         
         assert isinstance(r, list)
         assert len(r) == 2
+        assert ["Alice", "Bob"] in r
+        assert ["Alice", "Carl"] in r
 
     def test_descendants_at_distance(self, graph):
         """Test descendants_at_distance function"""
@@ -182,12 +178,6 @@ class TestBFS:
 
     def test_descendants_at_distance_with_aws_options(self, graph):
         """Test descendants_at_distance with AWS-specific options"""
-        graph.add_node("Alice", age=30, role="Engineer")
-        graph.add_node("Bob", age=25, role="Designer")
-        graph.add_node("Carl", age=35, role="Manager")
-        graph.add_edge("Alice", "Bob", weight=5, relationship="colleague")
-        graph.add_edge("Alice", "Carl", weight=2, relationship="manager")
-
         r = nx.descendants_at_distance(graph, backend=BACKEND, source="Alice", distance=1, 
                                      vertex_label="Node", edge_labels=["RELATES_TO"], concurrency=0)
         
