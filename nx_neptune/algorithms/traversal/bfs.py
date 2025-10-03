@@ -27,7 +27,7 @@ from nx_neptune.clients.opencypher_builder import (
     _NODE_FULL_FORM_ID_FUNC_REF,
     bfs_layers_query,
     bfs_query,
-    descendants_at_distance_query,
+    descendants_at_distance_query, _NODE_REF,
 )
 from nx_neptune.na_graph import NeptuneGraph
 from nx_neptune.utils.decorators import configure_if_nx_active
@@ -95,8 +95,6 @@ def bfs_edges(
         f"concurrency={concurrency}"
     )
 
-    source_node = "n"
-
     parameters = {}
     # map parameters:
     if depth_limit:
@@ -121,7 +119,7 @@ def bfs_edges(
     )
 
     query_str, para_map = bfs_query(
-        source_node, {f"id({source_node})": source}, parameters
+        _NODE_REF, {f"id({_NODE_REF})": source}, parameters
     )
     json_result = neptune_graph.execute_call(query_str, para_map)
 
@@ -178,10 +176,8 @@ def descendants_at_distance(
     if concurrency is not None:
         parameters[PARAM_CONCURRENCY] = concurrency
 
-    source_node = "n"
-
     query_str, para_map = descendants_at_distance_query(
-        source_node, {f"id({source_node})": source}, parameters
+        _NODE_REF, {f"id({_NODE_REF})": source}, parameters
     )
     json_result = neptune_graph.execute_call(query_str, para_map)
 
@@ -232,10 +228,8 @@ def bfs_layers(
     if concurrency is not None:
         parameters[PARAM_CONCURRENCY] = concurrency
 
-    source_node = "n"
-
     query_str, para_map = bfs_layers_query(
-        source_node, {f"id({source_node})": sources}, parameters
+        _NODE_REF, {f"id({_NODE_REF})": sources}, parameters
     )
     json_result = neptune_graph.execute_call(query_str, para_map)
 

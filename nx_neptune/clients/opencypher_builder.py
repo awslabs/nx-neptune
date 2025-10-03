@@ -567,7 +567,7 @@ def descendants_at_distance_query(
     :return: Tuple of (OpenCypher query string, parameter map) for BFS-Levels algorithm execution
 
     Example:
-        >>> descendants_at_distance_query("Alice", {'n.name': 'Alice'}, {maxDepth:2})
+        >>> descendants_at_distance_query("Alice", {'id(n)': 'Alice'}, {maxDepth:2})
         MATCH (n)
         WHERE id(n) = 'Alice'
         CALL neptune.algo.bfs.levels(n, {maxDepth:2})
