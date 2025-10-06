@@ -27,7 +27,7 @@ from nx_neptune.clients.opencypher_builder import (
     _NODE_FULL_FORM_ID_FUNC_REF,
     bfs_layers_query,
     bfs_query,
-    descendants_at_distance_query,
+    descendants_at_distance_query, _NODE_REF,
 )
 from nx_neptune.na_graph import NeptuneGraph
 from nx_neptune.utils.decorators import configure_if_nx_active
@@ -95,8 +95,6 @@ def bfs_edges(
         f"concurrency={concurrency}"
     )
 
-    source_node = "n"
-
     parameters = {}
     # map parameters:
     if depth_limit:
@@ -121,7 +119,7 @@ def bfs_edges(
     )
 
     query_str, para_map = bfs_query(
-        source_node, {f"id({source_node})": source}, parameters
+        _NODE_REF, {f"id({_NODE_REF})": source}, parameters
     )
     json_result = neptune_graph.execute_call(query_str, para_map)
 
@@ -152,8 +150,8 @@ def descendants_at_distance(
     :param source: Specify starting node for breadth-first levels search
     :param distance: The distance of the wanted nodes from source
     :param neptune_graph: A NeptuneGraph instance
-    :param edge_labels: To filter on one more edge labels, provide a list of the ones to filter on.
-    If no edgeLabels field is provided then all edge labels are processed during traversal.
+    :param edge_labels: To filter on edge labels, provide a list of the ones to filter on.
+    If edge_labels field is not provided, then all edge labels are processed during traversal.
     :param vertex_label: A vertex label for vertex filtering.
     :param traversal_direction: The direction of edge to follow. Must be one of: "outbound" or "inbound".
     :param concurrency: Controls the number of concurrent threads used to run the algorithm.
@@ -178,7 +176,9 @@ def descendants_at_distance(
     if concurrency is not None:
         parameters[PARAM_CONCURRENCY] = concurrency
 
-    query_str, para_map = descendants_at_distance_query(source, parameters)
+    query_str, para_map = descendants_at_distance_query(
+        _NODE_REF, {f"id({_NODE_REF})": source}, parameters
+    )
     json_result = neptune_graph.execute_call(query_str, para_map)
 
     # Transform response from list of dict to set.
@@ -204,8 +204,8 @@ def bfs_layers(
     :param neptune_graph: A NeptuneGraph instance
     :param sources: Specify starting node for breadth-first levels search
     :param neptune_graph: A NeptuneGraph instance
-    :param edge_labels: To filter on one more edge labels, provide a list of the ones to filter on.
-    If no edgeLabels field is provided then all edge labels are processed during traversal.
+    :param edge_labels: To filter on edge labels: provide a list of the ones to filter on.
+    If edge_labels field is not provided, then all edge labels are processed during traversal.
     :param vertex_label: A vertex label for vertex filtering.
     :param traversal_direction: The direction of edge to follow. Must be one of: "outbound" or "inbound".
     :param concurrency: Controls the number of concurrent threads used to run the algorithm.
@@ -228,7 +228,9 @@ def bfs_layers(
     if concurrency is not None:
         parameters[PARAM_CONCURRENCY] = concurrency
 
-    query_str, para_map = bfs_layers_query(sources, parameters)
+    query_str, para_map = bfs_layers_query(
+        _NODE_REF, {f"id({_NODE_REF})": sources}, parameters
+    )
     json_result = neptune_graph.execute_call(query_str, para_map)
 
     for json_item in json_result:
