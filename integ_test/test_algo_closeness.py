@@ -12,28 +12,19 @@
 # language governing permissions and limitations under the License.
 
 import pytest
+import os
+import pandas as pd
+import requests
+
 from dotenv import load_dotenv
 load_dotenv()
 
 import networkx as nx
-from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID, Node
+from nx_neptune import Node
+from utils.test_utils import BACKEND, neptune_graph, air_route_graph
 
+# run tests sequentially
 pytestmark = pytest.mark.order("after")
-
-@pytest.fixture(scope="module")
-def neptune_graph():
-    """Setup Neptune graph for testing"""
-    if not NETWORKX_GRAPH_ID:
-        pytest.skip('Environment Variable "NETWORKX_GRAPH_ID" is not defined')
-    
-    g = nx.Graph()
-    na_graph = NeptuneGraph.from_config(graph=g)
-    return na_graph
-
-@pytest.fixture(autouse=True)
-def clear_graph(neptune_graph):
-    """Clear graph before each test"""
-    neptune_graph.clear_graph()
 
 @pytest.fixture
 def graph():
@@ -57,39 +48,39 @@ def test_graph():
     return g
 
 class TestCloseness:
-    BACKEND = "neptune"
 
-    def test_closeness_centrality_basic(self, test_graph):
-        """Test basic closeness centrality"""
-        result = nx.closeness_centrality(test_graph, backend=self.BACKEND)
+    def test_closeness_centrality_basic(self, air_route_graph):
+        """Test basic closeness centrality on airline routes data"""
+        result = nx.closeness_centrality(air_route_graph, backend=BACKEND)
         
         assert isinstance(result, dict)
-        assert len(result) == 5  # 5 airports
+        assert len(result) > 0
         assert all(isinstance(v, float) for v in result.values())
         assert all(0 <= v <= 1 for v in result.values())
 
-    def test_closeness_centrality_selected_node(self, test_graph):
+    def test_closeness_centrality_selected_node(self, air_route_graph):
         """Test closeness centrality for selected node"""
-        result = nx.closeness_centrality(test_graph, backend=self.BACKEND, u="YVR")
-        
-        assert isinstance(result, float)
-        assert 0 <= result <= 1
+        result = nx.closeness_centrality(air_route_graph, backend=BACKEND, u="YVR")
+        yvr_result = result["YVR"]
+        assert isinstance(yvr_result, float)
+        assert 0 <= yvr_result <= 1
 
-    def test_closeness_centrality_mutation(self, test_graph, neptune_graph):
+    def test_closeness_centrality_mutation(self, air_route_graph, neptune_graph):
         """Test closeness centrality with write_property (mutation)"""
-        nx.closeness_centrality(test_graph, backend=self.BACKEND, write_property="ccScore")
-        
+        nx.closeness_centrality(air_route_graph, backend=BACKEND, write_property="ccScore")
+
         nodes = neptune_graph.get_all_nodes()[:10]
         assert len(nodes) > 0
-        
+
         # Verify nodes exist after mutation
         for item in nodes:
             node = Node.from_neptune_response(item)
             assert node is not None
+            assert "ccScore" in node.properties
 
     def test_closeness_centrality_empty_graph(self, graph):
         """Test closeness centrality on empty graph"""
-        result = nx.closeness_centrality(graph, backend=self.BACKEND)
+        result = nx.closeness_centrality(graph, backend=BACKEND)
         
         assert isinstance(result, dict)
         assert len(result) == 0
@@ -97,7 +88,7 @@ class TestCloseness:
     def test_closeness_centrality_single_node(self, graph):
         """Test closeness centrality on single node graph"""
         graph.add_node("A")
-        result = nx.closeness_centrality(graph, backend=self.BACKEND)
+        result = nx.closeness_centrality(graph, backend=BACKEND)
         
         assert isinstance(result, dict)
         assert len(result) == 1

@@ -17,23 +17,9 @@ load_dotenv()
 
 import networkx as nx
 from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID, Node
+from utils.test_utils import BACKEND, neptune_graph
 
 pytestmark = pytest.mark.order("after")
-
-@pytest.fixture(scope="module")
-def neptune_graph():
-    """Setup Neptune graph for testing"""
-    if not NETWORKX_GRAPH_ID:
-        pytest.skip('Environment Variable "NETWORKX_GRAPH_ID" is not defined')
-    
-    g = nx.Graph()
-    na_graph = NeptuneGraph.from_config(graph=g)
-    return na_graph
-
-@pytest.fixture(autouse=True)
-def clear_graph(neptune_graph):
-    """Clear graph before each test"""
-    neptune_graph.clear_graph()
 
 @pytest.fixture
 def graph():
@@ -140,6 +126,7 @@ class TestLouvain:
         for item in nodes:
             node = Node.from_neptune_response(item)
             assert node is not None
+            assert "communities" in node.properties
 
     def test_louvain_communities_empty_graph(self, graph):
         """Test Louvain communities on empty graph"""

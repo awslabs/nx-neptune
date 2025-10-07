@@ -16,24 +16,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import networkx as nx
-from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID, Node
+from nx_neptune import Node
+from utils.test_utils import BACKEND, air_route_graph, neptune_graph
 
 pytestmark = pytest.mark.order("after")
-
-@pytest.fixture(scope="module")
-def neptune_graph():
-    """Setup Neptune graph for testing"""
-    if not NETWORKX_GRAPH_ID:
-        pytest.skip('Environment Variable "NETWORKX_GRAPH_ID" is not defined')
-    
-    g = nx.Graph()
-    na_graph = NeptuneGraph.from_config(graph=g)
-    return na_graph
-
-@pytest.fixture(autouse=True)
-def clear_graph(neptune_graph):
-    """Clear graph before each test"""
-    neptune_graph.clear_graph()
 
 @pytest.fixture
 def digraph():
@@ -55,11 +41,10 @@ def test_digraph():
     return g
 
 class TestPageRank:
-    BACKEND = "neptune"
 
     def test_pagerank_basic(self, test_digraph):
         """Test basic PageRank"""
-        r = nx.pagerank(test_digraph, backend=self.BACKEND)
+        r = nx.pagerank(test_digraph, backend=BACKEND)
         
         assert isinstance(r, dict)
         assert len(r) == 6  # 5 connected nodes + 1 isolated
@@ -68,35 +53,36 @@ class TestPageRank:
 
     def test_pagerank_with_vertex_label(self, test_digraph):
         """Test PageRank with vertex_label option"""
-        r = nx.pagerank(test_digraph, backend=self.BACKEND, vertex_label="A")
+        r = nx.pagerank(test_digraph, backend=BACKEND, vertex_label="Node")
         
         assert isinstance(r, dict)
         assert len(r) == 6
 
+    @pytest.mark.skipif(BACKEND != "neptune", reason="requires BACKEND='neptune'")
     def test_pagerank_with_edge_labels(self, test_digraph):
         """Test PageRank with edge_labels option"""
-        r = nx.pagerank(test_digraph, backend=self.BACKEND, edge_labels=["RELATES_TO"])
+        r = nx.pagerank(test_digraph, backend=BACKEND, edge_labels=["RELATES_TO"])
         
         assert isinstance(r, dict)
         assert len(r) == 6
 
     def test_pagerank_with_concurrency(self, test_digraph):
         """Test PageRank with concurrency option"""
-        r = nx.pagerank(test_digraph, backend=self.BACKEND, concurrency=0)
+        r = nx.pagerank(test_digraph, backend=BACKEND, concurrency=0)
         
         assert isinstance(r, dict)
         assert len(r) == 6
 
     def test_pagerank_with_traversal_direction(self, test_digraph):
         """Test PageRank with traversal_direction option"""
-        r = nx.pagerank(test_digraph, backend=self.BACKEND, traversal_direction="inbound")
+        r = nx.pagerank(test_digraph, backend=BACKEND, traversal_direction="inbound")
         
         assert isinstance(r, dict)
         assert len(r) == 6
 
     def test_pagerank_with_edge_weights(self, test_digraph):
         """Test PageRank with edge weight options"""
-        r = nx.pagerank(test_digraph, backend=self.BACKEND, 
+        r = nx.pagerank(test_digraph, backend=BACKEND, 
                        edge_weight_type="int", edge_weight_property="weight")
         
         assert isinstance(r, dict)
@@ -104,7 +90,7 @@ class TestPageRank:
 
     def test_pagerank_with_source_nodes_weights(self, test_digraph):
         """Test PageRank with source_nodes and source_weights"""
-        r = nx.pagerank(test_digraph, backend=self.BACKEND, 
+        r = nx.pagerank(test_digraph, backend=BACKEND, 
                        source_nodes=["A", "B"], source_weights=[1, 1.5])
         
         assert isinstance(r, dict)
@@ -112,7 +98,7 @@ class TestPageRank:
 
     def test_pagerank_with_personalization(self, test_digraph):
         """Test PageRank with personalization"""
-        r = nx.pagerank(test_digraph, backend=self.BACKEND, 
+        r = nx.pagerank(test_digraph, backend=BACKEND, 
                        personalization={"A": 0.1, "B": 100})
         
         assert isinstance(r, dict)
@@ -122,7 +108,7 @@ class TestPageRank:
 
     def test_pagerank_mutation(self, test_digraph, neptune_graph):
         """Test PageRank with write_property (mutation)"""
-        r = nx.pagerank(test_digraph, backend=self.BACKEND, write_property="rank")
+        r = nx.pagerank(test_digraph, backend=BACKEND, write_property="rank")
         
         nodes = neptune_graph.get_all_nodes()[:10]
         assert len(nodes) > 0
@@ -131,10 +117,11 @@ class TestPageRank:
         for item in nodes:
             node = Node.from_neptune_response(item)
             assert node is not None
+            assert "rank" in node.properties
 
     def test_pagerank_empty_graph(self, digraph):
         """Test PageRank on empty graph"""
-        r = nx.pagerank(digraph, backend=self.BACKEND)
+        r = nx.pagerank(digraph, backend=BACKEND)
         
         assert isinstance(r, dict)
         assert len(r) == 0
@@ -142,7 +129,7 @@ class TestPageRank:
     def test_pagerank_single_node(self, digraph):
         """Test PageRank on single node graph"""
         digraph.add_node("A")
-        r = nx.pagerank(digraph, backend=self.BACKEND)
+        r = nx.pagerank(digraph, backend=BACKEND)
         
         assert isinstance(r, dict)
         assert len(r) == 1

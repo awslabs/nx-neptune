@@ -10,30 +10,17 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
+import os
 
 import pytest
 from dotenv import load_dotenv
 load_dotenv()
 
 import networkx as nx
-from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID, Node
+from nx_neptune import Node
+from utils.test_utils import BACKEND, neptune_graph
 
 pytestmark = pytest.mark.order("after")
-
-@pytest.fixture(scope="module")
-def neptune_graph():
-    """Setup Neptune graph for testing"""
-    if not NETWORKX_GRAPH_ID:
-        pytest.skip('Environment Variable "NETWORKX_GRAPH_ID" is not defined')
-    
-    g = nx.Graph()
-    na_graph = NeptuneGraph.from_config(graph=g)
-    return na_graph
-
-@pytest.fixture(autouse=True)
-def clear_graph(neptune_graph):
-    """Clear graph before each test"""
-    neptune_graph.clear_graph()
 
 @pytest.fixture
 def digraph():
@@ -55,11 +42,10 @@ def test_digraph():
     return g
 
 class TestDegree:
-    BACKEND = "neptune"
 
     def test_degree_centrality_basic(self, test_digraph):
         """Test basic degree centrality"""
-        r = nx.degree_centrality(test_digraph, backend=self.BACKEND)
+        r = nx.degree_centrality(test_digraph, backend=BACKEND)
         
         assert isinstance(r, dict)
         assert len(r) == 6  # 5 connected nodes + 1 isolated
@@ -67,7 +53,7 @@ class TestDegree:
 
     def test_degree_centrality_with_aws_options(self, test_digraph):
         """Test degree centrality with AWS-specific options"""
-        r = nx.degree_centrality(test_digraph, backend=self.BACKEND, 
+        r = nx.degree_centrality(test_digraph, backend=BACKEND, 
                                 vertex_label="Node", edge_labels=["RELATES_TO"], concurrency=0)
         
         assert isinstance(r, dict)
@@ -75,7 +61,7 @@ class TestDegree:
 
     def test_in_degree_centrality_basic(self, test_digraph):
         """Test basic in-degree centrality"""
-        r = nx.in_degree_centrality(test_digraph, backend=self.BACKEND)
+        r = nx.in_degree_centrality(test_digraph, backend=BACKEND)
         
         assert isinstance(r, dict)
         assert len(r) == 6
@@ -83,7 +69,7 @@ class TestDegree:
 
     def test_in_degree_centrality_with_aws_options(self, test_digraph):
         """Test in-degree centrality with AWS-specific options"""
-        r = nx.in_degree_centrality(test_digraph, backend=self.BACKEND, 
+        r = nx.in_degree_centrality(test_digraph, backend=BACKEND, 
                                    vertex_label="Node", edge_labels=["RELATES_TO"], concurrency=0)
         
         assert isinstance(r, dict)
@@ -91,7 +77,7 @@ class TestDegree:
 
     def test_out_degree_centrality_basic(self, test_digraph):
         """Test basic out-degree centrality"""
-        r = nx.out_degree_centrality(test_digraph, backend=self.BACKEND)
+        r = nx.out_degree_centrality(test_digraph, backend=BACKEND)
         
         assert isinstance(r, dict)
         assert len(r) == 6
@@ -99,7 +85,7 @@ class TestDegree:
 
     def test_out_degree_centrality_with_aws_options(self, test_digraph):
         """Test out-degree centrality with AWS-specific options"""
-        r = nx.out_degree_centrality(test_digraph, backend=self.BACKEND, 
+        r = nx.out_degree_centrality(test_digraph, backend=BACKEND, 
                                     vertex_label="Node", edge_labels=["RELATES_TO"], concurrency=0)
         
         assert isinstance(r, dict)
@@ -107,7 +93,7 @@ class TestDegree:
 
     def test_degree_centrality_mutation(self, test_digraph, neptune_graph):
         """Test degree centrality with write_property (mutation)"""
-        nx.degree_centrality(test_digraph, backend=self.BACKEND, write_property="degree")
+        nx.degree_centrality(test_digraph, backend=BACKEND, write_property="degree")
         
         nodes = neptune_graph.get_all_nodes()[:10]
         assert len(nodes) > 0
@@ -116,17 +102,28 @@ class TestDegree:
         for item in nodes:
             node = Node.from_neptune_response(item)
             assert node is not None
+            assert "degree" in node.properties
 
     def test_in_degree_centrality_mutation(self, test_digraph, neptune_graph):
         """Test in-degree centrality with write_property (mutation)"""
-        nx.in_degree_centrality(test_digraph, backend=self.BACKEND, write_property="degree")
+        nx.in_degree_centrality(test_digraph, backend=BACKEND, write_property="degree")
         
         nodes = neptune_graph.get_all_nodes()[:10]
         assert len(nodes) > 0
+        # Verify nodes have the degree property
+        for item in nodes:
+            node = Node.from_neptune_response(item)
+            assert node is not None
+            assert "degree" in node.properties
 
     def test_out_degree_centrality_mutation(self, test_digraph, neptune_graph):
         """Test out-degree centrality with write_property (mutation)"""
-        nx.out_degree_centrality(test_digraph, backend=self.BACKEND, write_property="degree")
+        nx.out_degree_centrality(test_digraph, backend=BACKEND, write_property="degree")
         
         nodes = neptune_graph.get_all_nodes()[:10]
         assert len(nodes) > 0
+        # Verify nodes have the degree property
+        for item in nodes:
+            node = Node.from_neptune_response(item)
+            assert node is not None
+            assert "degree" in node.properties
