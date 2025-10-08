@@ -106,6 +106,22 @@ Analytics instance. Make sure your AWS credentials are properly configured and
 your IAM role/user has the required permissions (ReadDataViaQuery,
 WriteDataViaQuery, DeleteDataViaQuery).
 
+## Running tests
+
+Unit tests can be run with make, this runs all tests in the `test` folder:
+```bash
+make test
+```
+
+Integration tests are included in the `integ_test` folder and run examples against an existing instance of Neptune 
+Analytics, by passing the graph identifier available in the AWS account. 
+```bash
+export NETWORKX_GRAPH_ID=g-test12345
+make integ-test
+```
+
+You can set `BACKEND=False` to run the test suite using NetworkX without nx-neptune as the backend. 
+
 ## Jupyter Notebook Integration
 
 For interactive exploration and visualization, you can use the Jupyter notebook integration.

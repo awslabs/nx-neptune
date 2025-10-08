@@ -12,12 +12,6 @@
 # language governing permissions and limitations under the License.
 
 import pytest
-import os
-import pandas as pd
-import requests
-
-from dotenv import load_dotenv
-load_dotenv()
 
 import networkx as nx
 from nx_neptune import Node

@@ -44,7 +44,7 @@ def neptune_graph():
 def air_route_graph():
     """Create airline routes graph from resources data"""
     routes_url = "https://raw.githubusercontent.com/jpatokal/openflights/master/data/routes.dat"
-    routes_file = "resources/notebook_test_data_routes.dat"
+    routes_file = "integ_test/resources/test_data_routes.dat"
     
     # Ensure the directory exists
     os.makedirs(os.path.dirname(routes_file), exist_ok=True)
@@ -59,7 +59,7 @@ def air_route_graph():
         "dest_airport", "dest_airport_id", "codeshare", "stops", "equipment"
     ]
     
-    routes_df = pd.read_csv("resources/notebook_test_data_routes.dat", names=cols, header=None)
+    routes_df = pd.read_csv(routes_file, names=cols, header=None)
     air_route_graph = nx.Graph()  # use Graph for un-directed air routes
 
     for _, row in routes_df.iterrows():
