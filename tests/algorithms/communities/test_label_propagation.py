@@ -44,9 +44,9 @@ class TestLabelPropagation:
     """Test suite for all three variants of labels propagation algorithms in nx_neptune."""
 
     PARSED_RESULT_SET = [
-        ["SLM", "IAA", "GRV", "ETZ", "MME", "ZAD"],
-        ["FAI", "HSL", "HUS", "LMA", "GAL", "KBC"],
-        ["FAT", "UII", "SJT", "VSA", "QBC", "LAM"],
+        {"SLM", "IAA", "GRV", "ETZ", "MME", "ZAD"},
+        {"FAI", "HSL", "HUS", "LMA", "GAL", "KBC"},
+        {"FAT", "UII", "SJT", "VSA", "QBC", "LAM"},
     ]
 
     @pytest.fixture

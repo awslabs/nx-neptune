@@ -358,6 +358,5 @@ def _label_propagation_communities(
 
         result = {}
         for item in json_result:
-            result[item["community"]] = item["members"]
-        # Return dict_value to match NX return type.
+            result[item["community"]] = set(item["members"])
         return result.values()
