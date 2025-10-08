@@ -19,8 +19,6 @@ import networkx as nx
 from nx_neptune import Node
 from utils.test_utils import BACKEND, air_route_graph, neptune_graph
 
-pytestmark = pytest.mark.order("after")
-
 @pytest.fixture
 def graph():
     """Create a new undirected graph"""

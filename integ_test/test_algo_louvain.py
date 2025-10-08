@@ -16,10 +16,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import networkx as nx
-from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID, Node
+from nx_neptune import Node
 from utils.test_utils import BACKEND, neptune_graph
-
-pytestmark = pytest.mark.order("after")
 
 @pytest.fixture
 def graph():
@@ -44,11 +42,9 @@ def test_graph():
     return g
 
 class TestLouvain:
-    BACKEND = "neptune"
-
     def test_louvain_communities_basic(self, test_graph):
         """Test basic Louvain communities"""
-        result = nx.community.louvain_communities(test_graph, backend=self.BACKEND)
+        result = nx.community.louvain_communities(test_graph, backend=BACKEND)
         
         assert isinstance(result, list)
         assert len(result) > 0
@@ -60,7 +56,7 @@ class TestLouvain:
 
     def test_louvain_communities_with_weight(self, test_graph):
         """Test Louvain communities with weight parameter"""
-        result = nx.community.louvain_communities(test_graph, backend=self.BACKEND, 
+        result = nx.community.louvain_communities(test_graph, backend=BACKEND, 
                                                  weight="custom_weight")
         
         assert isinstance(result, list)
@@ -68,7 +64,7 @@ class TestLouvain:
 
     def test_louvain_communities_with_max_level(self, test_graph):
         """Test Louvain communities with max_level parameter"""
-        result = nx.community.louvain_communities(test_graph, backend=self.BACKEND, 
+        result = nx.community.louvain_communities(test_graph, backend=BACKEND, 
                                                  max_level=100)
         
         assert isinstance(result, list)
@@ -76,7 +72,7 @@ class TestLouvain:
 
     def test_louvain_communities_with_threshold(self, test_graph):
         """Test Louvain communities with threshold parameter"""
-        result = nx.community.louvain_communities(test_graph, backend=self.BACKEND, 
+        result = nx.community.louvain_communities(test_graph, backend=BACKEND, 
                                                  threshold=0.5)
         
         assert isinstance(result, list)
@@ -84,7 +80,7 @@ class TestLouvain:
 
     def test_louvain_communities_with_level_tolerance(self, test_graph):
         """Test Louvain communities with level_tolerance parameter"""
-        result = nx.community.louvain_communities(test_graph, backend=self.BACKEND, 
+        result = nx.community.louvain_communities(test_graph, backend=BACKEND, 
                                                  level_tolerance=0.5)
         
         assert isinstance(result, list)
@@ -92,7 +88,7 @@ class TestLouvain:
 
     def test_louvain_communities_with_max_iterations(self, test_graph):
         """Test Louvain communities with max_iterations parameter"""
-        result = nx.community.louvain_communities(test_graph, backend=self.BACKEND, 
+        result = nx.community.louvain_communities(test_graph, backend=BACKEND, 
                                                  max_iterations=100)
         
         assert isinstance(result, list)
@@ -100,7 +96,7 @@ class TestLouvain:
 
     def test_louvain_communities_with_concurrency(self, test_graph):
         """Test Louvain communities with concurrency parameter"""
-        result = nx.community.louvain_communities(test_graph, backend=self.BACKEND, 
+        result = nx.community.louvain_communities(test_graph, backend=BACKEND, 
                                                  concurrency=1)
         
         assert isinstance(result, list)
@@ -108,7 +104,7 @@ class TestLouvain:
 
     def test_louvain_communities_with_edge_labels(self, test_graph):
         """Test Louvain communities with edge_labels parameter"""
-        result = nx.community.louvain_communities(test_graph, backend=self.BACKEND, 
+        result = nx.community.louvain_communities(test_graph, backend=BACKEND, 
                                                  edge_labels=["RELATES_TO"])
         
         assert isinstance(result, list)
@@ -116,7 +112,7 @@ class TestLouvain:
 
     def test_louvain_communities_mutation(self, test_graph, neptune_graph):
         """Test Louvain communities with write_property (mutation)"""
-        result = nx.community.louvain_communities(test_graph, backend=self.BACKEND, 
+        result = nx.community.louvain_communities(test_graph, backend=BACKEND, 
                                                  write_property="communities")
         
         nodes = neptune_graph.get_all_nodes()[:10]
@@ -130,7 +126,7 @@ class TestLouvain:
 
     def test_louvain_communities_empty_graph(self, graph):
         """Test Louvain communities on empty graph"""
-        result = nx.community.louvain_communities(graph, backend=self.BACKEND)
+        result = nx.community.louvain_communities(graph, backend=BACKEND)
         
         assert isinstance(result, list)
         assert len(result) == 0
@@ -138,7 +134,7 @@ class TestLouvain:
     def test_louvain_communities_single_node(self, graph):
         """Test Louvain communities on single node graph"""
         graph.add_node("A")
-        result = nx.community.louvain_communities(graph, backend=self.BACKEND)
+        result = nx.community.louvain_communities(graph, backend=BACKEND)
         
         assert isinstance(result, list)
         assert len(result) == 1

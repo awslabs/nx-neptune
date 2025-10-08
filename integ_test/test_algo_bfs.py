@@ -17,9 +17,6 @@ import pytest
 import networkx as nx
 from utils.test_utils import BACKEND, neptune_graph
 
-# run tests sequentially
-pytestmark = pytest.mark.order("after")
-
 @pytest.fixture
 def digraph():
     """Create a new directed graph"""
