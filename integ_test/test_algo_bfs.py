@@ -10,28 +10,12 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
+import os
 
 import pytest
 
 import networkx as nx
-from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID
-
-pytestmark = pytest.mark.order("after")
-
-BACKEND = "neptune"
-
-@pytest.fixture(scope="module", autouse=True)
-def neptune_graph():
-    """Setup Neptune graph for testing"""
-    if not NETWORKX_GRAPH_ID:
-        pytest.skip('Environment Variable "NETWORKX_GRAPH_ID" is not defined')
-    
-    g = nx.Graph()
-    na_graph = NeptuneGraph.from_config(graph=g)
-
-    """Clear graph before each test"""
-    na_graph.clear_graph()
-    return na_graph
+from utils.test_utils import BACKEND, neptune_graph
 
 @pytest.fixture
 def digraph():

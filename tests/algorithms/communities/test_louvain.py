@@ -16,27 +16,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from networkx.classes import Graph
 
-from nx_neptune import (
-    label_propagation_communities,
-    asyn_lpa_communities,
-    fast_label_propagation_communities,
-)
 from nx_neptune.algorithms import louvain_communities
-from nx_neptune.clients.neptune_constants import (
-    PARAM_CONCURRENCY,
-    PARAM_EDGE_LABELS,
-    PARAM_VERTEX_LABEL,
-    PARAM_VERTEX_WEIGHT_PROPERTY,
-    PARAM_VERTEX_WEIGHT_TYPE,
-    PARAM_EDGE_WEIGHT_PROPERTY,
-    PARAM_EDGE_WEIGHT_TYPE,
-    PARAM_MAX_ITERATIONS,
-    PARAM_TRAVERSAL_DIRECTION,
-    PARAM_WRITE_PROPERTY,
-)
 from nx_neptune.clients.opencypher_builder import (
-    label_propagation_query,
-    label_propagation_mutation_query,
     louvain_query,
     louvain_mutation_query,
 )

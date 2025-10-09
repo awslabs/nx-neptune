@@ -83,6 +83,7 @@ notebooks/resources
 
 # Example dataset
 example/resources
+integ_test/resources
 
 # IPython
 profile_default/
