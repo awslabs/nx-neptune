@@ -9,6 +9,7 @@ load_dotenv()
 
 import os
 import time
+import sys
 import json
 import logging
 import pandas as pd
@@ -19,6 +20,15 @@ from types import GeneratorType
 
 import networkx as nx
 from nx_neptune import NeptuneGraph
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    stream=sys.stdout  # Explicitly set output to stdout
+)
+for logger_name in ['nx_neptune.na_graph', 'nx_neptune.utils.decorators']:
+    logging.getLogger(logger_name).setLevel(logging.DEBUG)
 
 # from nx_neptune.interface import ALGORITHMS
 GRAPH_ALGORITHMS = [
@@ -54,28 +64,46 @@ DIGRAPH_ALGORITHMS = [
     "louvain_communities",
 ]
 
-alg_params = {
-    "bfs_edges": {
-        "source": "BOS" # BOS airport
-    },
-    "bfs_layers": {
-        "sources": ["JFK", "BOS", "DFW", "LAX", "ORD"] # various airports by ID
-    },
-    "descendants_at_distance": {
-        "source": "BOS", # BOS airport
-        "distance": 2,
-    },
-}
+RUN_DATA_SET = "cit_patents"
 
-nx.config.warnings_to_ignore.add("cache")
+alg_params = {
+    "air_routes": {
+        "bfs_edges": {
+            "source": "BOS" # BOS airport
+        },
+        "bfs_layers": {
+            "sources": ["JFK", "BOS", "DFW", "LAX", "ORD"] # various airports by ID
+        },
+        "descendants_at_distance": {
+            "source": "BOS", # BOS airport
+            "distance": 2,
+        },
+    },
+    "cit_patents": {
+        "bfs_edges": {
+            "source": "1843326" # random edge
+        },
+        "bfs_layers": {
+            "sources": ["3197425", "1843326", "2305959", "2551863", "3189105"] # random edges
+        },
+        "descendants_at_distance": {
+            "source": "1843326", # random edge
+            "distance": 2,
+        },
+    }
+}
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-RUN_COUNT = 1
+RUN_COUNT = 3
 MAX_WORKERS = 1
 BACKEND = os.getenv("BACKEND")
+SKIP_IMPORT = True
+
+nx.config.warnings_to_ignore.add("cache")
+nx.config.backends.neptune.skip_graph_reset = True
 
 def setup_cit_patents_data(g: nx.Graph):
     url = "https://data.rapids.ai/cugraph/datasets/cit-Patents.csv"
@@ -149,7 +177,7 @@ def run_algorithm(algorithm_name, graph, run_id):
             else:
                 raise AttributeError(f"Algorithm {algorithm_name} not found")
 
-        params = alg_params.get(algorithm_name, {})
+        params = alg_params.get(RUN_DATA_SET).get(algorithm_name, {})
 
         if BACKEND:
             result = func(graph, backend=BACKEND, **params)
@@ -188,23 +216,19 @@ def run_algorithm(algorithm_name, graph, run_id):
 def pipeline(graph: nx.Graph, graph_description: str, alg_list: list, is_neptune: bool):
     """Main benchmarking function."""
 
-    if is_neptune:
-        logger.info("Reset Neptune data...")
-        na_graph = NeptuneGraph.from_config(graph=graph)
-        na_graph.clear_graph()
-
     logger.info("Setting up test data...")
-    # graph = setup_air_routes_data(graph)
-    graph = setup_cit_patents_data(graph)
+    if not SKIP_IMPORT:
+        # graph = setup_air_routes_data(graph)
+        graph = setup_cit_patents_data(graph)
 
-    if is_neptune:
-        logger.info(f"load data into graph {os.getenv("NETWORKX_GRAPH_ID")}")
+        if is_neptune:
+            logger.info(f"load data into graph {os.getenv("NETWORKX_GRAPH_ID")}")
 
-        # run bfs_edges once to sync-data to backend
-        nx.bfs_edges(graph, "Dummy", backend=BACKEND)
+            # run bfs_edges once to sync-data to backend
+            nx.bfs_edges(graph, 1, backend=BACKEND)
 
-        # and now empty the graphs to ensure that nothing else gets synced
-        graph.clear()
+            # and now empty the graphs to ensure that nothing else gets synced
+            graph.clear()
 
     results = []
 
@@ -254,9 +278,7 @@ def main():
     pipeline(nx.DiGraph(), "DIRECTED GRAPH", DIGRAPH_ALGORITHMS, is_neptune_backend)
 
     # run undirected graph algorithms
-
-    pipeline(nx.Graph(), "UNDIRECTED GRAPH", GRAPH_ALGORITHMS, is_neptune_backend)
-
+    # pipeline(nx.Graph(), "UNDIRECTED GRAPH", GRAPH_ALGORITHMS, is_neptune_backend)
 
 if __name__ == "__main__":
     main()
