@@ -35,6 +35,8 @@ __all__ = [
     "TaskType",
     "create_na_instance",
     "delete_na_instance",
+    "export_athena_table_to_s3",
+    "create_table_from_s3",
 ]
 
 logger = logging.getLogger(__name__)
@@ -594,3 +596,45 @@ def delete_status_check_wrapper(client, graph_id):
             return {"status": "DELETED"}
         else:
             raise e
+
+
+def export_athena_table_to_s3(source_table_id: str, sql_queries: list, s3_bucket: str):
+    """Export Athena table data to S3 by executing SQL queries.
+    
+    Args:
+        source_table_id (str): The source table identifier
+        sql_queries (list): List of SQL query strings to execute
+        s3_bucket (str): S3 bucket path for query results
+    """
+    athena_client = boto3.client('athena')
+    
+    for query in sql_queries:
+        try:
+            response = athena_client.start_query_execution(
+                QueryString=query,
+                ResultConfiguration={'OutputLocation': s3_bucket}
+            )
+            logger.info(f"Started query execution: {response['QueryExecutionId']}")
+        except ClientError as e:
+            logger.error(f"Error executing query: {e}")
+            raise
+
+
+def create_table_from_s3(s3_bucket: str, table_schema: str):
+    """Create external table in Athena from S3 data.
+    
+    Args:
+        s3_bucket (str): S3 bucket path containing data
+        table_schema (str): SQL CREATE TABLE statement
+    """
+    athena_client = boto3.client('athena')
+    
+    try:
+        response = athena_client.start_query_execution(
+            QueryString=table_schema,
+            ResultConfiguration={'OutputLocation': s3_bucket}
+        )
+        logger.info(f"Created table: {response['QueryExecutionId']}")
+    except ClientError as e:
+        logger.error(f"Error creating table: {e}")
+        raise
