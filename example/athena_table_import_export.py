@@ -17,7 +17,13 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from nx_neptune import NeptuneGraph, import_csv_from_s3, export_csv_to_s3, export_athena_table_to_s3
+from nx_neptune import (
+    NeptuneGraph,
+    import_csv_from_s3,
+    export_csv_to_s3,
+    export_athena_table_to_s3,
+    create_table_from_s3
+)
 from nx_neptune.utils.utils import get_stdout_logger
 
 """
@@ -47,9 +53,12 @@ SELECT DISTINCT "~id", airport_name, 'airline' AS "~label" FROM (
 );
 """
 
+# TODO add properties: airline, airline_id, codeshare, stops
+# TODO add list property: equipment
 FLIGHT_RELATIONSHIPS = """
-SELECT "source_airport_id" as "~from", "dest_airport_id" as "~to", 'flight' AS "~label", 
+SELECT source_airport_id as "~from", dest_airport_id as "~to", 'flight' AS "~label" 
 FROM air_routes_db.air_routes_table
+WHERE source_airport_id IS NOT NULL AND dest_airport_id IS NOT NULL
 """
 
 SOURCE_AIRPORTS_WITH_MORE_STOPS = """
@@ -59,7 +68,7 @@ WHERE stops > 0
 """
 
 ALL_NODES = "MATCH (n) RETURN n"
-ALL_EDGES = "MATCH (m)-[r]-(n) RETURN m, r, n"
+ALL_EDGES = "MATCH ()-[r]-() RETURN r"
 
 async def do_import_from_table():
 
@@ -86,19 +95,28 @@ async def do_import_from_s3():
     import_blocking_status = await import_csv_from_s3(na_graph, s3_location_import)
     print("Import completed with status: " + import_blocking_status)
 
+async def do_export_to_s3():
+    na_graph = NeptuneGraph.from_config()
+
+    s3_location_export = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
+
+    # Export - blocking
+    await export_csv_to_s3(na_graph, s3_location_export)
+    print("Export completed with export location: " + s3_location_export)
+
 async def do_export_to_table():
 
     na_graph = NeptuneGraph.from_config()
 
     s3_location_export = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
-    print("Skip export")
 
-    # Export - blocking
-    # await export_csv_to_s3(na_graph, s3_location_export)
-    # print("Export completed with export location: " + s3_location_export)
+    table_schema = ""
+
+    # Create table - blocking
+    await create_table_from_s3(s3_location_export, table_schema)
+
 
 async def do_execute_opencypher():
-
     na_graph = NeptuneGraph.from_config()
     all_nodes = na_graph.execute_call(ALL_NODES)
     logger.info(f"all_nodes: {all_nodes}")
@@ -106,7 +124,7 @@ async def do_execute_opencypher():
     logger.info(f"all_edges: {all_edges}")
 
 if __name__ == "__main__":
-    asyncio.run(do_import_from_table())
-    # asyncio.run(do_import_from_s3())
+    # asyncio.run(do_import_from_table())
+    asyncio.run(do_import_from_s3())
     # asyncio.run(do_export_to_table())
-    # asyncio.run(do_execute_opencypher())
+    asyncio.run(do_execute_opencypher())

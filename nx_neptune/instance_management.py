@@ -27,6 +27,7 @@ from botocore.exceptions import ClientError
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
 from .clients.neptune_constants import APP_ID_NX
 from .na_graph import NeptuneGraph
+import time
 
 __all__ = [
     "import_csv_from_s3",
@@ -44,7 +45,6 @@ logger = logging.getLogger(__name__)
 _PROJECT_IDENTIFIER = "nx-neptune"
 
 _PERMISSIONS_CREATE = ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]
-
 
 class TaskType(Enum):
     # Allow import to run against an "INITIALIZING" state - the graph is sometimes in this state after creating graph
@@ -73,11 +73,12 @@ class TaskFuture(Future):
         polling_interval(int): Time interval in seconds to perform job status query
     """
 
-    def __init__(self, task_id, task_type, polling_interval):
+    def __init__(self, task_id, task_type, polling_interval=10, max_attempts=60):
         super().__init__()
         self.task_id = task_id
         self.task_type = task_type
         self.polling_interval = polling_interval
+        # TODO: add max attempts
 
 
 async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
@@ -188,7 +189,7 @@ def import_csv_from_s3(
     return asyncio.wrap_future(future)
 
 
-def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn, polling_interval=30) -> Future:
+def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn: str, polling_interval: int) -> Future:
     """Export graph data from Neptune Analytics to S3 in CSV format.
 
     This function handles the complete workflow for exporting graph data:
@@ -450,7 +451,7 @@ def _start_export_task(
         raise e
 
 
-def _reset_graph(client: BaseClient, graph_id: str, skip_snapshot: bool = True) -> bool:
+def _reset_graph(client: BaseClient, graph_id: str, skip_snapshot: bool = True, polling_interval=10, max_attempts=60) -> bool:
     """Reset the Neptune Analytics graph.
 
     Args:
@@ -468,7 +469,7 @@ def _reset_graph(client: BaseClient, graph_id: str, skip_snapshot: bool = True) 
         client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
         waiter = client.get_waiter("graph_available")
         waiter.wait(
-            graphIdentifier=graph_id, WaiterConfig={"Delay": 10, "MaxAttempts": 60}
+            graphIdentifier=graph_id, WaiterConfig={"Delay": polling_interval, "MaxAttempts": max_attempts}
         )
         return True
     except ClientError as e:
@@ -598,14 +599,15 @@ def delete_status_check_wrapper(client, graph_id):
             raise e
 
 
-def export_athena_table_to_s3(sql_queries: list, s3_bucket: str):
+def export_athena_table_to_s3(sql_queries: list, s3_bucket: str, polling_interval=10, max_attempts=60):
     """Export Athena table data to S3 by executing SQL queries.
     
     Args:
-        sql_queries (list): List of SQL query strings to execute
-        s3_bucket (str): S3 bucket path for query results
+        :param s3_bucket: S3 bucket path for query results
+        :param sql_queries: List of SQL query strings to execute
+        :param max_attempts:
+        :param polling_interval:
     """
-    import time
     client = boto3.client('athena')
 
     # TODO: validate permissions - or fail
@@ -625,8 +627,74 @@ def export_athena_table_to_s3(sql_queries: list, s3_bucket: str):
             return False
     
     # Wait on all query execution IDs
+    s3_client = boto3.client('s3')
+    bucket_name = s3_bucket.replace('s3://', '').split('/')[0]
+    bucket_prefix = '/'.join(s3_bucket.replace('s3://', '').split('/')[1:])
+    
     for query_execution_id in query_execution_ids:
-        while True:
+        # TODO use TaskFuture instead
+        for _ in range(1, max_attempts):
+            response = client.get_query_execution(QueryExecutionId=query_execution_id)
+            status = response['QueryExecution']['Status']['State']
+            if status in ['SUCCEEDED', 'FAILED', 'CANCELLED']:
+                if status != 'SUCCEEDED':
+                    logger.error(f"Query {query_execution_id} failed with status: {status}")
+                    logger.error(f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}")
+                    return False
+                
+                # Sanity check that the CSV file exists
+                csv_key = f"{bucket_prefix}{query_execution_id}.csv"
+                try:
+                    s3_client.head_object(Bucket=bucket_name, Key=csv_key)
+                    logger.info(f"Confirmed CSV file exists: {csv_key}")
+                except ClientError:
+                    logger.error(f"CSV file not found: {csv_key}")
+                    return False
+                
+                # Remove metadata file
+                metadata_key = f"{bucket_prefix}{query_execution_id}.csv.metadata"
+                try:
+                    s3_client.delete_object(Bucket=bucket_name, Key=metadata_key)
+                    logger.info(f"Deleted metadata file: {metadata_key}")
+                except ClientError as e:
+                    logger.warning(f"Could not delete metadata file {metadata_key}: {e}")
+                
+                break
+            time.sleep(polling_interval)
+    logger.info(f"Successfully completed execution of {len(query_execution_ids)} queries")
+
+    return True
+
+def create_table_from_s3(s3_bucket: str, table_schema: str, polling_interval=10, max_attempts=60):
+    """Create external table in Athena from S3 data.
+    
+    Args:
+        :param table_schema: SQL CREATE TABLE statement
+        :param s3_bucket: S3 bucket path containing data
+        :param max_attempts:
+        :param polling_interval:
+    """
+    # TODO check if s3_bucket is empty
+    # TODO validate table_schema
+    # TODO validate if table exists already
+    # TODO check is skip drop table is False and table exists
+
+    client = boto3.client('athena')
+    query_execution_ids = []
+    try:
+        response = client.start_query_execution(
+            QueryString=table_schema,
+            ResultConfiguration={'OutputLocation': s3_bucket}
+        )
+        logger.info(f"Created table: {response['QueryExecutionId']}")
+        query_execution_ids.append(response['QueryExecutionId'])
+    except ClientError as e:
+        logger.error(f"Error creating table: {e}")
+        raise
+
+    for query_execution_id in query_execution_ids:
+        # TODO use TaskFuture instead
+        for _ in range(1, max_attempts):
             response = client.get_query_execution(QueryExecutionId=query_execution_id)
             status = response['QueryExecution']['Status']['State']
             if status in ['SUCCEEDED', 'FAILED', 'CANCELLED']:
@@ -635,31 +703,11 @@ def export_athena_table_to_s3(sql_queries: list, s3_bucket: str):
                     logger.error(f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}")
                     return False
                 break
-                # TODO: Sanity check that the file {query_execution_id}.csv exists in the folder
-
-                # Remove {query_execution_id}.csv.metadata from the folder
-                # This file will cause subsequent NA import to fail
-                # TODO: Remove {query_execution_id}.csv.metadata from the folder
-            time.sleep(10)
+            time.sleep(polling_interval)
     logger.info(f"Successfully completed execution of {len(query_execution_ids)} queries")
 
     return True
 
-def create_table_from_s3(s3_bucket: str, table_schema: str):
-    """Create external table in Athena from S3 data.
-    
-    Args:
-        s3_bucket (str): S3 bucket path containing data
-        table_schema (str): SQL CREATE TABLE statement
-    """
-    athena_client = boto3.client('athena')
-    
-    try:
-        response = athena_client.start_query_execution(
-            QueryString=table_schema,
-            ResultConfiguration={'OutputLocation': s3_bucket}
-        )
-        logger.info(f"Created table: {response['QueryExecutionId']}")
-    except ClientError as e:
-        logger.error(f"Error creating table: {e}")
-        raise
+def empty_s3_bucket(s3_bucket: str):
+    # TODO Empty bucket and delete folder?
+    pass
