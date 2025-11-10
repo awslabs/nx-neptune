@@ -11,6 +11,8 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 import logging
+from audioop import error
+from sys import exception
 from typing import Optional
 
 import jmespath
@@ -322,6 +324,25 @@ class IamClient:
 
         # All ARNs are valid if we reach here
         return True
+
+    def validate_permissions(self, user_role: Optional[str] = None):
+
+        results = {}
+        permissions_to_check = {
+            "test_op": ["neptune-graph:CreateGraph", "neptune-graph:TagResource"],
+            "test_op_2": ["neptune-graph:CreateGraph", "xxx:TagResource"],
+            "test_op_3": ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]
+        }
+
+        for op_name, permissions in permissions_to_check.items():
+            try:
+                self.check_aws_permission(op_name, permissions)
+                results[op_name] = True
+            except Exception:
+                results[op_name] = False
+
+        return results
+
 
 
 def _get_s3_in_arn(s3_path: str) -> str:
