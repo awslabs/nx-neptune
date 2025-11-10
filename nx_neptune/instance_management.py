@@ -598,27 +598,52 @@ def delete_status_check_wrapper(client, graph_id):
             raise e
 
 
-def export_athena_table_to_s3(source_table_id: str, sql_queries: list, s3_bucket: str):
+def export_athena_table_to_s3(sql_queries: list, s3_bucket: str):
     """Export Athena table data to S3 by executing SQL queries.
     
     Args:
-        source_table_id (str): The source table identifier
         sql_queries (list): List of SQL query strings to execute
         s3_bucket (str): S3 bucket path for query results
     """
-    athena_client = boto3.client('athena')
-    
+    import time
+    client = boto3.client('athena')
+
+    # TODO: validate permissions - or fail
+    # TODO: check s3 bucket location is empty - or fail
+
+    query_execution_ids = []
     for query in sql_queries:
         try:
-            response = athena_client.start_query_execution(
+            response = client.start_query_execution(
                 QueryString=query,
                 ResultConfiguration={'OutputLocation': s3_bucket}
             )
             logger.info(f"Started query execution: {response['QueryExecutionId']}")
+            query_execution_ids.append(response['QueryExecutionId'])
         except ClientError as e:
             logger.error(f"Error executing query: {e}")
-            raise
+            return False
+    
+    # Wait on all query execution IDs
+    for query_execution_id in query_execution_ids:
+        while True:
+            response = client.get_query_execution(QueryExecutionId=query_execution_id)
+            status = response['QueryExecution']['Status']['State']
+            if status in ['SUCCEEDED', 'FAILED', 'CANCELLED']:
+                if status != 'SUCCEEDED':
+                    logger.error(f"Query {query_execution_id} failed with status: {status}")
+                    logger.error(f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}")
+                    return False
+                break
+                # TODO: Sanity check that the file {query_execution_id}.csv exists in the folder
 
+                # Remove {query_execution_id}.csv.metadata from the folder
+                # This file will cause subsequent NA import to fail
+                # TODO: Remove {query_execution_id}.csv.metadata from the folder
+            time.sleep(10)
+    logger.info(f"Successfully completed execution of {len(query_execution_ids)} queries")
+
+    return True
 
 def create_table_from_s3(s3_bucket: str, table_schema: str):
     """Create external table in Athena from S3 data.

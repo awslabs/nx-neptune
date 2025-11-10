@@ -30,6 +30,8 @@ from .instance_management import (
     create_na_instance,
     export_csv_to_s3,
     import_csv_from_s3,
+    export_athena_table_to_s3,
+    create_table_from_s3,
 )
 from .interface import BackendInterface
 from .na_graph import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN, NeptuneGraph
@@ -64,5 +66,7 @@ __all__ = [
     "import_csv_from_s3",
     "export_csv_to_s3",
     "create_na_instance",
+    "export_athena_table_to_s3",
+    "create_table_from_s3",
     "TaskFuture",
 ]
