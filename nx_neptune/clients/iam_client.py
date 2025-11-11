@@ -328,6 +328,11 @@ class IamClient:
 
     def validate_permissions(self, arn_s3_bucket_import, arn_kms_key_import, arn_s3_bucket_export, arn_kms_key_export):
         results = {}
+
+        # Convert s3 bucket urls to arn:
+        arn_s3_bucket_import = _get_s3_in_arn(arn_s3_bucket_import) if arn_s3_bucket_import else None
+        arn_s3_bucket_export = _get_s3_in_arn(arn_s3_bucket_export) if arn_s3_bucket_export else None
+
         permissions_to_check = {
             "create_graph": [{"permissions": ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]}],
             "delete_na_instance": [{"permissions": ["neptune-graph:DeleteGraph"]}],
@@ -351,12 +356,12 @@ class IamClient:
                             self.check_aws_permission(op_name, permissions, permission_pair["arn"])
                     else:
                         self.check_aws_permission(op_name, permissions)
-                except Exception:
+                except Exception as e:
+                    self.logger.debug(e)
                     results[op_name] = False
                     break
                 results.setdefault(op_name, True)
         return results
-
 
 
 def _get_s3_in_arn(s3_path: str) -> str:
