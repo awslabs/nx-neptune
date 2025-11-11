@@ -327,6 +327,32 @@ class IamClient:
         return True
 
     def validate_permissions(self, arn_s3_bucket_import, arn_kms_key_import, arn_s3_bucket_export, arn_kms_key_export):
+        """
+        Validates all required permissions for Neptune Analytics operations.
+
+        This method checks permissions for creating/deleting Neptune Analytics instances and S3/KMS permissions
+        for import/export operations.
+
+        Args:
+            arn_s3_bucket_import (str): ARN of S3 bucket used for importing data
+            arn_kms_key_import (str): ARN of KMS key used for import encryption
+            arn_s3_bucket_export (str): ARN of S3 bucket used for exporting data
+            arn_kms_key_export (str): ARN of KMS key used for export encryption
+
+        Returns:
+            dict: Dictionary mapping operation names to boolean permission status:
+                {
+                    'create_graph': bool,
+                    'delete_na_instance': bool,
+                    'import_from_s3': bool,
+                    'export_to_s3': bool
+                }
+
+        The method checks the following permissions:
+            - Neptune Graph: CreateGraph, TagResource, DeleteGraph
+            - S3: GetObject (import), PutObject/ListBucket (export)
+            - KMS: Decrypt, GenerateDataKey, DescribeKey (for both import/export)
+        """
         results = {}
 
         # Convert s3 bucket urls to arn
