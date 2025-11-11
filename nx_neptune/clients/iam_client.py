@@ -329,38 +329,36 @@ class IamClient:
     def validate_permissions(self, arn_s3_bucket_import, arn_kms_key_import, arn_s3_bucket_export, arn_kms_key_export):
         results = {}
 
-        # Convert s3 bucket urls to arn:
-        arn_s3_bucket_import = _get_s3_in_arn(arn_s3_bucket_import) if arn_s3_bucket_import else None
-        arn_s3_bucket_export = _get_s3_in_arn(arn_s3_bucket_export) if arn_s3_bucket_export else None
+        # Convert s3 bucket urls to arn
+        s3_import = _get_s3_in_arn(arn_s3_bucket_import) if arn_s3_bucket_import else None
+        s3_export = _get_s3_in_arn(arn_s3_bucket_export) if arn_s3_bucket_export else None
 
-        permissions_to_check = {
+        checks = {
             "create_graph": [{"permissions": ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]}],
             "delete_na_instance": [{"permissions": ["neptune-graph:DeleteGraph"]}],
             "import_from_s3": [
-                {"permissions": ["s3:GetObject"], "arn": arn_s3_bucket_import},
-                {"permissions": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"],  "arn": arn_kms_key_import},
+                {"permissions": ["s3:GetObject"], "arn": s3_import},
+                {"permissions": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"], "arn": arn_kms_key_import}
             ],
             "export_to_s3": [
-                {"permissions": ["s3:PutObject", "s3:ListBucket"], "arn": arn_s3_bucket_export},
-                {"permissions": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"], "arn": arn_kms_key_export},
-            ],
+                {"permissions": ["s3:PutObject", "s3:ListBucket"], "arn": s3_export},
+                {"permissions": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"], "arn": arn_kms_key_export}
+            ]
         }
 
-        for op_name, op_permission_pairs in permissions_to_check.items():
-            for permission_pair in op_permission_pairs:
-                permissions = permission_pair["permissions"]
-
+        for op, permission_pairs in checks.items():
+            for pair in permission_pairs:
                 try:
-                    if "arn" in permission_pair:
-                        if permission_pair["arn"] is not None:
-                            self.check_aws_permission(op_name, permissions, permission_pair["arn"])
+                    if "arn" in pair and pair["arn"]:
+                        self.check_aws_permission(op, pair["permissions"], pair["arn"])
                     else:
-                        self.check_aws_permission(op_name, permissions)
+                        self.check_aws_permission(op, pair["permissions"])
                 except Exception as e:
                     self.logger.debug(e)
-                    results[op_name] = False
+                    results[op] = False
                     break
-                results.setdefault(op_name, True)
+                results.setdefault(op, True)
+
         return results
 
 
