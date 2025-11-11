@@ -14,6 +14,7 @@ import logging
 from audioop import error
 from sys import exception
 from typing import Optional
+import os
 
 import jmespath
 from botocore.client import BaseClient
@@ -325,22 +326,35 @@ class IamClient:
         # All ARNs are valid if we reach here
         return True
 
-    def validate_permissions(self, user_role: Optional[str] = None):
-
+    def validate_permissions(self, arn_s3_bucket_import, arn_kms_key_import, arn_s3_bucket_export, arn_kms_key_export):
         results = {}
         permissions_to_check = {
-            "test_op": ["neptune-graph:CreateGraph", "neptune-graph:TagResource"],
-            "test_op_2": ["neptune-graph:CreateGraph", "xxx:TagResource"],
-            "test_op_3": ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]
+            "create_graph": [{"permissions": ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]}],
+            "delete_na_instance": [{"permissions": ["neptune-graph:DeleteGraph"]}],
+            "import_from_s3": [
+                {"permissions": ["s3:GetObject"], "arn": arn_s3_bucket_import},
+                {"permissions": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"],  "arn": arn_kms_key_import},
+            ],
+            "export_to_s3": [
+                {"permissions": ["s3:PutObject", "s3:ListBucket"], "arn": arn_s3_bucket_export},
+                {"permissions": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"], "arn": arn_kms_key_export},
+            ],
         }
 
-        for op_name, permissions in permissions_to_check.items():
-            try:
-                self.check_aws_permission(op_name, permissions)
-                results[op_name] = True
-            except Exception:
-                results[op_name] = False
+        for op_name, op_permission_pairs in permissions_to_check.items():
+            for permission_pair in op_permission_pairs:
+                permissions = permission_pair["permissions"]
 
+                try:
+                    if "arn" in permission_pair:
+                        if permission_pair["arn"] is not None:
+                            self.check_aws_permission(op_name, permissions, permission_pair["arn"])
+                    else:
+                        self.check_aws_permission(op_name, permissions)
+                except Exception:
+                    results[op_name] = False
+                    break
+                results.setdefault(op_name, True)
         return results
 
 
