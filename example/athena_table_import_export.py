@@ -42,7 +42,7 @@ logger = get_stdout_logger(__name__, [
     'nx_neptune.clients.instance_management', __name__])
 
 SOURCE_AND_DESTINATION_AIRPORT_IDS = """
-SELECT DISTINCT "~id", airport_name, 'airline' AS "~label" FROM (
+SELECT DISTINCT "~id", airport_name AS "airport_name:string", 'airline' AS "~label" FROM (
     SELECT source_airport_id as "~id", source_airport as "airport_name" 
     FROM air_routes_db.air_routes_table
     WHERE source_airport_id IS NOT NULL
@@ -65,6 +65,16 @@ SOURCE_AIRPORTS_WITH_MORE_STOPS = """
 SELECT DISTINCT source_airport_id AS "~id", 'airline' AS "~label" 
 FROM air_routes_db.air_routes_table 
 WHERE stops > 0
+"""
+
+CREATE_AIRLINES_TABLE = """
+CREATE EXTERNAL TABLE air_routes_db.new_air_routes_table
+    airline string
+    airline_id string
+    ...
+STORED AS TEXTFILE
+LOCATION 's3://your-neptune-export-bucket/path/'
+TBLPROPERTIES ('skip.header.line.count'='1')
 """
 
 ALL_NODES = "MATCH (n) RETURN n"
@@ -101,20 +111,17 @@ async def do_export_to_s3():
     s3_location_export = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
 
     # Export - blocking
-    await export_csv_to_s3(na_graph, s3_location_export)
-    print("Export completed with export location: " + s3_location_export)
+    task_id = await export_csv_to_s3(na_graph, s3_location_export)
+    print(f"Export completed with export location: {s3_location_export}{task_id}")
 
 async def do_export_to_table():
 
-    na_graph = NeptuneGraph.from_config()
-
     s3_location_export = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
-
-    table_schema = ""
+    task_id = "t-subh1ch7d0"
 
     # Create table - blocking
-    await create_table_from_s3(s3_location_export, table_schema)
-
+    # await create_table_from_s3(s3_location_export, CREATE_AIRLINES_TABLE)
+    await create_table_from_s3(f"{s3_location_export}/{task_id}", s3_location_export, 'air_routes_db.new_air_routes_table')
 
 async def do_execute_opencypher():
     na_graph = NeptuneGraph.from_config()
@@ -123,8 +130,12 @@ async def do_execute_opencypher():
     all_edges = na_graph.execute_call(ALL_EDGES)
     logger.info(f"all_edges: {all_edges}")
 
+async def do_execute_sql_query():
+    pass
+
 if __name__ == "__main__":
     # asyncio.run(do_import_from_table())
-    asyncio.run(do_import_from_s3())
-    # asyncio.run(do_export_to_table())
-    asyncio.run(do_execute_opencypher())
+    # asyncio.run(do_import_from_s3())
+    # asyncio.run(do_export_to_s3())
+    asyncio.run(do_export_to_table())
+    # asyncio.run(do_execute_opencypher())

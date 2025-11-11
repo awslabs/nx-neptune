@@ -189,7 +189,7 @@ def import_csv_from_s3(
     return asyncio.wrap_future(future)
 
 
-def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn: str, polling_interval: int) -> Future:
+def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn: str, polling_interval=30) -> Future:
     """Export graph data from Neptune Analytics to S3 in CSV format.
 
     This function handles the complete workflow for exporting graph data:
@@ -598,7 +598,7 @@ def delete_status_check_wrapper(client, graph_id):
         else:
             raise e
 
-
+# TODO: provide an alternative to sql_queries - instead take a JSON import to map types
 def export_athena_table_to_s3(sql_queries: list, s3_bucket: str, polling_interval=10, max_attempts=60):
     """Export Athena table data to S3 by executing SQL queries.
     
@@ -658,18 +658,113 @@ def export_athena_table_to_s3(sql_queries: list, s3_bucket: str, polling_interva
                     logger.info(f"Deleted metadata file: {metadata_key}")
                 except ClientError as e:
                     logger.warning(f"Could not delete metadata file {metadata_key}: {e}")
-                
+
+                # TODO: remove execution id from the list
+
                 break
             time.sleep(polling_interval)
     logger.info(f"Successfully completed execution of {len(query_execution_ids)} queries")
 
     return True
 
-def create_table_from_s3(s3_bucket: str, table_schema: str, polling_interval=10, max_attempts=60):
+def create_table_from_s3(s3_bucket: str, s3_output_bucket: str, table_name: str, table_columns=None, polling_interval=10, max_attempts=60):
+    """Create external table in Athena from S3 data.
+
+    Args:
+        :param s3_bucket: S3 bucket path containing data
+        :param s3_output_bucket: S3 bucket path to print results
+        :param table_name:
+        :param table_columns:
+        :param max_attempts:
+        :param polling_interval:
+    """
+    # TODO check if s3_bucket is empty
+    # TODO validate table_schema
+    # TODO validate if table exists already
+    # TODO check is skip drop table is False and table exists
+
+    # Wait on all query execution IDs
+    s3_client = boto3.client('s3')
+    bucket_name = s3_bucket.replace('s3://', '').split('/')[0]
+    bucket_prefix = '/'.join(s3_bucket.replace('s3://', '').split('/')[1:])
+
+    response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=bucket_prefix)
+    file_paths = [obj['Key'] for obj in response.get('Contents', []) if obj['Key'].endswith('.csv')]
+
+    table_columns = {
+        "~id": "string",
+        "~from": "string",
+        "~to": "string",
+        "~label": "string",
+    }
+    for fp in file_paths:
+        response = s3_client.get_object(Bucket=bucket_name, Key=fp)
+        first_line = response['Body'].readline().decode('utf-8').strip()
+        header_fields = first_line.split(',')
+        for field in header_fields:
+            field = field[1:-1] if field.startswith('"') and field.endswith('"') else field
+            if field in ["~id", "~from", "~to", "~label"]:
+                continue
+            if ":" not in field:
+                table_columns[field] = "string"
+                continue
+            (field, datatype) = field.split(':')
+            if datatype in ["String", "Int"]:
+                table_columns[field] = datatype.lower()
+            elif datatype == "vector":
+                # skip vectors:
+                # table_columns[field] = "vector"
+                pass
+    table_schema = ',\n    '.join(f'`{k}` {v}' for k, v in table_columns.items())
+#     sql_statement = f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
+#     {table_schema}
+# ) STORED AS TEXTFILE
+# LOCATION '{s3_bucket}'
+# TBLPROPERTIES ('skip.header.line.count'='1')
+# """
+    sql_statement = f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
+    {table_schema}
+)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
+WITH SERDEPROPERTIES ('field.delim' = ',')
+STORED AS INPUTFORMAT 'org.apache.hadoop.mapred.TextInputFormat' 
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
+LOCATION '{s3_bucket}'
+TBLPROPERTIES ('classification' = 'csv');
+"""
+
+    logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
+
+    athena_client = boto3.client('athena')
+    try:
+        response = athena_client.start_query_execution(
+            QueryString=sql_statement,
+            # for the query result:
+            ResultConfiguration={'OutputLocation': s3_bucket},
+        )
+        logger.info(f"Creating table: {response['QueryExecutionId']}")
+        query_execution_id = response['QueryExecutionId']
+    except ClientError as e:
+        logger.error(f"Error creating table: {e}")
+        raise
+
+    # TODO use TaskFuture instead
+    for _ in range(1, max_attempts):
+        response = athena_client.get_query_execution(QueryExecutionId=query_execution_id)
+        status = response['QueryExecution']['Status']['State']
+        if status in ['SUCCEEDED', 'FAILED', 'CANCELLED']:
+            if status != 'SUCCEEDED':
+                logger.error(f"Query {query_execution_id} failed with status: {status}")
+                logger.error(f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}")
+                return False
+            break
+        time.sleep(polling_interval)
+
+def create_table_schema_from_s3(s3_bucket: str, table_schema: str, polling_interval=10, max_attempts=60):
     """Create external table in Athena from S3 data.
     
     Args:
-        :param table_schema: SQL CREATE TABLE statement
+        :param table_schema: SQL CREATE EXTRNAL TABLE statement
         :param s3_bucket: S3 bucket path containing data
         :param max_attempts:
         :param polling_interval:
@@ -680,31 +775,30 @@ def create_table_from_s3(s3_bucket: str, table_schema: str, polling_interval=10,
     # TODO check is skip drop table is False and table exists
 
     client = boto3.client('athena')
-    query_execution_ids = []
     try:
         response = client.start_query_execution(
             QueryString=table_schema,
-            ResultConfiguration={'OutputLocation': s3_bucket}
+            # for the query result:
+            ResultConfiguration={'OutputLocation': s3_bucket},
         )
         logger.info(f"Created table: {response['QueryExecutionId']}")
-        query_execution_ids.append(response['QueryExecutionId'])
+        query_execution_id = response['QueryExecutionId']
     except ClientError as e:
         logger.error(f"Error creating table: {e}")
         raise
 
-    for query_execution_id in query_execution_ids:
-        # TODO use TaskFuture instead
-        for _ in range(1, max_attempts):
-            response = client.get_query_execution(QueryExecutionId=query_execution_id)
-            status = response['QueryExecution']['Status']['State']
-            if status in ['SUCCEEDED', 'FAILED', 'CANCELLED']:
-                if status != 'SUCCEEDED':
-                    logger.error(f"Query {query_execution_id} failed with status: {status}")
-                    logger.error(f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}")
-                    return False
-                break
-            time.sleep(polling_interval)
-    logger.info(f"Successfully completed execution of {len(query_execution_ids)} queries")
+    # TODO use TaskFuture instead
+    for _ in range(1, max_attempts):
+        response = client.get_query_execution(QueryExecutionId=query_execution_id)
+        status = response['QueryExecution']['Status']['State']
+        if status in ['SUCCEEDED', 'FAILED', 'CANCELLED']:
+            if status != 'SUCCEEDED':
+                logger.error(f"Query {query_execution_id} failed with status: {status}")
+                logger.error(f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}")
+                return False
+            break
+        time.sleep(polling_interval)
+    logger.info(f"Successfully completed execution of query")
 
     return True
 
