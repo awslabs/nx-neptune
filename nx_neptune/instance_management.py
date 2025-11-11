@@ -11,8 +11,10 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 import asyncio
+import os
 import logging
 import uuid
+
 from asyncio import Future
 from datetime import datetime
 from enum import Enum
@@ -805,3 +807,21 @@ def create_table_schema_from_s3(s3_bucket: str, table_schema: str, polling_inter
 def empty_s3_bucket(s3_bucket: str):
     # TODO Empty bucket and delete folder?
     pass
+
+def validate_permissions():
+    user_arn = boto3.client("sts").get_caller_identity()["Arn"]
+    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+
+    s3_location_import = os.getenv('NETWORKX_S3_IMPORT_BUCKET_PATH')
+    if s3_location_import is not None:
+        kms_key_import = _get_bucket_encryption_key_arn(s3_location_import)
+    else:
+        kms_key_import = None
+
+    s3_location_export = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
+    if s3_location_export is not None:
+        kms_key_export = _get_bucket_encryption_key_arn(s3_location_export)
+    else:
+        kms_key_export = None
+    return iam_client.validate_permissions(s3_location_import, kms_key_import,
+                                           s3_location_export, kms_key_export)

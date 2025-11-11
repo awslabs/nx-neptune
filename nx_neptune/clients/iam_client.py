@@ -11,7 +11,10 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 import logging
+from audioop import error
+from sys import exception
 from typing import Optional
+import os
 
 import jmespath
 from botocore.client import BaseClient
@@ -322,6 +325,67 @@ class IamClient:
 
         # All ARNs are valid if we reach here
         return True
+
+    def validate_permissions(self, arn_s3_bucket_import, arn_kms_key_import, arn_s3_bucket_export, arn_kms_key_export):
+        """
+        Validates all required permissions for Neptune Analytics operations.
+
+        This method checks permissions for creating/deleting Neptune Analytics instances and S3/KMS permissions
+        for import/export operations.
+
+        Args:
+            arn_s3_bucket_import (str): ARN of S3 bucket used for importing data
+            arn_kms_key_import (str): ARN of KMS key used for import encryption
+            arn_s3_bucket_export (str): ARN of S3 bucket used for exporting data
+            arn_kms_key_export (str): ARN of KMS key used for export encryption
+
+        Returns:
+            dict: Dictionary mapping operation names to boolean permission status:
+                {
+                    'create_graph': bool,
+                    'delete_na_instance': bool,
+                    'import_from_s3': bool,
+                    'export_to_s3': bool
+                }
+
+        The method checks the following permissions:
+            - Neptune Graph: CreateGraph, TagResource, DeleteGraph
+            - S3: GetObject (import), PutObject/ListBucket (export)
+            - KMS: Decrypt, GenerateDataKey, DescribeKey (for both import/export)
+        """
+        results = {}
+
+        # Convert s3 bucket urls to arn
+        s3_import = _get_s3_in_arn(arn_s3_bucket_import) if arn_s3_bucket_import else None
+        s3_export = _get_s3_in_arn(arn_s3_bucket_export) if arn_s3_bucket_export else None
+
+        checks = {
+            "create_graph": [{"permissions": ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]}],
+            "delete_na_instance": [{"permissions": ["neptune-graph:DeleteGraph"]}],
+            "import_from_s3": [
+                {"permissions": ["s3:GetObject"], "arn": s3_import},
+                {"permissions": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"], "arn": arn_kms_key_import}
+            ],
+            "export_to_s3": [
+                {"permissions": ["s3:PutObject", "s3:ListBucket"], "arn": s3_export},
+                {"permissions": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"], "arn": arn_kms_key_export}
+            ]
+        }
+
+        for op, permission_pairs in checks.items():
+            for pair in permission_pairs:
+                try:
+                    if "arn" in pair and pair["arn"]:
+                        self.check_aws_permission(op, pair["permissions"], pair["arn"])
+                    else:
+                        self.check_aws_permission(op, pair["permissions"])
+                except Exception as e:
+                    self.logger.debug(e)
+                    results[op] = False
+                    break
+                results.setdefault(op, True)
+
+        return results
 
 
 def _get_s3_in_arn(s3_path: str) -> str:
