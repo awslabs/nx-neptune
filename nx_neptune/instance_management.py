@@ -40,6 +40,9 @@ __all__ = [
     "delete_na_instance",
     "export_athena_table_to_s3",
     "create_table_from_s3",
+    "validate_permissions",
+    "start_na_instance",
+    "stop_na_instance",
 ]
 
 logger = logging.getLogger(__name__)
@@ -116,7 +119,9 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
                 TaskType.IMPORT: lambda: client.get_import_task(taskIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.EXPORT: lambda: client.get_export_task(taskIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.CREATE: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
-                TaskType.DELETE: lambda: delete_status_check_wrapper(client, task_id),  # type: ignore[attr-defined]
+                TaskType.DELETE: lambda: delete_status_check_wrapper(client, task_id),  # type: ignore[attr-defined],
+                TaskType.START: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
+                TaskType.STOP: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
             }
 
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -275,6 +280,67 @@ def create_na_instance(config: Optional[dict] = None):
         raise Exception(
             f"Neptune instance creation failure with graph name {prospective_graph_id}"
         )
+
+
+
+def start_na_instance(graph_id: str):
+    """
+    Attempt to resume a remote Neptune Analytics instance with the provided graph_id,
+    on behalf of the configured IAM user.
+
+    Returns:
+        asyncio.Future: A Future that resolves with the graph_id,
+        represent the instance being deleted, or String literal Fail
+        in the case of exception.
+
+    Raises:
+        Exception: If the Neptune Analytics instance creation fails
+    """
+    # Instance deletion
+    na_client = boto3.client("neptune-graph")
+    response = na_client.start_graph(graphIdentifier=graph_id)
+
+    status_code = _get_status_code(response)
+    if status_code == 200:
+        fut = TaskFuture(graph_id, TaskType.START, 10)
+        asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
+        return asyncio.wrap_future(fut)
+    else:
+        fut = TaskFuture("-1", TaskType.NOOP, 30)
+        fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
+        return asyncio.wrap_future(fut)
+
+
+
+def stop_na_instance(graph_id: str):
+    """
+    Attempt to stop a remote Neptune Analytics instance with the provided graph_id,
+    on behalf of the configured IAM user.
+
+    Returns:
+        asyncio.Future: A Future that resolves with the graph_id,
+        represent the instance being deleted, or String literal Fail
+        in the case of exception.
+
+    Raises:
+        Exception: If the Neptune Analytics instance creation fails
+    """
+    # Instance deletion
+    na_client = boto3.client("neptune-graph")
+    response = na_client.stop_graph(graphIdentifier=graph_id)
+
+    status_code = _get_status_code(response)
+    if status_code == 200:
+        fut = TaskFuture(graph_id, TaskType.STOP, 10)
+        asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
+        return asyncio.wrap_future(fut)
+    else:
+        fut = TaskFuture("-1", TaskType.NOOP, 30)
+        fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
+        return asyncio.wrap_future(fut)
+
+
+
 
 
 def delete_na_instance(graph_id: str):
