@@ -56,6 +56,9 @@ class TaskType(Enum):
     CREATE = (3, ["INI", "CREATING"], "AVAILABLE")
     DELETE = (4, ["INI", "DELETING"], "DELETED")
     NOOP = (5, ["INI"], "AVAILABLE")
+    START = (6, ["INI", "STARTING"], "AVAILABLE")
+    STOP = (7, ["INI", "STOPPING"], "STOPPED")
+
 
     def __init__(self, num_value, permitted_statuses, status_complete):
         self._value_ = num_value
