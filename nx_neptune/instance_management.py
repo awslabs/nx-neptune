@@ -311,9 +311,7 @@ def start_na_instance(graph_id: str):
         asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
         return asyncio.wrap_future(fut)
     else:
-        fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
-        fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
-        return asyncio.wrap_future(fut)
+        return _invalid_status_code(status_code, response)
 
 
 
@@ -343,9 +341,7 @@ def stop_na_instance(graph_id: str):
         asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
         return asyncio.wrap_future(fut)
     else:
-        fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
-        fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
-        return asyncio.wrap_future(fut)
+        return _invalid_status_code(status_code, response)
 
 
 def delete_na_instance(graph_id: str):
@@ -919,4 +915,19 @@ def _graph_status_check(na_client, graph_id, expected_state):
         fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
         fut.set_exception(Exception(f"Invalid graph ({graph_id}) instance state: {current_status}"))
         return asyncio.wrap_future(fut)
+
+def _invalid_status_code(status_code, response):
+    """Create a failed Future for an invalid API response status code.
+
+    Args:
+        status_code (int): The HTTP status code from the API response
+        response (dict): The full API response
+
+    Returns:
+        asyncio.Future: A failed Future containing an exception with details about
+                       the invalid status code and response
+    """
+    fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
+    fut.set_exception(Exception(f"Invalid response status code: {status_code} with full response:\n {response}"))
+    return asyncio.wrap_future(fut)
 
