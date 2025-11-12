@@ -51,6 +51,8 @@ _PROJECT_IDENTIFIER = "nx-neptune"
 
 _PERMISSIONS_CREATE = ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]
 
+_ASYNC_POLLING_INTERVAL = 30
+
 class TaskType(Enum):
     # Allow import to run against an "INITIALIZING" state - the graph is sometimes in this state after creating graph
     IMPORT = (1, ["INI", "INITIALIZING", "IMPORTING"], "SUCCEEDED")
@@ -147,7 +149,7 @@ def import_csv_from_s3(
     s3_arn,
     reset_graph_ahead=True,
     skip_snapshot=True,
-    polling_interval=30,
+    polling_interval=_ASYNC_POLLING_INTERVAL,
 ) -> Future:
     """Import CSV data from S3 into a Neptune Analytics graph.
 
@@ -199,7 +201,7 @@ def import_csv_from_s3(
     return asyncio.wrap_future(future)
 
 
-def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn: str, polling_interval=30) -> Future:
+def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn: str, polling_interval=_ASYNC_POLLING_INTERVAL) -> Future:
     """Export graph data from Neptune Analytics to S3 in CSV format.
 
     This function handles the complete workflow for exporting graph data:
@@ -271,7 +273,7 @@ def create_na_instance(config: Optional[dict] = None):
     prospective_graph_id = _get_graph_id(response)
 
     if _get_status_code(response) == 201:
-        fut = TaskFuture(prospective_graph_id, TaskType.CREATE, 30)
+        fut = TaskFuture(prospective_graph_id, TaskType.CREATE, _ASYNC_POLLING_INTERVAL)
         asyncio.create_task(
             _wait_until_task_complete(na_client, fut), name=prospective_graph_id
         )
@@ -302,11 +304,11 @@ def start_na_instance(graph_id: str):
 
     status_code = _get_status_code(response)
     if status_code == 200:
-        fut = TaskFuture(graph_id, TaskType.START, 10)
+        fut = TaskFuture(graph_id, TaskType.START, _ASYNC_POLLING_INTERVAL)
         asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
         return asyncio.wrap_future(fut)
     else:
-        fut = TaskFuture("-1", TaskType.NOOP, 30)
+        fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
         fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
         return asyncio.wrap_future(fut)
 
@@ -331,11 +333,11 @@ def stop_na_instance(graph_id: str):
 
     status_code = _get_status_code(response)
     if status_code == 200:
-        fut = TaskFuture(graph_id, TaskType.STOP, 10)
+        fut = TaskFuture(graph_id, TaskType.STOP, _ASYNC_POLLING_INTERVAL)
         asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
         return asyncio.wrap_future(fut)
     else:
-        fut = TaskFuture("-1", TaskType.NOOP, 30)
+        fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
         fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
         return asyncio.wrap_future(fut)
 
@@ -364,11 +366,11 @@ def delete_na_instance(graph_id: str):
 
     status_code = _get_status_code(response)
     if status_code == 200:
-        fut = TaskFuture(graph_id, TaskType.DELETE, 30)
+        fut = TaskFuture(graph_id, TaskType.DELETE, _ASYNC_POLLING_INTERVAL)
         asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
         return asyncio.wrap_future(fut)
     else:
-        fut = TaskFuture("-1", TaskType.NOOP, 30)
+        fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
         fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
         return asyncio.wrap_future(fut)
 
