@@ -300,8 +300,11 @@ def start_na_instance(graph_id: str):
     """
     # Instance deletion
     na_client = boto3.client("neptune-graph")
-    response = na_client.start_graph(graphIdentifier=graph_id)
 
+    if status_exception := _graph_status_check(na_client, graph_id, "STOPPED"):
+        return status_exception
+
+    response = na_client.start_graph(graphIdentifier=graph_id)
     status_code = _get_status_code(response)
     if status_code == 200:
         fut = TaskFuture(graph_id, TaskType.START, _ASYNC_POLLING_INTERVAL)
@@ -329,8 +332,11 @@ def stop_na_instance(graph_id: str):
     """
     # Instance deletion
     na_client = boto3.client("neptune-graph")
-    response = na_client.stop_graph(graphIdentifier=graph_id)
 
+    if status_exception := _graph_status_check(na_client, graph_id, "AVAILABLE"):
+        return status_exception
+
+    response = na_client.stop_graph(graphIdentifier=graph_id)
     status_code = _get_status_code(response)
     if status_code == 200:
         fut = TaskFuture(graph_id, TaskType.STOP, _ASYNC_POLLING_INTERVAL)
@@ -893,3 +899,24 @@ def validate_permissions():
         kms_key_export = None
     return iam_client.validate_permissions(s3_location_import, kms_key_import,
                                            s3_location_export, kms_key_export)
+
+def _graph_status_check(na_client, graph_id, expected_state):
+    """Check if a Neptune Analytics graph is in the expected state.
+
+    Args:
+        na_client (boto3.client): The Neptune Analytics boto3 client
+        graph_id (str): The ID of the graph to check
+        expected_state (str): The expected state of the graph (e.g. 'AVAILABLE', 'STOPPED')
+
+    Returns:
+        asyncio.Future: A failed Future if the graph is not in the expected state,
+                       None otherwise. The Future's exception will contain details
+                       about the invalid state.
+    """
+    response_status = na_client.get_graph(graphIdentifier=graph_id)
+    current_status = response_status.get("status")
+    if current_status != expected_state:
+        fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
+        fut.set_exception(Exception(f"Invalid graph ({graph_id}) instance state: {current_status}"))
+        return asyncio.wrap_future(fut)
+
