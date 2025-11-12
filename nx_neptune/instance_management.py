@@ -340,9 +340,6 @@ def stop_na_instance(graph_id: str):
         return asyncio.wrap_future(fut)
 
 
-
-
-
 def delete_na_instance(graph_id: str):
     """
     Attempt to delete a remote Neptune Analytics instance with the provided graph_id,
