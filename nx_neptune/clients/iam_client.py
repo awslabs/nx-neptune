@@ -362,6 +362,8 @@ class IamClient:
         checks = {
             "create_graph": [{"permissions": ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]}],
             "delete_na_instance": [{"permissions": ["neptune-graph:DeleteGraph"]}],
+            "start_graph": [{"permissions": ["neptune-graph:StartGraph"]}],
+            "stop_graph": [{"permissions": ["neptune-graph:StopGraph"]}],
             "import_from_s3": [
                 {"permissions": ["s3:GetObject"], "arn": s3_import},
                 {"permissions": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"], "arn": arn_kms_key_import}
