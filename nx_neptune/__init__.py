@@ -28,13 +28,13 @@ from .clients import Edge, Node
 from .instance_management import (
     TaskFuture,
     create_na_instance,
+    create_table_from_s3,
+    export_athena_table_to_s3,
     export_csv_to_s3,
     import_csv_from_s3,
-    export_athena_table_to_s3,
-    create_table_from_s3,
-    validate_permissions,
     start_na_instance,
     stop_na_instance,
+    validate_permissions,
 )
 from .interface import BackendInterface
 from .na_graph import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN, NeptuneGraph

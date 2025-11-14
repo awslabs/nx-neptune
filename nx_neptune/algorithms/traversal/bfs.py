@@ -25,9 +25,10 @@ from nx_neptune.clients.neptune_constants import (
 )
 from nx_neptune.clients.opencypher_builder import (
     _NODE_FULL_FORM_ID_FUNC_REF,
+    _NODE_REF,
     bfs_layers_query,
     bfs_query,
-    descendants_at_distance_query, _NODE_REF,
+    descendants_at_distance_query,
 )
 from nx_neptune.na_graph import NeptuneGraph
 from nx_neptune.utils.decorators import configure_if_nx_active
@@ -118,9 +119,7 @@ def bfs_edges(
         }
     )
 
-    query_str, para_map = bfs_query(
-        _NODE_REF, {f"id({_NODE_REF})": source}, parameters
-    )
+    query_str, para_map = bfs_query(_NODE_REF, {f"id({_NODE_REF})": source}, parameters)
     json_result = neptune_graph.execute_call(query_str, para_map)
 
     for json_edge in json_result:

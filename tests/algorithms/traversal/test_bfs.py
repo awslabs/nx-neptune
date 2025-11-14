@@ -408,7 +408,9 @@ class TestBfsEdges:
             source_node = "n"
             where_in_filters = {f"id({source_node})": source}
             parameters = {}
-            (expected_query, param_values) = bfs_layers_query(source_node, where_in_filters, parameters)
+            (expected_query, param_values) = bfs_layers_query(
+                source_node, where_in_filters, parameters
+            )
 
             # Verify the function called execute_algo_bfs with correct parameters
             mock_bfs_layers_graph.execute_call.assert_called_once_with(
@@ -431,7 +433,9 @@ class TestBfsEdges:
             source_node = "n"
             where_in_filters = {f"id({source_node})": source}
             parameters = {}
-            (expected_query, param_values) = bfs_layers_query(source_node, where_in_filters, parameters)
+            (expected_query, param_values) = bfs_layers_query(
+                source_node, where_in_filters, parameters
+            )
 
             # Verify the function called execute_algo_bfs with correct parameters
             mock_bfs_layers_graph.execute_call.assert_called_once_with(
@@ -466,7 +470,9 @@ class TestBfsEdges:
                 PARAM_EDGE_LABELS: ["RELATES_TO"],
                 PARAM_CONCURRENCY: 0,
             }
-            (expected_query, param_values) = bfs_layers_query(source_node, where_in_filters, parameters)
+            (expected_query, param_values) = bfs_layers_query(
+                source_node, where_in_filters, parameters
+            )
 
             # Verify the function called execute_algo_bfs with correct parameters
             mock_bfs_layers_graph.execute_call.assert_called_once_with(

@@ -11,10 +11,10 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 import asyncio
-import os
 import logging
+import os
+import time
 import uuid
-
 from asyncio import Future
 from datetime import datetime
 from enum import Enum
@@ -29,7 +29,6 @@ from botocore.exceptions import ClientError
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
 from .clients.neptune_constants import APP_ID_NX
 from .na_graph import NeptuneGraph
-import time
 
 __all__ = [
     "import_csv_from_s3",
@@ -53,6 +52,7 @@ _PERMISSIONS_CREATE = ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]
 
 _ASYNC_POLLING_INTERVAL = 30
 
+
 class TaskType(Enum):
     # Allow import to run against an "INITIALIZING" state - the graph is sometimes in this state after creating graph
     IMPORT = (1, ["INI", "INITIALIZING", "IMPORTING"], "SUCCEEDED")
@@ -63,7 +63,6 @@ class TaskType(Enum):
     NOOP = (5, ["INI"], "AVAILABLE")
     START = (6, ["INI", "STARTING"], "AVAILABLE")
     STOP = (7, ["INI", "STOPPING"], "STOPPED")
-
 
     def __init__(self, num_value, permitted_statuses, status_complete):
         self._value_ = num_value
@@ -121,7 +120,7 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
                 TaskType.IMPORT: lambda: client.get_import_task(taskIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.EXPORT: lambda: client.get_export_task(taskIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.CREATE: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
-                TaskType.DELETE: lambda: delete_status_check_wrapper(client, task_id),  # type: ignore[attr-defined],
+                TaskType.DELETE: lambda: delete_status_check_wrapper(client, task_id),
                 TaskType.START: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.STOP: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
             }
@@ -201,7 +200,9 @@ def import_csv_from_s3(
     return asyncio.wrap_future(future)
 
 
-def export_csv_to_s3(na_graph: NeptuneGraph, s3_arn: str, polling_interval=_ASYNC_POLLING_INTERVAL) -> Future:
+def export_csv_to_s3(
+    na_graph: NeptuneGraph, s3_arn: str, polling_interval=_ASYNC_POLLING_INTERVAL
+) -> Future:
     """Export graph data from Neptune Analytics to S3 in CSV format.
 
     This function handles the complete workflow for exporting graph data:
@@ -284,7 +285,6 @@ def create_na_instance(config: Optional[dict] = None):
         )
 
 
-
 def start_na_instance(graph_id: str):
     """
     Attempt to resume a remote Neptune Analytics instance with the provided graph_id,
@@ -312,7 +312,6 @@ def start_na_instance(graph_id: str):
         return asyncio.wrap_future(fut)
     else:
         return _invalid_status_code(status_code, response)
-
 
 
 def stop_na_instance(graph_id: str):
@@ -523,7 +522,13 @@ def _start_export_task(
         raise e
 
 
-def _reset_graph(client: BaseClient, graph_id: str, skip_snapshot: bool = True, polling_interval=10, max_attempts=60) -> bool:
+def _reset_graph(
+    client: BaseClient,
+    graph_id: str,
+    skip_snapshot: bool = True,
+    polling_interval=10,
+    max_attempts=60,
+) -> bool:
     """Reset the Neptune Analytics graph.
 
     Args:
@@ -541,7 +546,8 @@ def _reset_graph(client: BaseClient, graph_id: str, skip_snapshot: bool = True, 
         client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
         waiter = client.get_waiter("graph_available")
         waiter.wait(
-            graphIdentifier=graph_id, WaiterConfig={"Delay": polling_interval, "MaxAttempts": max_attempts}
+            graphIdentifier=graph_id,
+            WaiterConfig={"Delay": polling_interval, "MaxAttempts": max_attempts},
         )
         return True
     except ClientError as e:
@@ -670,17 +676,20 @@ def delete_status_check_wrapper(client, graph_id):
         else:
             raise e
 
+
 # TODO: provide an alternative to sql_queries - instead take a JSON import to map types
-def export_athena_table_to_s3(sql_queries: list, s3_bucket: str, polling_interval=10, max_attempts=60):
+def export_athena_table_to_s3(
+    sql_queries: list, s3_bucket: str, polling_interval=10, max_attempts=60
+):
     """Export Athena table data to S3 by executing SQL queries.
-    
+
     Args:
         :param s3_bucket: S3 bucket path for query results
         :param sql_queries: List of SQL query strings to execute
         :param max_attempts:
         :param polling_interval:
     """
-    client = boto3.client('athena')
+    client = boto3.client("athena")
 
     # TODO: validate permissions - or fail
     # TODO: check s3 bucket location is empty - or fail
@@ -689,31 +698,34 @@ def export_athena_table_to_s3(sql_queries: list, s3_bucket: str, polling_interva
     for query in sql_queries:
         try:
             response = client.start_query_execution(
-                QueryString=query,
-                ResultConfiguration={'OutputLocation': s3_bucket}
+                QueryString=query, ResultConfiguration={"OutputLocation": s3_bucket}
             )
             logger.info(f"Started query execution: {response['QueryExecutionId']}")
-            query_execution_ids.append(response['QueryExecutionId'])
+            query_execution_ids.append(response["QueryExecutionId"])
         except ClientError as e:
             logger.error(f"Error executing query: {e}")
             return False
-    
+
     # Wait on all query execution IDs
-    s3_client = boto3.client('s3')
-    bucket_name = s3_bucket.replace('s3://', '').split('/')[0]
-    bucket_prefix = '/'.join(s3_bucket.replace('s3://', '').split('/')[1:])
-    
+    s3_client = boto3.client("s3")
+    bucket_name = s3_bucket.replace("s3://", "").split("/")[0]
+    bucket_prefix = "/".join(s3_bucket.replace("s3://", "").split("/")[1:])
+
     for query_execution_id in query_execution_ids:
         # TODO use TaskFuture instead
         for _ in range(1, max_attempts):
             response = client.get_query_execution(QueryExecutionId=query_execution_id)
-            status = response['QueryExecution']['Status']['State']
-            if status in ['SUCCEEDED', 'FAILED', 'CANCELLED']:
-                if status != 'SUCCEEDED':
-                    logger.error(f"Query {query_execution_id} failed with status: {status}")
-                    logger.error(f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}")
+            status = response["QueryExecution"]["Status"]["State"]
+            if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
+                if status != "SUCCEEDED":
+                    logger.error(
+                        f"Query {query_execution_id} failed with status: {status}"
+                    )
+                    logger.error(
+                        f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}"
+                    )
                     return False
-                
+
                 # Sanity check that the CSV file exists
                 csv_key = f"{bucket_prefix}{query_execution_id}.csv"
                 try:
@@ -722,24 +734,36 @@ def export_athena_table_to_s3(sql_queries: list, s3_bucket: str, polling_interva
                 except ClientError:
                     logger.error(f"CSV file not found: {csv_key}")
                     return False
-                
+
                 # Remove metadata file
                 metadata_key = f"{bucket_prefix}{query_execution_id}.csv.metadata"
                 try:
                     s3_client.delete_object(Bucket=bucket_name, Key=metadata_key)
                     logger.info(f"Deleted metadata file: {metadata_key}")
                 except ClientError as e:
-                    logger.warning(f"Could not delete metadata file {metadata_key}: {e}")
+                    logger.warning(
+                        f"Could not delete metadata file {metadata_key}: {e}"
+                    )
 
                 # TODO: remove execution id from the list
 
                 break
             time.sleep(polling_interval)
-    logger.info(f"Successfully completed execution of {len(query_execution_ids)} queries")
+    logger.info(
+        f"Successfully completed execution of {len(query_execution_ids)} queries"
+    )
 
     return True
 
-def create_table_from_s3(s3_bucket: str, s3_output_bucket: str, table_name: str, table_columns=None, polling_interval=10, max_attempts=60):
+
+def create_table_from_s3(
+    s3_bucket: str,
+    s3_output_bucket: str,
+    table_name: str,
+    table_columns=None,
+    polling_interval=10,
+    max_attempts=60,
+):
     """Create external table in Athena from S3 data.
 
     Args:
@@ -756,12 +780,16 @@ def create_table_from_s3(s3_bucket: str, s3_output_bucket: str, table_name: str,
     # TODO check is skip drop table is False and table exists
 
     # Wait on all query execution IDs
-    s3_client = boto3.client('s3')
-    bucket_name = s3_bucket.replace('s3://', '').split('/')[0]
-    bucket_prefix = '/'.join(s3_bucket.replace('s3://', '').split('/')[1:])
+    s3_client = boto3.client("s3")
+    bucket_name = s3_bucket.replace("s3://", "").split("/")[0]
+    bucket_prefix = "/".join(s3_bucket.replace("s3://", "").split("/")[1:])
 
     response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=bucket_prefix)
-    file_paths = [obj['Key'] for obj in response.get('Contents', []) if obj['Key'].endswith('.csv')]
+    file_paths = [
+        obj["Key"]
+        for obj in response.get("Contents", [])
+        if obj["Key"].endswith(".csv")
+    ]
 
     table_columns = {
         "~id": "string",
@@ -771,35 +799,37 @@ def create_table_from_s3(s3_bucket: str, s3_output_bucket: str, table_name: str,
     }
     for fp in file_paths:
         response = s3_client.get_object(Bucket=bucket_name, Key=fp)
-        first_line = response['Body'].readline().decode('utf-8').strip()
-        header_fields = first_line.split(',')
+        first_line = response["Body"].readline().decode("utf-8").strip()
+        header_fields = first_line.split(",")
         for field in header_fields:
-            field = field[1:-1] if field.startswith('"') and field.endswith('"') else field
+            field = (
+                field[1:-1] if field.startswith('"') and field.endswith('"') else field
+            )
             if field in ["~id", "~from", "~to", "~label"]:
                 continue
             if ":" not in field:
                 table_columns[field] = "string"
                 continue
-            (field, datatype) = field.split(':')
+            (field, datatype) = field.split(":")
             if datatype in ["String", "Int"]:
                 table_columns[field] = datatype.lower()
             elif datatype == "vector":
                 # skip vectors:
                 # table_columns[field] = "vector"
                 pass
-    table_schema = ',\n    '.join(f'`{k}` {v}' for k, v in table_columns.items())
-#     sql_statement = f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
-#     {table_schema}
-# ) STORED AS TEXTFILE
-# LOCATION '{s3_bucket}'
-# TBLPROPERTIES ('skip.header.line.count'='1')
-# """
+    table_schema = ",\n    ".join(f"`{k}` {v}" for k, v in table_columns.items())
+    #     sql_statement = f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
+    #     {table_schema}
+    # ) STORED AS TEXTFILE
+    # LOCATION '{s3_bucket}'
+    # TBLPROPERTIES ('skip.header.line.count'='1')
+    # """
     sql_statement = f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
     {table_schema}
 )
 ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
 WITH SERDEPROPERTIES ('field.delim' = ',')
-STORED AS INPUTFORMAT 'org.apache.hadoop.mapred.TextInputFormat' 
+STORED AS INPUTFORMAT 'org.apache.hadoop.mapred.TextInputFormat'
 OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
 LOCATION '{s3_bucket}'
 TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
@@ -807,36 +837,43 @@ TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
 
     logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
 
-    athena_client = boto3.client('athena')
+    athena_client = boto3.client("athena")
     try:
         response = athena_client.start_query_execution(
             QueryString=sql_statement,
             # for the query result:
-            ResultConfiguration={'OutputLocation': s3_output_bucket},
+            ResultConfiguration={"OutputLocation": s3_output_bucket},
         )
         logger.info(f"Creating table: {response['QueryExecutionId']}")
-        query_execution_id = response['QueryExecutionId']
+        query_execution_id = response["QueryExecutionId"]
     except ClientError as e:
         logger.error(f"Error creating table: {e}")
         raise
 
     # TODO use TaskFuture instead
     for _ in range(1, max_attempts):
-        response = athena_client.get_query_execution(QueryExecutionId=query_execution_id)
-        status = response['QueryExecution']['Status']['State']
-        if status in ['SUCCEEDED', 'FAILED', 'CANCELLED']:
-            if status != 'SUCCEEDED':
+        response = athena_client.get_query_execution(
+            QueryExecutionId=query_execution_id
+        )
+        status = response["QueryExecution"]["Status"]["State"]
+        if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
+            if status != "SUCCEEDED":
                 logger.error(f"Query {query_execution_id} failed with status: {status}")
-                logger.error(f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}")
+                logger.error(
+                    f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}"
+                )
                 return False
             break
         time.sleep(polling_interval)
 
     return True
 
-def create_table_schema_from_s3(s3_bucket: str, table_schema: str, polling_interval=10, max_attempts=60):
+
+def create_table_schema_from_s3(
+    s3_bucket: str, table_schema: str, polling_interval=10, max_attempts=60
+):
     """Create external table in Athena from S3 data.
-    
+
     Args:
         :param table_schema: SQL CREATE EXTRNAL TABLE statement
         :param s3_bucket: S3 bucket path containing data
@@ -848,15 +885,15 @@ def create_table_schema_from_s3(s3_bucket: str, table_schema: str, polling_inter
     # TODO validate if table exists already
     # TODO check is skip drop table is False and table exists
 
-    client = boto3.client('athena')
+    client = boto3.client("athena")
     try:
         response = client.start_query_execution(
             QueryString=table_schema,
             # for the query result:
-            ResultConfiguration={'OutputLocation': s3_bucket},
+            ResultConfiguration={"OutputLocation": s3_bucket},
         )
         logger.info(f"Created table: {response['QueryExecutionId']}")
-        query_execution_id = response['QueryExecutionId']
+        query_execution_id = response["QueryExecutionId"]
     except ClientError as e:
         logger.error(f"Error creating table: {e}")
         raise
@@ -864,39 +901,45 @@ def create_table_schema_from_s3(s3_bucket: str, table_schema: str, polling_inter
     # TODO use TaskFuture instead
     for _ in range(1, max_attempts):
         response = client.get_query_execution(QueryExecutionId=query_execution_id)
-        status = response['QueryExecution']['Status']['State']
-        if status in ['SUCCEEDED', 'FAILED', 'CANCELLED']:
-            if status != 'SUCCEEDED':
+        status = response["QueryExecution"]["Status"]["State"]
+        if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
+            if status != "SUCCEEDED":
                 logger.error(f"Query {query_execution_id} failed with status: {status}")
-                logger.error(f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}")
+                logger.error(
+                    f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}"
+                )
                 return False
             break
         time.sleep(polling_interval)
-    logger.info(f"Successfully completed execution of query")
+    logger.info(f"Successfully completed execution of query [{query_execution_id}]")
 
     return True
+
 
 def empty_s3_bucket(s3_bucket: str):
     # TODO Empty bucket and delete folder?
     pass
 
+
 def validate_permissions():
     user_arn = boto3.client("sts").get_caller_identity()["Arn"]
     iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
 
-    s3_location_import = os.getenv('NETWORKX_S3_IMPORT_BUCKET_PATH')
+    s3_location_import = os.getenv("NETWORKX_S3_IMPORT_BUCKET_PATH")
     if s3_location_import is not None:
         kms_key_import = _get_bucket_encryption_key_arn(s3_location_import)
     else:
         kms_key_import = None
 
-    s3_location_export = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
+    s3_location_export = os.getenv("NETWORKX_S3_EXPORT_BUCKET_PATH")
     if s3_location_export is not None:
         kms_key_export = _get_bucket_encryption_key_arn(s3_location_export)
     else:
         kms_key_export = None
-    return iam_client.validate_permissions(s3_location_import, kms_key_import,
-                                           s3_location_export, kms_key_export)
+    return iam_client.validate_permissions(
+        s3_location_import, kms_key_import, s3_location_export, kms_key_export
+    )
+
 
 def _graph_status_check(na_client, graph_id, expected_state):
     """Check if a Neptune Analytics graph is in the expected state.
@@ -915,8 +958,11 @@ def _graph_status_check(na_client, graph_id, expected_state):
     current_status = response_status.get("status")
     if current_status != expected_state:
         fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
-        fut.set_exception(Exception(f"Invalid graph ({graph_id}) instance state: {current_status}"))
+        fut.set_exception(
+            Exception(f"Invalid graph ({graph_id}) instance state: {current_status}")
+        )
         return asyncio.wrap_future(fut)
+
 
 def _invalid_status_code(status_code, response):
     """Create a failed Future for an invalid API response status code.
@@ -930,6 +976,9 @@ def _invalid_status_code(status_code, response):
                        the invalid status code and response
     """
     fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
-    fut.set_exception(Exception(f"Invalid response status code: {status_code} with full response:\n {response}"))
+    fut.set_exception(
+        Exception(
+            f"Invalid response status code: {status_code} with full response:\n {response}"
+        )
+    )
     return asyncio.wrap_future(fut)
-

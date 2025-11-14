@@ -15,8 +15,8 @@ __all__ = [
     "Edge",
 ]
 
-from typing import Any, Dict, List, Tuple
 from dataclasses import dataclass
+from typing import Any, Dict, List, Tuple
 
 DEFAULT_NODE_LABEL_TYPE = "Node"
 

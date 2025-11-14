@@ -43,7 +43,7 @@ _info = {
         "bfs_layers": f"For additional details, see {algorithms_url}#bfs_layers",
         "pagerank": f"""- Neptune Analytics recommends using a `max_iter` value of `20` for PageRank calculations, \
 which balances computational efficiency with result accuracy. This default setting is optimized for most graph \
-workloads, though you can adjust it based on your specific convergence requirements. 
+workloads, though you can adjust it based on your specific convergence requirements.
 - Please note that the `personalization`, `nstart`, `weight`, and `dangling` parameters are not supported at the moment.
 - For additional parameters, see {algorithms_url}#pagerank""",
         "degree_centrality": f"For additional details, see {algorithms_url}#degree_centrality",
@@ -51,7 +51,7 @@ workloads, though you can adjust it based on your specific convergence requireme
         "out_degree_centrality": f"For additional details, see {algorithms_url}#out_degree_centrality",
         "asyn_lpa_communities": f"""- The `seed` parameter is not supported at the moment.
 - Label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm, using a fixed label update \
-strategy. Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.  
+strategy. Variant-specific control over the update method (e.g., synchronous vs. asynchronous) is not configurable.
 - For additional parameters, see {algorithms_url}#asyn_lpa_communities""",
         "fast_label_propagation_communities": f"""- The `seed` parameter is not supported at the moment.
 - Label propagation in Neptune Analytics maps all NetworkX variants to the same algorithm, using a fixed label update \
