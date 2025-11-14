@@ -494,6 +494,7 @@ def _start_export_task(
     role_arn: str,
     kms_key_identifier: str,
     filetype: str = "CSV",
+    export_filter: dict=None
 ) -> str:
     """Export graph data to an S3 bucket in CSV format.
 
@@ -503,21 +504,31 @@ def _start_export_task(
         s3_destination (str): The S3 destination location (e.g., 's3://bucket-name/prefix/')
         role_arn (str): The IAM role ARN with permissions to write to the S3 bucket
         kms_key_identifier (str): KMS key ARN for encrypting the exported data
-        filetype (str): CSV
+        filetype (str, optional): The format of the export data. Defaults to "CSV".
+        export_filter (dict, optional): Filter criteria for the export. Defaults to None.
 
     Returns:
-        str or None: The export task ID if successful, None otherwise
+        str: The export task ID if successful
+
+    Raises:
+        ClientError: If there's an issue with the AWS API call
     """
     logger.debug(
         f"Export S3 Graph [{graph_id}] data to S3 [{s3_destination}], under IAM role [{role_arn}]"
     )
     try:
+        kwarg_export = {}
+        kwarg_export['graphIdentifier'] = graph_id
+        kwarg_export['roleArn'] = role_arn
+        kwarg_export['format'] = filetype
+        kwarg_export['destination'] = s3_destination
+        kwarg_export['kmsKeyIdentifier'] = kms_key_identifier
+        # Optional filter
+        if export_filter:
+            kwarg_export['exportFilter'] = export_filter
+
         response = client.start_export_task(  # type: ignore[attr-defined]
-            graphIdentifier=graph_id,
-            roleArn=role_arn,
-            format=filetype,
-            destination=s3_destination,
-            kmsKeyIdentifier=kms_key_identifier,
+            kwarg_export
         )
         task_id = response.get("taskId")
         return task_id
