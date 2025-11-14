@@ -35,8 +35,6 @@ from .instance_management import (
     start_na_instance,
     stop_na_instance,
     validate_permissions,
-    start_na_instance,
-    stop_na_instance,
 )
 from .interface import BackendInterface
 from .na_graph import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN, NeptuneGraph

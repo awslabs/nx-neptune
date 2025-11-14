@@ -405,14 +405,38 @@ class IamClient:
             ],
             "export_athena_table_to_s3": [
                 {"permissions": ["s3:GetObject", "s3:DeleteObject"], "arn": s3_import},
-                {"permissions": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"], "arn": arn_kms_key_import},
-                {"permissions": ["athena:StartQueryExecution", "athena:GetQueryExecution"]}
+                {
+                    "permissions": [
+                        "kms:Decrypt",
+                        "kms:GenerateDataKey",
+                        "kms:DescribeKey",
+                    ],
+                    "arn": arn_kms_key_import,
+                },
+                {
+                    "permissions": [
+                        "athena:StartQueryExecution",
+                        "athena:GetQueryExecution",
+                    ]
+                },
             ],
             "create_table_from_s3": [
                 {"permissions": ["s3:GetObject", "s3:ListBucket"], "arn": s3_export},
-                {"permissions": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"], "arn": arn_kms_key_export},
-                {"permissions": ["athena:StartQueryExecution", "athena:GetQueryExecution"]}
-            ]
+                {
+                    "permissions": [
+                        "kms:Decrypt",
+                        "kms:GenerateDataKey",
+                        "kms:DescribeKey",
+                    ],
+                    "arn": arn_kms_key_export,
+                },
+                {
+                    "permissions": [
+                        "athena:StartQueryExecution",
+                        "athena:GetQueryExecution",
+                    ]
+                },
+            ],
         }
 
         for op, permission_pairs in checks.items():
