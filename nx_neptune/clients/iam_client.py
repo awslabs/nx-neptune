@@ -370,7 +370,7 @@ class IamClient:
         )
 
         checks = {
-            "create_graph": [
+            "create_na_instance": [
                 {
                     "permissions": [
                         "neptune-graph:CreateGraph",
@@ -392,7 +392,7 @@ class IamClient:
                     "arn": arn_kms_key_import,
                 },
             ],
-            "export_to_s3": [
+            "export_csv_to_s3": [
                 {"permissions": ["s3:PutObject", "s3:ListBucket"], "arn": s3_export},
                 {
                     "permissions": [
@@ -403,6 +403,16 @@ class IamClient:
                     "arn": arn_kms_key_export,
                 },
             ],
+            "export_athena_table_to_s3": [
+                {"permissions": ["s3:GetObject", "s3:DeleteObject"], "arn": s3_import},
+                {"permissions": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"], "arn": arn_kms_key_import},
+                {"permissions": ["athena:StartQueryExecution", "athena:GetQueryExecution"]}
+            ],
+            "create_table_from_s3": [
+                {"permissions": ["s3:GetObject", "s3:ListBucket"], "arn": s3_export},
+                {"permissions": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"], "arn": arn_kms_key_export},
+                {"permissions": ["athena:StartQueryExecution", "athena:GetQueryExecution"]}
+            ]
         }
 
         for op, permission_pairs in checks.items():
