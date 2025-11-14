@@ -26,6 +26,8 @@ from nx_neptune import (
 )
 from nx_neptune.utils.utils import get_stdout_logger
 
+task_id = "t-94jdjjknd1"
+
 """
 TODO update description
 
@@ -61,12 +63,6 @@ FROM air_routes_db.air_routes_table
 WHERE source_airport_id IS NOT NULL AND dest_airport_id IS NOT NULL
 """
 
-SOURCE_AIRPORTS_WITH_MORE_STOPS = """
-SELECT DISTINCT source_airport_id AS "~id", 'airline' AS "~label" 
-FROM air_routes_db.air_routes_table 
-WHERE stops > 0
-"""
-
 CREATE_AIRLINES_TABLE = """
 CREATE EXTERNAL TABLE air_routes_db.new_air_routes_table
     airline string
@@ -77,8 +73,37 @@ LOCATION 's3://your-neptune-export-bucket/path/'
 TBLPROPERTIES ('skip.header.line.count'='1')
 """
 
-ALL_NODES = "MATCH (n) RETURN n"
-ALL_EDGES = "MATCH ()-[r]-() RETURN r"
+SOURCE_AND_DESTINATION_BANK_CUSTOMERS = """
+SELECT DISTINCT "~id", 'customer' AS "~label" 
+FROM (
+    SELECT "nameOrig" as "~id"
+    FROM bank_fraud.transactions
+    WHERE "nameOrig" IS NOT NULL AND "step"=1
+    UNION ALL
+    SELECT "nameDest" as "~id"
+    FROM bank_fraud.transactions
+    WHERE "nameDest" IS NOT NULL AND "step"=1
+);
+"""
+
+BANK_TRANSACTIONS = """
+SELECT 
+    "nameOrig" as "~from", 
+    "nameDest" as "~to", 
+    "type" AS "~label", 
+    "step" AS "step:Int", 
+    "amount" AS "amount:Float", 
+    "oldbalanceOrg" AS "oldbalanceOrg:Float", 
+    "newbalanceOrig" AS "newbalanceOrig:Float", 
+    "oldbalanceDest" AS "oldbalanceDest:Float", 
+    "newbalanceDest" AS "newbalanceDest:Float", 
+    "isFraud" AS "isFraud:Int"
+FROM bank_fraud.transactions
+WHERE "nameOrig" IS NOT NULL AND "nameDest" IS NOT NULL AND "step"=1
+"""
+
+ALL_NODES = "MATCH (n) RETURN n LIMIT 10"
+ALL_EDGES = "MATCH ()-[r]-() RETURN r LIMIT 10"
 
 async def do_import_from_table():
 
@@ -88,11 +113,15 @@ async def do_import_from_table():
     # S3 bucket path for import and export location, which in the format of:
     # s3://BUCKET_NAME/FOLDER_NAME
     s3_location_import = os.getenv('NETWORKX_S3_IMPORT_BUCKET_PATH')
+    print(f"create projection to s3 bucket: {s3_location_import}")
 
     sql_queries = [
-        SOURCE_AND_DESTINATION_AIRPORT_IDS,
-        FLIGHT_RELATIONSHIPS,
+        # SOURCE_AND_DESTINATION_AIRPORT_IDS,
+        # FLIGHT_RELATIONSHIPS,
+        SOURCE_AND_DESTINATION_BANK_CUSTOMERS,
+        BANK_TRANSACTIONS,
     ]
+    print(f"running sql queries:{'\n'.join(sql_queries)}")
     export_projection_status = export_athena_table_to_s3(sql_queries, s3_location_import)
 
 async def do_import_from_s3():
@@ -117,11 +146,10 @@ async def do_export_to_s3():
 async def do_export_to_table():
 
     s3_location_export = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
-    task_id = "t-subh1ch7d0"
 
     # Create table - blocking
     # await create_table_from_s3(s3_location_export, CREATE_AIRLINES_TABLE)
-    await create_table_from_s3(f"{s3_location_export}/{task_id}", s3_location_export, 'air_routes_db.new_air_routes_table')
+    create_table_from_s3(f"{s3_location_export}{task_id}", s3_location_export, 'bank_fraud.new_transactions_typed')
 
 async def do_execute_opencypher():
     na_graph = NeptuneGraph.from_config()
@@ -134,8 +162,8 @@ async def do_execute_sql_query():
     pass
 
 if __name__ == "__main__":
-    # asyncio.run(do_import_from_table())
-    # asyncio.run(do_import_from_s3())
-    # asyncio.run(do_export_to_s3())
+    asyncio.run(do_import_from_table())
+    asyncio.run(do_import_from_s3())
+    asyncio.run(do_export_to_s3())
     asyncio.run(do_export_to_table())
     # asyncio.run(do_execute_opencypher())

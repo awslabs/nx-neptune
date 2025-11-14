@@ -802,7 +802,7 @@ WITH SERDEPROPERTIES ('field.delim' = ',')
 STORED AS INPUTFORMAT 'org.apache.hadoop.mapred.TextInputFormat' 
 OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
 LOCATION '{s3_bucket}'
-TBLPROPERTIES ('classification' = 'csv');
+TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
 """
 
     logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
@@ -812,7 +812,7 @@ TBLPROPERTIES ('classification' = 'csv');
         response = athena_client.start_query_execution(
             QueryString=sql_statement,
             # for the query result:
-            ResultConfiguration={'OutputLocation': s3_bucket},
+            ResultConfiguration={'OutputLocation': s3_output_bucket},
         )
         logger.info(f"Creating table: {response['QueryExecutionId']}")
         query_execution_id = response['QueryExecutionId']
@@ -831,6 +831,8 @@ TBLPROPERTIES ('classification' = 'csv');
                 return False
             break
         time.sleep(polling_interval)
+
+    return True
 
 def create_table_schema_from_s3(s3_bucket: str, table_schema: str, polling_interval=10, max_attempts=60):
     """Create external table in Athena from S3 data.
