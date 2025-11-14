@@ -205,7 +205,7 @@ def import_csv_from_s3(
 
 
 def export_csv_to_s3(
-    na_graph: NeptuneGraph, s3_arn: str, polling_interval=_ASYNC_POLLING_INTERVAL
+    na_graph: NeptuneGraph, s3_arn: str, polling_interval=_ASYNC_POLLING_INTERVAL, export_filter=None
 ) -> Future:
     """Export graph data from Neptune Analytics to S3 in CSV format.
 
@@ -217,7 +217,8 @@ def export_csv_to_s3(
     Args:
         na_graph (NeptuneGraph): The Neptune Analytics graph instance
         s3_arn (str): The S3 destination location (e.g., 's3://bucket-name/prefix/')
-        polling_interval(int): Time interval in seconds to perform job status query
+        polling_interval (int): Time interval in seconds to perform job status query. Defaults to 30.
+        export_filter (dict, optional): Filter criteria for the export. Defaults to None.
 
     Returns:
         asyncio.Future: A Future that resolves when the export completes
@@ -237,7 +238,7 @@ def export_csv_to_s3(
     iam_client.has_export_to_s3_permissions(s3_arn, key_arn)
 
     # Run Import
-    task_id = _start_export_task(na_client, graph_id, s3_arn, role_arn, key_arn)
+    task_id = _start_export_task(na_client, graph_id, s3_arn, role_arn, key_arn, export_filter=export_filter)
 
     # Packaging future
     future = TaskFuture(task_id, TaskType.EXPORT, polling_interval)
@@ -494,7 +495,7 @@ def _start_export_task(
     role_arn: str,
     kms_key_identifier: str,
     filetype: str = "CSV",
-    export_filter: dict=None
+    export_filter: dict = None,
 ) -> str:
     """Export graph data to an S3 bucket in CSV format.
 
@@ -528,7 +529,7 @@ def _start_export_task(
             kwarg_export['exportFilter'] = export_filter
 
         response = client.start_export_task(  # type: ignore[attr-defined]
-            kwarg_export
+            **kwarg_export
         )
         task_id = response.get("taskId")
         return task_id
