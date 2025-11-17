@@ -925,19 +925,14 @@ def validate_permissions():
     user_arn = boto3.client("sts").get_caller_identity()["Arn"]
     iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
 
-    s3_location_import = os.getenv("NETWORKX_S3_IMPORT_BUCKET_PATH")
-    if s3_location_import is not None:
-        kms_key_import = _get_bucket_encryption_key_arn(s3_location_import)
-    else:
-        kms_key_import = None
+    s3_import = os.getenv("NETWORKX_S3_IMPORT_BUCKET_PATH")
+    s3_export = os.getenv("NETWORKX_S3_EXPORT_BUCKET_PATH")
 
-    s3_location_export = os.getenv("NETWORKX_S3_EXPORT_BUCKET_PATH")
-    if s3_location_export is not None:
-        kms_key_export = _get_bucket_encryption_key_arn(s3_location_export)
-    else:
-        kms_key_export = None
+    kms_key_import = _get_bucket_encryption_key_arn(s3_import) if s3_import else None
+    kms_key_export = _get_bucket_encryption_key_arn(s3_export) if s3_export else None
+
     return iam_client.validate_permissions(
-        s3_location_import, kms_key_import, s3_location_export, kms_key_export
+        s3_import, kms_key_import, s3_export, kms_key_export
     )
 
 
