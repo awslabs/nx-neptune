@@ -26,7 +26,7 @@ from nx_neptune import (
 )
 from nx_neptune.utils.utils import get_stdout_logger
 
-task_id = "t-94jdjjknd1"
+task_id = "t-6v0b09ug64"
 
 """
 TODO update description
@@ -102,6 +102,23 @@ FROM bank_fraud.transactions
 WHERE "nameOrig" IS NOT NULL AND "nameDest" IS NOT NULL AND "step"=1
 """
 
+CREATE_NEW_BANK_TRANSACTIONS_TABLE = """
+CREATE EXTERNAL TABLE IF NOT EXISTS bank_fraud.new_transactions (
+    `~id` string,
+    `~from` string,
+    `~to` string,
+    `~label` string,
+    `step` int,
+    `isFraud` int
+)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
+WITH SERDEPROPERTIES ('field.delim' = ',')
+STORED AS INPUTFORMAT 'org.apache.hadoop.mapred.TextInputFormat'
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
+LOCATION 's3://nx-fraud-detection/t-6v0b09ug64'
+TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
+"""
+
 ALL_NODES = "MATCH (n) RETURN n LIMIT 10"
 ALL_EDGES = "MATCH ()-[r]-() RETURN r LIMIT 10"
 
@@ -141,15 +158,15 @@ async def do_export_to_s3():
 
     # Export - blocking
     task_id = await export_csv_to_s3(na_graph, s3_location_export)
-    print(f"Export completed with export location: {s3_location_export}{task_id}")
+    print(f"Export completed with export location: {s3_location_export}/{task_id}")
 
 async def do_export_to_table():
 
     s3_location_export = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
 
     # Create table - blocking
-    # await create_table_from_s3(s3_location_export, CREATE_AIRLINES_TABLE)
-    create_table_from_s3(f"{s3_location_export}{task_id}", s3_location_export, 'bank_fraud.new_transactions_typed')
+    await create_table_from_s3(s3_location_export, CREATE_NEW_BANK_TRANSACTIONS_TABLE)
+    # create_table_from_s3(f"{s3_location_export}/{task_id}", s3_location_export, 'bank_fraud.new_transactions_typed')
 
 async def do_execute_opencypher():
     na_graph = NeptuneGraph.from_config()
