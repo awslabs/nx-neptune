@@ -40,6 +40,7 @@ from .instance_management import (
 )
 from .interface import BackendInterface
 from .na_graph import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN, NeptuneGraph
+from .session_manager import SessionManager
 from .utils.decorators import configure_if_nx_active
 
 __version__ = "0.4.4"
@@ -78,4 +79,6 @@ __all__ = [
     "start_na_instance",
     "stop_na_instance",
     "TaskFuture",
+    # session management
+    "SessionManager",
 ]

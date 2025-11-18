@@ -249,7 +249,13 @@ def export_csv_to_s3(
     return asyncio.wrap_future(future)
 
 
-def create_na_instance(config: Optional[dict] = None):
+def create_na_instance(
+    config: Optional[dict] = None,
+    na_client: Optional[BaseClient] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    graph_name_prefix: Optional[str] = None,
+):
     """
     Creates a new graph instance for Neptune Analytics.
 
@@ -261,20 +267,30 @@ def create_na_instance(config: Optional[dict] = None):
 
             Reference:
             https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph.html
+        na_client (Optional[BaseClient]): Optional boto3 client for neptune-graph service
+        sts_client (Optional[BaseClient]): Optional boto3 client for sts service
+        iam_client (Optional[BaseClient]): Optional boto3 client for iam service
+        graph_name_prefix (Optional[str]): Optional prefix for the generated graph name
 
     Raises:
         Exception: If the Neptune Analytics instance creation fails
     """
-    na_client = boto3.client(
-        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-    )
+    if na_client is None:
+        na_client = boto3.client(
+            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+        )
 
     # Permissions check
-    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
-    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
-    iam_client.has_create_na_permissions()
+    if sts_client is None:
+        sts_client = boto3.client(SERVICE_STS)
+    user_arn = sts_client.get_caller_identity()["Arn"]
+    
+    if iam_client is None:
+        iam_client = boto3.client(SERVICE_IAM)
+    iam_client_wrapper = IamClient(role_arn=user_arn, client=iam_client)
+    iam_client_wrapper.has_create_na_permissions()
 
-    response = _create_na_instance_task(na_client, config)
+    response = _create_na_instance_task(na_client, config, graph_name_prefix)
     prospective_graph_id = _get_graph_id(response)
 
     if _get_status_code(response) == 201:
@@ -410,7 +426,9 @@ def _get_create_instance_config(graph_name, config=None):
     return config
 
 
-def _create_na_instance_task(client, config: Optional[dict] = None):
+def _create_na_instance_task(
+    client, config: Optional[dict] = None, graph_name_prefix: Optional[str] = None
+):
     """Create a new Neptune Analytics graph instance with default settings.
 
     This function generates a unique name for the graph using a UUID suffix and
@@ -418,6 +436,8 @@ def _create_na_instance_task(client, config: Optional[dict] = None):
 
     Args:
         client (boto3.client): The Neptune Analytics boto3 client
+        config (Optional[dict]): Optional configuration parameters
+        graph_name_prefix (Optional[str]): Optional prefix for the generated graph name
 
     Returns:
         dict: The API response containing information about the created graph
@@ -426,7 +446,7 @@ def _create_na_instance_task(client, config: Optional[dict] = None):
         ClientError: If there's an issue with the AWS API call
     """
 
-    graph_name = _create_random_graph_name()
+    graph_name = _create_random_graph_name(graph_name_prefix)
     kwargs = _get_create_instance_config(graph_name, config)
     response = client.create_graph(**kwargs)
     return response
@@ -645,17 +665,22 @@ def _get_graph_id(response: dict):
     return response.get("id")
 
 
-def _create_random_graph_name() -> str:
+def _create_random_graph_name(graph_name_prefix: Optional[str] = None) -> str:
     """Generate a unique name for a Neptune Analytics graph instance.
 
     This function creates a random graph name by combining the project identifier
     with a UUID to ensure uniqueness across all graph instances.
 
+    Args:
+        graph_name_prefix (Optional[str]): Optional prefix for the graph name.
+            If not provided, uses _PROJECT_IDENTIFIER.
+
     Returns:
-        str: A unique graph name in the format '{PROJECT_IDENTIFIER}-{uuid}'
+        str: A unique graph name in the format '{prefix}-{uuid}'
     """
+    prefix = graph_name_prefix if graph_name_prefix is not None else _PROJECT_IDENTIFIER
     uuid_suffix = str(uuid.uuid4())
-    return f"{_PROJECT_IDENTIFIER}-{uuid_suffix}"
+    return f"{prefix}-{uuid_suffix}"
 
 
 def delete_status_check_wrapper(client, graph_id):
@@ -1086,7 +1111,7 @@ def empty_s3_bucket(s3_bucket: str):
 
 
 def validate_permissions():
-    user_arn = boto3.client("sts").get_caller_identity()["Arn"]
+    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
     iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
 
     s3_import = os.getenv("NETWORKX_S3_IMPORT_BUCKET_PATH")
