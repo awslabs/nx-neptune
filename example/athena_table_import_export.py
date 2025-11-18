@@ -77,11 +77,11 @@ SOURCE_AND_DESTINATION_BANK_CUSTOMERS = """
 SELECT DISTINCT "~id", 'customer' AS "~label" 
 FROM (
     SELECT "nameOrig" as "~id"
-    FROM bank_fraud.transactions
+    FROM transactions
     WHERE "nameOrig" IS NOT NULL AND "step"=1
     UNION ALL
     SELECT "nameDest" as "~id"
-    FROM bank_fraud.transactions
+    FROM transactions
     WHERE "nameDest" IS NOT NULL AND "step"=1
 );
 """
@@ -98,7 +98,7 @@ SELECT
     "oldbalanceDest" AS "oldbalanceDest:Float", 
     "newbalanceDest" AS "newbalanceDest:Float", 
     "isFraud" AS "isFraud:Int"
-FROM bank_fraud.transactions
+FROM transactions
 WHERE "nameOrig" IS NOT NULL AND "nameDest" IS NOT NULL AND "step"=1
 """
 
@@ -133,13 +133,16 @@ async def do_import_from_table():
     print(f"create projection to s3 bucket: {s3_location_import}")
 
     sql_queries = [
-        # SOURCE_AND_DESTINATION_AIRPORT_IDS,
-        # FLIGHT_RELATIONSHIPS,
         SOURCE_AND_DESTINATION_BANK_CUSTOMERS,
         BANK_TRANSACTIONS,
     ]
     print(f"running sql queries:{'\n'.join(sql_queries)}")
-    export_projection_status = export_athena_table_to_s3(sql_queries, s3_location_import)
+    export_projection_status = export_athena_table_to_s3(
+        sql_queries,
+        s3_location_import,
+        catalog='s3tablescatalog/nx-fraud-detection-data',
+        database='bank_transactions',
+    )
 
 async def do_import_from_s3():
 
@@ -165,8 +168,8 @@ async def do_export_to_table():
     s3_location_export = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
 
     # Create table - blocking
-    await create_table_from_s3(s3_location_export, CREATE_NEW_BANK_TRANSACTIONS_TABLE)
-    # create_table_from_s3(f"{s3_location_export}/{task_id}", s3_location_export, 'bank_fraud.new_transactions_typed')
+    # await create_table_from_s3(s3_location_export, CREATE_NEW_BANK_TRANSACTIONS_TABLE)
+    create_table_from_s3(f"{s3_location_export}/{task_id}", s3_location_export, 'bank_fraud.new_transactions_typed')
 
 async def do_execute_opencypher():
     na_graph = NeptuneGraph.from_config()
@@ -179,8 +182,8 @@ async def do_execute_sql_query():
     pass
 
 if __name__ == "__main__":
-    asyncio.run(do_import_from_table())
-    asyncio.run(do_import_from_s3())
+    # asyncio.run(do_import_from_table())
+    # asyncio.run(do_import_from_s3())
     asyncio.run(do_export_to_s3())
-    asyncio.run(do_export_to_table())
+    # asyncio.run(do_export_to_table())
     # asyncio.run(do_execute_opencypher())

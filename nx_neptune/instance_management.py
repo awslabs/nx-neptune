@@ -679,13 +679,20 @@ def delete_status_check_wrapper(client, graph_id):
 
 # TODO: provide an alternative to sql_queries - instead take a JSON import to map types
 def export_athena_table_to_s3(
-    sql_queries: list, s3_bucket: str, polling_interval=10, max_attempts=60
+    sql_queries: list,
+    s3_bucket: str,
+    catalog: str=None,
+    database: str=None,
+    polling_interval=10,
+    max_attempts=60,
 ):
     """Export Athena table data to S3 by executing SQL queries.
 
     Args:
-        :param s3_bucket: S3 bucket path for query results
         :param sql_queries: List of SQL query strings to execute
+        :param s3_bucket: S3 bucket path for query results
+        :param catalog (str, optional): catalog namespace to run the sql_query
+        :param database (str, optional): the database to run the sql_query
         :param max_attempts:
         :param polling_interval:
     """
@@ -696,15 +703,10 @@ def export_athena_table_to_s3(
 
     query_execution_ids = []
     for query in sql_queries:
-        try:
-            response = client.start_query_execution(
-                QueryString=query, ResultConfiguration={"OutputLocation": s3_bucket}
-            )
-            logger.info(f"Started query execution: {response['QueryExecutionId']}")
-            query_execution_ids.append(response["QueryExecutionId"])
-        except ClientError as e:
-            logger.error(f"Error executing query: {e}")
-            return False
+        query_execution_id = _execute_athena_query(
+            client, query, s3_bucket, catalog=catalog, database=database
+        )
+        query_execution_ids.append(query_execution_id)
 
     # Wait on all query execution IDs
     s3_client = boto3.client("s3")
@@ -760,7 +762,9 @@ def create_table_from_s3(
     s3_bucket: str,
     s3_output_bucket: str,
     table_name: str,
-    table_columns=None,
+    catalog: str = None,
+    database: str = None,
+    table_columns: list[str] = None,
     polling_interval=10,
     max_attempts=60,
 ):
@@ -769,8 +773,10 @@ def create_table_from_s3(
     Args:
         :param s3_bucket: S3 bucket path containing data
         :param s3_output_bucket: S3 bucket path to print results
-        :param table_name:
-        :param table_columns:
+        :param table_name: the table name to create
+        :param catalog (str, optional): catalog namespace to run the sql_query
+        :param database (str, optional): the database to run the sql_query
+        :param table_columns: table columns to include in the newly created query
         :param max_attempts:
         :param polling_interval:
     """
@@ -838,17 +844,13 @@ TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
     logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
 
     athena_client = boto3.client("athena")
-    try:
-        response = athena_client.start_query_execution(
-            QueryString=sql_statement,
-            # for the query result:
-            ResultConfiguration={"OutputLocation": s3_output_bucket},
-        )
-        logger.info(f"Creating table: {response['QueryExecutionId']}")
-        query_execution_id = response["QueryExecutionId"]
-    except ClientError as e:
-        logger.error(f"Error creating table: {e}")
-        raise
+    query_execution_id = _execute_athena_query(
+        athena_client,
+        sql_statement,
+        s3_output_bucket,
+        catalog=catalog,
+        database=database,
+    )
 
     # TODO use TaskFuture instead
     for _ in range(1, max_attempts):
@@ -870,13 +872,20 @@ TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
 
 
 def create_table_schema_from_s3(
-    s3_bucket: str, table_schema: str, polling_interval=10, max_attempts=60
+    s3_bucket: str,
+    table_schema: str,
+    catalog: str = None,
+    database: str = None,
+    polling_interval=10,
+    max_attempts=60,
 ):
     """Create external table in Athena from S3 data.
 
     Args:
         :param table_schema: SQL CREATE EXTRNAL TABLE statement
         :param s3_bucket: S3 bucket path containing data
+        :param catalog (str, optional): catalog namespace to run the sql_query
+        :param database (str, optional): the database to run the sql_query
         :param max_attempts:
         :param polling_interval:
     """
@@ -886,17 +895,9 @@ def create_table_schema_from_s3(
     # TODO check is skip drop table is False and table exists
 
     client = boto3.client("athena")
-    try:
-        response = client.start_query_execution(
-            QueryString=table_schema,
-            # for the query result:
-            ResultConfiguration={"OutputLocation": s3_bucket},
-        )
-        logger.info(f"Created table: {response['QueryExecutionId']}")
-        query_execution_id = response["QueryExecutionId"]
-    except ClientError as e:
-        logger.error(f"Error creating table: {e}")
-        raise
+    query_execution_id = _execute_athena_query(
+        client, table_schema, s3_bucket, catalog=catalog, database=database
+    )
 
     # TODO use TaskFuture instead
     for _ in range(1, max_attempts):
@@ -914,6 +915,46 @@ def create_table_schema_from_s3(
     logger.info(f"Successfully completed execution of query [{query_execution_id}]")
 
     return True
+
+
+def _execute_athena_query(
+    client,
+    sql_statement: str,
+    output_location: str,
+    catalog: str = None,
+    database: str = None,
+) -> str:
+    """
+
+    :param client:
+    :param sql_statement:
+    :param output_location:
+    :param catalog:
+    :param database:
+    :return:
+    """
+
+    query_execution_params = {
+        "QueryString": sql_statement,
+        "ResultConfiguration": {"OutputLocation": output_location},
+    }
+    if catalog or database:
+        query_execution_context = {}
+        if catalog:
+            query_execution_context["Catalog"] = catalog
+        if database:
+            query_execution_context["Database"] = database
+        query_execution_params["QueryExecutionContext"] = query_execution_context
+
+    try:
+        response = client.start_query_execution(**query_execution_params)
+        logger.info(f"Created table: {response['QueryExecutionId']}")
+        query_execution_id = response["QueryExecutionId"]
+    except ClientError as e:
+        logger.error(f"Error creating table: {e}")
+        raise
+
+    return query_execution_id
 
 
 def empty_s3_bucket(s3_bucket: str):
