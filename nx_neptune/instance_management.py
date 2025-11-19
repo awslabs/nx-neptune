@@ -507,6 +507,18 @@ def _start_export_task(
         kms_key_identifier (str): KMS key ARN for encrypting the exported data
         filetype (str, optional): The format of the export data. Defaults to "CSV".
         export_filter (dict, optional): Filter criteria for the export. Defaults to None.
+            Example filter to export only vertices with label "Person" and edges with label "FOLLOWS":
+            {
+                "vertexFilter": {"Person": {}},
+                "edgeFilter": {"FOLLOWS": {}},
+            }
+            Example filter to export vertices with property "age":
+            {
+                "vertexFilter": {"Person": {"age": {"sourcePropertyName": "age"}}},
+            }
+            For more details on export filter syntax, see:
+            https://docs.aws.amazon.com/neptune-analytics/latest/userguide/export-filter.html
+
 
     Returns:
         str: The export task ID if successful
