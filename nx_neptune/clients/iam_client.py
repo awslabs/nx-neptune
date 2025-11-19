@@ -401,7 +401,7 @@ class IamClient:
                 },
             ],
             "export_athena_table_to_s3": [
-                {"permissions": ["s3:GetObject", "s3:DeleteObject"], "arn": s3_import},
+                {"permissions": ["s3:GetObject"], "arn": s3_import},
                 {
                     "permissions": [
                         "kms:Decrypt",

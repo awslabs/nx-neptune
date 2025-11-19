@@ -28,7 +28,8 @@ from .clients import Edge, Node
 from .instance_management import (
     TaskFuture,
     create_na_instance,
-    create_table_from_s3,
+    create_csv_table_from_s3,
+    create_iceberg_table_from_table,
     export_athena_table_to_s3,
     export_csv_to_s3,
     import_csv_from_s3,

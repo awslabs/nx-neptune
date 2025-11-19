@@ -17,16 +17,17 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+import networkx as nx
+
 from nx_neptune import (
     NeptuneGraph,
     import_csv_from_s3,
     export_csv_to_s3,
     export_athena_table_to_s3,
-    create_table_from_s3
+    create_csv_table_from_s3,
+    create_iceberg_table_from_table, louvain_communities
 )
 from nx_neptune.utils.utils import get_stdout_logger
-
-task_id = "t-6v0b09ug64"
 
 """
 TODO update description
@@ -43,36 +44,10 @@ logger = get_stdout_logger(__name__, [
     'nx_neptune.na_graph',
     'nx_neptune.clients.instance_management', __name__])
 
-SOURCE_AND_DESTINATION_AIRPORT_IDS = """
-SELECT DISTINCT "~id", airport_name AS "airport_name:string", 'airline' AS "~label" FROM (
-    SELECT source_airport_id as "~id", source_airport as "airport_name" 
-    FROM air_routes_db.air_routes_table
-    WHERE source_airport_id IS NOT NULL
-    UNION ALL
-    SELECT dest_airport_id as "~id", dest_airport as "airport_name" 
-    FROM air_routes_db.air_routes_table
-    WHERE dest_airport_id IS NOT NULL
-);
 """
-
-# TODO add properties: airline, airline_id, codeshare, stops
-# TODO add list property: equipment
-FLIGHT_RELATIONSHIPS = """
-SELECT source_airport_id as "~from", dest_airport_id as "~to", 'flight' AS "~label" 
-FROM air_routes_db.air_routes_table
-WHERE source_airport_id IS NOT NULL AND dest_airport_id IS NOT NULL
+This data comes from kaggle.com:
+https://www.kaggle.com/code/kartik2112/fraud-detection-on-paysim-dataset/input?select=PS_20174392719_1491204439457_log.csv
 """
-
-CREATE_AIRLINES_TABLE = """
-CREATE EXTERNAL TABLE air_routes_db.new_air_routes_table
-    airline string
-    airline_id string
-    ...
-STORED AS TEXTFILE
-LOCATION 's3://your-neptune-export-bucket/path/'
-TBLPROPERTIES ('skip.header.line.count'='1')
-"""
-
 SOURCE_AND_DESTINATION_BANK_CUSTOMERS = """
 SELECT DISTINCT "~id", 'customer' AS "~label" 
 FROM (
@@ -163,27 +138,56 @@ async def do_export_to_s3():
     task_id = await export_csv_to_s3(na_graph, s3_location_export)
     print(f"Export completed with export location: {s3_location_export}/{task_id}")
 
-async def do_export_to_table():
+async def do_export_to_csv_table():
 
-    s3_location_export = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
+    task_id = os.getenv('TASK_ID')
+    s3_sql_output = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
+    s3_export_location = f"{os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')}/{task_id}"
+    catalog = 'AwsDataCatalog'
+    database = 'bank_fraud'
+    csv_table_name = 'transactions_csv_tmp'
 
     # Create table - blocking
-    # await create_table_from_s3(s3_location_export, CREATE_NEW_BANK_TRANSACTIONS_TABLE)
-    create_table_from_s3(f"{s3_location_export}/{task_id}", s3_location_export, 'bank_fraud.new_transactions_typed')
+    create_csv_table_from_s3(s3_export_location, s3_sql_output, csv_table_name, catalog=catalog, database=database)
+
+async def do_export_to_iceberg_table():
+
+    s3_sql_output = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
+    catalog = 's3tablescatalog/nx-fraud-detection-data'
+    database = 'bank'
+    iceberg_table_name = 'transactions_updated'
+    csv_table_name = 'AwsDataCatalog.bank_fraud.transactions_csv_tmp'
+    table_cols = ["~from", "~to", "~label", "oldbalanceOrg", "amount", "newbalanceOrig", "newbalanceDest", "step", "oldbalanceDest", "isFraud"]
+    create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, table_columns=table_cols, catalog=catalog, database=database, with_nodes=False)
+
+    iceberg_table_name = 'customers_updated'
+    table_cols = ["~id", "community"]
+    create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, table_columns=table_cols, catalog=catalog, database=database, with_edges=False)
 
 async def do_execute_opencypher():
+    nx.config.backends.neptune.graph_id = os.getenv('NETWORKX_GRAPH_ID')
+    nx.config.backends.neptune.skip_graph_reset = False
+    result = nx.community.louvain_communities(nx.Graph(), backend="neptune", write_property="community")
+    print(f"louvain result: \n{result}")
+    community_size = []
+    for community in result:
+        if len(community) > 30:
+            print(f"possible fraud (size:{len(community)})? {community}")
+
+def do_execute_dump_graph():
     na_graph = NeptuneGraph.from_config()
     all_nodes = na_graph.execute_call(ALL_NODES)
-    logger.info(f"all_nodes: {all_nodes}")
-    all_edges = na_graph.execute_call(ALL_EDGES)
-    logger.info(f"all_edges: {all_edges}")
+    print(f"all nodes: {all_nodes}")
 
-async def do_execute_sql_query():
-    pass
+    all_edges = na_graph.execute_call(ALL_EDGES)
+    print(f"all edges: {all_edges}")
 
 if __name__ == "__main__":
     # asyncio.run(do_import_from_table())
     # asyncio.run(do_import_from_s3())
-    asyncio.run(do_export_to_s3())
-    # asyncio.run(do_export_to_table())
-    # asyncio.run(do_execute_opencypher())
+    # asyncio.run(do_export_to_s3())
+    # asyncio.run(do_export_to_csv_table())
+    # asyncio.run(do_export_to_iceberg_table())
+    asyncio.run(do_execute_opencypher())
+    # do_execute_dump_graph()
+

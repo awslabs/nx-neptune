@@ -38,7 +38,8 @@ __all__ = [
     "create_na_instance",
     "delete_na_instance",
     "export_athena_table_to_s3",
-    "create_table_from_s3",
+    "create_csv_table_from_s3",
+    "create_iceberg_table_from_table",
     "validate_permissions",
     "start_na_instance",
     "stop_na_instance",
@@ -758,7 +759,7 @@ def export_athena_table_to_s3(
     return True
 
 
-def create_table_from_s3(
+def create_csv_table_from_s3(
     s3_bucket: str,
     s3_output_bucket: str,
     table_name: str,
@@ -768,12 +769,12 @@ def create_table_from_s3(
     polling_interval=10,
     max_attempts=60,
 ):
-    """Create external table in Athena from S3 data.
+    """Create an external CSV table from S3 data using Athena queries.
 
     Args:
-        :param s3_bucket: S3 bucket path containing data
-        :param s3_output_bucket: S3 bucket path to print results
-        :param table_name: the table name to create
+        :param s3_bucket: S3 bucket path containing csv data
+        :param s3_output_bucket: S3 path to print results
+        :param table_name: the table name to create iceberg-formatted data
         :param catalog (str, optional): catalog namespace to run the sql_query
         :param database (str, optional): the database to run the sql_query
         :param table_columns: table columns to include in the newly created query
@@ -817,19 +818,15 @@ def create_table_from_s3(
                 table_columns[field] = "string"
                 continue
             (field, datatype) = field.split(":")
-            if datatype in ["String", "Int"]:
-                table_columns[field] = datatype.lower()
-            elif datatype == "vector":
+            if datatype == "Vector":
                 # skip vectors:
-                # table_columns[field] = "vector"
-                pass
+                continue
+            if datatype == "Long":
+                table_columns[field] = "bigint"
+                continue
+            table_columns[field] = datatype.lower()
+
     table_schema = ",\n    ".join(f"`{k}` {v}" for k, v in table_columns.items())
-    #     sql_statement = f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
-    #     {table_schema}
-    # ) STORED AS TEXTFILE
-    # LOCATION '{s3_bucket}'
-    # TBLPROPERTIES ('skip.header.line.count'='1')
-    # """
     sql_statement = f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
     {table_schema}
 )
@@ -868,8 +865,75 @@ TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
             break
         time.sleep(polling_interval)
 
+    logger.info(f"Successfully completed execution of query [{query_execution_id}]")
+
     return True
 
+def create_iceberg_table_from_table(
+        s3_output_bucket: str,
+        table_name: str,
+        csv_table_name: str,
+        catalog: str = None,
+        database: str = None,
+        with_nodes: bool = True,
+        with_edges: bool = True,
+        table_columns: list[str] = None,
+        polling_interval=10,
+        max_attempts=60,
+):
+    if not with_nodes and not with_edges:
+        logger.error(f"Nothing to export. Specify either with_edges or with_nodes as True.")
+        return False
+
+    select_columns = "*"
+    if table_columns:
+        select_columns = '"' + '","'.join(table_columns) + '"'
+
+    where_filter = ""
+    if not with_nodes:
+        where_filter = 'WHERE "~from" IS NOT NULL AND "~to" IS NOT NULL'
+    if not with_edges:
+        where_filter = 'WHERE "~id" IS NOT NULL'
+
+    sql_statement=f"""
+CREATE TABLE {table_name}
+  WITH (
+      table_type = 'ICEBERG',
+      is_external = false
+      )
+AS SELECT {select_columns} FROM {csv_table_name} {where_filter};
+"""
+
+    logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
+
+    athena_client = boto3.client("athena")
+    query_execution_id = _execute_athena_query(
+        athena_client,
+        sql_statement,
+        s3_output_bucket,
+        catalog=catalog,
+        database=database,
+    )
+
+    # TODO use TaskFuture instead
+    for _ in range(1, max_attempts):
+        response = athena_client.get_query_execution(
+            QueryExecutionId=query_execution_id
+        )
+        status = response["QueryExecution"]["Status"]["State"]
+        if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
+            if status != "SUCCEEDED":
+                logger.error(f"Query {query_execution_id} failed with status: {status}")
+                logger.error(
+                    f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}"
+                )
+                return False
+            break
+        time.sleep(polling_interval)
+
+    logger.info(f"Successfully completed execution of query [{query_execution_id}]")
+
+    return True
 
 def create_table_schema_from_s3(
     s3_bucket: str,
@@ -948,7 +1012,7 @@ def _execute_athena_query(
 
     try:
         response = client.start_query_execution(**query_execution_params)
-        logger.info(f"Created table: {response['QueryExecutionId']}")
+        logger.info(f"Creating table: {response['QueryExecutionId']}")
         query_execution_id = response["QueryExecutionId"]
     except ClientError as e:
         logger.error(f"Error creating table: {e}")

@@ -189,6 +189,12 @@ async def _execute_setup_new_graph(
 def _sync_data_to_neptune(
     graph: networkx.Graph, neptune_graph: NeptuneGraph, neptune_config: NeptuneConfig
 ):
+    if not graph.nodes and not graph.edges:
+        logger.debug(
+            f"Graph is empty"
+        )
+        return neptune_graph
+
     logger.debug(
         f"Sync data to instance: nodes:{len(graph.nodes())}, edges:{len(graph.edges())}"
     )
