@@ -518,18 +518,19 @@ def _start_export_task(
         f"Export S3 Graph [{graph_id}] data to S3 [{s3_destination}], under IAM role [{role_arn}]"
     )
     try:
-        kwarg_export = {}
-        kwarg_export['graphIdentifier'] = graph_id
-        kwarg_export['roleArn'] = role_arn
-        kwarg_export['format'] = filetype
-        kwarg_export['destination'] = s3_destination
-        kwarg_export['kmsKeyIdentifier'] = kms_key_identifier
+        kwargs_export = {
+            'graphIdentifier': graph_id,
+            'roleArn': role_arn,
+            'format': filetype,
+            'destination': s3_destination,
+            'kmsKeyIdentifier': kms_key_identifier
+        }
         # Optional filter
         if export_filter:
-            kwarg_export['exportFilter'] = export_filter
+            kwargs_export['exportFilter'] = export_filter
 
         response = client.start_export_task(  # type: ignore[attr-defined]
-            **kwarg_export
+            **kwargs_export
         )
         task_id = response.get("taskId")
         return task_id
