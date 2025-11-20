@@ -25,10 +25,12 @@ import jmespath
 from botocore.client import BaseClient
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from sqlglot import parse_one, exp
 
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
 from .clients.neptune_constants import APP_ID_NX
 from .na_graph import NeptuneGraph
+
 
 __all__ = [
     "import_csv_from_s3",
@@ -1041,13 +1043,50 @@ def validate_permissions():
         s3_import, kms_key_import, s3_export, kms_key_export
     )
 
-def validate_athena_query(query: str, validation_mode: str, warning_only: bool):
+class ProjectionType(Enum):
+    NODES = "nodes"
+    EDGES = "edges"
+
+def validate_athena_query(query: str, projection_type: ProjectionType, warning_only: bool):
     # Extract projection from query
     # Print out warning if select * and exit early
     # Validation mode with enum: (Node and Edge)
     # Examine the project (alias and column) to make sure all fields are present
 
+    column_names = {column.alias_or_name for column in parse_one(query).find(exp.Select)}
 
+    if '*' in column_names:
+        logger.warning("Cannot validate required fields due to wildcard (*) in SELECT projection")
+        return True
+
+    match projection_type:
+        case ProjectionType.NODES:
+            mandate_fields_node = {"~id"}
+            mandate_fields_node.issubset(column_names)
+        case ProjectionType.EDGES:
+            mandate_fields_edge = {"~id", "~from", "~to"}
+            mandate_fields_edge.issubset(column_names)
+        case _:
+            logger.warning(f"Unknown projection type: {projection_type}")
+            return False
+
+
+
+
+
+
+
+
+
+    # Check - 1 (Valid sql?)
+
+    # Check - 2
+
+    # Check - 3
+
+    # Check - 4
+
+    print(column_names)
 
     pass
 
