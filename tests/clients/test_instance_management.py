@@ -29,7 +29,9 @@ from nx_neptune.instance_management import (
     import_csv_from_s3,
     export_csv_to_s3,
     delete_na_instance,
-    _get_create_instance_config, validate_athena_query, ProjectionType,
+    _get_create_instance_config,
+    validate_athena_query,
+    ProjectionType,
 )
 
 NX_CREATE_SUCCESS_FIXTURE = """{
