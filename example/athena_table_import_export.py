@@ -156,20 +156,19 @@ async def do_export_to_iceberg_table():
     catalog = 's3tablescatalog/nx-fraud-detection-data'
     database = 'bank'
     iceberg_table_name = 'transactions_updated'
-    csv_table_name = 'AwsDataCatalog.bank_fraud.transactions_csv_tmp'
-    table_cols = ["~from", "~to", "~label", "oldbalanceOrg", "amount", "newbalanceOrig", "newbalanceDest", "step", "oldbalanceDest", "isFraud"]
-    create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, table_columns=table_cols, catalog=catalog, database=database, with_nodes=False)
+    csv_table_name = 'AwsDataCatalog.bank_fraud.transactions_csv_tmp_edges'
+    create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, catalog=catalog, database=database)
 
     iceberg_table_name = 'customers_updated'
-    table_cols = ["~id", "community"]
-    create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, table_columns=table_cols, catalog=catalog, database=database, with_edges=False)
+    csv_table_name = 'AwsDataCatalog.bank_fraud.transactions_csv_tmp_vertices'
+    create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, catalog=catalog, database=database)
 
 async def do_execute_opencypher():
     nx.config.backends.neptune.graph_id = os.getenv('NETWORKX_GRAPH_ID')
-    nx.config.backends.neptune.skip_graph_reset = False
+    nx.config.backends.neptune.skip_graph_reset = True
+    # result = nx.community.louvain_communities(nx.Graph(), backend="neptune")
     result = nx.community.louvain_communities(nx.Graph(), backend="neptune", write_property="community")
     print(f"louvain result: \n{result}")
-    community_size = []
     for community in result:
         if len(community) > 30:
             print(f"possible fraud (size:{len(community)})? {community}")

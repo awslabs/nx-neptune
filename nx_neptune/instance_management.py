@@ -791,23 +791,117 @@ def create_csv_table_from_s3(
 
     # Wait on all query execution IDs
     s3_client = boto3.client("s3")
-    bucket_name = s3_bucket.replace("s3://", "").split("/")[0]
-    bucket_prefix = "/".join(s3_bucket.replace("s3://", "").split("/")[1:])
+    bucket_path = s3_bucket.replace("s3://", "").split("/")
+    bucket_name = bucket_path.pop(0)
+    bucket_prefix = "/".join(bucket_path)
+
+    logger.info(f"Inspecting files from {s3_bucket}")
 
     response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=bucket_prefix)
-    file_paths = [
-        obj["Key"]
-        for obj in response.get("Contents", [])
-        if obj["Key"].endswith(".csv")
-    ]
+    file_paths = response.get("Contents", [])
 
-    table_columns = {
-        "~id": "string",
-        "~from": "string",
-        "~to": "string",
-        "~label": "string",
-    }
-    for fp in file_paths:
+    logger.info(f"Moving 'Edge_*.csv' files to folder {s3_bucket}/Edge")
+    edge_sql_statement = _build_sql_statement(
+        s3_client,
+        bucket_name,
+        bucket_prefix,
+        "Edge",
+        file_paths,
+        {
+            "~id": "string",
+            "~from": "string",
+            "~to": "string",
+            "~label": "string",
+        },
+        f"{table_name}_edges"
+    )
+
+    logger.info(f"Moving 'Vertex_*.csv' files to folder {s3_bucket}/Vertex")
+    vertex_sql_statement = _build_sql_statement(
+        s3_client,
+        bucket_name,
+        bucket_prefix,
+        "Vertex",
+        file_paths,
+        {
+            "~id": "string",
+            "~label": "string",
+        },
+        f"{table_name}_vertices"
+    )
+
+    athena_client = boto3.client("athena")
+    query_execution_ids = []
+    for sql_statement in [edge_sql_statement, vertex_sql_statement]:
+        logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
+        query_execution_id = _execute_athena_query(
+            athena_client,
+            sql_statement,
+            s3_output_bucket,
+            catalog=catalog,
+            database=database,
+        )
+        query_execution_ids.append(query_execution_id)
+
+    for query_execution_id in query_execution_ids:
+        # TODO use TaskFuture instead
+        for _ in range(1, max_attempts):
+            response = athena_client.get_query_execution(QueryExecutionId=query_execution_id)
+            status = response["QueryExecution"]["Status"]["State"]
+            if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
+                if status != "SUCCEEDED":
+                    logger.error(
+                        f"Query {query_execution_id} failed with status: {status}"
+                    )
+                    logger.error(
+                        f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}"
+                    )
+                    return False
+
+                break
+            time.sleep(polling_interval)
+    logger.info(
+        f"Successfully completed execution of {len(query_execution_ids)} queries"
+    )
+
+    return True
+
+def _build_sql_statement(
+        s3_client,
+        bucket_name: str,
+        bucket_folder: str,
+        prefix: str,
+        file_paths: list[str],
+        table_columns: dict[str, str],
+        table_name: str) -> str:
+
+    # Move all the files with _prefix_ into a subfolder called _prefix_
+    subfolder_file_paths = []
+    for obj in file_paths:
+        orig_key = obj["Key"]
+        folder_path = orig_key.split("/")
+        filename = folder_path.pop()
+        if not filename.endswith(".csv") or not filename.startswith(prefix):
+            continue
+
+        # if we have already run this, the files are already moved to subfolder
+        if folder_path[-1] == prefix:
+            subfolder_file_paths.append(f"{"/".join(folder_path)}/{filename}")
+
+        else:
+            # move files to new bucket subfolder
+            dest_key = f"{"/".join(folder_path)}/{prefix}/{filename}"
+            s3_client.copy_object(
+                Bucket=bucket_name,
+                CopySource={'Bucket': bucket_name, 'Key': orig_key},
+                Key=dest_key
+            )
+            s3_client.delete_object(Bucket=bucket_name, Key=orig_key)
+
+            subfolder_file_paths.append(dest_key)
+
+    # reader the header line of each file in _subfolder_file_paths_ and determine the table schema
+    for fp in subfolder_file_paths:
         response = s3_client.get_object(Bucket=bucket_name, Key=fp)
         first_line = response["Body"].readline().decode("utf-8").strip()
         header_fields = first_line.split(",")
@@ -830,47 +924,21 @@ def create_csv_table_from_s3(
             table_columns[field] = datatype.lower()
 
     table_schema = ",\n    ".join(f"`{k}` {v}" for k, v in table_columns.items())
-    sql_statement = f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
+    if bucket_folder:
+        s3_location = f"s3://{bucket_name}/{bucket_folder}/{prefix}"
+    else:
+        s3_location = f"s3://{bucket_name}/{prefix}"
+
+    return f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
     {table_schema}
 )
 ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
 WITH SERDEPROPERTIES ('field.delim' = ',')
 STORED AS INPUTFORMAT 'org.apache.hadoop.mapred.TextInputFormat'
 OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
-LOCATION '{s3_bucket}'
+LOCATION '{s3_location}'
 TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
 """
-
-    logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
-
-    athena_client = boto3.client("athena")
-    query_execution_id = _execute_athena_query(
-        athena_client,
-        sql_statement,
-        s3_output_bucket,
-        catalog=catalog,
-        database=database,
-    )
-
-    # TODO use TaskFuture instead
-    for _ in range(1, max_attempts):
-        response = athena_client.get_query_execution(
-            QueryExecutionId=query_execution_id
-        )
-        status = response["QueryExecution"]["Status"]["State"]
-        if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
-            if status != "SUCCEEDED":
-                logger.error(f"Query {query_execution_id} failed with status: {status}")
-                logger.error(
-                    f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}"
-                )
-                return False
-            break
-        time.sleep(polling_interval)
-
-    logger.info(f"Successfully completed execution of query [{query_execution_id}]")
-
-    return True
 
 def create_iceberg_table_from_table(
         s3_output_bucket: str,
@@ -878,25 +946,13 @@ def create_iceberg_table_from_table(
         csv_table_name: str,
         catalog: str = None,
         database: str = None,
-        with_nodes: bool = True,
-        with_edges: bool = True,
         table_columns: list[str] = None,
         polling_interval=10,
         max_attempts=60,
 ):
-    if not with_nodes and not with_edges:
-        logger.error(f"Nothing to export. Specify either with_edges or with_nodes as True.")
-        return False
-
     select_columns = "*"
     if table_columns:
         select_columns = '"' + '","'.join(table_columns) + '"'
-
-    where_filter = ""
-    if not with_nodes:
-        where_filter = 'WHERE "~from" IS NOT NULL AND "~to" IS NOT NULL'
-    if not with_edges:
-        where_filter = 'WHERE "~id" IS NOT NULL'
 
     sql_statement=f"""
 CREATE TABLE {table_name}
@@ -904,7 +960,7 @@ CREATE TABLE {table_name}
       table_type = 'ICEBERG',
       is_external = false
       )
-AS SELECT {select_columns} FROM {csv_table_name} {where_filter};
+AS SELECT {select_columns} FROM {csv_table_name};
 """
 
     logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
