@@ -25,10 +25,12 @@ import jmespath
 from botocore.client import BaseClient
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from sqlglot import parse_one, exp
 
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
 from .clients.neptune_constants import APP_ID_NX
 from .na_graph import NeptuneGraph
+
 
 __all__ = [
     "import_csv_from_s3",
@@ -40,6 +42,7 @@ __all__ = [
     "export_athena_table_to_s3",
     "create_csv_table_from_s3",
     "create_iceberg_table_from_table",
+    "validate_athena_query",
     "validate_permissions",
     "start_na_instance",
     "stop_na_instance",
@@ -1095,6 +1098,59 @@ def validate_permissions():
     return iam_client.validate_permissions(
         s3_import, kms_key_import, s3_export, kms_key_export
     )
+
+
+class ProjectionType(Enum):
+    """Enum representing the type of graph projection for validating Athena SQL queries.
+
+    Attributes:
+        NODE: Projection type for node queries that require ~id field
+        EDGE: Projection type for edge queries that require ~id, ~from, and ~to fields
+    """
+    NODE = "node"
+    EDGE = "edge"
+
+
+def validate_athena_query(query: str, projection_type: ProjectionType):
+    """Validates that an Athena SQL query contains the required fields for node or edge projections.
+
+    Args:
+        query (str): The SQL query to validate
+        projection_type (ProjectionType): The type of projection (NODE or EDGE) to validate against
+
+    Returns:
+        bool: True if query contains required fields for the projection type, False otherwise
+
+    The function checks that:
+    - For NODE projections: Query must include ~id field
+    - For EDGE projections: Query must include ~id, ~from, and ~to fields
+    - Wildcard (*) selects are allowed but generate a warning
+    - Invalid SQL syntax returns False
+    """
+    try:
+        column_names = {column.alias_or_name for column in parse_one(query).find(exp.Select)}
+    except Exception as e:
+        logger.error(f"Invalid SQL query: {e}")
+        return False
+
+    if '*' in column_names:
+        logger.warning("Cannot validate required fields due to wildcard (*) in SELECT projection")
+        return True
+
+    match projection_type:
+        case ProjectionType.NODE:
+            mandate_fields_node = {"~id"}
+            if not mandate_fields_node.issubset(column_names):
+                logger.warning(f"Missing required fields for node projection. Required fields: {mandate_fields_node}")
+            return mandate_fields_node.issubset(column_names)
+        case ProjectionType.EDGE:
+            mandate_fields_edge = {"~id", "~from", "~to"}
+            if not mandate_fields_edge.issubset(column_names):
+                logger.warning(f"Missing required fields for edge projection. Required fields: {mandate_fields_edge}")
+            return mandate_fields_edge.issubset(column_names)
+        case _:
+            logger.warning(f"Unknown projection type: {projection_type}")
+            return False
 
 
 def _graph_status_check(na_client, graph_id, expected_state):

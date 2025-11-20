@@ -30,6 +30,8 @@ from nx_neptune.instance_management import (
     export_csv_to_s3,
     delete_na_instance,
     _get_create_instance_config,
+    validate_athena_query,
+    ProjectionType,
 )
 
 NX_CREATE_SUCCESS_FIXTURE = """{
@@ -279,6 +281,52 @@ def test_clean_s3_path(s3_path, expected_result):
     result = _clean_s3_path(s3_path)
     assert result == expected_result
 
+
+@pytest.mark.parametrize(
+    "query,projection_type,expected_result",
+    [
+
+        ("some_invalid_SQL_query", ProjectionType.NODE, False),
+        # Python library couldn't infer the runtime DB schema, will print a warning and pass instead.
+        ("select * from test_table", ProjectionType.NODE, True),
+        # Simple query which satisfied all conditions for Node
+        ("select '~id' from test_table", ProjectionType.NODE, True),
+        # Simple query which satisfied all conditions for Edge
+        ("select '~id', '~from', '~to' from test_table", ProjectionType.EDGE, True),
+        # Projection with alias (Node)
+        ("select col_a as '~id' from test_table", ProjectionType.NODE, True),
+        # Projection with alias (Edge)
+        ("select col_a as '~id', col_b as '~from', col_c as '~to' from test_table", ProjectionType.EDGE, True),
+        # Alias with sub-queries (Node)
+        (""" 
+            SELECT DISTINCT "~id", airport_name, 'airline' AS "~label" FROM (
+                SELECT source_airport_id as "~id", source_airport as "airport_name"
+                FROM air_routes_db.air_routes_table
+                WHERE source_airport_id IS NOT NULL
+                UNION ALL
+                SELECT dest_airport_id as "~id", dest_airport as "airport_name"
+                FROM air_routes_db.air_routes_table
+                WHERE dest_airport_id IS NOT NULL );
+        """, ProjectionType.EDGE, True),
+    ],
+)
+def test_validate_athena_query(query, projection_type, expected_result):
+    """Test the validate_athena_query function with various SQL query scenarios.
+
+    Args:
+        query (str): The SQL query to validate
+        projection_type (ProjectionType): The type of projection (NODE or EDGE)
+        expected_result (bool): The expected validation result
+
+    Tests validation of:
+    - Invalid SQL queries
+    - Simple SELECT queries
+    - Queries with required node/edge columns
+    - Queries with column aliases
+    - Complex queries with subqueries
+    """
+    result = validate_athena_query(query, projection_type)
+    assert result == expected_result
 
 @pytest.mark.parametrize(
     "mock_response,expected_result",
