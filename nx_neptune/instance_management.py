@@ -1042,6 +1042,8 @@ def validate_permissions():
     return iam_client.validate_permissions(
         s3_import, kms_key_import, s3_export, kms_key_export
     )
+
+
 class ProjectionType(Enum):
     """Enum representing the type of graph projection for validating Athena SQL queries.
 
@@ -1049,8 +1051,9 @@ class ProjectionType(Enum):
         NODE: Projection type for node queries that require ~id field
         EDGE: Projection type for edge queries that require ~id, ~from, and ~to fields
     """
-    NODE = "nodes"
-    EDGE = "edges"
+    NODE = "node"
+    EDGE = "edge"
+
 
 def validate_athena_query(query: str, projection_type: ProjectionType):
     """Validates that an Athena SQL query contains the required fields for node or edge projections.
@@ -1092,6 +1095,7 @@ def validate_athena_query(query: str, projection_type: ProjectionType):
         case _:
             logger.warning(f"Unknown projection type: {projection_type}")
             return False
+
 
 def _graph_status_check(na_client, graph_id, expected_state):
     """Check if a Neptune Analytics graph is in the expected state.
