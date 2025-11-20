@@ -40,6 +40,7 @@ __all__ = [
     "export_athena_table_to_s3",
     "create_csv_table_from_s3",
     "create_iceberg_table_from_table",
+    "validate_athena_query",
     "validate_permissions",
     "start_na_instance",
     "stop_na_instance",
@@ -1039,6 +1040,16 @@ def validate_permissions():
     return iam_client.validate_permissions(
         s3_import, kms_key_import, s3_export, kms_key_export
     )
+
+def validate_athena_query(query: str, validation_mode: str, warning_only: bool):
+    # Extract projection from query
+    # Print out warning if select * and exit early
+    # Validation mode with enum: (Node and Edge)
+    # Examine the project (alias and column) to make sure all fields are present
+
+
+
+    pass
 
 
 def _graph_status_check(na_client, graph_id, expected_state):

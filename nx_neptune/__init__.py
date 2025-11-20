@@ -36,6 +36,7 @@ from .instance_management import (
     start_na_instance,
     stop_na_instance,
     validate_permissions,
+    validate_athena_query
 )
 from .interface import BackendInterface
 from .na_graph import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN, NeptuneGraph
@@ -72,6 +73,7 @@ __all__ = [
     "create_na_instance",
     "export_athena_table_to_s3",
     "create_table_from_s3",
+    "validate_athena_query",
     "validate_permissions",
     "start_na_instance",
     "stop_na_instance",
