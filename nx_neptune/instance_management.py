@@ -1219,3 +1219,60 @@ def _invalid_status_code(status_code, response):
         )
     )
     return asyncio.wrap_future(fut)
+
+
+def create_graph_snapshot(graph_id: str, snapshot_name: str = None):
+    """Create a snapshot of a Neptune Analytics graph.
+    
+    Args:
+        graph_id (str): The ID of the graph to snapshot
+        snapshot_name (str, optional): Name for the snapshot
+    """
+    na_client = boto3.client(SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX))
+    
+    kwargs = {"sourceGraphId": graph_id}
+    if snapshot_name:
+        kwargs["snapshotName"] = snapshot_name
+    
+    return na_client.create_graph_snapshot(**kwargs)
+
+
+def delete_graph_snapshot(snapshot_id: str):
+    """Delete a Neptune Analytics graph snapshot.
+    
+    Args:
+        snapshot_id (str): The ID of the snapshot to delete
+    """
+    na_client = boto3.client(SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX))
+    return na_client.delete_graph_snapshot(snapshotIdentifier=snapshot_id)
+
+
+def list_graph_snapshots(graph_id: str = None):
+    """List Neptune Analytics graph snapshots.
+    
+    Args:
+        graph_id (str, optional): Filter snapshots by graph ID
+    """
+    na_client = boto3.client(SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX))
+    
+    kwargs = {}
+    if graph_id:
+        kwargs["graphIdentifier"] = graph_id
+    
+    return na_client.list_graph_snapshots(**kwargs)
+
+
+def restore_graph_from_snapshot(snapshot_id: str, graph_name: str = None):
+    """Restore a Neptune Analytics graph from a snapshot.
+    
+    Args:
+        snapshot_id (str): The ID of the snapshot to restore from
+        graph_name (str, optional): Name for the restored graph
+    """
+    na_client = boto3.client(SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX))
+    
+    kwargs = {"snapshotIdentifier": snapshot_id}
+    if graph_name:
+        kwargs["graphName"] = graph_name
+    
+    return na_client.restore_graph_from_snapshot(**kwargs)
