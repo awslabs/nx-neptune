@@ -27,9 +27,11 @@ from .algorithms.traversal.bfs import bfs_edges, bfs_layers, descendants_at_dist
 from .clients import Edge, Node
 from .instance_management import (
     TaskFuture,
+    create_na_instance,
+    create_na_instance_from_snapshot,
+    create_graph_snapshot,
     create_csv_table_from_s3,
     create_iceberg_table_from_table,
-    create_na_instance,
     create_na_instance_with_s3_import,
     export_athena_table_to_s3,
     export_csv_to_s3,
@@ -78,6 +80,8 @@ __all__ = [
     "validate_permissions",
     "start_na_instance",
     "create_na_instance_with_s3_import",
+    "create_na_instance_from_snapshot",
     "stop_na_instance",
+    "create_graph_snapshot",
     "TaskFuture",
 ]

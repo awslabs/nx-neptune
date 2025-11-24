@@ -25,7 +25,7 @@ import jmespath
 from botocore.client import BaseClient
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from sqlglot import exp, parse_one
+from sqlglot import parse_one, exp
 
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
 from .clients.neptune_constants import APP_ID_NX
@@ -45,7 +45,9 @@ __all__ = [
     "validate_athena_query",
     "validate_permissions",
     "start_na_instance",
+    "create_na_instance_from_snapshot",
     "stop_na_instance",
+    "create_graph_snapshot",
 ]
 
 logger = logging.getLogger(__name__)
@@ -67,6 +69,7 @@ class TaskType(Enum):
     NOOP = (5, ["INI"], "AVAILABLE")
     START = (6, ["INI", "STARTING"], "AVAILABLE")
     STOP = (7, ["INI", "STOPPING"], "STOPPED")
+    EXPORT_SNAPSHOT = (8, ["INI", "SNAPSHOTTING"], "AVAILABLE")
 
     def __init__(self, num_value, permitted_statuses, status_complete):
         self._value_ = num_value
@@ -380,6 +383,45 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
             f"Neptune instance creation failure with import task ID: {task_id}"
         )
 
+def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = None):
+    """
+    Creates a new graph instance for Neptune Analytics.
+
+    Args:
+        config (Optional[dict]): Optional dictionary of custom configuration parameters
+            to use when creating the Neptune Analytics instance. If not provided,
+            default settings will be applied.
+            All options listed under boto3 documentations are supported.
+
+            Reference:
+            https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph.html
+
+    Raises:
+        Exception: If the Neptune Analytics instance creation fails
+    """
+    na_client = boto3.client(
+        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+    )
+
+    # Permissions check
+    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
+    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+    iam_client.has_create_na_permissions()
+
+    response = _create_na_instance_from_snapshot_task(na_client, snapshot_id, config)
+    prospective_graph_id = _get_graph_id(response)
+
+    if _get_status_code(response) == 201:
+        fut = TaskFuture(prospective_graph_id, TaskType.CREATE, _ASYNC_POLLING_INTERVAL)
+        asyncio.create_task(
+            _wait_until_task_complete(na_client, fut), name=prospective_graph_id
+        )
+        return asyncio.wrap_future(fut)
+    else:
+        raise Exception(
+            f"Neptune instance creation failure with graph name {prospective_graph_id}"
+        )
+
 
 def start_na_instance(graph_id: str):
     """
@@ -464,6 +506,24 @@ def delete_na_instance(graph_id: str):
     status_code = _get_status_code(response)
     if status_code == 200:
         fut = TaskFuture(graph_id, TaskType.DELETE, _ASYNC_POLLING_INTERVAL)
+        asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
+        return asyncio.wrap_future(fut)
+    else:
+        fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
+        fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
+        return asyncio.wrap_future(fut)
+
+def create_graph_snapshot(graph_id: str, snapshot_name: str, tag: Optional[dict] = None):
+
+    kwargs = {"graphIdentifier": graph_id, "snapshotName": snapshot_name}
+    if tag:
+        kwargs["tags"] = tag
+    na_client = boto3.client("neptune-graph")
+    response = na_client.create_graph_snapshot(**kwargs)
+
+    status_code = _get_status_code(response)
+    if status_code == 201:
+        fut = TaskFuture(graph_id, TaskType.EXPORT_SNAPSHOT, _ASYNC_POLLING_INTERVAL)
         asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
         return asyncio.wrap_future(fut)
     else:
@@ -568,6 +628,28 @@ def _create_na_instance_task(client, config: Optional[dict] = None):
     graph_name = _create_random_graph_name()
     kwargs = _get_create_instance_config(graph_name, config)
     response = client.create_graph(**kwargs)
+    return response
+
+def _create_na_instance_from_snapshot_task(client, snapshotIdentifier: str, config: Optional[dict] = None):
+    """Create a new Neptune Analytics graph instance with default settings.
+
+    This function generates a unique name for the graph using a UUID suffix and
+    creates a new Neptune Analytics graph instance with public connectivity.
+
+    Args:
+        client (boto3.client): The Neptune Analytics boto3 client
+
+    Returns:
+        dict: The API response containing information about the created graph
+
+    Raises:
+        ClientError: If there's an issue with the AWS API call
+    """
+
+    graph_name = _create_random_graph_name()
+    kwargs = _get_create_instance_config(graph_name, config)
+    kwargs["snapshotIdentifier"] = snapshotIdentifier
+    response = client.restore_graph_from_snapshot(**kwargs)
     return response
 
 
