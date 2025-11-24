@@ -130,6 +130,7 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
                 TaskType.DELETE: lambda: delete_status_check_wrapper(client, task_id),
                 TaskType.START: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.STOP: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
+                TaskType.EXPORT_SNAPSHOT: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
             }
 
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -437,7 +438,9 @@ def start_na_instance(graph_id: str):
         Exception: If the Neptune Analytics instance creation fails
     """
     # Instance deletion
-    na_client = boto3.client("neptune-graph")
+    na_client = boto3.client(
+        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+    )
 
     if status_exception := _graph_status_check(na_client, graph_id, "STOPPED"):
         return status_exception
@@ -466,7 +469,9 @@ def stop_na_instance(graph_id: str):
         Exception: If the Neptune Analytics instance creation fails
     """
     # Instance deletion
-    na_client = boto3.client("neptune-graph")
+    na_client = boto3.client(
+        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+    )
 
     if status_exception := _graph_status_check(na_client, graph_id, "AVAILABLE"):
         return status_exception
@@ -500,7 +505,9 @@ def delete_na_instance(graph_id: str):
     iam_client.has_delete_na_permissions()
 
     # Instance deletion
-    na_client = boto3.client("neptune-graph")
+    na_client = boto3.client(
+        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+    )
     response = _delete_na_instance_task(na_client, graph_id)
 
     status_code = _get_status_code(response)
@@ -518,7 +525,9 @@ def create_graph_snapshot(graph_id: str, snapshot_name: str, tag: Optional[dict]
     kwargs = {"graphIdentifier": graph_id, "snapshotName": snapshot_name}
     if tag:
         kwargs["tags"] = tag
-    na_client = boto3.client("neptune-graph")
+    na_client = boto3.client(
+        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+    )
     response = na_client.create_graph_snapshot(**kwargs)
 
     status_code = _get_status_code(response)
