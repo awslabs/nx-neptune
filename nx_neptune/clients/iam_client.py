@@ -131,7 +131,7 @@ class IamClient:
             # Validate ARN formats
             if resource_arn != "*":
                 self._validate_arns([self.role_arn, resource_arn])
-            self.logger.info(
+            self.logger.debug(
                 f"Perform role permission check with: \n"
                 f" Role [{self.role_arn}], \n"
                 f" Permission: [{permissions}]\n"
@@ -201,7 +201,7 @@ class IamClient:
         Note:
             If key_arn is provided, both S3 and KMS permissions are checked and the results are merged.
         """
-        self.logger.info(
+        self.logger.debug(
             f"Permission check on ARN(s): {self.role_arn}, {bucket_arn}, {key_arn}"
         )
 

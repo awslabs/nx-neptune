@@ -39,7 +39,7 @@ from .instance_management import (
     validate_athena_query
 )
 from .interface import BackendInterface
-from .na_graph import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN, NeptuneGraph
+from .na_graph import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN, NeptuneGraph, set_config_graph_id
 from .session_manager import SessionManager
 from .utils.decorators import configure_if_nx_active
 
@@ -65,6 +65,7 @@ __all__ = [
     "Node",
     "Edge",
     "NeptuneGraph",
+    "set_config_graph_id",
     # decorators
     "configure_if_nx_active",
     "BackendInterface",
@@ -73,7 +74,8 @@ __all__ = [
     "export_csv_to_s3",
     "create_na_instance",
     "export_athena_table_to_s3",
-    "create_table_from_s3",
+    "create_csv_table_from_s3",
+    "create_iceberg_table_from_table",
     "validate_athena_query",
     "validate_permissions",
     "start_na_instance",

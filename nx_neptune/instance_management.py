@@ -180,7 +180,7 @@ def import_csv_from_s3(
     iam_client = na_graph.iam_client
     role_arn = iam_client.role_arn
 
-    # Retrieve key_arn for the bucket and permission check if present
+    # Retrieve key_arn for the bucket and permission checks if present
     key_arn = _get_bucket_encryption_key_arn(s3_arn)
 
     # Run permission check
@@ -492,7 +492,7 @@ def _start_import_task(
         ClientError: If there's an issue with the AWS API call
     """
     logger.debug(
-        f"Import S3 graph data [{s3_location}] into Graph [{graph_id}], under IAM role [{role_arn}]"
+        f"Import S3 graph data [{s3_location}] into Graph [{graph_id}]"
     )
     try:
         response = client.start_import_task(  # type: ignore[attr-defined]
@@ -529,7 +529,7 @@ def _start_export_task(
         str or None: The export task ID if successful, None otherwise
     """
     logger.debug(
-        f"Export S3 Graph [{graph_id}] data to S3 [{s3_destination}], under IAM role [{role_arn}]"
+        f"Export S3 Graph [{graph_id}] data to S3 [{s3_destination}]"
     )
     try:
         response = client.start_export_task(  # type: ignore[attr-defined]
@@ -1094,9 +1094,11 @@ def _execute_athena_query(
             query_execution_context["Database"] = database
         query_execution_params["QueryExecutionContext"] = query_execution_context
 
+    logger.info(f"Creating table using statement:{sql_statement}")
+
     try:
         response = client.start_query_execution(**query_execution_params)
-        logger.info(f"Creating table: {response['QueryExecutionId']}")
+        logger.info(f"Executing query: {response['QueryExecutionId']}")
         query_execution_id = response["QueryExecutionId"]
     except ClientError as e:
         logger.error(f"Error creating table: {e}")

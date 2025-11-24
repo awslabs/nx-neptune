@@ -42,7 +42,8 @@ logger = get_stdout_logger(__name__, [
     'nx_neptune.utils.decorators',
     'nx_neptune.interface',
     'nx_neptune.na_graph',
-    'nx_neptune.clients.instance_management', __name__])
+    __name__
+])
 
 """
 This data comes from kaggle.com:
@@ -53,11 +54,11 @@ SELECT DISTINCT "~id", 'customer' AS "~label"
 FROM (
     SELECT "nameOrig" as "~id"
     FROM transactions
-    WHERE "nameOrig" IS NOT NULL AND "step"=1
+    WHERE "nameOrig" IS NOT NULL
     UNION ALL
     SELECT "nameDest" as "~id"
     FROM transactions
-    WHERE "nameDest" IS NOT NULL AND "step"=1
+    WHERE "nameDest" IS NOT NULL
 );
 """
 
@@ -74,11 +75,11 @@ SELECT
     "newbalanceDest" AS "newbalanceDest:Float", 
     "isFraud" AS "isFraud:Int"
 FROM transactions
-WHERE "nameOrig" IS NOT NULL AND "nameDest" IS NOT NULL AND "step"=1
+WHERE "nameOrig" IS NOT NULL AND "nameDest" IS NOT NULL
 """
 
 CREATE_NEW_BANK_TRANSACTIONS_TABLE = """
-CREATE EXTERNAL TABLE IF NOT EXISTS bank_fraud.new_transactions (
+CREATE EXTERNAL TABLE IF NOT EXISTS bank_fraud_full.transactions (
     `~id` string,
     `~from` string,
     `~to` string,
@@ -116,7 +117,7 @@ async def do_import_from_table():
         sql_queries,
         s3_location_import,
         catalog='s3tablescatalog/nx-fraud-detection-data',
-        database='bank_transactions',
+        database='bank_fraud_full',
     )
 
 async def do_import_from_s3():
@@ -144,8 +145,8 @@ async def do_export_to_csv_table():
     s3_sql_output = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
     s3_export_location = f"{os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')}/{task_id}"
     catalog = 'AwsDataCatalog'
-    database = 'bank_fraud'
-    csv_table_name = 'transactions_csv_tmp'
+    database = 'bank_fraud_full'
+    csv_table_name = 'transactions_csv'
 
     # Create table - blocking
     create_csv_table_from_s3(s3_export_location, s3_sql_output, csv_table_name, catalog=catalog, database=database)
@@ -154,24 +155,34 @@ async def do_export_to_iceberg_table():
 
     s3_sql_output = os.getenv('NETWORKX_S3_EXPORT_BUCKET_PATH')
     catalog = 's3tablescatalog/nx-fraud-detection-data'
-    database = 'bank'
+    database = 'bank_fraud_full'
+
     iceberg_table_name = 'transactions_updated'
-    csv_table_name = 'AwsDataCatalog.bank_fraud.transactions_csv_tmp_edges'
+    csv_table_name = 'AwsDataCatalog.bank_fraud_full.transactions_csv_edges'
     create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, catalog=catalog, database=database)
 
     iceberg_table_name = 'customers_updated'
-    csv_table_name = 'AwsDataCatalog.bank_fraud.transactions_csv_tmp_vertices'
+    csv_table_name = 'AwsDataCatalog.bank_fraud_full.transactions_csv_vertices'
     create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, catalog=catalog, database=database)
 
 async def do_execute_opencypher():
     nx.config.backends.neptune.graph_id = os.getenv('NETWORKX_GRAPH_ID')
     nx.config.backends.neptune.skip_graph_reset = True
-    # result = nx.community.louvain_communities(nx.Graph(), backend="neptune")
-    result = nx.community.louvain_communities(nx.Graph(), backend="neptune", write_property="community")
+
+    result = nx.community.louvain_communities(nx.Graph(), backend="neptune")
     print(f"louvain result: \n{result}")
     for community in result:
         if len(community) > 30:
             print(f"possible fraud (size:{len(community)})? {community}")
+
+    result = nx.pagerank(
+        nx.Graph(),
+        edge_weight_property="amount",
+        edge_weight_type="double",
+        write_property="amount_rank",
+        backend="neptune"
+    )
+    print(f"pagerank result: \n{result}")
 
 def do_execute_dump_graph():
     na_graph = NeptuneGraph.from_config()
@@ -182,11 +193,11 @@ def do_execute_dump_graph():
     print(f"all edges: {all_edges}")
 
 if __name__ == "__main__":
-    # asyncio.run(do_import_from_table())
-    # asyncio.run(do_import_from_s3())
-    # asyncio.run(do_export_to_s3())
-    # asyncio.run(do_export_to_csv_table())
-    # asyncio.run(do_export_to_iceberg_table())
+    asyncio.run(do_import_from_table())
+    asyncio.run(do_import_from_s3())
+    asyncio.run(do_export_to_s3())
+    asyncio.run(do_export_to_csv_table())
+    asyncio.run(do_export_to_iceberg_table())
     asyncio.run(do_execute_opencypher())
-    # do_execute_dump_graph()
+    do_execute_dump_graph()
 
