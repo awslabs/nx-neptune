@@ -38,6 +38,8 @@ __all__ = [
     "TaskType",
     "create_na_instance",
     "create_na_instance_with_s3_import",
+    "create_na_instance_from_snapshot",
+    "create_graph_snapshot",
     "delete_na_instance",
     "export_athena_table_to_s3",
     "create_csv_table_from_s3",
@@ -45,9 +47,7 @@ __all__ = [
     "validate_athena_query",
     "validate_permissions",
     "start_na_instance",
-    "create_na_instance_from_snapshot",
     "stop_na_instance",
-    "create_graph_snapshot",
 ]
 
 logger = logging.getLogger(__name__)
@@ -396,7 +396,7 @@ def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = 
             All options listed under boto3 documentations are supported.
 
             Reference:
-            https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph_snapshot.html
+            https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/restore_graph_from_snapshot.html
 
     Returns:
         asyncio.Future: A Future that resolves when the graph creation completes

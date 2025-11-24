@@ -74,6 +74,8 @@ __all__ = [
     "import_csv_from_s3",
     "export_csv_to_s3",
     "create_na_instance",
+    "create_na_instance_from_snapshot",
+    "create_graph_snapshot",
     "export_athena_table_to_s3",
     "create_table_from_s3",
     "validate_athena_query",
@@ -82,6 +84,5 @@ __all__ = [
     "create_na_instance_with_s3_import",
     "create_na_instance_from_snapshot",
     "stop_na_instance",
-    "create_graph_snapshot",
     "TaskFuture",
 ]
