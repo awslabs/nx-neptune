@@ -537,6 +537,10 @@ def create_graph_snapshot(graph_id: str, snapshot_name: str, tag: Optional[dict]
     Raises:
         Exception: If the snapshot creation fails with an invalid status code
     """
+    # Permission check
+    user_arn = boto3.client("sts").get_caller_identity()["Arn"]
+    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+    iam_client.has_create_na_from_snapshot_permissions()
 
     kwargs = {"graphIdentifier": graph_id, "snapshotName": snapshot_name}
     if tag:
@@ -555,6 +559,7 @@ def create_graph_snapshot(graph_id: str, snapshot_name: str, tag: Optional[dict]
         fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
         fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
         return asyncio.wrap_future(fut)
+
 def _get_create_instance_config(graph_name, config=None):
     """
     Build and sanitize the configuration dictionary for creating a graph instance.
@@ -653,7 +658,7 @@ def _create_na_instance_task(client, config: Optional[dict] = None):
     response = client.create_graph(**kwargs)
     return response
 
-def _create_na_instance_from_snapshot_task(client, snapshotIdentifier: str, config: Optional[dict] = None):
+def _create_na_instance_from_snapshot_task(client, snapshot_identifier: str, config: Optional[dict] = None):
     """Create a new Neptune Analytics graph instance with default settings.
 
     This function generates a unique name for the graph using a UUID suffix and
@@ -671,7 +676,7 @@ def _create_na_instance_from_snapshot_task(client, snapshotIdentifier: str, conf
 
     graph_name = _create_random_graph_name()
     kwargs = _get_create_instance_config(graph_name, config)
-    kwargs["snapshotIdentifier"] = snapshotIdentifier
+    kwargs["snapshotIdentifier"] = snapshot_identifier
     response = client.restore_graph_from_snapshot(**kwargs)
     return response
 

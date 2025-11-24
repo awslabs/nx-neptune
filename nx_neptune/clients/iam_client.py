@@ -254,6 +254,29 @@ class IamClient:
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)
 
+
+    def has_create_na_from_snapshot_permissions(self):
+        """Check if the configured IAM role has permissions to create a Neptune Analytics instance from a snapshot.
+
+        Verifies that the role has the necessary permissions required to restore a Neptune Analytics
+        instance from an existing snapshot, including tagging resources and restoring from snapshot.
+
+        Raises:
+            ValueError: If the role lacks required permissions for snapshot restore operations
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:TagResource
+            - neptune-graph:RestoreGraphFromSnapshot
+        """
+        na_permissions = ["neptune-graph:TagResource", "neptune-graph:RestoreGraphFromSnapshot"]
+        operation_name = "Create Neptune Instance From Snapshot"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
+
     def has_delete_na_permissions(self):
         """Check if the configured IAM role has permissions to delete Neptune Analytics instance.
 
@@ -434,6 +457,21 @@ class IamClient:
                     ]
                 },
             ],
+            "create_graph_snapshot": [
+                {"permissions": [
+                        "neptune-graph:TagResource",
+                        "neptune-graph:CreateGraphSnapshot",
+                    ]
+                },
+            ],
+            "create_na_instance_from_snapshot": [
+                {"permissions": [
+                        "neptune-graph:TagResource",
+                        "neptune-graph:RestoreGraphFromSnapshot",
+                    ]
+                },
+            ],
+
         }
 
         for op, permission_pairs in checks.items():
