@@ -540,7 +540,7 @@ def create_graph_snapshot(graph_id: str, snapshot_name: str, tag: Optional[dict]
     # Permission check
     user_arn = boto3.client("sts").get_caller_identity()["Arn"]
     iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
-    iam_client.has_create_na_from_snapshot_permissions()
+    iam_client.has_create_na_snapshot_permissions()
 
     kwargs = {"graphIdentifier": graph_id, "snapshotName": snapshot_name}
     if tag:
@@ -673,6 +673,10 @@ def _create_na_instance_from_snapshot_task(client, snapshot_identifier: str, con
     Raises:
         ClientError: If there's an issue with the AWS API call
     """
+    # Permission check
+    user_arn = boto3.client("sts").get_caller_identity()["Arn"]
+    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+    iam_client.has_create_na_from_snapshot_permissions()
 
     graph_name = _create_random_graph_name()
     kwargs = _get_create_instance_config(graph_name, config)
