@@ -386,16 +386,20 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
 
 def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = None):
     """
-    Creates a new graph instance for Neptune Analytics.
+    Creates a new Neptune Analytics graph instance from an existing snapshot.
 
     Args:
+        snapshot_id (str): The ID of the snapshot to restore from
         config (Optional[dict]): Optional dictionary of custom configuration parameters
             to use when creating the Neptune Analytics instance. If not provided,
             default settings will be applied.
             All options listed under boto3 documentations are supported.
 
             Reference:
-            https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph.html
+            https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph_snapshot.html
+
+    Returns:
+        asyncio.Future: A Future that resolves when the graph creation completes
 
     Raises:
         Exception: If the Neptune Analytics instance creation fails
@@ -422,7 +426,6 @@ def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = 
         raise Exception(
             f"Neptune instance creation failure with graph name {prospective_graph_id}"
         )
-
 
 def start_na_instance(graph_id: str):
     """
@@ -521,6 +524,19 @@ def delete_na_instance(graph_id: str):
         return asyncio.wrap_future(fut)
 
 def create_graph_snapshot(graph_id: str, snapshot_name: str, tag: Optional[dict] = None):
+    """Create a snapshot of a Neptune Analytics graph.
+
+    Args:
+        graph_id (str): The ID of the Neptune Analytics graph to snapshot
+        snapshot_name (str): Name to assign to the snapshot
+        tag (Optional[dict]): Optional tags to apply to the snapshot
+
+    Returns:
+        asyncio.Future: A Future that resolves when the snapshot completes
+
+    Raises:
+        Exception: If the snapshot creation fails with an invalid status code
+    """
 
     kwargs = {"graphIdentifier": graph_id, "snapshotName": snapshot_name}
     if tag:
@@ -539,8 +555,6 @@ def create_graph_snapshot(graph_id: str, snapshot_name: str, tag: Optional[dict]
         fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
         fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
         return asyncio.wrap_future(fut)
-
-
 def _get_create_instance_config(graph_name, config=None):
     """
     Build and sanitize the configuration dictionary for creating a graph instance.
