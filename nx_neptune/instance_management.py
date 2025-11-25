@@ -573,9 +573,8 @@ def create_graph_snapshot(graph_id: str, snapshot_name: str, tag: Optional[dict]
     if status_code == 201:
         return _get_status_check_future(na_client, TaskType.EXPORT_SNAPSHOT, graph_id)
     else:
-        fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
-        fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
-        return asyncio.wrap_future(fut)
+        return _invalid_status_code(status_code, response)
+
 
 def _get_create_instance_config(graph_name, config=None):
     """
