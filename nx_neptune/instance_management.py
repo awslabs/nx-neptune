@@ -414,7 +414,7 @@ def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = 
     # Permissions check
     user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
     iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
-    iam_client.has_create_na_permissions()
+    iam_client.has_create_na_from_snapshot_permissions()
 
     response = _create_na_instance_from_snapshot_task(na_client, snapshot_id, config)
     prospective_graph_id = _get_graph_id(response)
@@ -471,21 +471,6 @@ def delete_graph_snapshot(snapshot_id: str):
             f"Neptune snapshot deletion failed with snapshot id: {snapshot_id}"
         )
 
-
-
-    # response = _create_na_instance_from_snapshot_task(na_client, snapshot_id, config)
-    # prospective_graph_id = _get_graph_id(response)
-    #
-    # if _get_status_code(response) == 201:
-    #     fut = TaskFuture(prospective_graph_id, TaskType.CREATE, _ASYNC_POLLING_INTERVAL)
-    #     asyncio.create_task(
-    #         _wait_until_task_complete(na_client, fut), name=prospective_graph_id
-    #     )
-    #     return asyncio.wrap_future(fut)
-    # else:
-    #     raise Exception(
-    #         f"Neptune instance creation failure with graph name {prospective_graph_id}"
-    #     )
 
 
 def start_na_instance(graph_id: str):
@@ -735,10 +720,6 @@ def _create_na_instance_from_snapshot_task(client, snapshot_identifier: str, con
         ClientError: If there's an issue with the AWS API call
     """
     # Permission check
-    user_arn = boto3.client("sts").get_caller_identity()["Arn"]
-    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
-    iam_client.has_create_na_from_snapshot_permissions()
-
     graph_name = _create_random_graph_name()
     kwargs = _get_create_instance_config(graph_name, config)
     kwargs["snapshotIdentifier"] = snapshot_identifier

@@ -514,6 +514,12 @@ class IamClient:
                     ]
                 },
             ],
+            "delete_graph_snapshot": [
+                {"permissions": [
+                    "neptune-graph:DeleteGraphSnapshot",
+                ]
+                },
+            ],
 
         }
 
