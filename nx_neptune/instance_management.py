@@ -48,6 +48,7 @@ __all__ = [
     "validate_permissions",
     "start_na_instance",
     "stop_na_instance",
+    "delete_graph_snapshot",
 ]
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ class TaskType(Enum):
     START = (6, ["INI", "STARTING"], "AVAILABLE")
     STOP = (7, ["INI", "STOPPING"], "STOPPED")
     EXPORT_SNAPSHOT = (8, ["INI", "SNAPSHOTTING"], "AVAILABLE")
+    DELETE_SNAPSHOT = (9, ["INI", "DELETING"], "DELETED")
 
     def __init__(self, num_value, permitted_statuses, status_complete):
         self._value_ = num_value
@@ -131,6 +133,7 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
                 TaskType.START: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.STOP: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.EXPORT_SNAPSHOT: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
+                TaskType.DELETE_SNAPSHOT: lambda: delete_snapshot_status_check_wrapper(client, task_id),
             }
 
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -426,6 +429,64 @@ def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = 
         raise Exception(
             f"Neptune instance creation failure with graph name {prospective_graph_id}"
         )
+
+def delete_graph_snapshot(snapshot_id: str):
+    """
+    Creates a new Neptune Analytics graph instance from an existing snapshot.
+
+    Args:
+        snapshot_id (str): The ID of the snapshot to restore from
+        config (Optional[dict]): Optional dictionary of custom configuration parameters
+            to use when creating the Neptune Analytics instance. If not provided,
+            default settings will be applied.
+            All options listed under boto3 documentations are supported.
+
+            Reference:
+            https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/restore_graph_from_snapshot.html
+
+    Returns:
+        asyncio.Future: A Future that resolves when the graph creation completes
+
+    Raises:
+        Exception: If the Neptune Analytics instance creation fails
+    """
+    # Permissions check
+    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
+    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+    iam_client.has_delete_snapshot_permissions()
+
+    na_client = boto3.client(
+        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+    )
+    response = na_client.delete_graph_snapshot(snapshotIdentifier=snapshot_id)
+
+    if _get_status_code(response) == 200:
+        fut = TaskFuture(snapshot_id, TaskType.DELETE_SNAPSHOT, _ASYNC_POLLING_INTERVAL)
+        asyncio.create_task(
+            _wait_until_task_complete(na_client, fut), name=snapshot_id
+        )
+        return asyncio.wrap_future(fut)
+    else:
+        raise Exception(
+            f"Neptune snapshot deletion failed with snapshot id: {snapshot_id}"
+        )
+
+
+
+    # response = _create_na_instance_from_snapshot_task(na_client, snapshot_id, config)
+    # prospective_graph_id = _get_graph_id(response)
+    #
+    # if _get_status_code(response) == 201:
+    #     fut = TaskFuture(prospective_graph_id, TaskType.CREATE, _ASYNC_POLLING_INTERVAL)
+    #     asyncio.create_task(
+    #         _wait_until_task_complete(na_client, fut), name=prospective_graph_id
+    #     )
+    #     return asyncio.wrap_future(fut)
+    # else:
+    #     raise Exception(
+    #         f"Neptune instance creation failure with graph name {prospective_graph_id}"
+    #     )
+
 
 def start_na_instance(graph_id: str):
     """
@@ -957,6 +1018,27 @@ def delete_status_check_wrapper(client, graph_id):
         else:
             raise e
 
+def delete_snapshot_status_check_wrapper(client, snapshot_id: str):
+    """
+    Wrapper method to suppress error when snapshot_id not found,
+    as this is an indicator of successful deletion.
+
+    Args:
+        client (client): The boto client
+        snapshot_id (str): The String identifier for the Neptune Analytics snapshot
+
+    Returns:
+        str: The original response from Boto or a mocked response to represent
+        successful deletion, in the case of resource not found.
+    """
+    try:
+        return client.get_graph_snapshot(snapshotIdentifier=snapshot_id)
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code == "ResourceNotFoundException":
+            return {"status": "DELETED"}
+        else:
+            raise e
 
 # TODO: provide an alternative to sql_queries - instead take a JSON import to map types
 def export_athena_table_to_s3(

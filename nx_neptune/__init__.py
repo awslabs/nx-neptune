@@ -40,6 +40,7 @@ from .instance_management import (
     stop_na_instance,
     validate_athena_query,
     validate_permissions,
+    delete_graph_snapshot
 )
 from .interface import BackendInterface
 from .na_graph import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN, NeptuneGraph
@@ -85,4 +86,5 @@ __all__ = [
     "create_na_instance_from_snapshot",
     "stop_na_instance",
     "TaskFuture",
+    "delete_graph_snapshot",
 ]

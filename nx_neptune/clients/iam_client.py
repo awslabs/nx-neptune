@@ -254,6 +254,27 @@ class IamClient:
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)
 
+    def has_delete_snapshot_permissions(self):
+        """Check if the configured IAM role has permissions to delete a Neptune Analytics snapshot.
+
+        Verifies that the role has the necessary permissions required to delete a snapshot
+        of a Neptune Analytics instance.
+
+        Raises:
+            ValueError: If the role lacks required permissions for snapshot deletion operations
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:DeleteGraphSnapshot
+        """
+        na_permissions = ["neptune-graph:DeleteGraphSnapshot"]
+        operation_name = "Delete Neptune Snapshot"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
+
 
     def has_create_na_from_snapshot_permissions(self):
         """Check if the configured IAM role has permissions to create a Neptune Analytics instance from a snapshot.
