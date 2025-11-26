@@ -293,17 +293,14 @@ def create_na_instance(config: Optional[dict] = None):
         raise Exception(
             f"Neptune instance creation failure with graph name {prospective_graph_id}"
         )
-
-
-def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None):
+def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None, iam_client: Optional[IamClient] = None, na_client: Optional[BaseClient] = None) -> asyncio.Future:
     """Creates a new Neptune Analytics graph instance and imports data from S3.
 
     This function creates a new Neptune Analytics graph instance and immediately starts
     importing data from the specified S3 location. It handles the complete workflow:
     1. Validates required permissions
-    2. Creates a new graph instance
-    3. Starts the import task
-    4. Returns a Future that can be awaited for completion
+    2. Creates a new graph instance and trigger the import task
+    3. Returns a Future that can be awaited for completion
 
     Args:
         s3_arn (str): The S3 location containing CSV data (e.g., 's3://bucket-name/prefix/')
@@ -314,27 +311,35 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
 
             Reference:
             https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph_using_import_task.html
+        iam_client (Optional[IamClient]): Optional IamClient instance. If not provided,
+            a new one will be created using the current user's credentials.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
+            a new one will be created.
 
     Returns:
-        asyncio.Future: A Future that resolves when the import completes and instance is available for computation work.
+        asyncio.Task: A Task that resolves with the graph_id when the import completes and instance is available for computation work.
 
     Raises:
         Exception: If the Neptune Analytics instance creation or import task fails
         ValueError: If the role lacks required permissions
     """
 
-    # Permissions check
-    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
-    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+    # Create IAM client if not provided
+    if iam_client is None:
+        user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
+        iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+
+    # Create Neptune Analytics client if not provided
+    if na_client is None:
+        na_client = boto3.client(
+            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+        )
+
     # Retrieve key_arn for the bucket and permission check if present
     key_arn = _get_bucket_encryption_key_arn(s3_arn)
     # Permission checks
     iam_client.has_create_na_permissions()
     iam_client.has_import_from_s3_permissions(s3_arn, key_arn)
-
-    na_client = boto3.client(
-        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-    )
 
     graph_name = _create_random_graph_name()
     kwargs = _get_create_instance_with_import_config(
