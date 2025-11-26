@@ -25,12 +25,11 @@ import jmespath
 from botocore.client import BaseClient
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from sqlglot import parse_one, exp
+from sqlglot import exp, parse_one
 
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
 from .clients.neptune_constants import APP_ID_NX
 from .na_graph import NeptuneGraph
-
 
 __all__ = [
     "import_csv_from_s3",
@@ -206,7 +205,10 @@ def import_csv_from_s3(
 
 
 def export_csv_to_s3(
-    na_graph: NeptuneGraph, s3_arn: str, polling_interval=_ASYNC_POLLING_INTERVAL, export_filter=None
+    na_graph: NeptuneGraph,
+    s3_arn: str,
+    polling_interval=_ASYNC_POLLING_INTERVAL,
+    export_filter=None,
 ) -> Future:
     """Export graph data from Neptune Analytics to S3 in CSV format.
 
@@ -239,7 +241,9 @@ def export_csv_to_s3(
     iam_client.has_export_to_s3_permissions(s3_arn, key_arn)
 
     # Run Import
-    task_id = _start_export_task(na_client, graph_id, s3_arn, role_arn, key_arn, export_filter=export_filter)
+    task_id = _start_export_task(
+        na_client, graph_id, s3_arn, role_arn, key_arn, export_filter=export_filter
+    )
 
     # Packaging future
     future = TaskFuture(task_id, TaskType.EXPORT, polling_interval)
@@ -290,6 +294,7 @@ def create_na_instance(config: Optional[dict] = None):
             f"Neptune instance creation failure with graph name {prospective_graph_id}"
         )
 
+
 def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None):
     """Creates a new Neptune Analytics graph instance and imports data from S3.
 
@@ -311,7 +316,7 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
             https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph_using_import_task.html
 
     Returns:
-        asyncio.Future: A Future that resolves when the import completes
+        asyncio.Future: A Future that resolves when the import completes and instance is available for computation work.
 
     Raises:
         Exception: If the Neptune Analytics instance creation or import task fails
@@ -332,7 +337,9 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
     )
 
     graph_name = _create_random_graph_name()
-    kwargs = _get_create_instance_with_import_config(graph_name, s3_arn, iam_client.role_arn, config)
+    kwargs = _get_create_instance_with_import_config(
+        graph_name, s3_arn, iam_client.role_arn, config
+    )
     response = na_client.create_graph_using_import_task(**kwargs)
     task_id = response.get("taskId")
 
@@ -358,6 +365,7 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
         raise Exception(
             f"Neptune instance creation failure with import task ID: {task_id}"
         )
+
 
 def start_na_instance(graph_id: str):
     """
@@ -479,7 +487,10 @@ def _get_create_instance_config(graph_name, config=None):
 
     return config
 
-def _get_create_instance_with_import_config(graph_name, s3_location, role_arn , config=None):
+
+def _get_create_instance_with_import_config(
+    graph_name, s3_location, role_arn, config=None
+):
     """
     Build and sanitize the configuration dictionary for creating a graph instance with import.
 
@@ -644,15 +655,15 @@ def _start_export_task(
     )
     try:
         kwargs_export = {
-            'graphIdentifier': graph_id,
-            'roleArn': role_arn,
-            'format': filetype,
-            'destination': s3_destination,
-            'kmsKeyIdentifier': kms_key_identifier
+            "graphIdentifier": graph_id,
+            "roleArn": role_arn,
+            "format": filetype,
+            "destination": s3_destination,
+            "kmsKeyIdentifier": kms_key_identifier,
         }
         # Optional filter
         if export_filter:
-            kwargs_export['exportFilter'] = export_filter
+            kwargs_export["exportFilter"] = export_filter
 
         response = client.start_export_task(  # type: ignore[attr-defined]
             **kwargs_export
@@ -823,8 +834,8 @@ def delete_status_check_wrapper(client, graph_id):
 def export_athena_table_to_s3(
     sql_queries: list,
     s3_bucket: str,
-    catalog: str=None,
-    database: str=None,
+    catalog: str = None,
+    database: str = None,
     polling_interval=10,
     max_attempts=60,
 ):
@@ -951,7 +962,7 @@ def create_csv_table_from_s3(
             "~to": "string",
             "~label": "string",
         },
-        f"{table_name}_edges"
+        f"{table_name}_edges",
     )
 
     logger.info(f"Moving 'Vertex_*.csv' files to folder {s3_bucket}/Vertex")
@@ -965,7 +976,7 @@ def create_csv_table_from_s3(
             "~id": "string",
             "~label": "string",
         },
-        f"{table_name}_vertices"
+        f"{table_name}_vertices",
     )
 
     athena_client = boto3.client("athena")
@@ -984,7 +995,9 @@ def create_csv_table_from_s3(
     for query_execution_id in query_execution_ids:
         # TODO use TaskFuture instead
         for _ in range(1, max_attempts):
-            response = athena_client.get_query_execution(QueryExecutionId=query_execution_id)
+            response = athena_client.get_query_execution(
+                QueryExecutionId=query_execution_id
+            )
             status = response["QueryExecution"]["Status"]["State"]
             if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
                 if status != "SUCCEEDED":
@@ -1004,14 +1017,16 @@ def create_csv_table_from_s3(
 
     return True
 
+
 def _build_sql_statement(
-        s3_client,
-        bucket_name: str,
-        bucket_folder: str,
-        prefix: str,
-        file_paths: list[str],
-        table_columns: dict[str, str],
-        table_name: str) -> str:
+    s3_client,
+    bucket_name: str,
+    bucket_folder: str,
+    prefix: str,
+    file_paths: list[str],
+    table_columns: dict[str, str],
+    table_name: str,
+) -> str:
 
     # Move all the files with _prefix_ into a subfolder called _prefix_
     subfolder_file_paths = []
@@ -1031,8 +1046,8 @@ def _build_sql_statement(
             dest_key = f"{'/'.join(folder_path)}/{prefix}/{filename}"
             s3_client.copy_object(
                 Bucket=bucket_name,
-                CopySource={'Bucket': bucket_name, 'Key': orig_key},
-                Key=dest_key
+                CopySource={"Bucket": bucket_name, "Key": orig_key},
+                Key=dest_key,
             )
             s3_client.delete_object(Bucket=bucket_name, Key=orig_key)
 
@@ -1078,21 +1093,22 @@ LOCATION '{s3_location}'
 TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
 """
 
+
 def create_iceberg_table_from_table(
-        s3_output_bucket: str,
-        table_name: str,
-        csv_table_name: str,
-        catalog: str = None,
-        database: str = None,
-        table_columns: list[str] = None,
-        polling_interval=10,
-        max_attempts=60,
+    s3_output_bucket: str,
+    table_name: str,
+    csv_table_name: str,
+    catalog: str = None,
+    database: str = None,
+    table_columns: list[str] = None,
+    polling_interval=10,
+    max_attempts=60,
 ):
     select_columns = "*"
     if table_columns:
         select_columns = '"' + '","'.join(table_columns) + '"'
 
-    sql_statement=f"""
+    sql_statement = f"""
 CREATE TABLE {table_name}
   WITH (
       table_type = 'ICEBERG',
@@ -1131,6 +1147,7 @@ AS SELECT {select_columns} FROM {csv_table_name};
     logger.info(f"Successfully completed execution of query [{query_execution_id}]")
 
     return True
+
 
 def create_table_schema_from_s3(
     s3_bucket: str,
@@ -1245,6 +1262,7 @@ class ProjectionType(Enum):
         NODE: Projection type for node queries that require ~id field
         EDGE: Projection type for edge queries that require ~id, ~from, and ~to fields
     """
+
     NODE = "node"
     EDGE = "edge"
 
@@ -1266,25 +1284,33 @@ def validate_athena_query(query: str, projection_type: ProjectionType):
     - Invalid SQL syntax returns False
     """
     try:
-        column_names = {column.alias_or_name for column in parse_one(query).find(exp.Select)}
+        column_names = {
+            column.alias_or_name for column in parse_one(query).find(exp.Select)
+        }
     except Exception as e:
         logger.error(f"Invalid SQL query: {e}")
         return False
 
-    if '*' in column_names:
-        logger.warning("Cannot validate required fields due to wildcard (*) in SELECT projection")
+    if "*" in column_names:
+        logger.warning(
+            "Cannot validate required fields due to wildcard (*) in SELECT projection"
+        )
         return True
 
     match projection_type:
         case ProjectionType.NODE:
             mandate_fields_node = {"~id"}
             if not mandate_fields_node.issubset(column_names):
-                logger.warning(f"Missing required fields for node projection. Required fields: {mandate_fields_node}")
+                logger.warning(
+                    f"Missing required fields for node projection. Required fields: {mandate_fields_node}"
+                )
             return mandate_fields_node.issubset(column_names)
         case ProjectionType.EDGE:
             mandate_fields_edge = {"~id", "~from", "~to"}
             if not mandate_fields_edge.issubset(column_names):
-                logger.warning(f"Missing required fields for edge projection. Required fields: {mandate_fields_edge}")
+                logger.warning(
+                    f"Missing required fields for edge projection. Required fields: {mandate_fields_edge}"
+                )
             return mandate_fields_edge.issubset(column_names)
         case _:
             logger.warning(f"Unknown projection type: {projection_type}")
