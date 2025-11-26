@@ -60,7 +60,7 @@ _ASYNC_POLLING_INTERVAL = 30
 
 class TaskType(Enum):
     # Allow import to run against an "INITIALIZING" state - the graph is sometimes in this state after creating graph
-    IMPORT = (1, ["INI", "INITIALIZING", "IMPORTING"], "SUCCEEDED")
+    IMPORT = (1, ["INI", "INITIALIZING", "ANALYZING_DATA", "IMPORTING"], "SUCCEEDED")
     # Allow export to run against an "INITIALIZING" state - the graph is sometimes in this state after running algorithms
     EXPORT = (2, ["INI", "INITIALIZING", "EXPORTING"], "SUCCEEDED")
     CREATE = (3, ["INI", "CREATING"], "AVAILABLE")
@@ -290,56 +290,75 @@ def create_na_instance(config: Optional[dict] = None):
             f"Neptune instance creation failure with graph name {prospective_graph_id}"
         )
 
-
-
 def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None):
-    """
-    Creates a new graph instance for Neptune Analytics.
+    """Creates a new Neptune Analytics graph instance and imports data from S3.
+
+    This function creates a new Neptune Analytics graph instance and immediately starts
+    importing data from the specified S3 location. It handles the complete workflow:
+    1. Validates required permissions
+    2. Creates a new graph instance
+    3. Starts the import task
+    4. Returns a Future that can be awaited for completion
 
     Args:
+        s3_arn (str): The S3 location containing CSV data (e.g., 's3://bucket-name/prefix/')
         config (Optional[dict]): Optional dictionary of custom configuration parameters
             to use when creating the Neptune Analytics instance. If not provided,
             default settings will be applied.
             All options listed under boto3 documentations are supported.
 
             Reference:
-            https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph.html
+            https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph_using_import_task.html
+
+    Returns:
+        asyncio.Future: A Future that resolves when the import completes
 
     Raises:
-        Exception: If the Neptune Analytics instance creation fails
+        Exception: If the Neptune Analytics instance creation or import task fails
+        ValueError: If the role lacks required permissions
     """
-    na_client = boto3.client(
-        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-    )
 
     # Permissions check
     user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
     iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
-    iam_client.has_create_na_permissions()
     # Retrieve key_arn for the bucket and permission check if present
     key_arn = _get_bucket_encryption_key_arn(s3_arn)
-    # Run permission check
+    # Permission checks
+    iam_client.has_create_na_permissions()
     iam_client.has_import_from_s3_permissions(s3_arn, key_arn)
 
-    fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
-    # fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
-    return asyncio.wrap_future(fut)
+    na_client = boto3.client(
+        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+    )
 
-    #
-    # response = _create_na_instance_task(na_client, config)
-    # prospective_graph_id = _get_graph_id(response)
-    #
-    # if _get_status_code(response) == 201:
-    #     fut = TaskFuture(prospective_graph_id, TaskType.CREATE, _ASYNC_POLLING_INTERVAL)
-    #     asyncio.create_task(
-    #         _wait_until_task_complete(na_client, fut), name=prospective_graph_id
-    #     )
-    #     return asyncio.wrap_future(fut)
-    # else:
-    #     raise Exception(
-    #         f"Neptune instance creation failure with graph name {prospective_graph_id}"
-    #     )
+    graph_name = _create_random_graph_name()
+    kwargs = _get_create_instance_with_import_config(graph_name, s3_arn, "CSV", iam_client.role_arn, config)
+    response = na_client.create_graph_using_import_task(**kwargs)
+    task_id = response.get("taskId")
+    graph_id = response.get("graphId")
 
+
+    if _get_status_code(response) == 201:
+
+        async def combined_wait():
+            # Import task status check.
+            fut = TaskFuture(task_id, TaskType.IMPORT, _ASYNC_POLLING_INTERVAL)
+            await _wait_until_task_complete(na_client, fut)
+
+            # Wait for instance at last
+            fut_create = TaskFuture(graph_id, TaskType.CREATE, _ASYNC_POLLING_INTERVAL)
+            await _wait_until_task_complete(na_client, fut_create)
+
+            return graph_id
+
+        return asyncio.create_task(
+            combined_wait(), name=f"{task_id}-combined"
+        )
+
+    else:
+        raise Exception(
+            f"Neptune instance creation failure with import task ID: {task_id}"
+        )
 
 def start_na_instance(graph_id: str):
     """
@@ -457,6 +476,40 @@ def _get_create_instance_config(graph_name, config=None):
 
     # Make sure agent tag shows regardless
     config["graphName"] = graph_name
+    config.setdefault("tags", {}).setdefault("agent", _PROJECT_IDENTIFIER)
+
+    return config
+
+
+def _get_create_instance_with_import_config(graph_name, s3_location, format_type, role_arn , config=None):
+    """
+    Build and sanitize the configuration dictionary for creating a graph instance.
+
+    This function filters the provided `config` to include only permitted keys,
+    fills in default values for required parameters if they are missing, and
+    ensures the presence of the 'agent' tag and the graph name.
+
+    Args:
+        graph_name (str): The name of the graph to create. This is always included in the result.
+        config (dict, optional): An optional dictionary of user-provided configuration values.
+
+    Returns:
+        dict: A sanitized and completed configuration dictionary with required keys and values.
+    """
+
+    config = config or {}
+    # Ensure mandatory config present.
+    config.setdefault("publicConnectivity", True)
+    config.setdefault("replicaCount", 0)
+    config.setdefault("deletionProtection", False)
+    config.setdefault("maxProvisionedMemory", 32)
+    config.setdefault("minProvisionedMemory", 16)
+
+    # Make sure agent tag shows regardless
+    config["graphName"] = graph_name
+    config["source"] = s3_location
+    config["format"] = format_type
+    config["roleArn"] = role_arn
     config.setdefault("tags", {}).setdefault("agent", _PROJECT_IDENTIFIER)
 
     return config
