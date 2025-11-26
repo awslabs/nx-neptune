@@ -293,7 +293,11 @@ def create_na_instance(config: Optional[dict] = None):
         raise Exception(
             f"Neptune instance creation failure with graph name {prospective_graph_id}"
         )
-def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None, iam_client: Optional[IamClient] = None, na_client: Optional[BaseClient] = None) -> asyncio.Future:
+
+def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None,
+                                      sts_client: Optional[BaseClient] = None,
+                                      iam_client: Optional[BaseClient] = None,
+                                      na_client: Optional[BaseClient] = None) -> asyncio.Future:
     """Creates a new Neptune Analytics graph instance and imports data from S3.
 
     This function creates a new Neptune Analytics graph instance and immediately starts
@@ -311,6 +315,8 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
 
             Reference:
             https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph_using_import_task.html
+        sts_client (Optional[IamClient]): Optional StsClient instance. If not provided,
+            a new one will be created using the current user's credentials.
         iam_client (Optional[IamClient]): Optional IamClient instance. If not provided,
             a new one will be created using the current user's credentials.
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
@@ -324,9 +330,12 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
         ValueError: If the role lacks required permissions
     """
 
+    if sts_client is None:
+        sts_client = boto3.client(SERVICE_STS)
+    user_arn = sts_client.get_caller_identity()["Arn"]
+
     # Create IAM client if not provided
     if iam_client is None:
-        user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
         iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
 
     # Create Neptune Analytics client if not provided
