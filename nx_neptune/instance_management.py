@@ -332,11 +332,9 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
     )
 
     graph_name = _create_random_graph_name()
-    kwargs = _get_create_instance_with_import_config(graph_name, s3_arn, "CSV", iam_client.role_arn, config)
+    kwargs = _get_create_instance_with_import_config(graph_name, s3_arn, iam_client.role_arn, config)
     response = na_client.create_graph_using_import_task(**kwargs)
     task_id = response.get("taskId")
-    graph_id = response.get("graphId")
-
 
     if _get_status_code(response) == 201:
 
@@ -346,13 +344,14 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
             await _wait_until_task_complete(na_client, fut)
 
             # Wait for instance at last
+            graph_id = response.get("graphId")
             fut_create = TaskFuture(graph_id, TaskType.CREATE, _ASYNC_POLLING_INTERVAL)
             await _wait_until_task_complete(na_client, fut_create)
 
             return graph_id
 
         return asyncio.create_task(
-            combined_wait(), name=f"{task_id}-combined"
+            combined_wait(), name=f"create-with-s3-import-{task_id}"
         )
 
     else:
@@ -480,21 +479,31 @@ def _get_create_instance_config(graph_name, config=None):
 
     return config
 
-
-def _get_create_instance_with_import_config(graph_name, s3_location, format_type, role_arn , config=None):
+def _get_create_instance_with_import_config(graph_name, s3_location, role_arn , config=None):
     """
-    Build and sanitize the configuration dictionary for creating a graph instance.
+    Build and sanitize the configuration dictionary for creating a graph instance with import.
 
     This function filters the provided `config` to include only permitted keys,
     fills in default values for required parameters if they are missing, and
-    ensures the presence of the 'agent' tag and the graph name.
+    ensures the presence of required parameters for graph creation with import.
 
     Args:
-        graph_name (str): The name of the graph to create. This is always included in the result.
+        graph_name (str): The name of the graph to create
+        s3_location (str): The S3 location containing data to import
+        role_arn (str): The IAM role ARN with permissions to read from S3
         config (dict, optional): An optional dictionary of user-provided configuration values.
+            Supported keys include:
+            - publicConnectivity (bool): Whether the graph has public connectivity
+            - replicaCount (int): Number of read replicas
+            - deletionProtection (bool): Whether deletion protection is enabled
+            - minProvisionedMemory (int): Minimum provisioned memory in GB
+            - maxProvisionedMemory (int): Maximum provisioned memory in GB
+            - format (str): Import data format (e.g. "CSV")
+            - tags (dict): Resource tags
 
     Returns:
-        dict: A sanitized and completed configuration dictionary with required keys and values.
+        dict: A sanitized and completed configuration dictionary with required keys and values
+            for creating a graph with import
     """
 
     config = config or {}
@@ -502,13 +511,13 @@ def _get_create_instance_with_import_config(graph_name, s3_location, format_type
     config.setdefault("publicConnectivity", True)
     config.setdefault("replicaCount", 0)
     config.setdefault("deletionProtection", False)
-    config.setdefault("maxProvisionedMemory", 32)
     config.setdefault("minProvisionedMemory", 16)
+    config.setdefault("maxProvisionedMemory", 32)
+    config.setdefault("format", "CSV")
 
     # Make sure agent tag shows regardless
     config["graphName"] = graph_name
     config["source"] = s3_location
-    config["format"] = format_type
     config["roleArn"] = role_arn
     config.setdefault("tags", {}).setdefault("agent", _PROJECT_IDENTIFIER)
 
