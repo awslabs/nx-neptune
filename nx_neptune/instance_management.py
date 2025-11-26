@@ -38,6 +38,7 @@ __all__ = [
     "TaskFuture",
     "TaskType",
     "create_na_instance",
+    "create_na_instance_with_s3_import",
     "delete_na_instance",
     "export_athena_table_to_s3",
     "create_csv_table_from_s3",
@@ -288,6 +289,56 @@ def create_na_instance(config: Optional[dict] = None):
         raise Exception(
             f"Neptune instance creation failure with graph name {prospective_graph_id}"
         )
+
+
+
+def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None):
+    """
+    Creates a new graph instance for Neptune Analytics.
+
+    Args:
+        config (Optional[dict]): Optional dictionary of custom configuration parameters
+            to use when creating the Neptune Analytics instance. If not provided,
+            default settings will be applied.
+            All options listed under boto3 documentations are supported.
+
+            Reference:
+            https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph.html
+
+    Raises:
+        Exception: If the Neptune Analytics instance creation fails
+    """
+    na_client = boto3.client(
+        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+    )
+
+    # Permissions check
+    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
+    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+    iam_client.has_create_na_permissions()
+    # Retrieve key_arn for the bucket and permission check if present
+    key_arn = _get_bucket_encryption_key_arn(s3_arn)
+    # Run permission check
+    iam_client.has_import_from_s3_permissions(s3_arn, key_arn)
+
+    fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
+    # fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
+    return asyncio.wrap_future(fut)
+
+    #
+    # response = _create_na_instance_task(na_client, config)
+    # prospective_graph_id = _get_graph_id(response)
+    #
+    # if _get_status_code(response) == 201:
+    #     fut = TaskFuture(prospective_graph_id, TaskType.CREATE, _ASYNC_POLLING_INTERVAL)
+    #     asyncio.create_task(
+    #         _wait_until_task_complete(na_client, fut), name=prospective_graph_id
+    #     )
+    #     return asyncio.wrap_future(fut)
+    # else:
+    #     raise Exception(
+    #         f"Neptune instance creation failure with graph name {prospective_graph_id}"
+    #     )
 
 
 def start_na_instance(graph_id: str):
@@ -911,11 +962,11 @@ def _build_sql_statement(
 
         # if we have already run this, the files are already moved to subfolder
         if folder_path[-1] == prefix:
-            subfolder_file_paths.append(f"{"/".join(folder_path)}/{filename}")
+            subfolder_file_paths.append(f"{'/'.join(folder_path)}/{filename}")
 
         else:
             # move files to new bucket subfolder
-            dest_key = f"{"/".join(folder_path)}/{prefix}/{filename}"
+            dest_key = f"{'/'.join(folder_path)}/{prefix}/{filename}"
             s3_client.copy_object(
                 Bucket=bucket_name,
                 CopySource={'Bucket': bucket_name, 'Key': orig_key},

@@ -28,6 +28,7 @@ from .clients import Edge, Node
 from .instance_management import (
     TaskFuture,
     create_na_instance,
+    create_na_instance_with_s3_import,
     create_csv_table_from_s3,
     create_iceberg_table_from_table,
     export_athena_table_to_s3,
@@ -76,6 +77,7 @@ __all__ = [
     "validate_athena_query",
     "validate_permissions",
     "start_na_instance",
+    "create_na_instance_with_s3_import",
     "stop_na_instance",
     "TaskFuture",
 ]
