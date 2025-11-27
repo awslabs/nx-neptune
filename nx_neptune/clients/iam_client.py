@@ -274,8 +274,6 @@ class IamClient:
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)
 
-
-
     def has_create_na_from_snapshot_permissions(self):
         """Check if the configured IAM role has permissions to create a Neptune Analytics instance from a snapshot.
 
@@ -317,8 +315,6 @@ class IamClient:
         operation_name = "Create Neptune Analytics Snapshot"
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)
-
-
 
     def has_delete_na_permissions(self):
         """Check if the configured IAM role has permissions to delete Neptune Analytics instance.

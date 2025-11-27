@@ -25,7 +25,7 @@ import jmespath
 from botocore.client import BaseClient
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from sqlglot import parse_one, exp
+from sqlglot import exp, parse_one
 
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
 from .clients.neptune_constants import APP_ID_NX
@@ -386,8 +386,11 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
         raise Exception(
             f"Neptune instance creation failure with import task ID: {task_id}"
         )
-
-def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = None):
+def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = None,
+                                     sts_client: Optional[BaseClient] = None,
+                                     iam_client: Optional[BaseClient] = None,
+                                     na_client: Optional[BaseClient] = None
+                                     ):
     """
     Creates a new Neptune Analytics graph instance from an existing snapshot.
 
@@ -400,22 +403,35 @@ def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = 
 
             Reference:
             https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/restore_graph_from_snapshot.html
+        sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided,
+            a new one will be created.
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided,
+            a new one will be created using the current user's credentials.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
+            a new one will be created.
 
     Returns:
         asyncio.Future: A Future that resolves when the graph creation completes
 
     Raises:
         Exception: If the Neptune Analytics instance creation fails
+        ValueError: If the role lacks required permissions
     """
-    na_client = boto3.client(
-        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-    )
+    if sts_client is None:
+        sts_client = boto3.client(SERVICE_STS)
+    user_arn = sts_client.get_caller_identity()["Arn"]
 
-    # Permissions check
-    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
-    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+    # Create IAM client if not provided
+    if iam_client is None:
+        iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+
+    # Create Neptune Analytics client if not provided
+    if na_client is None:
+        na_client = boto3.client(
+            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+        )
+
     iam_client.has_create_na_from_snapshot_permissions()
-
     response = _create_na_instance_from_snapshot_task(na_client, snapshot_id, config)
     prospective_graph_id = _get_graph_id(response)
 
