@@ -337,20 +337,7 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
         ValueError: If the role lacks required permissions
     """
 
-    if sts_client is None:
-        sts_client = boto3.client(SERVICE_STS)
-    user_arn = sts_client.get_caller_identity()["Arn"]
-
-    # Create IAM client if not provided
-    if iam_client is None:
-        iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
-
-    # Create Neptune Analytics client if not provided
-    if na_client is None:
-        na_client = boto3.client(
-            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-        )
-
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
     # Retrieve key_arn for the bucket and permission check if present
     key_arn = _get_bucket_encryption_key_arn(s3_arn)
     # Permission checks
@@ -418,19 +405,7 @@ def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = 
         Exception: If the Neptune Analytics instance creation fails
         ValueError: If the role lacks required permissions
     """
-    if sts_client is None:
-        sts_client = boto3.client(SERVICE_STS)
-    user_arn = sts_client.get_caller_identity()["Arn"]
-
-    # Create IAM client if not provided
-    if iam_client is None:
-        iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
-
-    # Create Neptune Analytics client if not provided
-    if na_client is None:
-        na_client = boto3.client(
-            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-        )
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
 
     iam_client.has_create_na_from_snapshot_permissions()
     response = _create_na_instance_from_snapshot_task(na_client, snapshot_id, config)
@@ -467,20 +442,7 @@ def delete_graph_snapshot(snapshot_id: str,
         Exception: If the snapshot deletion fails
         ValueError: If the role lacks required permissions
     """
-
-    if sts_client is None:
-        sts_client = boto3.client(SERVICE_STS)
-    user_arn = sts_client.get_caller_identity()["Arn"]
-
-    # Create IAM client if not provided
-    if iam_client is None:
-        iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
-
-    # Create Neptune Analytics client if not provided
-    if na_client is None:
-        na_client = boto3.client(
-            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-        )
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
 
     # Permissions check
     iam_client.has_delete_snapshot_permissions()
@@ -579,33 +541,39 @@ def delete_na_instance(graph_id: str):
     else:
         return _invalid_status_code(status_code, response)
 
-def create_graph_snapshot(graph_id: str, snapshot_name: str, tag: Optional[dict] = None):
+def create_graph_snapshot(graph_id: str, snapshot_name: str, tag: Optional[dict] = None,
+                          sts_client: Optional[BaseClient] = None,
+                          iam_client: Optional[BaseClient] = None,
+                          na_client: Optional[BaseClient] = None
+                          ):
     """Create a snapshot of a Neptune Analytics graph.
 
     Args:
         graph_id (str): The ID of the Neptune Analytics graph to snapshot
         snapshot_name (str): Name to assign to the snapshot
         tag (Optional[dict]): Optional tags to apply to the snapshot
+        sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided,
+            a new one will be created.
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided,
+            a new one will be created using the current user's credentials.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
+            a new one will be created.
 
     Returns:
         asyncio.Future: A Future that resolves when the snapshot completes
 
     Raises:
         Exception: If the snapshot creation fails with an invalid status code
+        ValueError: If the role lacks required permissions
     """
     # Permission check
-    user_arn = boto3.client("sts").get_caller_identity()["Arn"]
-    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
-    iam_client.has_create_na_snapshot_permissions()
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
 
     kwargs = {"graphIdentifier": graph_id, "snapshotName": snapshot_name}
     if tag:
         kwargs["tags"] = tag
-    na_client = boto3.client(
-        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-    )
-    response = na_client.create_graph_snapshot(**kwargs)
 
+    response = na_client.create_graph_snapshot(**kwargs)
     status_code = _get_status_code(response)
     if status_code == 201:
         return _get_status_check_future(na_client, TaskType.EXPORT_SNAPSHOT, graph_id)
