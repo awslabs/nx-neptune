@@ -27,12 +27,13 @@ from .algorithms.traversal.bfs import bfs_edges, bfs_layers, descendants_at_dist
 from .clients import Edge, Node
 from .instance_management import (
     TaskFuture,
+    create_csv_table_from_s3,
+    create_graph_snapshot,
+    create_iceberg_table_from_table,
     create_na_instance,
     create_na_instance_from_snapshot,
-    create_graph_snapshot,
-    create_csv_table_from_s3,
-    create_iceberg_table_from_table,
     create_na_instance_with_s3_import,
+    delete_graph_snapshot,
     export_athena_table_to_s3,
     export_csv_to_s3,
     import_csv_from_s3,
@@ -40,7 +41,6 @@ from .instance_management import (
     stop_na_instance,
     validate_athena_query,
     validate_permissions,
-    delete_graph_snapshot
 )
 from .interface import BackendInterface
 from .na_graph import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN, NeptuneGraph

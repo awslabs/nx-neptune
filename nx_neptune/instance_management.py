@@ -133,7 +133,9 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
                 TaskType.START: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.STOP: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.EXPORT_SNAPSHOT: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
-                TaskType.DELETE_SNAPSHOT: lambda: delete_snapshot_status_check_wrapper(client, task_id),
+                TaskType.DELETE_SNAPSHOT: lambda: delete_snapshot_status_check_wrapper(
+                    client, task_id
+                ),
             }
 
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -292,19 +294,22 @@ def create_na_instance(config: Optional[dict] = None):
     status_code = _get_status_code(response)
 
     if status_code == 201:
-        return _get_status_check_future(na_client, TaskType.CREATE, prospective_graph_id)
+        return _get_status_check_future(
+            na_client, TaskType.CREATE, prospective_graph_id
+        )
     else:
         raise Exception(
             f"Neptune instance creation failure with graph name {prospective_graph_id}"
         )
 
 
-
-
-def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None,
-                                      sts_client: Optional[BaseClient] = None,
-                                      iam_client: Optional[BaseClient] = None,
-                                      na_client: Optional[BaseClient] = None) -> asyncio.Future:
+def create_na_instance_with_s3_import(
+    s3_arn: str,
+    config: Optional[dict] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+) -> asyncio.Future:
     """Creates a new Neptune Analytics graph instance and imports data from S3.
 
     This function creates a new Neptune Analytics graph instance and immediately starts
@@ -374,11 +379,14 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
             f"Neptune instance creation failure with import task ID: {task_id}"
         )
 
-def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = None,
-                                     sts_client: Optional[BaseClient] = None,
-                                     iam_client: Optional[BaseClient] = None,
-                                     na_client: Optional[BaseClient] = None
-                                     ):
+
+def create_na_instance_from_snapshot(
+    snapshot_id: str,
+    config: Optional[dict] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
     """
     Creates a new Neptune Analytics graph instance from an existing snapshot.
 
@@ -412,17 +420,21 @@ def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = 
     prospective_graph_id = _get_graph_id(response)
 
     if _get_status_code(response) == 201:
-        return _get_status_check_future(na_client, TaskType.CREATE, prospective_graph_id)
+        return _get_status_check_future(
+            na_client, TaskType.CREATE, prospective_graph_id
+        )
     else:
         raise Exception(
             f"Neptune instance creation failure with graph name {prospective_graph_id}"
         )
 
-def delete_graph_snapshot(snapshot_id: str,
-                          sts_client: Optional[BaseClient] = None,
-                          iam_client: Optional[BaseClient] = None,
-                          na_client: Optional[BaseClient] = None
-                          ):
+
+def delete_graph_snapshot(
+    snapshot_id: str,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
     """
     Delete a Neptune Analytics graph snapshot.
 
@@ -449,15 +461,19 @@ def delete_graph_snapshot(snapshot_id: str,
     response = na_client.delete_graph_snapshot(snapshotIdentifier=snapshot_id)
 
     if _get_status_code(response) == 200:
-        return _get_status_check_future(na_client, TaskType.DELETE_SNAPSHOT, snapshot_id)
+        return _get_status_check_future(
+            na_client, TaskType.DELETE_SNAPSHOT, snapshot_id
+        )
     else:
         return _invalid_status_code(200, response)
 
 
-def start_na_instance(graph_id: str,
-                      sts_client: Optional[BaseClient] = None,
-                      iam_client: Optional[BaseClient] = None,
-                      na_client: Optional[BaseClient] = None):
+def start_na_instance(
+    graph_id: str,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
     """
     Start a stopped Neptune Analytics graph instance.
 
@@ -491,10 +507,12 @@ def start_na_instance(graph_id: str,
         return _invalid_status_code(status_code, response)
 
 
-def stop_na_instance(graph_id: str,
-                     sts_client: Optional[BaseClient] = None,
-                     iam_client: Optional[BaseClient] = None,
-                     na_client: Optional[BaseClient] = None):
+def stop_na_instance(
+    graph_id: str,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
     """Stop a running Neptune Analytics graph instance.
 
     Args:
@@ -527,11 +545,12 @@ def stop_na_instance(graph_id: str,
         return _invalid_status_code(status_code, response)
 
 
-def delete_na_instance(graph_id: str,
-                       sts_client: Optional[BaseClient] = None,
-                       iam_client: Optional[BaseClient] = None,
-                       na_client: Optional[BaseClient] = None
-    ):
+def delete_na_instance(
+    graph_id: str,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
     """
     Delete a Neptune Analytics graph instance.
 
@@ -563,11 +582,15 @@ def delete_na_instance(graph_id: str,
     else:
         return _invalid_status_code(status_code, response)
 
-def create_graph_snapshot(graph_id: str, snapshot_name: str, tag: Optional[dict] = None,
-                          sts_client: Optional[BaseClient] = None,
-                          iam_client: Optional[BaseClient] = None,
-                          na_client: Optional[BaseClient] = None
-                          ):
+
+def create_graph_snapshot(
+    graph_id: str,
+    snapshot_name: str,
+    tag: Optional[dict] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
     """Create a snapshot of a Neptune Analytics graph.
 
     Args:
@@ -702,7 +725,10 @@ def _create_na_instance_task(client, config: Optional[dict] = None):
     response = client.create_graph(**kwargs)
     return response
 
-def _create_na_instance_from_snapshot_task(client, snapshot_identifier: str, config: Optional[dict] = None):
+
+def _create_na_instance_from_snapshot_task(
+    client, snapshot_identifier: str, config: Optional[dict] = None
+):
     """Create a new Neptune Analytics graph instance with default settings.
 
     This function generates a unique name for the graph using a UUID suffix and
@@ -997,6 +1023,7 @@ def delete_status_check_wrapper(client, graph_id):
         else:
             raise e
 
+
 def delete_snapshot_status_check_wrapper(client, snapshot_id: str):
     """
     Wrapper method to suppress error when snapshot_id not found,
@@ -1018,6 +1045,7 @@ def delete_snapshot_status_check_wrapper(client, snapshot_id: str):
             return {"status": "DELETED"}
         else:
             raise e
+
 
 # TODO: provide an alternative to sql_queries - instead take a JSON import to map types
 def export_athena_table_to_s3(
@@ -1565,14 +1593,15 @@ def _get_status_check_future(na_client, task_type: TaskType, object_id):
     its completion state as defined by the TaskType.
     """
     fut = TaskFuture(object_id, task_type, _ASYNC_POLLING_INTERVAL)
-    asyncio.create_task(
-        _wait_until_task_complete(na_client, fut), name=object_id
-    )
+    asyncio.create_task(_wait_until_task_complete(na_client, fut), name=object_id)
     return asyncio.wrap_future(fut)
 
-def _get_or_create_clients(sts_client: Optional[BaseClient] = None,
-                          iam_client: Optional[BaseClient] = None,
-                          na_client: Optional[BaseClient] = None):
+
+def _get_or_create_clients(
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
     """
     Create or reuse provided AWS clients.
 

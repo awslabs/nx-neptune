@@ -330,7 +330,10 @@ class IamClient:
             - neptune-graph:TagResource
             - neptune-graph:RestoreGraphFromSnapshot
         """
-        na_permissions = ["neptune-graph:TagResource", "neptune-graph:RestoreGraphFromSnapshot"]
+        na_permissions = [
+            "neptune-graph:TagResource",
+            "neptune-graph:RestoreGraphFromSnapshot",
+        ]
         operation_name = "Create Neptune Instance From Snapshot"
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)
@@ -351,7 +354,10 @@ class IamClient:
             - neptune-graph:TagResource
             - neptune-graph:CreateGraphSnapshot
         """
-        na_permissions = ["neptune-graph:TagResource", "neptune-graph:CreateGraphSnapshot"]
+        na_permissions = [
+            "neptune-graph:TagResource",
+            "neptune-graph:CreateGraphSnapshot",
+        ]
         operation_name = "Create Neptune Analytics Snapshot"
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)
@@ -537,26 +543,28 @@ class IamClient:
                 },
             ],
             "create_graph_snapshot": [
-                {"permissions": [
+                {
+                    "permissions": [
                         "neptune-graph:TagResource",
                         "neptune-graph:CreateGraphSnapshot",
                     ]
                 },
             ],
             "create_na_instance_from_snapshot": [
-                {"permissions": [
+                {
+                    "permissions": [
                         "neptune-graph:TagResource",
                         "neptune-graph:RestoreGraphFromSnapshot",
                     ]
                 },
             ],
             "delete_graph_snapshot": [
-                {"permissions": [
-                    "neptune-graph:DeleteGraphSnapshot",
-                ]
+                {
+                    "permissions": [
+                        "neptune-graph:DeleteGraphSnapshot",
+                    ]
                 },
             ],
-
         }
 
         for op, permission_pairs in checks.items():
