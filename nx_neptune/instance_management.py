@@ -386,6 +386,7 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
         raise Exception(
             f"Neptune instance creation failure with import task ID: {task_id}"
         )
+
 def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = None,
                                      sts_client: Optional[BaseClient] = None,
                                      iam_client: Optional[BaseClient] = None,
@@ -1577,3 +1578,33 @@ def _get_status_check_future(na_client, task_type: TaskType, object_id):
         _wait_until_task_complete(na_client, fut), name=object_id
     )
     return asyncio.wrap_future(fut)
+
+def _get_or_create_clients(sts_client: Optional[BaseClient] = None,
+                          iam_client: Optional[BaseClient] = None,
+                          na_client: Optional[BaseClient] = None):
+    """
+    Create or reuse provided AWS clients.
+
+    Args:
+        sts_client (Optional[BaseClient]): Optional STS boto3 client
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client
+
+    Returns:
+        Tuple[BaseClient, IamClient, BaseClient]: Tuple containing (sts_client, iam_client, na_client)
+    """
+    if sts_client is None:
+        sts_client = boto3.client(SERVICE_STS)
+    user_arn = sts_client.get_caller_identity()["Arn"]
+
+    # Create IAM client if not provided
+    if iam_client is None:
+        iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+
+    # Create Neptune Analytics client if not provided
+    if na_client is None:
+        na_client = boto3.client(
+            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+        )
+
+    return iam_client, na_client
