@@ -442,27 +442,47 @@ def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = 
             f"Neptune instance creation failure with graph name {prospective_graph_id}"
         )
 
-def delete_graph_snapshot(snapshot_id: str):
+def delete_graph_snapshot(snapshot_id: str,
+                          sts_client: Optional[BaseClient] = None,
+                          iam_client: Optional[BaseClient] = None,
+                          na_client: Optional[BaseClient] = None
+                          ):
     """
     Delete a Neptune Analytics graph snapshot.
 
     Args:
         snapshot_id (str): The ID of the snapshot to delete
+        sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided,
+            a new one will be created.
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided,
+            a new one will be created using the current user's credentials.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
+            a new one will be created.
 
     Returns:
         asyncio.Future: A Future that resolves when the snapshot deletion completes
 
     Raises:
         Exception: If the snapshot deletion fails
+        ValueError: If the role lacks required permissions
     """
-    # Permissions check
-    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
-    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
-    iam_client.has_delete_snapshot_permissions()
 
-    na_client = boto3.client(
-        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-    )
+    if sts_client is None:
+        sts_client = boto3.client(SERVICE_STS)
+    user_arn = sts_client.get_caller_identity()["Arn"]
+
+    # Create IAM client if not provided
+    if iam_client is None:
+        iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+
+    # Create Neptune Analytics client if not provided
+    if na_client is None:
+        na_client = boto3.client(
+            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+        )
+
+    # Permissions check
+    iam_client.has_delete_snapshot_permissions()
     response = na_client.delete_graph_snapshot(snapshotIdentifier=snapshot_id)
 
     if _get_status_code(response) == 200:
