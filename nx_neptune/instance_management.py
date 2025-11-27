@@ -406,8 +406,8 @@ def create_na_instance_from_snapshot(snapshot_id: str, config: Optional[dict] = 
         ValueError: If the role lacks required permissions
     """
     (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
-
     iam_client.has_create_na_from_snapshot_permissions()
+
     response = _create_na_instance_from_snapshot_task(na_client, snapshot_id, config)
     prospective_graph_id = _get_graph_id(response)
 
@@ -453,23 +453,32 @@ def delete_graph_snapshot(snapshot_id: str,
     else:
         return _invalid_status_code(200, response)
 
-def start_na_instance(graph_id: str):
+
+def start_na_instance(graph_id: str,
+                      sts_client: Optional[BaseClient] = None,
+                      iam_client: Optional[BaseClient] = None,
+                      na_client: Optional[BaseClient] = None):
     """
-    Attempt to resume a remote Neptune Analytics instance with the provided graph_id,
-    on behalf of the configured IAM user.
+    Start a stopped Neptune Analytics graph instance.
+
+    Args:
+        graph_id (str): The ID of the Neptune Analytics graph to start
+        sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided,
+            a new one will be created.
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided,
+            a new one will be created using the current user's credentials.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
+            a new one will be created.
 
     Returns:
-        asyncio.Future: A Future that resolves with the graph_id,
-        represent the instance being deleted, or String literal Fail
-        in the case of exception.
+        asyncio.Future: A Future that resolves when the graph start completes
 
     Raises:
-        Exception: If the Neptune Analytics instance creation fails
+        Exception: If the start operation fails with an invalid status code
+        ValueError: If the role lacks required permissions or if graph is not in STOPPED state
     """
-    # Instance deletion
-    na_client = boto3.client(
-        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-    )
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    iam_client.has_start_na_permissions()
 
     if status_exception := _graph_status_check(na_client, graph_id, "STOPPED"):
         return status_exception
@@ -482,23 +491,30 @@ def start_na_instance(graph_id: str):
         return _invalid_status_code(status_code, response)
 
 
-def stop_na_instance(graph_id: str):
-    """
-    Attempt to stop a remote Neptune Analytics instance with the provided graph_id,
-    on behalf of the configured IAM user.
+def stop_na_instance(graph_id: str,
+                     sts_client: Optional[BaseClient] = None,
+                     iam_client: Optional[BaseClient] = None,
+                     na_client: Optional[BaseClient] = None):
+    """Stop a running Neptune Analytics graph instance.
+
+    Args:
+        graph_id (str): The ID of the Neptune Analytics graph to stop
+        sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided,
+            a new one will be created.
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided,
+            a new one will be created using the current user's credentials.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
+            a new one will be created.
 
     Returns:
-        asyncio.Future: A Future that resolves with the graph_id,
-        represent the instance being deleted, or String literal Fail
-        in the case of exception.
+        asyncio.Future: A Future that resolves when the graph stop completes
 
     Raises:
-        Exception: If the Neptune Analytics instance creation fails
+        Exception: If the stop operation fails with an invalid status code
+        ValueError: If the role lacks required permissions or if graph is not in AVAILABLE state
     """
-    # Instance deletion
-    na_client = boto3.client(
-        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-    )
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    iam_client.has_stop_na_permissions()
 
     if status_exception := _graph_status_check(na_client, graph_id, "AVAILABLE"):
         return status_exception
@@ -511,30 +527,36 @@ def stop_na_instance(graph_id: str):
         return _invalid_status_code(status_code, response)
 
 
-def delete_na_instance(graph_id: str):
+def delete_na_instance(graph_id: str,
+                       sts_client: Optional[BaseClient] = None,
+                       iam_client: Optional[BaseClient] = None,
+                       na_client: Optional[BaseClient] = None
+    ):
     """
-    Attempt to delete a remote Neptune Analytics instance with the provided graph_id,
-    on behalf of the configured IAM user.
+    Delete a Neptune Analytics graph instance.
+
+    Args:
+        graph_id (str): The ID of the Neptune Analytics graph to delete
+        sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided,
+            a new one will be created.
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided,
+            a new one will be created using the current user's credentials.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
+            a new one will be created.
 
     Returns:
-        asyncio.Future: A Future that resolves with the graph_id,
-        represent the instance being deleted, or String literal Fail
-        in the case of exception.
+        asyncio.Future: A Future that resolves when the graph deletion completes
 
     Raises:
-        Exception: If the Neptune Analytics instance creation fails
+        Exception: If the deletion fails with an invalid status code
+        ValueError: If the role lacks required permissions
     """
+
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
     # Permission check
-    user_arn = boto3.client("sts").get_caller_identity()["Arn"]
-    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
     iam_client.has_delete_na_permissions()
 
-    # Instance deletion
-    na_client = boto3.client(
-        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-    )
     response = _delete_na_instance_task(na_client, graph_id)
-
     status_code = _get_status_code(response)
     if status_code == 200:
         return _get_status_check_future(na_client, TaskType.DELETE, graph_id)
@@ -568,6 +590,7 @@ def create_graph_snapshot(graph_id: str, snapshot_name: str, tag: Optional[dict]
     """
     # Permission check
     (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    iam_client.has_create_na_snapshot_permissions()
 
     kwargs = {"graphIdentifier": graph_id, "snapshotName": snapshot_name}
     if tag:

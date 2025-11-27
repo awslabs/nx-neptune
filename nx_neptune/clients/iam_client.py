@@ -254,6 +254,46 @@ class IamClient:
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)
 
+    def has_start_na_permissions(self):
+        """Check if the configured IAM role has permissions to start a Neptune Analytics instance.
+
+        Verifies that the role has the necessary permissions required to start a stopped
+        Neptune Analytics instance.
+
+        Raises:
+            ValueError: If the role lacks required permissions for starting the instance
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:StartGraph
+        """
+        na_permissions = ["neptune-graph:StartGraph"]
+        operation_name = "Start Neptune Instance"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
+    def has_stop_na_permissions(self):
+        """Check if the configured IAM role has permissions to start a Neptune Analytics instance.
+
+        Verifies that the role has the necessary permissions required to start a stopped
+        Neptune Analytics instance.
+
+        Raises:
+            ValueError: If the role lacks required permissions for starting the instance
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:StartGraph
+        """
+        na_permissions = ["neptune-graph:StopGraph"]
+        operation_name = "Stop Neptune Instance"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
     def has_delete_snapshot_permissions(self):
         """Check if the configured IAM role has permissions to delete a Neptune Analytics snapshot.
 
