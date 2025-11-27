@@ -18,7 +18,7 @@ import uuid
 from asyncio import Future
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 import boto3
 import jmespath
@@ -813,7 +813,7 @@ def _start_export_task(
     role_arn: str,
     kms_key_identifier: str,
     filetype: str = "CSV",
-    export_filter: dict = None,
+    export_filter: dict | None = None,
 ) -> str:
     """Export graph data to an S3 bucket in CSV format.
 
@@ -848,7 +848,7 @@ def _start_export_task(
         f"Export S3 Graph [{graph_id}] data to S3 [{s3_destination}], under IAM role [{role_arn}]"
     )
     try:
-        kwargs_export = {
+        kwargs_export: dict[str, Any] = {
             "graphIdentifier": graph_id,
             "roleArn": role_arn,
             "format": filetype,
@@ -1051,8 +1051,8 @@ def delete_snapshot_status_check_wrapper(client, snapshot_id: str):
 def export_athena_table_to_s3(
     sql_queries: list,
     s3_bucket: str,
-    catalog: str = None,
-    database: str = None,
+    catalog: str = None,  # type: ignore[assignment]
+    database: str = None,  # type: ignore[assignment]
     polling_interval=10,
     max_attempts=60,
 ):
@@ -1061,8 +1061,8 @@ def export_athena_table_to_s3(
     Args:
         :param sql_queries: List of SQL query strings to execute
         :param s3_bucket: S3 bucket path for query results
-        :param catalog (str, optional): catalog namespace to run the sql_query
-        :param database (str, optional): the database to run the sql_query
+        :param catalog: (str, optional) catalog namespace to run the sql_query
+        :param database: (str, optional) the database to run the sql_query
         :param max_attempts:
         :param polling_interval:
     """
@@ -1132,9 +1132,9 @@ def create_csv_table_from_s3(
     s3_bucket: str,
     s3_output_bucket: str,
     table_name: str,
-    catalog: str = None,
-    database: str = None,
-    table_columns: list[str] = None,
+    catalog: str = None,  # type: ignore[assignment]
+    database: str = None,  # type: ignore[assignment]
+    table_columns: Optional[list[str]] = None,
     polling_interval=10,
     max_attempts=60,
 ):
@@ -1144,9 +1144,9 @@ def create_csv_table_from_s3(
         :param s3_bucket: S3 bucket path containing csv data
         :param s3_output_bucket: S3 path to print results
         :param table_name: the table name to create iceberg-formatted data
-        :param catalog (str, optional): catalog namespace to run the sql_query
-        :param database (str, optional): the database to run the sql_query
-        :param table_columns: table columns to include in the newly created query
+        :param catalog: (str, optional) catalog namespace to run the sql_query
+        :param database: (str, optional) the database to run the sql_query
+        :param table_columns: (list, optional) table columns to include in the newly created query
         :param max_attempts:
         :param polling_interval:
     """
@@ -1240,7 +1240,7 @@ def _build_sql_statement(
     bucket_name: str,
     bucket_folder: str,
     prefix: str,
-    file_paths: list[str],
+    file_paths: list[dict],
     table_columns: dict[str, str],
     table_name: str,
 ) -> str:
@@ -1315,9 +1315,9 @@ def create_iceberg_table_from_table(
     s3_output_bucket: str,
     table_name: str,
     csv_table_name: str,
-    catalog: str = None,
-    database: str = None,
-    table_columns: list[str] = None,
+    catalog: str = None,  # type: ignore[assignment]
+    database: str = None,  # type: ignore[assignment]
+    table_columns: Optional[list[str]] = None,
     polling_interval=10,
     max_attempts=60,
 ):
@@ -1369,8 +1369,8 @@ AS SELECT {select_columns} FROM {csv_table_name};
 def create_table_schema_from_s3(
     s3_bucket: str,
     table_schema: str,
-    catalog: str = None,
-    database: str = None,
+    catalog: str = None,  # type: ignore[assignment]
+    database: str = None,  # type: ignore[assignment]
     polling_interval=10,
     max_attempts=60,
 ):
@@ -1379,8 +1379,8 @@ def create_table_schema_from_s3(
     Args:
         :param table_schema: SQL CREATE EXTRNAL TABLE statement
         :param s3_bucket: S3 bucket path containing data
-        :param catalog (str, optional): catalog namespace to run the sql_query
-        :param database (str, optional): the database to run the sql_query
+        :param catalog: (str, optional) catalog namespace to run the sql_query
+        :param database: (str, optional) the database to run the sql_query
         :param max_attempts:
         :param polling_interval:
     """
@@ -1416,17 +1416,16 @@ def _execute_athena_query(
     client,
     sql_statement: str,
     output_location: str,
-    catalog: str = None,
-    database: str = None,
+    catalog: str = None,  # type: ignore[assignment]
+    database: str = None,  # type: ignore[assignment]
 ) -> str:
     """
-
-    :param client:
-    :param sql_statement:
-    :param output_location:
-    :param catalog:
-    :param database:
-    :return:
+    :param client: boto3 Athena client to run a query
+    :param sql_statement: SQL query to execute
+    :param output_location: S3 bucket path for query results
+    :param catalog: (str, optional) catalog namespace to run the sql_query
+    :param database: (str, optional) the database to run the sql_query
+    :return: string with the execution id
     """
 
     query_execution_params = {
@@ -1485,25 +1484,29 @@ class ProjectionType(Enum):
 
 
 def validate_athena_query(query: str, projection_type: ProjectionType):
-    """Validates that an Athena SQL query contains the required fields for node or edge projections.
+    """Validates that an Athena SQL SELECT query contains the required fields for node or edge projections.
 
     Args:
-        query (str): The SQL query to validate
+        query (str): The SQL SELECT query to validate
         projection_type (ProjectionType): The type of projection (NODE or EDGE) to validate against
 
     Returns:
         bool: True if query contains required fields for the projection type, False otherwise
 
     The function checks that:
-    - For NODE projections: Query must include ~id field
-    - For EDGE projections: Query must include ~id, ~from, and ~to fields
+    - Query is a SELECT query
+    - For NODE projections: Query must return the "~id" field
+    - For EDGE projections: Query must return the "~from" and "~to" fields
+    - The "~label" return field is optional
     - Wildcard (*) selects are allowed but generate a warning
     - Invalid SQL syntax returns False
     """
+    parsed_queries = parse_one(query).find(exp.Select)
+    if parsed_queries is None:
+        logger.error(f"SQL query not a SELECT query: {query}")
+        return False
     try:
-        column_names = {
-            column.alias_or_name for column in parse_one(query).find(exp.Select)
-        }
+        column_names = {column.alias_or_name for column in parsed_queries}
     except Exception as e:
         logger.error(f"Invalid SQL query: {e}")
         return False
@@ -1523,7 +1526,7 @@ def validate_athena_query(query: str, projection_type: ProjectionType):
                 )
             return mandate_fields_node.issubset(column_names)
         case ProjectionType.EDGE:
-            mandate_fields_edge = {"~id", "~from", "~to"}
+            mandate_fields_edge = {"~from", "~to"}
             if not mandate_fields_edge.issubset(column_names):
                 logger.warning(
                     f"Missing required fields for edge projection. Required fields: {mandate_fields_edge}"
