@@ -275,19 +275,19 @@ class IamClient:
         self.check_aws_permission(operation_name, na_permissions)
 
     def has_stop_na_permissions(self):
-        """Check if the configured IAM role has permissions to start a Neptune Analytics instance.
+        """Check if the configured IAM role has permissions to stop a Neptune Analytics instance.
 
-        Verifies that the role has the necessary permissions required to start a stopped
+        Verifies that the role has the necessary permissions required to stop a running
         Neptune Analytics instance.
 
         Raises:
-            ValueError: If the role lacks required permissions for starting the instance
+            ValueError: If the role lacks required permissions for stopping the instance
 
         Returns:
             None: The function doesn't return a value but raises an exception if permissions are insufficient
 
         Required permissions:
-            - neptune-graph:StartGraph
+            - neptune-graph:StopGraph
         """
         na_permissions = ["neptune-graph:StopGraph"]
         operation_name = "Stop Neptune Instance"
