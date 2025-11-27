@@ -254,6 +254,114 @@ class IamClient:
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)
 
+    def has_start_na_permissions(self):
+        """Check if the configured IAM role has permissions to start a Neptune Analytics instance.
+
+        Verifies that the role has the necessary permissions required to start a stopped
+        Neptune Analytics instance.
+
+        Raises:
+            ValueError: If the role lacks required permissions for starting the instance
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:StartGraph
+        """
+        na_permissions = ["neptune-graph:StartGraph"]
+        operation_name = "Start Neptune Instance"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
+    def has_stop_na_permissions(self):
+        """Check if the configured IAM role has permissions to stop a Neptune Analytics instance.
+
+        Verifies that the role has the necessary permissions required to stop a running
+        Neptune Analytics instance.
+
+        Raises:
+            ValueError: If the role lacks required permissions for stopping the instance
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:StopGraph
+        """
+        na_permissions = ["neptune-graph:StopGraph"]
+        operation_name = "Stop Neptune Instance"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
+    def has_delete_snapshot_permissions(self):
+        """Check if the configured IAM role has permissions to delete a Neptune Analytics snapshot.
+
+        Verifies that the role has the necessary permissions required to delete a snapshot
+        of a Neptune Analytics instance.
+
+        Raises:
+            ValueError: If the role lacks required permissions for snapshot deletion operations
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:DeleteGraphSnapshot
+        """
+        na_permissions = ["neptune-graph:DeleteGraphSnapshot"]
+        operation_name = "Delete Neptune Snapshot"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
+    def has_create_na_from_snapshot_permissions(self):
+        """Check if the configured IAM role has permissions to create a Neptune Analytics instance from a snapshot.
+
+        Verifies that the role has the necessary permissions required to restore a Neptune Analytics
+        instance from an existing snapshot, including tagging resources and restoring from snapshot.
+
+        Raises:
+            ValueError: If the role lacks required permissions for snapshot restore operations
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:TagResource
+            - neptune-graph:RestoreGraphFromSnapshot
+        """
+        na_permissions = [
+            "neptune-graph:TagResource",
+            "neptune-graph:RestoreGraphFromSnapshot",
+        ]
+        operation_name = "Create Neptune Instance From Snapshot"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
+    def has_create_na_snapshot_permissions(self):
+        """Check if the configured IAM role has permissions to create a Neptune Analytics snapshot.
+
+        Verifies that the role has the necessary permissions required to create a snapshot
+        of a Neptune Analytics instance, including tagging resources and creating snapshots.
+
+        Raises:
+            ValueError: If the role lacks required permissions for snapshot creation operations
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:TagResource
+            - neptune-graph:CreateGraphSnapshot
+        """
+        na_permissions = [
+            "neptune-graph:TagResource",
+            "neptune-graph:CreateGraphSnapshot",
+        ]
+        operation_name = "Create Neptune Analytics Snapshot"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
     def has_delete_na_permissions(self):
         """Check if the configured IAM role has permissions to delete Neptune Analytics instance.
 
@@ -431,6 +539,29 @@ class IamClient:
                     "permissions": [
                         "athena:StartQueryExecution",
                         "athena:GetQueryExecution",
+                    ]
+                },
+            ],
+            "create_graph_snapshot": [
+                {
+                    "permissions": [
+                        "neptune-graph:TagResource",
+                        "neptune-graph:CreateGraphSnapshot",
+                    ]
+                },
+            ],
+            "create_na_instance_from_snapshot": [
+                {
+                    "permissions": [
+                        "neptune-graph:TagResource",
+                        "neptune-graph:RestoreGraphFromSnapshot",
+                    ]
+                },
+            ],
+            "delete_graph_snapshot": [
+                {
+                    "permissions": [
+                        "neptune-graph:DeleteGraphSnapshot",
                     ]
                 },
             ],

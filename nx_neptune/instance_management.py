@@ -38,6 +38,8 @@ __all__ = [
     "TaskType",
     "create_na_instance",
     "create_na_instance_with_s3_import",
+    "create_na_instance_from_snapshot",
+    "create_graph_snapshot",
     "delete_na_instance",
     "export_athena_table_to_s3",
     "create_csv_table_from_s3",
@@ -46,6 +48,7 @@ __all__ = [
     "validate_permissions",
     "start_na_instance",
     "stop_na_instance",
+    "delete_graph_snapshot",
 ]
 
 logger = logging.getLogger(__name__)
@@ -67,6 +70,8 @@ class TaskType(Enum):
     NOOP = (5, ["INI"], "AVAILABLE")
     START = (6, ["INI", "STARTING"], "AVAILABLE")
     STOP = (7, ["INI", "STOPPING"], "STOPPED")
+    EXPORT_SNAPSHOT = (8, ["INI", "SNAPSHOTTING"], "AVAILABLE")
+    DELETE_SNAPSHOT = (9, ["INI", "DELETING"], "DELETED")
 
     def __init__(self, num_value, permitted_statuses, status_complete):
         self._value_ = num_value
@@ -127,6 +132,10 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
                 TaskType.DELETE: lambda: delete_status_check_wrapper(client, task_id),
                 TaskType.START: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.STOP: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
+                TaskType.EXPORT_SNAPSHOT: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
+                TaskType.DELETE_SNAPSHOT: lambda: delete_snapshot_status_check_wrapper(
+                    client, task_id
+                ),
             }
 
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -282,22 +291,25 @@ def create_na_instance(config: Optional[dict] = None):
 
     response = _create_na_instance_task(na_client, config)
     prospective_graph_id = _get_graph_id(response)
+    status_code = _get_status_code(response)
 
-    if _get_status_code(response) == 201:
-        fut = TaskFuture(prospective_graph_id, TaskType.CREATE, _ASYNC_POLLING_INTERVAL)
-        asyncio.create_task(
-            _wait_until_task_complete(na_client, fut), name=prospective_graph_id
+    if status_code == 201:
+        return _get_status_check_future(
+            na_client, TaskType.CREATE, prospective_graph_id
         )
-        return asyncio.wrap_future(fut)
     else:
         raise Exception(
             f"Neptune instance creation failure with graph name {prospective_graph_id}"
         )
 
-def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None,
-                                      sts_client: Optional[BaseClient] = None,
-                                      iam_client: Optional[BaseClient] = None,
-                                      na_client: Optional[BaseClient] = None) -> asyncio.Future:
+
+def create_na_instance_with_s3_import(
+    s3_arn: str,
+    config: Optional[dict] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+) -> asyncio.Future:
     """Creates a new Neptune Analytics graph instance and imports data from S3.
 
     This function creates a new Neptune Analytics graph instance and immediately starts
@@ -330,20 +342,7 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
         ValueError: If the role lacks required permissions
     """
 
-    if sts_client is None:
-        sts_client = boto3.client(SERVICE_STS)
-    user_arn = sts_client.get_caller_identity()["Arn"]
-
-    # Create IAM client if not provided
-    if iam_client is None:
-        iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
-
-    # Create Neptune Analytics client if not provided
-    if na_client is None:
-        na_client = boto3.client(
-            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-        )
-
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
     # Retrieve key_arn for the bucket and permission check if present
     key_arn = _get_bucket_encryption_key_arn(s3_arn)
     # Permission checks
@@ -381,21 +380,121 @@ def create_na_instance_with_s3_import(s3_arn: str, config: Optional[dict] = None
         )
 
 
-def start_na_instance(graph_id: str):
+def create_na_instance_from_snapshot(
+    snapshot_id: str,
+    config: Optional[dict] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
     """
-    Attempt to resume a remote Neptune Analytics instance with the provided graph_id,
-    on behalf of the configured IAM user.
+    Creates a new Neptune Analytics graph instance from an existing snapshot.
+
+    Args:
+        snapshot_id (str): The ID of the snapshot to restore from
+        config (Optional[dict]): Optional dictionary of custom configuration parameters
+            to use when creating the Neptune Analytics instance. If not provided,
+            default settings will be applied.
+            All options listed under boto3 documentations are supported.
+
+            Reference:
+            https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/restore_graph_from_snapshot.html
+        sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided,
+            a new one will be created.
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided,
+            a new one will be created using the current user's credentials.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
+            a new one will be created.
 
     Returns:
-        asyncio.Future: A Future that resolves with the graph_id,
-        represent the instance being deleted, or String literal Fail
-        in the case of exception.
+        asyncio.Future: A Future that resolves when the graph creation completes
 
     Raises:
         Exception: If the Neptune Analytics instance creation fails
+        ValueError: If the role lacks required permissions
     """
-    # Instance deletion
-    na_client = boto3.client("neptune-graph")
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    iam_client.has_create_na_from_snapshot_permissions()
+
+    response = _create_na_instance_from_snapshot_task(na_client, snapshot_id, config)
+    prospective_graph_id = _get_graph_id(response)
+
+    if _get_status_code(response) == 201:
+        return _get_status_check_future(
+            na_client, TaskType.CREATE, prospective_graph_id
+        )
+    else:
+        raise Exception(
+            f"Neptune instance creation failure with graph name {prospective_graph_id}"
+        )
+
+
+def delete_graph_snapshot(
+    snapshot_id: str,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
+    """
+    Delete a Neptune Analytics graph snapshot.
+
+    Args:
+        snapshot_id (str): The ID of the snapshot to delete
+        sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided,
+            a new one will be created.
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided,
+            a new one will be created using the current user's credentials.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
+            a new one will be created.
+
+    Returns:
+        asyncio.Future: A Future that resolves when the snapshot deletion completes
+
+    Raises:
+        Exception: If the snapshot deletion fails
+        ValueError: If the role lacks required permissions
+    """
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+
+    # Permissions check
+    iam_client.has_delete_snapshot_permissions()
+    response = na_client.delete_graph_snapshot(snapshotIdentifier=snapshot_id)
+
+    if _get_status_code(response) == 200:
+        return _get_status_check_future(
+            na_client, TaskType.DELETE_SNAPSHOT, snapshot_id
+        )
+    else:
+        return _invalid_status_code(200, response)
+
+
+def start_na_instance(
+    graph_id: str,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
+    """
+    Start a stopped Neptune Analytics graph instance.
+
+    Args:
+        graph_id (str): The ID of the Neptune Analytics graph to start
+        sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided,
+            a new one will be created.
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided,
+            a new one will be created using the current user's credentials.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
+            a new one will be created.
+
+    Returns:
+        asyncio.Future: A Future that resolves when the graph start completes
+
+    Raises:
+        Exception: If the start operation fails with an invalid status code
+        ValueError: If the role lacks required permissions or if graph is not in STOPPED state
+    """
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    iam_client.has_start_na_permissions()
 
     if status_exception := _graph_status_check(na_client, graph_id, "STOPPED"):
         return status_exception
@@ -403,28 +502,37 @@ def start_na_instance(graph_id: str):
     response = na_client.start_graph(graphIdentifier=graph_id)
     status_code = _get_status_code(response)
     if status_code == 200:
-        fut = TaskFuture(graph_id, TaskType.START, _ASYNC_POLLING_INTERVAL)
-        asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
-        return asyncio.wrap_future(fut)
+        return _get_status_check_future(na_client, TaskType.START, graph_id)
     else:
         return _invalid_status_code(status_code, response)
 
 
-def stop_na_instance(graph_id: str):
-    """
-    Attempt to stop a remote Neptune Analytics instance with the provided graph_id,
-    on behalf of the configured IAM user.
+def stop_na_instance(
+    graph_id: str,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
+    """Stop a running Neptune Analytics graph instance.
+
+    Args:
+        graph_id (str): The ID of the Neptune Analytics graph to stop
+        sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided,
+            a new one will be created.
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided,
+            a new one will be created using the current user's credentials.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
+            a new one will be created.
 
     Returns:
-        asyncio.Future: A Future that resolves with the graph_id,
-        represent the instance being deleted, or String literal Fail
-        in the case of exception.
+        asyncio.Future: A Future that resolves when the graph stop completes
 
     Raises:
-        Exception: If the Neptune Analytics instance creation fails
+        Exception: If the stop operation fails with an invalid status code
+        ValueError: If the role lacks required permissions or if graph is not in AVAILABLE state
     """
-    # Instance deletion
-    na_client = boto3.client("neptune-graph")
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    iam_client.has_stop_na_permissions()
 
     if status_exception := _graph_status_check(na_client, graph_id, "AVAILABLE"):
         return status_exception
@@ -432,44 +540,91 @@ def stop_na_instance(graph_id: str):
     response = na_client.stop_graph(graphIdentifier=graph_id)
     status_code = _get_status_code(response)
     if status_code == 200:
-        fut = TaskFuture(graph_id, TaskType.STOP, _ASYNC_POLLING_INTERVAL)
-        asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
-        return asyncio.wrap_future(fut)
+        return _get_status_check_future(na_client, TaskType.STOP, graph_id)
     else:
         return _invalid_status_code(status_code, response)
 
 
-def delete_na_instance(graph_id: str):
+def delete_na_instance(
+    graph_id: str,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
     """
-    Attempt to delete a remote Neptune Analytics instance with the provided graph_id,
-    on behalf of the configured IAM user.
+    Delete a Neptune Analytics graph instance.
+
+    Args:
+        graph_id (str): The ID of the Neptune Analytics graph to delete
+        sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided,
+            a new one will be created.
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided,
+            a new one will be created using the current user's credentials.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
+            a new one will be created.
 
     Returns:
-        asyncio.Future: A Future that resolves with the graph_id,
-        represent the instance being deleted, or String literal Fail
-        in the case of exception.
+        asyncio.Future: A Future that resolves when the graph deletion completes
 
     Raises:
-        Exception: If the Neptune Analytics instance creation fails
+        Exception: If the deletion fails with an invalid status code
+        ValueError: If the role lacks required permissions
     """
+
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
     # Permission check
-    user_arn = boto3.client("sts").get_caller_identity()["Arn"]
-    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
     iam_client.has_delete_na_permissions()
 
-    # Instance deletion
-    na_client = boto3.client("neptune-graph")
     response = _delete_na_instance_task(na_client, graph_id)
-
     status_code = _get_status_code(response)
     if status_code == 200:
-        fut = TaskFuture(graph_id, TaskType.DELETE, _ASYNC_POLLING_INTERVAL)
-        asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
-        return asyncio.wrap_future(fut)
+        return _get_status_check_future(na_client, TaskType.DELETE, graph_id)
     else:
-        fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
-        fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
-        return asyncio.wrap_future(fut)
+        return _invalid_status_code(status_code, response)
+
+
+def create_graph_snapshot(
+    graph_id: str,
+    snapshot_name: str,
+    tag: Optional[dict] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
+    """Create a snapshot of a Neptune Analytics graph.
+
+    Args:
+        graph_id (str): The ID of the Neptune Analytics graph to snapshot
+        snapshot_name (str): Name to assign to the snapshot
+        tag (Optional[dict]): Optional tags to apply to the snapshot
+        sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided,
+            a new one will be created.
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided,
+            a new one will be created using the current user's credentials.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
+            a new one will be created.
+
+    Returns:
+        asyncio.Future: A Future that resolves when the snapshot completes
+
+    Raises:
+        Exception: If the snapshot creation fails with an invalid status code
+        ValueError: If the role lacks required permissions
+    """
+    # Permission check
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    iam_client.has_create_na_snapshot_permissions()
+
+    kwargs = {"graphIdentifier": graph_id, "snapshotName": snapshot_name}
+    if tag:
+        kwargs["tags"] = tag
+
+    response = na_client.create_graph_snapshot(**kwargs)
+    status_code = _get_status_code(response)
+    if status_code == 201:
+        return _get_status_check_future(na_client, TaskType.EXPORT_SNAPSHOT, graph_id)
+    else:
+        return _invalid_status_code(status_code, response)
 
 
 def _get_create_instance_config(graph_name, config=None):
@@ -568,6 +723,31 @@ def _create_na_instance_task(client, config: Optional[dict] = None):
     graph_name = _create_random_graph_name()
     kwargs = _get_create_instance_config(graph_name, config)
     response = client.create_graph(**kwargs)
+    return response
+
+
+def _create_na_instance_from_snapshot_task(
+    client, snapshot_identifier: str, config: Optional[dict] = None
+):
+    """Create a new Neptune Analytics graph instance with default settings.
+
+    This function generates a unique name for the graph using a UUID suffix and
+    creates a new Neptune Analytics graph instance with public connectivity.
+
+    Args:
+        client (boto3.client): The Neptune Analytics boto3 client
+
+    Returns:
+        dict: The API response containing information about the created graph
+
+    Raises:
+        ClientError: If there's an issue with the AWS API call
+    """
+    # Permission check
+    graph_name = _create_random_graph_name()
+    kwargs = _get_create_instance_config(graph_name, config)
+    kwargs["snapshotIdentifier"] = snapshot_identifier
+    response = client.restore_graph_from_snapshot(**kwargs)
     return response
 
 
@@ -836,6 +1016,29 @@ def delete_status_check_wrapper(client, graph_id):
     """
     try:
         return client.get_graph(graphIdentifier=graph_id)
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code == "ResourceNotFoundException":
+            return {"status": "DELETED"}
+        else:
+            raise e
+
+
+def delete_snapshot_status_check_wrapper(client, snapshot_id: str):
+    """
+    Wrapper method to suppress error when snapshot_id not found,
+    as this is an indicator of successful deletion.
+
+    Args:
+        client (client): The boto client
+        snapshot_id (str): The String identifier for the Neptune Analytics snapshot
+
+    Returns:
+        str: The original response from Boto or a mocked response to represent
+        successful deletion, in the case of resource not found.
+    """
+    try:
+        return client.get_graph_snapshot(snapshotIdentifier=snapshot_id)
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         if error_code == "ResourceNotFoundException":
@@ -1372,3 +1575,56 @@ def _invalid_status_code(status_code, response):
         )
     )
     return asyncio.wrap_future(fut)
+
+
+def _get_status_check_future(na_client, task_type: TaskType, object_id):
+    """Creates and returns a Future for monitoring Neptune Analytics task status.
+
+    Args:
+        na_client: The Neptune Analytics boto3 client
+        task_type (TaskType): The type of task being monitored (e.g. CREATE, DELETE, etc)
+        object_id (str): The identifier for the object being monitored (e.g. graph ID)
+
+    Returns:
+        asyncio.Future: A Future that resolves when the task completes
+
+    The returned Future will monitor the task status by polling at regular intervals
+    defined by _ASYNC_POLLING_INTERVAL. The Future resolves when the task reaches
+    its completion state as defined by the TaskType.
+    """
+    fut = TaskFuture(object_id, task_type, _ASYNC_POLLING_INTERVAL)
+    asyncio.create_task(_wait_until_task_complete(na_client, fut), name=object_id)
+    return asyncio.wrap_future(fut)
+
+
+def _get_or_create_clients(
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+):
+    """
+    Create or reuse provided AWS clients.
+
+    Args:
+        sts_client (Optional[BaseClient]): Optional STS boto3 client
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client
+
+    Returns:
+        Tuple[BaseClient, IamClient, BaseClient]: Tuple containing (sts_client, iam_client, na_client)
+    """
+    if sts_client is None:
+        sts_client = boto3.client(SERVICE_STS)
+    user_arn = sts_client.get_caller_identity()["Arn"]
+
+    # Create IAM client if not provided
+    if iam_client is None:
+        iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+
+    # Create Neptune Analytics client if not provided
+    if na_client is None:
+        na_client = boto3.client(
+            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+        )
+
+    return iam_client, na_client
