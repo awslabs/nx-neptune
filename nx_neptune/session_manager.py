@@ -345,9 +345,18 @@ class SessionManager:
         )
 
     def _graph_bulk_operation(self, operation: callable, status_to_check: str, graph_name: str = None):
-        graph_ids = [graph['id'] for graph in self.list_graphs()
-                     if graph['status'] == status_to_check
-                     and (graph_name is None or graph['name'] == graph_name)]
+        # Get all graphs matching name filter if specified
+        graphs = [graph for graph in self.list_graphs()
+                 if graph_name is None or graph['name'] == graph_name]
+
+        # Filter for graphs in correct status, log warning for others
+        graph_ids = []
+        for graph in graphs:
+            if graph['status'] == status_to_check:
+                graph_ids.append(graph['id'])
+            else:
+                logger.warning(f"Skipping graph {graph['id']} - status is {graph['status']}, expected {status_to_check}")
+
         future_list = []
         for graph_id in graph_ids:
             future_list.append(operation(graph_id))
