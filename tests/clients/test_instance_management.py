@@ -312,7 +312,7 @@ def test_clean_s3_path(s3_path, expected_result):
                 FROM air_routes_db.air_routes_table
                 WHERE dest_airport_id IS NOT NULL );
         """,
-            ProjectionType.EDGE,
+            ProjectionType.NODE,
             True,
         ),
     ],
@@ -809,6 +809,7 @@ async def test_export_csv_to_s3_success(
         "s3://test-bucket/test-folder/",
         "test-role-arn",
         None,
+        export_filter=None,
     )
     mock_create_task.assert_called_once()
 
@@ -858,6 +859,7 @@ async def test_export_csv_to_s3_with_kms_key(
         "s3://test-bucket/test-folder/",
         "test-role-arn",
         "test-kms-key-arn",
+        export_filter=None,
     )
     mock_create_task.assert_called_once()
 

@@ -28,7 +28,7 @@ from botocore.exceptions import ClientError
 from sqlglot import exp, parse_one
 
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
-from .clients.neptune_constants import APP_ID_NX
+from .clients.neptune_constants import APP_ID_NX, SERVICE_ATHENA, SERVICE_S3
 from .na_graph import NeptuneGraph
 
 __all__ = [
@@ -91,7 +91,13 @@ class TaskFuture(Future):
         polling_interval(int): Time interval in seconds to perform job status query
     """
 
-    def __init__(self, task_id, task_type, polling_interval=10, max_attempts=60):
+    def __init__(
+        self,
+        task_id,
+        task_type,
+        polling_interval=_ASYNC_POLLING_INTERVAL,
+        max_attempts=60,
+    ):
         super().__init__()
         self.task_id = task_id
         self.task_type = task_type
@@ -189,7 +195,7 @@ def import_csv_from_s3(
     iam_client = na_graph.iam_client
     role_arn = iam_client.role_arn
 
-    # Retrieve key_arn for the bucket and permission check if present
+    # Retrieve key_arn for the bucket and permission checks if present
     key_arn = _get_bucket_encryption_key_arn(s3_arn)
 
     # Run permission check
@@ -264,7 +270,13 @@ def export_csv_to_s3(
     return asyncio.wrap_future(future)
 
 
-def create_na_instance(config: Optional[dict] = None):
+def create_na_instance(
+    config: Optional[dict] = None,
+    na_client: Optional[BaseClient] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    graph_name_prefix: Optional[str] = None,
+):
     """
     Creates a new graph instance for Neptune Analytics.
 
@@ -276,20 +288,30 @@ def create_na_instance(config: Optional[dict] = None):
 
             Reference:
             https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph.html
+        na_client (Optional[BaseClient]): Optional boto3 client for neptune-graph service
+        sts_client (Optional[BaseClient]): Optional boto3 client for sts service
+        iam_client (Optional[BaseClient]): Optional boto3 client for iam service
+        graph_name_prefix (Optional[str]): Optional prefix for the generated graph name
 
     Raises:
         Exception: If the Neptune Analytics instance creation fails
     """
-    na_client = boto3.client(
-        service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-    )
+    if na_client is None:
+        na_client = boto3.client(
+            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+        )
 
     # Permissions check
-    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
-    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
-    iam_client.has_create_na_permissions()
+    if sts_client is None:
+        sts_client = boto3.client(SERVICE_STS)
+    user_arn = sts_client.get_caller_identity()["Arn"]
 
-    response = _create_na_instance_task(na_client, config)
+    if iam_client is None:
+        iam_client = boto3.client(SERVICE_IAM)
+    iam_client_wrapper = IamClient(role_arn=user_arn, client=iam_client)
+    iam_client_wrapper.has_create_na_permissions()
+
+    response = _create_na_instance_task(na_client, config, graph_name_prefix)
     prospective_graph_id = _get_graph_id(response)
     status_code = _get_status_code(response)
 
@@ -708,7 +730,9 @@ def _get_create_instance_with_import_config(
     return config
 
 
-def _create_na_instance_task(client, config: Optional[dict] = None):
+def _create_na_instance_task(
+    client, config: Optional[dict] = None, graph_name_prefix: Optional[str] = None
+):
     """Create a new Neptune Analytics graph instance with default settings.
 
     This function generates a unique name for the graph using a UUID suffix and
@@ -716,6 +740,8 @@ def _create_na_instance_task(client, config: Optional[dict] = None):
 
     Args:
         client (boto3.client): The Neptune Analytics boto3 client
+        config (Optional[dict]): Optional configuration parameters
+        graph_name_prefix (Optional[str]): Optional prefix for the generated graph name
 
     Returns:
         dict: The API response containing information about the created graph
@@ -724,7 +750,7 @@ def _create_na_instance_task(client, config: Optional[dict] = None):
         ClientError: If there's an issue with the AWS API call
     """
 
-    graph_name = _create_random_graph_name()
+    graph_name = _create_random_graph_name(graph_name_prefix)
     kwargs = _get_create_instance_config(graph_name, config)
     response = client.create_graph(**kwargs)
     return response
@@ -794,9 +820,7 @@ def _start_import_task(
     Raises:
         ClientError: If there's an issue with the AWS API call
     """
-    logger.debug(
-        f"Import S3 graph data [{s3_location}] into Graph [{graph_id}], under IAM role [{role_arn}]"
-    )
+    logger.debug(f"Import S3 graph data [{s3_location}] into Graph [{graph_id}]")
     try:
         response = client.start_import_task(  # type: ignore[attr-defined]
             graphIdentifier=graph_id,
@@ -848,9 +872,7 @@ def _start_export_task(
     Raises:
         ClientError: If there's an issue with the AWS API call
     """
-    logger.debug(
-        f"Export S3 Graph [{graph_id}] data to S3 [{s3_destination}], under IAM role [{role_arn}]"
-    )
+    logger.debug(f"Export S3 Graph [{graph_id}] data to S3 [{s3_destination}]")
     try:
         kwargs_export: dict[str, Any] = {
             "graphIdentifier": graph_id,
@@ -877,7 +899,7 @@ def _reset_graph(
     client: BaseClient,
     graph_id: str,
     skip_snapshot: bool = True,
-    polling_interval=10,
+    polling_interval=_ASYNC_POLLING_INTERVAL,
     max_attempts=60,
 ) -> bool:
     """Reset the Neptune Analytics graph.
@@ -918,7 +940,7 @@ def _get_bucket_encryption_key_arn(s3_arn):
     """
     try:
         # Create an S3 client
-        s3_client = boto3.client("s3")
+        s3_client = boto3.client(SERVICE_S3)
 
         # Get the bucket encryption configuration
         bucket_name = _clean_s3_path(s3_arn)
@@ -992,17 +1014,22 @@ def _get_graph_id(response: dict):
     return response.get("id")
 
 
-def _create_random_graph_name() -> str:
+def _create_random_graph_name(graph_name_prefix: Optional[str] = None) -> str:
     """Generate a unique name for a Neptune Analytics graph instance.
 
     This function creates a random graph name by combining the project identifier
     with a UUID to ensure uniqueness across all graph instances.
 
+    Args:
+        graph_name_prefix (Optional[str]): Optional prefix for the graph name.
+            If not provided, uses _PROJECT_IDENTIFIER.
+
     Returns:
-        str: A unique graph name in the format '{PROJECT_IDENTIFIER}-{uuid}'
+        str: A unique graph name in the format '{prefix}-{uuid}'
     """
+    prefix = graph_name_prefix if graph_name_prefix is not None else _PROJECT_IDENTIFIER
     uuid_suffix = str(uuid.uuid4())
-    return f"{_PROJECT_IDENTIFIER}-{uuid_suffix}"
+    return f"{prefix}-{uuid_suffix}"
 
 
 def delete_status_check_wrapper(client, graph_id):
@@ -1057,7 +1084,7 @@ def export_athena_table_to_s3(
     s3_bucket: str,
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
-    polling_interval=10,
+    polling_interval=_ASYNC_POLLING_INTERVAL,
     max_attempts=60,
 ):
     """Export Athena table data to S3 by executing SQL queries.
@@ -1070,7 +1097,7 @@ def export_athena_table_to_s3(
         :param max_attempts:
         :param polling_interval:
     """
-    client = boto3.client("athena")
+    client = boto3.client(SERVICE_ATHENA)
 
     # TODO: validate permissions - or fail
     # TODO: check s3 bucket location is empty - or fail
@@ -1083,7 +1110,7 @@ def export_athena_table_to_s3(
         query_execution_ids.append(query_execution_id)
 
     # Wait on all query execution IDs
-    s3_client = boto3.client("s3")
+    s3_client = boto3.client(SERVICE_S3)
     bucket_name = s3_bucket.replace("s3://", "").split("/")[0]
     bucket_prefix = "/".join(s3_bucket.replace("s3://", "").split("/")[1:])
 
@@ -1139,7 +1166,7 @@ def create_csv_table_from_s3(
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
     table_columns: Optional[list[str]] = None,
-    polling_interval=10,
+    polling_interval=_ASYNC_POLLING_INTERVAL,
     max_attempts=60,
 ):
     """Create an external CSV table from S3 data using Athena queries.
@@ -1160,12 +1187,12 @@ def create_csv_table_from_s3(
     # TODO check is skip drop table is False and table exists
 
     # Wait on all query execution IDs
-    s3_client = boto3.client("s3")
+    s3_client = boto3.client(SERVICE_S3)
     bucket_path = s3_bucket.replace("s3://", "").split("/")
     bucket_name = bucket_path.pop(0)
     bucket_prefix = "/".join(bucket_path)
 
-    logger.info(f"Inspecting files from {s3_bucket}")
+    logger.debug(f"Inspecting files from {s3_bucket}")
 
     response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=bucket_prefix)
     file_paths = response.get("Contents", [])
@@ -1200,7 +1227,7 @@ def create_csv_table_from_s3(
         f"{table_name}_vertices",
     )
 
-    athena_client = boto3.client("athena")
+    athena_client = boto3.client(SERVICE_ATHENA)
     query_execution_ids = []
     for sql_statement in [edge_sql_statement, vertex_sql_statement]:
         logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
@@ -1322,7 +1349,7 @@ def create_iceberg_table_from_table(
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
     table_columns: Optional[list[str]] = None,
-    polling_interval=10,
+    polling_interval=_ASYNC_POLLING_INTERVAL,
     max_attempts=60,
 ):
     select_columns = "*"
@@ -1340,7 +1367,7 @@ AS SELECT {select_columns} FROM {csv_table_name};
 
     logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
 
-    athena_client = boto3.client("athena")
+    athena_client = boto3.client(SERVICE_ATHENA)
     query_execution_id = _execute_athena_query(
         athena_client,
         sql_statement,
@@ -1375,7 +1402,7 @@ def create_table_schema_from_s3(
     table_schema: str,
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
-    polling_interval=10,
+    polling_interval=_ASYNC_POLLING_INTERVAL,
     max_attempts=60,
 ):
     """Create external table in Athena from S3 data.
@@ -1393,7 +1420,7 @@ def create_table_schema_from_s3(
     # TODO validate if table exists already
     # TODO check is skip drop table is False and table exists
 
-    client = boto3.client("athena")
+    client = boto3.client(SERVICE_ATHENA)
     query_execution_id = _execute_athena_query(
         client, table_schema, s3_bucket, catalog=catalog, database=database
     )
@@ -1444,9 +1471,11 @@ def _execute_athena_query(
             query_execution_context["Database"] = database
         query_execution_params["QueryExecutionContext"] = query_execution_context
 
+    logger.info(f"Creating table using statement:{sql_statement}")
+
     try:
         response = client.start_query_execution(**query_execution_params)
-        logger.info(f"Creating table: {response['QueryExecutionId']}")
+        logger.info(f"Executing query: {response['QueryExecutionId']}")
         query_execution_id = response["QueryExecutionId"]
     except ClientError as e:
         logger.error(f"Error creating table: {e}")
@@ -1461,7 +1490,7 @@ def empty_s3_bucket(s3_bucket: str):
 
 
 def validate_permissions():
-    user_arn = boto3.client("sts").get_caller_identity()["Arn"]
+    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
     iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
 
     s3_import = os.getenv("NETWORKX_S3_IMPORT_BUCKET_PATH")

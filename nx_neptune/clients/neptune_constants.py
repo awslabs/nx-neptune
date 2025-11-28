@@ -18,6 +18,8 @@ Neptune constants
 SERVICE_NA = "neptune-graph"
 SERVICE_IAM = "iam"
 SERVICE_STS = "sts"
+SERVICE_ATHENA = "athena"
+SERVICE_S3 = "s3"
 
 # APP_ID
 APP_ID_NX = "nx-neptune"
