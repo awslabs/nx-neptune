@@ -335,7 +335,8 @@ def create_na_instance_with_s3_import(
             a new one will be created.
 
     Returns:
-        asyncio.Task: A Task that resolves with the graph_id when the import completes and instance is available for computation work.
+        asyncio.Task: A Task that resolves with the graph_id when the import completes and instance is available
+        for computation work.
 
     Raises:
         Exception: If the Neptune Analytics instance creation or import task fails
@@ -615,7 +616,10 @@ def create_graph_snapshot(
     (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
     iam_client.has_create_na_snapshot_permissions()
 
-    kwargs = {"graphIdentifier": graph_id, "snapshotName": snapshot_name}
+    kwargs: dict[str, Any] = {
+        "graphIdentifier": graph_id,
+        "snapshotName": snapshot_name,
+    }
     if tag:
         kwargs["tags"] = tag
 
