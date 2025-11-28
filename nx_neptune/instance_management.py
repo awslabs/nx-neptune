@@ -30,7 +30,7 @@ from sqlglot import exp, parse_one
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
 from .clients.neptune_constants import APP_ID_NX, SERVICE_ATHENA, SERVICE_S3
 from .na_graph import NeptuneGraph
-from .utils.task_future import TaskType, TaskFuture
+from .utils.task_future import TaskFuture, TaskType
 
 __all__ = [
     "import_csv_from_s3",
@@ -220,9 +220,7 @@ def import_csv_from_s3(
 
     # Packaging future
     future = TaskFuture(task_id, TaskType.IMPORT, polling_interval, max_attempts)
-    task = asyncio.create_task(
-        future.wait_until_complete(na_client), name=task_id
-    )
+    task = asyncio.create_task(future.wait_until_complete(na_client), name=task_id)
     na_graph.current_jobs.add(task)
     task.add_done_callback(na_graph.current_jobs.discard)
 
@@ -274,9 +272,7 @@ def export_csv_to_s3(
 
     # Packaging future
     future = TaskFuture(task_id, TaskType.EXPORT, polling_interval, max_attempts)
-    task = asyncio.create_task(
-        future.wait_until_complete(na_client), name=task_id
-    )
+    task = asyncio.create_task(future.wait_until_complete(na_client), name=task_id)
     na_graph.current_jobs.add(task)
     task.add_done_callback(na_graph.current_jobs.discard)
     return asyncio.wrap_future(future)
@@ -404,7 +400,9 @@ def create_na_instance_with_s3_import(
 
             # Wait for instance at last
             graph_id = response.get("graphId")
-            fut_create = TaskFuture(graph_id, TaskType.CREATE, polling_interval, max_attempts)
+            fut_create = TaskFuture(
+                graph_id, TaskType.CREATE, polling_interval, max_attempts
+            )
             await fut_create.wait_until_complete(na_client)
 
             return graph_id
@@ -468,7 +466,7 @@ def create_na_instance_from_snapshot(
             TaskType.CREATE,
             prospective_graph_id,
             polling_interval,
-            max_attempts
+            max_attempts,
         )
     else:
         raise Exception(
@@ -1550,7 +1548,9 @@ def validate_athena_query(query: str, projection_type: ProjectionType):
             return False
 
 
-def _graph_status_check(na_client, graph_id, expected_state, polling_interval=_ASYNC_POLLING_INTERVAL):
+def _graph_status_check(
+    na_client, graph_id, expected_state, polling_interval=_ASYNC_POLLING_INTERVAL
+):
     """Check if a Neptune Analytics graph is in the expected state.
 
     Args:
@@ -1573,7 +1573,9 @@ def _graph_status_check(na_client, graph_id, expected_state, polling_interval=_A
         return asyncio.wrap_future(fut)
 
 
-def _invalid_status_code(status_code, response, polling_interval=_ASYNC_POLLING_INTERVAL):
+def _invalid_status_code(
+    status_code, response, polling_interval=_ASYNC_POLLING_INTERVAL
+):
     """Create a failed Future for an invalid API response status code.
 
     Args:
@@ -1594,11 +1596,11 @@ def _invalid_status_code(status_code, response, polling_interval=_ASYNC_POLLING_
 
 
 def _get_status_check_future(
-        na_client,
-        task_type: TaskType,
-        object_id,
-        polling_interval=_ASYNC_POLLING_INTERVAL,
-        max_attempts=_ASYNC_MAX_ATTEMPTS
+    na_client,
+    task_type: TaskType,
+    object_id,
+    polling_interval=_ASYNC_POLLING_INTERVAL,
+    max_attempts=_ASYNC_MAX_ATTEMPTS,
 ):
     """Creates and returns a Future for monitoring Neptune Analytics task status.
 

@@ -70,14 +70,18 @@ def _get_task_action_map(client, task_id):
         TaskType.START: lambda: client.get_graph(graphIdentifier=task_id),
         TaskType.STOP: lambda: client.get_graph(graphIdentifier=task_id),
         TaskType.EXPORT_SNAPSHOT: lambda: client.get_graph(graphIdentifier=task_id),
-        TaskType.DELETE_SNAPSHOT: lambda: _delete_snapshot_status_check_wrapper(client, task_id),
+        TaskType.DELETE_SNAPSHOT: lambda: _delete_snapshot_status_check_wrapper(
+            client, task_id
+        ),
     }
 
 
 class TaskFuture(Future):
     """A Future subclass that tracks Neptune Analytics task information."""
 
-    def __init__(self, task_id, task_type, polling_interval=10, max_attempts=_ASYNC_MAX_ATTEMPTS):
+    def __init__(
+        self, task_id, task_type, polling_interval=10, max_attempts=_ASYNC_MAX_ATTEMPTS
+    ):
         super().__init__()
         self.task_id = task_id
         self.task_type = task_type
@@ -110,13 +114,37 @@ class TaskFuture(Future):
                 elif status in status_list:
                     task_max_attempts -= 1
                     if task_max_attempts <= 0:
-                        logger.error(f"Maximum number of attempts reached: status is {status} on type: {self.task_type}")
-                        self.set_exception(ClientError({"Error": {"Code": "MaxAttemptsReached", "Message": "Maximum attempts reached"}}, "wait_until_complete"))
+                        logger.error(
+                            f"Maximum number of attempts reached: status is {status} on type: {self.task_type}"
+                        )
+                        self.set_exception(
+                            ClientError(
+                                {
+                                    "Error": {
+                                        "Code": "MaxAttemptsReached",
+                                        "Message": "Maximum attempts reached",
+                                    }
+                                },
+                                "wait_until_complete",
+                            )
+                        )
                         return
                     await asyncio.sleep(self.polling_interval)
                 else:
-                    logger.error(f"Unexpected status: {status} on type: {self.task_type}")
-                    self.set_exception(ClientError({"Error": {"Code": "UnexpectedStatus", "Message": "Unexpected status"}}, "wait_until_complete"))
+                    logger.error(
+                        f"Unexpected status: {status} on type: {self.task_type}"
+                    )
+                    self.set_exception(
+                        ClientError(
+                            {
+                                "Error": {
+                                    "Code": "UnexpectedStatus",
+                                    "Message": "Unexpected status",
+                                }
+                            },
+                            "wait_until_complete",
+                        )
+                    )
                     return
             except ClientError as e:
                 self.set_exception(e)
