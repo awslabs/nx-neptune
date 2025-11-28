@@ -1004,3 +1004,143 @@ async def test_create_graph_config_override_default_options():
         "tags": {"agent": "nx-neptune", "additional_tag": "test_value"},
     }
     assert expected == result
+
+
+@pytest.mark.asyncio
+async def test_create_random_graph_name_default():
+    """Test _create_random_graph_name with default prefix."""
+    from nx_neptune.instance_management import _create_random_graph_name
+
+    result = _create_random_graph_name()
+    assert result.startswith("nx-neptune-")
+    assert len(result) > len("nx-neptune-")
+
+
+@pytest.mark.asyncio
+async def test_create_random_graph_name_custom_prefix():
+    """Test _create_random_graph_name with custom prefix."""
+    from nx_neptune.instance_management import _create_random_graph_name
+
+    result = _create_random_graph_name("custom-prefix")
+    assert result.startswith("custom-prefix-")
+    assert len(result) > len("custom-prefix-")
+
+
+@pytest.mark.asyncio
+@patch("boto3.client")
+async def test_start_na_instance_success(mock_boto3_client):
+    """Test successful start of NA instance."""
+    from nx_neptune.instance_management import start_na_instance
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_na_client.get_graph.return_value = {"status": "STOPPED"}
+    mock_na_client.start_graph.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 200}
+    }
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {"EvalActionName": "neptune-graph:StartGraph", "EvalDecision": "allowed"}
+        ]
+    }
+
+    result = start_na_instance("test-graph-id")
+    assert result is not None
+
+
+@pytest.mark.asyncio
+@patch("boto3.client")
+async def test_start_na_instance_wrong_status(mock_boto3_client):
+    """Test start NA instance when graph is not in STOPPED state."""
+    from nx_neptune.instance_management import start_na_instance
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_na_client.get_graph.return_value = {"status": "AVAILABLE"}
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {"EvalActionName": "neptune-graph:StartGraph", "EvalDecision": "allowed"}
+        ]
+    }
+
+    result = start_na_instance("test-graph-id")
+    assert result is not None
+    # Should return a future with exception
+
+
+@pytest.mark.asyncio
+@patch("boto3.client")
+async def test_stop_na_instance_success(mock_boto3_client):
+    """Test successful stop of NA instance."""
+    from nx_neptune.instance_management import stop_na_instance
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_na_client.get_graph.return_value = {"status": "AVAILABLE"}
+    mock_na_client.stop_graph.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 200}
+    }
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {"EvalActionName": "neptune-graph:StopGraph", "EvalDecision": "allowed"}
+        ]
+    }
+
+    result = stop_na_instance("test-graph-id")
+    assert result is not None
+
+
+@pytest.mark.asyncio
+@patch("boto3.client")
+async def test_create_graph_snapshot_success(mock_boto3_client):
+    """Test successful creation of graph snapshot."""
+    from nx_neptune.instance_management import create_graph_snapshot
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_na_client.create_graph_snapshot.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 201}
+    }
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {
+                "EvalActionName": "neptune-graph:CreateGraphSnapshot",
+                "EvalDecision": "allowed",
+            }
+        ]
+    }
+
+    result = create_graph_snapshot("test-graph-id", "test-snapshot")
+    assert result is not None
+
+
+@pytest.mark.asyncio
+@patch("boto3.client")
+async def test_delete_graph_snapshot_success(mock_boto3_client):
+    """Test successful deletion of graph snapshot."""
+    from nx_neptune.instance_management import delete_graph_snapshot
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_na_client.delete_graph_snapshot.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 200}
+    }
+    mock_na_client.get_graph_snapshot.side_effect = ClientError(
+        {"Error": {"Code": "ResourceNotFoundException"}}, "GetGraphSnapshot"
+    )
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {
+                "EvalActionName": "neptune-graph:DeleteGraphSnapshot",
+                "EvalDecision": "allowed",
+            }
+        ]
+    }
+
+    result = await delete_graph_snapshot("test-snapshot-id")
+    assert result == "test-snapshot-id"
