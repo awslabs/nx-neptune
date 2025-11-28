@@ -681,9 +681,9 @@ def reset_graph(
     response = na_client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
     status_code = _get_status_code(response)
     if status_code == 200:
-        fut = TaskFuture(graph_id, TaskType.RESET_GRAPH, _ASYNC_POLLING_INTERVAL)
-        asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
-        return asyncio.wrap_future(fut)
+        return _get_status_check_future(
+            na_client, TaskType.RESET_GRAPH, graph_id
+        )
     else:
         return _invalid_status_code(status_code, response)
 
