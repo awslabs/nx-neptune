@@ -80,3 +80,244 @@ def test_sts_to_iam_arn_with_invalid_str():
         convert_sts_to_iam_arn(
             "INVALID_PREFIX::ACCOUNT_ID:assumed-role/ROLE_NAME/SESSION_NAME"
         )
+
+
+class TestIamClient:
+    """Tests for IamClient class methods."""
+
+    @pytest.fixture
+    def mock_iam_client(self):
+        """Create a mock IamClient for testing."""
+        from unittest.mock import MagicMock
+
+        mock_client = MagicMock()
+        iam_client = IamClient(
+            role_arn="arn:aws:iam::123456789012:role/test-role", client=mock_client
+        )
+        return iam_client, mock_client
+
+    def test_iam_client_init(self):
+        """Test IamClient initialization."""
+        from unittest.mock import MagicMock
+
+        mock_client = MagicMock()
+        iam_client = IamClient(
+            role_arn="arn:aws:iam::123456789012:role/test-role", client=mock_client
+        )
+        assert iam_client.role_arn == "arn:aws:iam::123456789012:role/test-role"
+        assert iam_client.client == mock_client
+
+    def test_check_assume_role_success(self, mock_iam_client):
+        """Test check_assume_role with valid service."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.get_role.return_value = {
+            "Role": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {"Service": "neptune-graph.amazonaws.com"},
+                            "Action": "sts:AssumeRole",
+                        }
+                    ]
+                }
+            }
+        }
+
+        result = iam_client.check_assume_role("neptune-graph")
+        assert result is True
+
+    def test_check_assume_role_failure(self, mock_iam_client):
+        """Test check_assume_role with invalid service."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.get_role.return_value = {
+            "Role": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {"Service": "other-service.amazonaws.com"},
+                            "Action": "sts:AssumeRole",
+                        }
+                    ]
+                }
+            }
+        }
+
+        result = iam_client.check_assume_role("neptune-graph.amazonaws.com")
+        assert result is False
+
+    def test_has_create_na_permissions_success(self, mock_iam_client):
+        """Test has_create_na_permissions with valid permissions."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {
+                    "EvalActionName": "neptune-graph:CreateGraph",
+                    "EvalDecision": "allowed",
+                },
+                {
+                    "EvalActionName": "neptune-graph:TagResource",
+                    "EvalDecision": "allowed",
+                },
+            ]
+        }
+
+        # Should not raise exception
+        iam_client.has_create_na_permissions()
+
+    def test_has_create_na_permissions_failure(self, mock_iam_client):
+        """Test has_create_na_permissions with missing permissions."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {
+                    "EvalActionName": "neptune-graph:CreateGraph",
+                    "EvalDecision": "allowed",
+                },
+                {
+                    "EvalActionName": "neptune-graph:TagResource",
+                    "EvalDecision": "denied",
+                },
+            ]
+        }
+
+        with pytest.raises(Exception, match="Insufficient permission"):
+            iam_client.has_create_na_permissions()
+
+    def test_has_delete_na_permissions_success(self, mock_iam_client):
+        """Test has_delete_na_permissions with valid permissions."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {
+                    "EvalActionName": "neptune-graph:DeleteGraph",
+                    "EvalDecision": "allowed",
+                }
+            ]
+        }
+
+        # Should not raise exception
+        iam_client.has_delete_na_permissions()
+
+    def test_has_start_na_permissions_success(self, mock_iam_client):
+        """Test has_start_na_permissions with valid permissions."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {
+                    "EvalActionName": "neptune-graph:StartGraph",
+                    "EvalDecision": "allowed",
+                }
+            ]
+        }
+
+        # Should not raise exception
+        iam_client.has_start_na_permissions()
+
+    def test_has_stop_na_permissions_success(self, mock_iam_client):
+        """Test has_stop_na_permissions with valid permissions."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "neptune-graph:StopGraph", "EvalDecision": "allowed"}
+            ]
+        }
+
+        # Should not raise exception
+        iam_client.has_stop_na_permissions()
+
+    def test_has_create_na_snapshot_permissions_success(self, mock_iam_client):
+        """Test has_create_na_snapshot_permissions with valid permissions."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {
+                    "EvalActionName": "neptune-graph:CreateGraphSnapshot",
+                    "EvalDecision": "allowed",
+                }
+            ]
+        }
+
+        # Should not raise exception
+        iam_client.has_create_na_snapshot_permissions()
+
+    def test_has_delete_snapshot_permissions_success(self, mock_iam_client):
+        """Test has_delete_snapshot_permissions with valid permissions."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {
+                    "EvalActionName": "neptune-graph:DeleteGraphSnapshot",
+                    "EvalDecision": "allowed",
+                }
+            ]
+        }
+
+        # Should not raise exception
+        iam_client.has_delete_snapshot_permissions()
+
+    def test_has_import_from_s3_permissions_success(self, mock_iam_client):
+        """Test has_import_from_s3_permissions with valid permissions."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.get_role.return_value = {
+            "Role": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {"Service": "neptune-graph.amazonaws.com"},
+                            "Action": "sts:AssumeRole",
+                        }
+                    ]
+                }
+            }
+        }
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "s3:GetObject", "EvalDecision": "allowed"},
+                {"EvalActionName": "s3:ListBucket", "EvalDecision": "allowed"},
+            ]
+        }
+
+        # Should not raise exception
+        iam_client.has_import_from_s3_permissions("arn:aws:s3:::test-bucket")
+
+    def test_has_export_to_s3_permissions_success(self, mock_iam_client):
+        """Test has_export_to_s3_permissions with valid permissions."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.get_role.return_value = {
+            "Role": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {"Service": "neptune-graph.amazonaws.com"},
+                            "Action": "sts:AssumeRole",
+                        }
+                    ]
+                }
+            }
+        }
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "s3:PutObject", "EvalDecision": "allowed"},
+                {"EvalActionName": "s3:ListBucket", "EvalDecision": "allowed"},
+            ]
+        }
+
+        # Should not raise exception
+        iam_client.has_export_to_s3_permissions("arn:aws:s3:::test-bucket")
