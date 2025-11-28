@@ -111,11 +111,6 @@ class TestNeptuneGraph:
             == PARAM_TRAVERSAL_DIRECTION_OUTBOUND
         )
 
-    def test_create_na_instance(self, neptune_graph):
-        """TODO: add tests"""
-        result = neptune_graph.create_na_instance()
-        assert result == neptune_graph.graph
-
     def test_add_node(self, neptune_graph, mock_client):
         """Test add_node method"""
         node = Node(id=123, properties={"name": "TestNode", "prop": "value"})

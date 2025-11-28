@@ -43,7 +43,12 @@ from .instance_management import (
     validate_permissions,
 )
 from .interface import BackendInterface
-from .na_graph import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN, NeptuneGraph, set_config_graph_id
+from .na_graph import (
+    NETWORKX_GRAPH_ID,
+    NETWORKX_S3_IAM_ROLE_ARN,
+    NeptuneGraph,
+    set_config_graph_id,
+)
 from .session_manager import SessionManager
 from .utils.decorators import configure_if_nx_active
 

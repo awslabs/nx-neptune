@@ -28,7 +28,7 @@ from botocore.exceptions import ClientError
 from sqlglot import exp, parse_one
 
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
-from .clients.neptune_constants import APP_ID_NX
+from .clients.neptune_constants import APP_ID_NX, SERVICE_ATHENA, SERVICE_S3
 from .na_graph import NeptuneGraph
 
 __all__ = [
@@ -91,7 +91,13 @@ class TaskFuture(Future):
         polling_interval(int): Time interval in seconds to perform job status query
     """
 
-    def __init__(self, task_id, task_type, polling_interval=10, max_attempts=60):
+    def __init__(
+        self,
+        task_id,
+        task_type,
+        polling_interval=_ASYNC_POLLING_INTERVAL,
+        max_attempts=60,
+    ):
         super().__init__()
         self.task_id = task_id
         self.task_type = task_type
@@ -724,7 +730,9 @@ def _get_create_instance_with_import_config(
     return config
 
 
-def _create_na_instance_task(client, config: Optional[dict] = None, graph_name_prefix: Optional[str] = None):
+def _create_na_instance_task(
+    client, config: Optional[dict] = None, graph_name_prefix: Optional[str] = None
+):
     """Create a new Neptune Analytics graph instance with default settings.
 
     This function generates a unique name for the graph using a UUID suffix and
@@ -812,9 +820,7 @@ def _start_import_task(
     Raises:
         ClientError: If there's an issue with the AWS API call
     """
-    logger.debug(
-        f"Import S3 graph data [{s3_location}] into Graph [{graph_id}]"
-    )
+    logger.debug(f"Import S3 graph data [{s3_location}] into Graph [{graph_id}]")
     try:
         response = client.start_import_task(  # type: ignore[attr-defined]
             graphIdentifier=graph_id,
@@ -866,9 +872,7 @@ def _start_export_task(
     Raises:
         ClientError: If there's an issue with the AWS API call
     """
-    logger.debug(
-        f"Export S3 Graph [{graph_id}] data to S3 [{s3_destination}]"
-    )
+    logger.debug(f"Export S3 Graph [{graph_id}] data to S3 [{s3_destination}]")
     try:
         kwargs_export: dict[str, Any] = {
             "graphIdentifier": graph_id,
@@ -895,7 +899,7 @@ def _reset_graph(
     client: BaseClient,
     graph_id: str,
     skip_snapshot: bool = True,
-    polling_interval=10,
+    polling_interval=_ASYNC_POLLING_INTERVAL,
     max_attempts=60,
 ) -> bool:
     """Reset the Neptune Analytics graph.
@@ -936,7 +940,7 @@ def _get_bucket_encryption_key_arn(s3_arn):
     """
     try:
         # Create an S3 client
-        s3_client = boto3.client("s3")
+        s3_client = boto3.client(SERVICE_S3)
 
         # Get the bucket encryption configuration
         bucket_name = _clean_s3_path(s3_arn)
@@ -1080,7 +1084,7 @@ def export_athena_table_to_s3(
     s3_bucket: str,
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
-    polling_interval=10,
+    polling_interval=_ASYNC_POLLING_INTERVAL,
     max_attempts=60,
 ):
     """Export Athena table data to S3 by executing SQL queries.
@@ -1093,7 +1097,7 @@ def export_athena_table_to_s3(
         :param max_attempts:
         :param polling_interval:
     """
-    client = boto3.client("athena")
+    client = boto3.client(SERVICE_ATHENA)
 
     # TODO: validate permissions - or fail
     # TODO: check s3 bucket location is empty - or fail
@@ -1106,7 +1110,7 @@ def export_athena_table_to_s3(
         query_execution_ids.append(query_execution_id)
 
     # Wait on all query execution IDs
-    s3_client = boto3.client("s3")
+    s3_client = boto3.client(SERVICE_S3)
     bucket_name = s3_bucket.replace("s3://", "").split("/")[0]
     bucket_prefix = "/".join(s3_bucket.replace("s3://", "").split("/")[1:])
 
@@ -1162,7 +1166,7 @@ def create_csv_table_from_s3(
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
     table_columns: Optional[list[str]] = None,
-    polling_interval=10,
+    polling_interval=_ASYNC_POLLING_INTERVAL,
     max_attempts=60,
 ):
     """Create an external CSV table from S3 data using Athena queries.
@@ -1183,12 +1187,12 @@ def create_csv_table_from_s3(
     # TODO check is skip drop table is False and table exists
 
     # Wait on all query execution IDs
-    s3_client = boto3.client("s3")
+    s3_client = boto3.client(SERVICE_S3)
     bucket_path = s3_bucket.replace("s3://", "").split("/")
     bucket_name = bucket_path.pop(0)
     bucket_prefix = "/".join(bucket_path)
 
-    logger.info(f"Inspecting files from {s3_bucket}")
+    logger.debug(f"Inspecting files from {s3_bucket}")
 
     response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=bucket_prefix)
     file_paths = response.get("Contents", [])
@@ -1223,7 +1227,7 @@ def create_csv_table_from_s3(
         f"{table_name}_vertices",
     )
 
-    athena_client = boto3.client("athena")
+    athena_client = boto3.client(SERVICE_ATHENA)
     query_execution_ids = []
     for sql_statement in [edge_sql_statement, vertex_sql_statement]:
         logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
@@ -1345,7 +1349,7 @@ def create_iceberg_table_from_table(
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
     table_columns: Optional[list[str]] = None,
-    polling_interval=10,
+    polling_interval=_ASYNC_POLLING_INTERVAL,
     max_attempts=60,
 ):
     select_columns = "*"
@@ -1363,7 +1367,7 @@ AS SELECT {select_columns} FROM {csv_table_name};
 
     logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
 
-    athena_client = boto3.client("athena")
+    athena_client = boto3.client(SERVICE_ATHENA)
     query_execution_id = _execute_athena_query(
         athena_client,
         sql_statement,
@@ -1398,7 +1402,7 @@ def create_table_schema_from_s3(
     table_schema: str,
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
-    polling_interval=10,
+    polling_interval=_ASYNC_POLLING_INTERVAL,
     max_attempts=60,
 ):
     """Create external table in Athena from S3 data.
@@ -1416,7 +1420,7 @@ def create_table_schema_from_s3(
     # TODO validate if table exists already
     # TODO check is skip drop table is False and table exists
 
-    client = boto3.client("athena")
+    client = boto3.client(SERVICE_ATHENA)
     query_execution_id = _execute_athena_query(
         client, table_schema, s3_bucket, catalog=catalog, database=database
     )

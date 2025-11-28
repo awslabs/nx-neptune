@@ -3,14 +3,57 @@
 import logging
 from asyncio import Future
 from typing import Optional
-import boto3
 
-from build.lib.nx_neptune import NeptuneGraph
-from . import instance_management
-from .clients import NeptuneAnalyticsClient, IamClient
-from .clients.neptune_constants import SERVICE_IAM, SERVICE_NA, SERVICE_STS
+import boto3
+import networkx as nx
+from botocore.config import Config
+
+from . import NeptuneGraph, instance_management
+from .clients import IamClient, NeptuneAnalyticsClient
+from .clients.neptune_constants import APP_ID_NX, SERVICE_IAM, SERVICE_NA, SERVICE_STS
 
 logger = logging.getLogger(__name__)
+
+
+def _format_output_graph(graph_details: dict[str, str], with_details=False):
+    """Format graph details for output.
+
+    Args:
+        graph_details: Dictionary containing graph information
+        with_details: If True, return full details; if False, return only name, id, and status
+
+    Returns:
+        Dictionary with formatted graph information
+    """
+    if with_details:
+        return graph_details
+    return {
+        "name": graph_details["name"],
+        "id": graph_details["id"],
+        "status": graph_details["status"],
+    }
+
+
+def _get_graph_id(graph: str | dict[str, str]) -> str:
+    """Extract graph ID from string or dictionary.
+
+    Args:
+        graph: Either a graph ID string or a dictionary containing an 'id' field
+
+    Returns:
+        str: The graph ID
+
+    Raises:
+        Exception: If graph is not a string and doesn't contain an 'id' field
+    """
+    if isinstance(graph, str):
+        return graph
+    if isinstance(graph, dict) and graph["id"]:
+        return graph["id"]
+    raise Exception(
+        "No graph id provided - 'graph' must a graph id string, or contain an `id` field"
+    )
+
 
 class SessionManager:
     """Manages Neptune Analytics sessions and graph operations."""
@@ -22,7 +65,9 @@ class SessionManager:
             session_name (str, optional): Name prefix for filtering graphs.
         """
         self.session_name = session_name
-        self._neptune_client = boto3.client(SERVICE_NA)
+        self._neptune_client = boto3.client(
+            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+        )
         self._sts_client = boto3.client(SERVICE_STS)
 
         self._s3_iam_role = self._sts_client.get_caller_identity()["Arn"]
@@ -30,7 +75,7 @@ class SessionManager:
         self._iam_client = boto3.client(SERVICE_IAM)
 
     @classmethod
-    def Session(cls, session_name=None):
+    def session(cls, session_name=None):
         """Create a new SessionManager instance.
 
         Args:
@@ -49,15 +94,6 @@ class SessionManager:
         """
         return instance_management.validate_permissions()
 
-    def _format_output_graph(self, graph_details: dict[str,str], with_details=False):
-        if with_details:
-            return graph_details
-        return {
-            "name": graph_details["name"],
-            "id": graph_details["id"],
-            "status": graph_details["status"]
-        }
-
     def list_graphs(self, with_details=False):
         """List available Neptune Analytics graphs.
 
@@ -71,15 +107,34 @@ class SessionManager:
 
         if self.session_name:
             graphs = [
-                self._format_output_graph(g, with_details) for g in graphs if g.get("name", "").startswith(self.session_name)
+                _format_output_graph(g, with_details)
+                for g in graphs
+                if g.get("name", "").startswith(self.session_name)
             ]
 
         return graphs
 
-    def _get_existing_graph(self):
+    def _get_existing_graph(self, filter_status: list[str] | None = None):
+        """Get the first existing graph, optionally filtered by status.
+
+        Args:
+            filter_status: Optional list of status values to filter by (case-insensitive).
+                          If None, returns the first graph regardless of status.
+
+        Returns:
+            dict or None: Graph details if found, None otherwise.
+        """
         graphs = self.list_graphs()
-        if graphs:
+        if not graphs:
+            return None
+
+        if filter_status is None:
             return graphs[0]
+
+        filter_status_lower = [s.lower() for s in filter_status]
+        for graph in graphs:
+            if graph.get("status", "").lower() in filter_status_lower:
+                return graph
         return None
 
     async def get_or_create_graph(self, config: Optional[dict] = None):
@@ -91,7 +146,7 @@ class SessionManager:
         """
         graph = self._get_existing_graph()
         if graph:
-            return self._format_output_graph(graph)
+            return _format_output_graph(graph)
         # create a new graph and return
         logger.info(f"Creating new graph named with prefix: {self.session_name}")
         graph_id = await instance_management.create_na_instance(
@@ -103,27 +158,23 @@ class SessionManager:
         )
         return {"id": graph_id, "status": "CREATING"}
 
-    def import_from_csv(
-            self,
-            graph: str | dict[str, str],
-            s3_location,
-    ) -> Future:
-        if isinstance(graph, str):
-            graph_id = graph
-        elif isinstance(graph, dict) and graph.id:
-            graph_id = graph.id
-        else:
-            raise Exception("No graph id provided - 'graph' must a graph id string, or contain an `id` field")
+    async def import_from_csv(
+        self,
+        graph: str | dict[str, str],
+        s3_location,
+    ):
+        graph_id = _get_graph_id(graph)
 
-        reset_graph_ahead=False
-        skip_snapshot=True
+        reset_graph_ahead = False
+        skip_snapshot = True
 
         # TODO Cleanup resources
 
-        return instance_management.import_csv_from_s3(
+        return await instance_management.import_csv_from_s3(
             NeptuneGraph(
                 NeptuneAnalyticsClient(graph_id, self._neptune_client),
                 IamClient(self._s3_iam_role, self._iam_client),
+                nx.Graph(),
             ),
             s3_location,
             reset_graph_ahead,
@@ -131,24 +182,19 @@ class SessionManager:
         )
 
     async def import_from_table(
-            self,
-            graph: str | dict[str, str],
-            s3_location,
-            sql_queries,
-            catalog=None,
-            database=None,
+        self,
+        graph: str | dict[str, str],
+        s3_location,
+        sql_queries,
+        catalog=None,
+        database=None,
     ):
-        if isinstance(graph, str):
-            graph_id = graph
-        elif isinstance(graph, dict) and graph["id"]:
-            graph_id = graph["id"]
-        else:
-            raise Exception("No graph id provided - 'graph' must a graph id string, or contain an `id` field")
+        graph_id = _get_graph_id(graph)
 
         logger.info(f"Importing to graph {graph_id}")
 
-        reset_graph_ahead=False
-        skip_snapshot=True
+        reset_graph_ahead = False
+        skip_snapshot = True
 
         # export the datalake table to S3 as CSV projection data
         projection_created = instance_management.export_athena_table_to_s3(
@@ -167,6 +213,7 @@ class SessionManager:
             NeptuneGraph(
                 NeptuneAnalyticsClient(graph_id, self._neptune_client),
                 IamClient(self._s3_iam_role, self._iam_client),
+                nx.Graph(),
             ),
             s3_location,
             reset_graph_ahead,
@@ -180,38 +227,32 @@ class SessionManager:
         logger.info(f"Graph data imported to graph {graph_id}")
 
     async def export_to_table(
-            self,
-            graph: str | dict[str, str],
-            s3_location: str,
-            csv_table_name: str,
-            csv_catalog: str,
-            csv_database: str,
-            iceberg_vertices_table_name: str,
-            iceberg_edges_table_name: str,
-            iceberg_catalog: str,
-            iceberg_database: str,
-    ) -> Future:
-
-        if isinstance(graph, str):
-            graph_id = graph
-        elif isinstance(graph, dict) and graph["id"]:
-            graph_id = graph["id"]
-        else:
-            raise Exception("No graph id provided - 'graph' must a graph id string, or contain an `id` field")
+        self,
+        graph: str | dict[str, str],
+        s3_location: str,
+        csv_table_name: str,
+        csv_catalog: str,
+        csv_database: str,
+        iceberg_vertices_table_name: str,
+        iceberg_edges_table_name: str,
+        iceberg_catalog: str,
+        iceberg_database: str,
+    ):
+        graph_id = _get_graph_id(graph)
 
         logger.info(f"Exporting graph: {graph_id}")
 
         task_id = await instance_management.export_csv_to_s3(
-                NeptuneGraph(
+            NeptuneGraph(
                 NeptuneAnalyticsClient(graph_id, self._neptune_client),
                 IamClient(self._s3_iam_role, self._iam_client),
+                nx.Graph(),
             ),
-            s3_location
+            s3_location,
         )
 
         s3_export_location = f"{s3_location}/{task_id}"
         logger.info(f"Graph exported to S3 at location: {s3_export_location}")
-
 
         ###
         logger.info(f"Creating CSV export table; SQL logs output to {s3_location}")
@@ -219,29 +260,37 @@ class SessionManager:
         # Create table - blocking
         instance_management.create_csv_table_from_s3(
             s3_export_location,
-            s3_location, # logs directory
+            s3_location,  # logs directory
             csv_table_name,
             catalog=csv_catalog,
-            database=csv_database
+            database=csv_database,
         )
         logger.info(f"Table created {csv_catalog}/{csv_database}/{csv_table_name}")
 
         ###
-        logger.info(f"Creating iceberg table for vertices: {iceberg_catalog}/{iceberg_database}/{iceberg_vertices_table_name}")
+        logger.info(
+            f"Creating iceberg table for vertices: {iceberg_catalog}/{iceberg_database}/{iceberg_vertices_table_name}"
+        )
         logger.info(f"SQL logs output to {s3_location}")
 
-        csv_vertices_table_name = f"{csv_catalog}.{csv_database}.{csv_table_name}_vertices"
+        csv_vertices_table_name = (
+            f"{csv_catalog}.{csv_database}.{csv_table_name}_vertices"
+        )
         instance_management.create_iceberg_table_from_table(
             s3_location,
             iceberg_vertices_table_name,
             csv_vertices_table_name,
             catalog=iceberg_catalog,
-            database=iceberg_database
+            database=iceberg_database,
         )
-        logger.info(f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_vertices_table_name}")
+        logger.info(
+            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_vertices_table_name}"
+        )
 
         ###
-        logger.info(f"Creating iceberg table for edges: {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}")
+        logger.info(
+            f"Creating iceberg table for edges: {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}"
+        )
         logger.info(f"SQL logs output to {s3_location}")
 
         csv_edges_table_name = f"{csv_catalog}.{csv_database}.{csv_table_name}_edges"
@@ -250,12 +299,8 @@ class SessionManager:
             iceberg_edges_table_name,
             csv_edges_table_name,
             catalog=iceberg_catalog,
-            database=iceberg_database
+            database=iceberg_database,
         )
-        logger.info(f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}")
-
-        return True
-
-
-
-
+        logger.info(
+            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}"
+        )
