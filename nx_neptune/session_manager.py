@@ -268,15 +268,66 @@ class SessionManager:
     #     pass
     #
 
-    async def stop_all_graphs(self):
+    def start_graph(self, graph_name):
+        """Start a specific Neptune Analytics graph.
 
-        # Fetch all graph ID
-        graph_ids = [graph['id'] for graph in self.list_graphs()]
+        Args:
+            graph_name (str): Name of the graph to stop
+
+        Returns:
+            asyncio.Future: A future that resolves when the graph has been stopped.
+        """
+        return self._start_graphs(graph_name)
+
+    def start_all_graphs(self):
+        """Start all Neptune Analytics graphs associated with this session.
+
+        Fetches all graph IDs for the current session and stops each graph instance.
+
+        Returns:
+            asyncio.Future: A future that resolves when all graphs have been stopped.
+        """
+        return self._start_graphs()
+
+    def stop_graph(self, graph_name):
+        """Stop a specific Neptune Analytics graph.
+
+        Args:
+            graph_name (str): Name of the graph to stop
+
+        Returns:
+            asyncio.Future: A future that resolves when the graph has been stopped.
+        """
+        return self._stop_graphs(graph_name)
+
+    def stop_all_graphs(self):
+        """Stop all Neptune Analytics graphs associated with this session.
+
+        Fetches all graph IDs for the current session and stops each graph instance.
+
+        Returns:
+            asyncio.Future: A future that resolves when all graphs have been stopped.
+        """
+        return self._stop_graphs()
+
+    def _stop_graphs(self, graph_name: str = None):
+        graph_ids = [graph['id'] for graph in self.list_graphs()
+                     if graph['status'] == 'AVAILABLE'
+                     and (graph_name is None or graph['name'] == graph_name)]
         future_list = []
         for graph_id in graph_ids:
             future_list.append(instance_management.stop_na_instance(graph_id))
+        return asyncio.gather(*future_list)
 
-        return await asyncio.gather(*future_list)
+
+    def _start_graphs(self, graph_name: str = None):
+        graph_ids = [graph['id'] for graph in self.list_graphs()
+                     if graph['status'] == 'STOPPED'
+                     and (graph_name is None or graph['name'] == graph_name)]
+        future_list = []
+        for graph_id in graph_ids:
+            future_list.append(instance_management.start_na_instance(graph_id))
+        return asyncio.gather(*future_list)
 
 
 
