@@ -59,15 +59,15 @@ _ASYNC_POLLING_INTERVAL = 30
 
 class TaskType(Enum):
     # Allow import to run against an "INITIALIZING" state - the graph is sometimes in this state after creating graph
-    IMPORT = (1, ["INI", "INITIALIZING", "IMPORTING"], "SUCCEEDED")
+    IMPORT = (1, ["INITIALIZING", "IMPORTING"], "SUCCEEDED")
     # Allow export to run against an "INITIALIZING" state - the graph is sometimes in this state after running algorithms
-    EXPORT = (2, ["INI", "INITIALIZING", "EXPORTING"], "SUCCEEDED")
-    CREATE = (3, ["INI", "CREATING"], "AVAILABLE")
-    DELETE = (4, ["INI", "DELETING"], "DELETED")
-    NOOP = (5, ["INI"], "AVAILABLE")
-    START = (6, ["INI", "STARTING"], "AVAILABLE")
-    STOP = (7, ["INI", "STOPPING"], "STOPPED")
-    RESET_GRAPH = (13, ["INI", "RESETTING"], "AVAILABLE")
+    EXPORT = (2, ["INITIALIZING", "EXPORTING"], "SUCCEEDED")
+    CREATE = (3, ["CREATING"], "AVAILABLE")
+    DELETE = (4, ["DELETING"], "DELETED")
+    NOOP = (5, [], "AVAILABLE")
+    START = (6, ["STARTING"], "AVAILABLE")
+    STOP = (7, ["STOPPING"], "STOPPED")
+    RESET_GRAPH = (13, ["RESETTING"], "AVAILABLE")
 
     def __init__(self, num_value, permitted_statuses, status_complete):
         self._value_ = num_value
@@ -116,9 +116,7 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
         f"Perform Neptune Analytics job status check on Type: [{task_type}] with ID: [{task_id}]"
     )
 
-    status_list = task_type.permitted_statuses
-    status = "INI"
-    while status in status_list:
+    while True:
         try:
             task_action_map = {
                 TaskType.IMPORT: lambda: client.get_import_task(taskIdentifier=task_id),  # type: ignore[attr-defined]
@@ -130,17 +128,17 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
                 TaskType.RESET_GRAPH: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
             }
 
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            logger.info(f"[{current_time}] Task [{task_id}] Current status: {status}")
-
             response = task_action_map[task_type]()
             status = response.get("status")
+
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logger.info(f"[{current_time}] Task [{task_id}] Current status: {status}")
 
             if status == task_type.status_complete:
                 logger.info(f"Task [{task_id}] completed at [{current_time}]")
                 future.set_result(task_id)
                 return
-            elif status in status_list:
+            elif status in task_type.permitted_statuses:
                 await asyncio.sleep(task_polling_interval)
             else:
                 logger.error(f"Task [{task_id}] Unexpected status: {status} on type: {task_type}")
