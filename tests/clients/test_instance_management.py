@@ -1144,3 +1144,70 @@ async def test_delete_graph_snapshot_success(mock_boto3_client):
 
     result = await delete_graph_snapshot("test-snapshot-id")
     assert result == "test-snapshot-id"
+
+
+@pytest.mark.asyncio
+@patch("boto3.client")
+async def test_create_na_instance_from_snapshot_success(mock_boto3_client):
+    """Test successful creation of NA instance from snapshot."""
+    from nx_neptune.instance_management import create_na_instance_from_snapshot
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_na_client.restore_graph_from_snapshot.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 201},
+        "id": "test-graph-id",
+    }
+    mock_na_client.get_graph.return_value = {"status": "AVAILABLE"}
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {
+                "EvalActionName": "neptune-graph:RestoreGraphFromSnapshot",
+                "EvalDecision": "allowed",
+            }
+        ]
+    }
+
+    result = create_na_instance_from_snapshot("test-snapshot-id")
+    assert result is not None
+
+
+def test_get_create_instance_with_import_config():
+    """Test _get_create_instance_with_import_config function."""
+    from nx_neptune.instance_management import _get_create_instance_with_import_config
+
+    result = _get_create_instance_with_import_config(
+        "test-graph",
+        "s3://test-bucket/data",
+        "arn:aws:iam::123456789012:role/test-role",
+    )
+
+    assert result["graphName"] == "test-graph"
+    assert result["source"] == "s3://test-bucket/data"
+    assert result["roleArn"] == "arn:aws:iam::123456789012:role/test-role"
+    assert result["format"] == "CSV"
+    assert result["publicConnectivity"] is True
+    assert result["tags"]["agent"] == "nx-neptune"
+
+
+def test_get_create_instance_with_import_config_custom():
+    """Test _get_create_instance_with_import_config with custom config."""
+    from nx_neptune.instance_management import _get_create_instance_with_import_config
+
+    config = {
+        "minProvisionedMemory": 32,
+        "maxProvisionedMemory": 64,
+        "format": "PARQUET",
+    }
+
+    result = _get_create_instance_with_import_config(
+        "test-graph",
+        "s3://test-bucket/data",
+        "arn:aws:iam::123456789012:role/test-role",
+        config,
+    )
+
+    assert result["minProvisionedMemory"] == 32
+    assert result["maxProvisionedMemory"] == 64
+    assert result["format"] == "PARQUET"

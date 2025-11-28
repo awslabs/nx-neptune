@@ -71,6 +71,16 @@ class TestGetGraphId:
         with pytest.raises(KeyError):
             _get_graph_id({"name": "test"})
 
+    def test_get_graph_id_empty_dict(self):
+        """Test exception when graph is empty dict."""
+        with pytest.raises(KeyError):
+            _get_graph_id({})
+
+    def test_get_graph_id_empty_id_value(self):
+        """Test exception when graph has empty id value."""
+        with pytest.raises(Exception, match="No graph id provided"):
+            _get_graph_id({"id": ""})
+
 
 class TestSessionManager:
     """Tests for SessionManager class."""
@@ -213,3 +223,104 @@ class TestSessionManager:
         sm = SessionManager()
         graph = sm._get_existing_graph()
         assert graph is None
+
+    @patch("boto3.client")
+    def test_validate_permissions(self, mock_boto3_client):
+        """Test validate_permissions method."""
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+
+        with patch(
+            "nx_neptune.session_manager.instance_management.validate_permissions"
+        ) as mock_validate:
+            mock_validate.return_value = True
+            sm = SessionManager()
+            result = sm.validate_permissions()
+            assert result is True
+            mock_validate.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
+    async def test_get_or_create_graph_creates_new(
+        self, mock_create, mock_boto3_client
+    ):
+        """Test get_or_create_graph when no graphs exist."""
+        from unittest.mock import AsyncMock
+
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        mock_client.list_graphs.return_value = {"graphs": []}
+
+        # Use AsyncMock for async function
+        mock_create.return_value = AsyncMock(return_value="test-graph-id")()
+
+        sm = SessionManager(session_name="test-session")
+        result = await sm.get_or_create_graph()
+
+        # Should call create_na_instance
+        mock_create.assert_called_once()
+
+    @patch("boto3.client")
+    def test_list_graphs_with_details(self, mock_boto3_client):
+        """Test listing graphs with full details."""
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        mock_client.list_graphs.return_value = {
+            "graphs": [
+                {
+                    "name": "graph-1",
+                    "id": "g-1",
+                    "status": "AVAILABLE",
+                    "endpoint": "test-endpoint",
+                    "provisionedMemory": 16,
+                }
+            ]
+        }
+
+        sm = SessionManager()
+        graphs = sm.list_graphs(with_details=True)
+        assert len(graphs) == 1
+        assert "endpoint" in graphs[0]
+        assert "provisionedMemory" in graphs[0]
+
+    @patch("boto3.client")
+    def test_get_existing_graph_multiple_status_filters(self, mock_boto3_client):
+        """Test getting existing graph with multiple status filters."""
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        mock_client.list_graphs.return_value = {
+            "graphs": [
+                {"name": "graph-1", "id": "g-1", "status": "CREATING"},
+                {"name": "graph-2", "id": "g-2", "status": "AVAILABLE"},
+                {"name": "graph-3", "id": "g-3", "status": "STOPPED"},
+            ]
+        }
+
+        sm = SessionManager()
+        graph = sm._get_existing_graph(filter_status=["AVAILABLE", "STOPPED"])
+        assert graph is not None
+        assert graph["id"] == "g-2"  # Should return first match
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    async def test_get_or_create_graph_returns_existing(self, mock_boto3_client):
+        """Test get_or_create_graph when graph already exists."""
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        mock_client.list_graphs.return_value = {
+            "graphs": [{"name": "test-graph", "id": "g-123", "status": "AVAILABLE"}]
+        }
+
+        sm = SessionManager(session_name="test")
+        result = await sm.get_or_create_graph()
+
+        # Should return existing graph without creating new one
+        assert result["id"] == "g-123"
+        assert result["status"] == "AVAILABLE"
+        assert result["name"] == "test-graph"

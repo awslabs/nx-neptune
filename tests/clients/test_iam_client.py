@@ -321,3 +321,206 @@ class TestIamClient:
 
         # Should not raise exception
         iam_client.has_export_to_s3_permissions("arn:aws:s3:::test-bucket")
+
+    def test_check_aws_permission_success(self, mock_iam_client):
+        """Test check_aws_permission with allowed permissions."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "s3:GetObject", "EvalDecision": "allowed"},
+                {"EvalActionName": "s3:PutObject", "EvalDecision": "allowed"},
+            ]
+        }
+
+        result = iam_client.check_aws_permission(
+            "test-operation",
+            ["s3:GetObject", "s3:PutObject"],
+            "arn:aws:s3:::test-bucket",
+        )
+
+        assert result == {"s3:GetObject": True, "s3:PutObject": True}
+
+    def test_check_aws_permission_denied(self, mock_iam_client):
+        """Test check_aws_permission with denied permissions."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "s3:GetObject", "EvalDecision": "denied"}
+            ]
+        }
+
+        with pytest.raises(ValueError, match="Insufficient permission"):
+            iam_client.check_aws_permission(
+                "test-operation", ["s3:GetObject"], "arn:aws:s3:::test-bucket"
+            )
+
+    def test_check_aws_permission_wildcard_resource(self, mock_iam_client):
+        """Test check_aws_permission with wildcard resource."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {
+                    "EvalActionName": "neptune-graph:CreateGraph",
+                    "EvalDecision": "allowed",
+                }
+            ]
+        }
+
+        result = iam_client.check_aws_permission(
+            "test-operation", ["neptune-graph:CreateGraph"], "*"
+        )
+
+        assert result == {"neptune-graph:CreateGraph": True}
+
+    def test_check_aws_permission_access_denied(self, mock_iam_client):
+        """Test check_aws_permission when IAM permission is missing."""
+        iam_client, mock_client = mock_iam_client
+        from botocore.exceptions import ClientError
+
+        mock_client.simulate_principal_policy.side_effect = ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "Access Denied"}},
+            "SimulatePrincipalPolicy",
+        )
+
+        result = iam_client.check_aws_permission(
+            "test-operation", ["s3:GetObject"], "arn:aws:s3:::test-bucket"
+        )
+
+        assert result == {}
+
+    def test_check_aws_permission_empty_results(self, mock_iam_client):
+        """Test check_aws_permission with empty evaluation results."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {"EvaluationResults": []}
+
+        with pytest.raises(ValueError, match="No evaluation results found"):
+            iam_client.check_aws_permission(
+                "test-operation", ["s3:GetObject"], "arn:aws:s3:::test-bucket"
+            )
+
+    def test_check_aws_permission_missing_fields(self, mock_iam_client):
+        """Test check_aws_permission with missing result fields."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [{"EvalActionName": "s3:GetObject"}]
+        }
+
+        with pytest.raises(ValueError, match="Unexpected result structure"):
+            iam_client.check_aws_permission(
+                "test-operation", ["s3:GetObject"], "arn:aws:s3:::test-bucket"
+            )
+
+    def test_validate_permissions_success(self, mock_iam_client):
+        """Test validate_permissions with all permissions allowed."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {
+                    "EvalActionName": "neptune-graph:CreateGraph",
+                    "EvalDecision": "allowed",
+                },
+                {
+                    "EvalActionName": "neptune-graph:TagResource",
+                    "EvalDecision": "allowed",
+                },
+                {
+                    "EvalActionName": "neptune-graph:DeleteGraph",
+                    "EvalDecision": "allowed",
+                },
+                {
+                    "EvalActionName": "neptune-graph:StartGraph",
+                    "EvalDecision": "allowed",
+                },
+                {
+                    "EvalActionName": "neptune-graph:StopGraph",
+                    "EvalDecision": "allowed",
+                },
+                {"EvalActionName": "s3:GetObject", "EvalDecision": "allowed"},
+                {"EvalActionName": "s3:PutObject", "EvalDecision": "allowed"},
+                {"EvalActionName": "s3:ListBucket", "EvalDecision": "allowed"},
+                {"EvalActionName": "kms:Decrypt", "EvalDecision": "allowed"},
+                {"EvalActionName": "kms:GenerateDataKey", "EvalDecision": "allowed"},
+                {"EvalActionName": "kms:DescribeKey", "EvalDecision": "allowed"},
+                {
+                    "EvalActionName": "athena:StartQueryExecution",
+                    "EvalDecision": "allowed",
+                },
+                {
+                    "EvalActionName": "athena:GetQueryExecution",
+                    "EvalDecision": "allowed",
+                },
+                {
+                    "EvalActionName": "neptune-graph:CreateGraphSnapshot",
+                    "EvalDecision": "allowed",
+                },
+                {
+                    "EvalActionName": "neptune-graph:RestoreGraphFromSnapshot",
+                    "EvalDecision": "allowed",
+                },
+                {
+                    "EvalActionName": "neptune-graph:DeleteGraphSnapshot",
+                    "EvalDecision": "allowed",
+                },
+            ]
+        }
+
+        result = iam_client.validate_permissions(
+            "s3://test-import-bucket",
+            "arn:aws:kms:us-east-1:123456789012:key/test-key",
+            "s3://test-export-bucket",
+            "arn:aws:kms:us-east-1:123456789012:key/test-key",
+        )
+
+        assert result["create_na_instance"] is True
+        assert result["delete_na_instance"] is True
+        assert result["start_graph"] is True
+        assert result["stop_graph"] is True
+        assert result["import_from_s3"] is True
+        assert result["export_csv_to_s3"] is True
+        assert result["export_athena_table_to_s3"] is True
+        assert result["create_table_from_s3"] is True
+        assert result["create_graph_snapshot"] is True
+        assert result["create_na_instance_from_snapshot"] is True
+        assert result["delete_graph_snapshot"] is True
+
+    def test_validate_permissions_partial_failure(self, mock_iam_client):
+        """Test validate_permissions with some permissions denied."""
+        iam_client, mock_client = mock_iam_client
+
+        def mock_simulate(*args, **kwargs):
+            action_names = kwargs.get("ActionNames", [])
+            if "neptune-graph:DeleteGraph" in action_names:
+                return {
+                    "EvaluationResults": [
+                        {
+                            "EvalActionName": "neptune-graph:DeleteGraph",
+                            "EvalDecision": "denied",
+                        }
+                    ]
+                }
+            return {
+                "EvaluationResults": [
+                    {"EvalActionName": action, "EvalDecision": "allowed"}
+                    for action in action_names
+                ]
+            }
+
+        mock_client.simulate_principal_policy.side_effect = mock_simulate
+
+        result = iam_client.validate_permissions(
+            "s3://test-import-bucket",
+            None,
+            "s3://test-export-bucket",
+            None,
+        )
+
+        assert result["create_na_instance"] is True
+        assert result["delete_na_instance"] is False
+        assert result["start_graph"] is True
+        assert result["stop_graph"] is True
