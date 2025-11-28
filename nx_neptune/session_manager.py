@@ -16,7 +16,6 @@ from .clients.neptune_constants import APP_ID_NX, SERVICE_IAM, SERVICE_NA, SERVI
 logger = logging.getLogger(__name__)
 
 
-
 def _format_output_graph(graph_details: dict[str, str], with_details=False):
     """Format graph details for output.
 
@@ -95,15 +94,6 @@ class SessionManager:
             bool: True if permissions are valid, False otherwise.
         """
         return instance_management.validate_permissions()
-
-    def _format_output_graph(self, graph_details: dict[str, str], with_details=False):
-        if with_details:
-            return graph_details
-        return {
-            "name": graph_details["name"],
-            "id": graph_details["id"],
-            "status": graph_details["status"]
-        }
 
     def list_graphs(self, with_details=False):
         """List available Neptune Analytics graphs.

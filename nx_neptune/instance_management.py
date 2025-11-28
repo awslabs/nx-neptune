@@ -25,7 +25,7 @@ import jmespath
 from botocore.client import BaseClient
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from sqlglot import parse_one, exp
+from sqlglot import exp, parse_one
 
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
 from .clients.neptune_constants import APP_ID_NX, SERVICE_ATHENA, SERVICE_S3
