@@ -67,6 +67,7 @@ class TaskType(Enum):
     NOOP = (5, ["INI"], "AVAILABLE")
     START = (6, ["INI", "STARTING"], "AVAILABLE")
     STOP = (7, ["INI", "STOPPING"], "STOPPED")
+    RESET_GRAPH = (13, ["INI", "RESETTING"], "AVAILABLE")
 
     def __init__(self, num_value, permitted_statuses, status_complete):
         self._value_ = num_value
@@ -127,6 +128,7 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
                 TaskType.DELETE: lambda: delete_status_check_wrapper(client, task_id),
                 TaskType.START: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.STOP: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
+                TaskType.RESET_GRAPH: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
             }
 
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -394,6 +396,42 @@ def delete_na_instance(graph_id: str):
         fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
         fut.set_exception(Exception(f"Invalid response status code: {status_code}"))
         return asyncio.wrap_future(fut)
+
+def reset_graph(
+    graph_id: str,
+    na_client: BaseClient = None,
+    skip_snapshot: bool = True,
+):
+    """Reset the Neptune Analytics graph by clearing all data while preserving the graph configuration.
+
+    Args:
+        na_client (BaseClient): The Neptune Analytics boto3 client. If None, a new client will be created.
+        graph_id (str): The ID of the Neptune Analytics graph to reset
+        skip_snapshot (bool, optional): Whether to skip creating a snapshot before resetting. Defaults to True.
+
+    Returns:
+        asyncio.Future: A Future that resolves when the reset completes successfully, or raises an exception on failure
+
+    Raises:
+        ClientError: If there's an issue with the AWS API call
+        ValueError: If an invalid status code is returned
+    """
+    if na_client is None:
+        na_client = boto3.client(
+            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+        )
+
+    logger.info(
+        f"Perform reset_graph action on graph: [{graph_id}] with skip_snapshot: [{skip_snapshot}]"
+    )
+    response = na_client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
+    status_code = _get_status_code(response)
+    if status_code == 200:
+        fut = TaskFuture(graph_id, TaskType.RESET_GRAPH, _ASYNC_POLLING_INTERVAL)
+        asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
+        return asyncio.wrap_future(fut)
+    else:
+        return _invalid_status_code(status_code, response)
 
 
 def _get_create_instance_config(graph_name, config=None):

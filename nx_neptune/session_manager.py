@@ -292,6 +292,17 @@ class SessionManager:
         """
         return self._start_graphs(graph_name)
 
+    def reset_graph(self, graph_name):
+        """Start a specific Neptune Analytics graph.
+
+        Args:
+            graph_name (str): Name of the graph to stop
+
+        Returns:
+            asyncio.Future: A future that resolves when the graph has been stopped.
+        """
+        return self._reset_graphs(graph_name)
+
     def start_all_graphs(self):
         """Start all Neptune Analytics graphs associated with this session.
 
@@ -323,6 +334,16 @@ class SessionManager:
         """
         return self._stop_graphs()
 
+    def reset_all_graphs(self):
+        """Stop all Neptune Analytics graphs associated with this session.
+
+        Fetches all graph IDs for the current session and stops each graph instance.
+
+        Returns:
+            asyncio.Future: A future that resolves when all graphs have been stopped.
+        """
+        return self._reset_graphs()
+
     def _destroy_graphs(self, graph_name: str = None):
         return self._graph_bulk_operation(
             operation=instance_management.delete_na_instance,
@@ -344,10 +365,20 @@ class SessionManager:
             graph_name=graph_name
         )
 
+    def _reset_graphs(self, graph_name: str = None):
+        return self._graph_bulk_operation(
+            operation=instance_management.reset_graph,
+            status_to_check='AVAILABLE',
+            graph_name=graph_name
+        )
+
     def _graph_bulk_operation(self, operation: callable, status_to_check: str, graph_name: str = None):
         # Get all graphs matching name filter if specified
         graphs = [graph for graph in self.list_graphs()
                  if graph_name is None or graph['name'] == graph_name]
+
+        if graph_name and len(graphs) == 0:
+            logger.warning(f"No graphs found matching name: {graph_name} and status: {status_to_check}")
 
         # Filter for graphs in correct status, log warning for others
         graph_ids = []
