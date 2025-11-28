@@ -259,14 +259,14 @@ class SessionManager:
 
         return True
 
-    def destroy_graph(self, graph_name):
-        """Destroy a specific Neptune Analytics graph.
+    def destroy_graph(self, graph_name: str | list[str]):
+        """Destroy one or more Neptune Analytics graphs.
 
         Args:
-            graph_name (str): Name of the graph to stop
+            graph_name (str | list[str]): Name or list of names of graphs to stop
 
         Returns:
-            asyncio.Future: A future that resolves when the graph has been stopped.
+            asyncio.Future: A future that resolves when the graphs have been stopped.
         """
         return self._destroy_graphs(graph_name)
 
@@ -281,14 +281,14 @@ class SessionManager:
             """
         return self._destroy_graphs()
 
-    def start_graph(self, graph_name):
-        """Start a specific Neptune Analytics graph.
+    def start_graph(self, graph_name: str | list[str]):
+        """Start one or more Neptune Analytics graphs.
 
         Args:
-            graph_name (str): Name of the graph to stop
+            graph_name (str | list[str]): Name or list of names of graphs to stop
 
         Returns:
-            asyncio.Future: A future that resolves when the graph has been stopped.
+            asyncio.Future: A future that resolves when the graphs have been stopped.
         """
         return self._start_graphs(graph_name)
 
@@ -302,16 +302,17 @@ class SessionManager:
         """
         return self._start_graphs()
 
-    def stop_graph(self, graph_name):
-        """Stop a specific Neptune Analytics graph.
+    def stop_graph(self, graph_name: str | list[str]):
+        """Stop one or more Neptune Analytics graphs.
 
         Args:
-            graph_name (str): Name of the graph to stop
+            graph_name (str | list[str]): Name or list of names of graphs to stop
 
         Returns:
-            asyncio.Future: A future that resolves when the graph has been stopped.
+            asyncio.Future: A future that resolves when the graphs have been stopped.
         """
         return self._stop_graphs(graph_name)
+
 
     def stop_all_graphs(self):
         """Stop all Neptune Analytics graphs associated with this session.
@@ -323,14 +324,14 @@ class SessionManager:
         """
         return self._stop_graphs()
 
-    def reset_graph(self, graph_name):
-        """Start a specific Neptune Analytics graph.
+    def reset_graph(self, graph_name: str | list[str]):
+        """Reset one or more Neptune Analytics graphs.
 
         Args:
-            graph_name (str): Name of the graph to stop
+            graph_name (str | list[str]): Name or list of names of graphs to stop
 
         Returns:
-            asyncio.Future: A future that resolves when the graph has been stopped.
+            asyncio.Future: A future that resolves when the graphs have been stopped.
         """
         return self._reset_graphs(graph_name)
 
