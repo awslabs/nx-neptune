@@ -30,12 +30,11 @@ from sqlglot import exp, parse_one
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
 from .clients.neptune_constants import APP_ID_NX, SERVICE_ATHENA, SERVICE_S3
 from .na_graph import NeptuneGraph
+from .utils.task_future import TaskType, TaskFuture
 
 __all__ = [
     "import_csv_from_s3",
     "export_csv_to_s3",
-    "TaskFuture",
-    "TaskType",
     "create_na_instance",
     "create_na_instance_with_s3_import",
     "create_na_instance_from_snapshot",
@@ -54,8 +53,6 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 _PROJECT_IDENTIFIER = "nx-neptune"
-
-_PERMISSIONS_CREATE = ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]
 
 _ASYNC_POLLING_INTERVAL = 30
 _ASYNC_MAX_ATTEMPTS = 60
@@ -224,7 +221,7 @@ def import_csv_from_s3(
     # Packaging future
     future = TaskFuture(task_id, TaskType.IMPORT, polling_interval, max_attempts)
     task = asyncio.create_task(
-        _wait_until_task_complete(na_client, future), name=task_id
+        future.wait_until_complete(na_client), name=task_id
     )
     na_graph.current_jobs.add(task)
     task.add_done_callback(na_graph.current_jobs.discard)
@@ -278,7 +275,7 @@ def export_csv_to_s3(
     # Packaging future
     future = TaskFuture(task_id, TaskType.EXPORT, polling_interval, max_attempts)
     task = asyncio.create_task(
-        _wait_until_task_complete(na_client, future), name=task_id
+        future.wait_until_complete(na_client), name=task_id
     )
     na_graph.current_jobs.add(task)
     task.add_done_callback(na_graph.current_jobs.discard)
@@ -403,12 +400,12 @@ def create_na_instance_with_s3_import(
         async def combined_wait():
             # Import task status check.
             fut = TaskFuture(task_id, TaskType.IMPORT, polling_interval, max_attempts)
-            await _wait_until_task_complete(na_client, fut)
+            await fut.wait_until_complete(na_client)
 
             # Wait for instance at last
             graph_id = response.get("graphId")
             fut_create = TaskFuture(graph_id, TaskType.CREATE, polling_interval, max_attempts)
-            await _wait_until_task_complete(na_client, fut_create)
+            await fut_create.wait_until_complete(na_client)
 
             return graph_id
 
@@ -1061,52 +1058,6 @@ def _create_random_graph_name(graph_name_prefix: Optional[str] = None) -> str:
     return f"{prefix}-{uuid_suffix}"
 
 
-def delete_status_check_wrapper(client, graph_id):
-    """
-    Wrapper method to suppress error when graph_id not found,
-    as this is an indicator of successful deletion.
-
-    Args:
-        client (client): The boto client
-        graph_id (str): The String identify for the remote Neptune Analytics graph
-
-    Returns:
-        str: The original response from Boto or a mocked response to represent
-        successful deletion, in the case of resource not found.
-    """
-    try:
-        return client.get_graph(graphIdentifier=graph_id)
-    except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        if error_code == "ResourceNotFoundException":
-            return {"status": "DELETED"}
-        else:
-            raise e
-
-
-def delete_snapshot_status_check_wrapper(client, snapshot_id: str):
-    """
-    Wrapper method to suppress error when snapshot_id not found,
-    as this is an indicator of successful deletion.
-
-    Args:
-        client (client): The boto client
-        snapshot_id (str): The String identifier for the Neptune Analytics snapshot
-
-    Returns:
-        str: The original response from Boto or a mocked response to represent
-        successful deletion, in the case of resource not found.
-    """
-    try:
-        return client.get_graph_snapshot(snapshotIdentifier=snapshot_id)
-    except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        if error_code == "ResourceNotFoundException":
-            return {"status": "DELETED"}
-        else:
-            raise e
-
-
 # TODO: provide an alternative to sql_queries - instead take a JSON import to map types
 def export_athena_table_to_s3(
     sql_queries: list,
@@ -1664,7 +1615,7 @@ def _get_status_check_future(
     its completion state as defined by the TaskType, unless max_attempts is reached first.
     """
     fut = TaskFuture(object_id, task_type, polling_interval, max_attempts)
-    asyncio.create_task(_wait_until_task_complete(na_client, fut), name=object_id)
+    asyncio.create_task(fut.wait_until_complete(na_client), name=object_id)
     return asyncio.wrap_future(fut)
 
 

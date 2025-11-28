@@ -20,12 +20,9 @@ from botocore.exceptions import ClientError
 from nx_neptune.instance_management import (
     _clean_s3_path,
     _get_bucket_encryption_key_arn,
-    TaskFuture,
-    TaskType,
     _get_status_code,
     _get_graph_id,
     create_na_instance,
-    _wait_until_task_complete,
     import_csv_from_s3,
     export_csv_to_s3,
     delete_na_instance,
@@ -33,6 +30,7 @@ from nx_neptune.instance_management import (
     validate_athena_query,
     ProjectionType,
 )
+from nx_neptune.utils.task_future import TaskFuture, TaskType
 
 NX_CREATE_SUCCESS_FIXTURE = """{
           "ResponseMetadata": {
@@ -592,7 +590,7 @@ async def test_status_check_create(mock_boto3_client):
     test_status_response = json.loads(NX_STATUS_CHECK_SUCCESS_FIXTURE)
     mock_nx_client.get_graph.return_value = test_status_response
 
-    await _wait_until_task_complete(mock_nx_client, future)
+    await future.wait_until_complete(mock_nx_client)
     assert future.done()
     assert future.result() == "test-create-id"
 
@@ -611,7 +609,7 @@ async def test_status_check_import(mock_boto3_client):
     test_status_response = json.loads(NX_STATUS_CHECK_IMPORT_EXPORT_SUCCESS_FIXTURE)
     mock_nx_client.get_import_task.return_value = test_status_response
 
-    await _wait_until_task_complete(mock_nx_client, future)
+    await future.wait_until_complete(mock_nx_client)
     assert future.done()
     assert future.result() == "test-import-job-id"
 
@@ -630,7 +628,7 @@ async def test_status_check_export(mock_boto3_client):
     test_status_response = json.loads(NX_STATUS_CHECK_IMPORT_EXPORT_SUCCESS_FIXTURE)
     mock_nx_client.get_export_task.return_value = test_status_response
 
-    await _wait_until_task_complete(mock_nx_client, future)
+    await future.wait_until_complete(mock_nx_client)
     assert future.done()
     assert future.result() == "test-export-job-id"
 
