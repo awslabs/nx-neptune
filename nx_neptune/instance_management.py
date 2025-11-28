@@ -911,11 +911,11 @@ def _build_sql_statement(
 
         # if we have already run this, the files are already moved to subfolder
         if folder_path[-1] == prefix:
-            subfolder_file_paths.append(f"{"/".join(folder_path)}/{filename}")
+            subfolder_file_paths.append(f"{'/'.join(folder_path)}/{filename}")
 
         else:
             # move files to new bucket subfolder
-            dest_key = f"{"/".join(folder_path)}/{prefix}/{filename}"
+            dest_key = f"{'/'.join(folder_path)}/{prefix}/{filename}"
             s3_client.copy_object(
                 Bucket=bucket_name,
                 CopySource={'Bucket': bucket_name, 'Key': orig_key},

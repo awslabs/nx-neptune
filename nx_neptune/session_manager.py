@@ -1,11 +1,11 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+import asyncio
 import logging
 from asyncio import Future
 from typing import Optional
 import boto3
 
-from build.lib.nx_neptune import NeptuneGraph
 from . import instance_management
 from .clients import NeptuneAnalyticsClient, IamClient
 from .clients.neptune_constants import SERVICE_IAM, SERVICE_NA, SERVICE_STS
@@ -255,6 +255,30 @@ class SessionManager:
         logger.info(f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}")
 
         return True
+
+
+    # async def reset_all_graphs(self):
+    #
+    #     # Fetch all graph ID
+    #
+    #     graph_ids = [graph['id'] for graph in self.list_graphs()]
+    #     for g in graph_ids:
+    #          instance_management._reset_graph(client=self._neptune_client,
+    #                                                graph_id=g)
+    #     pass
+    #
+
+    async def stop_all_graphs(self):
+
+        # Fetch all graph ID
+        graph_ids = [graph['id'] for graph in self.list_graphs()]
+        future_list = []
+        for graph_id in graph_ids:
+            future_list.append(instance_management.stop_na_instance(graph_id))
+
+        return await asyncio.gather(*future_list)
+
+
 
 
 
