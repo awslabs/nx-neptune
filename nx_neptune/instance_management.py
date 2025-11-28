@@ -118,7 +118,6 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
 
     status_list = task_type.permitted_statuses
     status = "INI"
-
     while status in status_list:
         try:
             task_action_map = {
@@ -132,7 +131,7 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
             }
 
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            logger.info(f"[{current_time}] Current status: {status}")
+            logger.info(f"[{current_time}] Task [{task_id}] Current status: {status}")
 
             response = task_action_map[task_type]()
             status = response.get("status")
@@ -144,7 +143,7 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
             elif status in status_list:
                 await asyncio.sleep(task_polling_interval)
             else:
-                logger.error(f"Unexpected status: {status} on type: {task_type}")
+                logger.error(f"Task [{task_id}] Unexpected status: {status} on type: {task_type}")
         except ClientError as e:
             raise e
 
