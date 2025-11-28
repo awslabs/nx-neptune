@@ -25,7 +25,7 @@ import jmespath
 from botocore.client import BaseClient
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from sqlglot import exp, parse_one
+from sqlglot import parse_one, exp
 
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
 from .clients.neptune_constants import APP_ID_NX, SERVICE_ATHENA, SERVICE_S3
@@ -62,16 +62,17 @@ _ASYNC_POLLING_INTERVAL = 30
 
 class TaskType(Enum):
     # Allow import to run against an "INITIALIZING" state - the graph is sometimes in this state after creating graph
-    IMPORT = (1, ["INI", "INITIALIZING", "ANALYZING_DATA", "IMPORTING"], "SUCCEEDED")
+    IMPORT = (1, ["INITIALIZING", "ANALYZING_DATA", "IMPORTING"], "SUCCEEDED")
     # Allow export to run against an "INITIALIZING" state - the graph is sometimes in this state after running algorithms
-    EXPORT = (2, ["INI", "INITIALIZING", "EXPORTING"], "SUCCEEDED")
-    CREATE = (3, ["INI", "CREATING"], "AVAILABLE")
-    DELETE = (4, ["INI", "DELETING"], "DELETED")
-    NOOP = (5, ["INI"], "AVAILABLE")
-    START = (6, ["INI", "STARTING"], "AVAILABLE")
-    STOP = (7, ["INI", "STOPPING"], "STOPPED")
-    EXPORT_SNAPSHOT = (8, ["INI", "SNAPSHOTTING"], "AVAILABLE")
-    DELETE_SNAPSHOT = (9, ["INI", "DELETING"], "DELETED")
+    EXPORT = (2, ["INITIALIZING", "EXPORTING"], "SUCCEEDED")
+    CREATE = (3, ["CREATING"], "AVAILABLE")
+    DELETE = (4, ["DELETING"], "DELETED")
+    NOOP = (5, [], "AVAILABLE")
+    START = (6, ["STARTING"], "AVAILABLE")
+    STOP = (7, ["STOPPING"], "STOPPED")
+    EXPORT_SNAPSHOT = (8, ["SNAPSHOTTING"], "AVAILABLE")
+    DELETE_SNAPSHOT = (9, ["DELETING"], "DELETED")
+    RESET_GRAPH = (10, ["RESETTING"], "AVAILABLE")
 
     def __init__(self, num_value, permitted_statuses, status_complete):
         self._value_ = num_value
@@ -126,10 +127,7 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
         f"Perform Neptune Analytics job status check on Type: [{task_type}] with ID: [{task_id}]"
     )
 
-    status_list = task_type.permitted_statuses
-    status = "INI"
-
-    while status in status_list:
+    while True:
         try:
             task_action_map = {
                 TaskType.IMPORT: lambda: client.get_import_task(taskIdentifier=task_id),  # type: ignore[attr-defined]
@@ -138,26 +136,27 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
                 TaskType.DELETE: lambda: delete_status_check_wrapper(client, task_id),
                 TaskType.START: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.STOP: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
+                TaskType.RESET_GRAPH: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.EXPORT_SNAPSHOT: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
                 TaskType.DELETE_SNAPSHOT: lambda: delete_snapshot_status_check_wrapper(
                     client, task_id
                 ),
             }
 
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            logger.info(f"[{current_time}] Current status: {status}")
-
             response = task_action_map[task_type]()
             status = response.get("status")
+
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logger.info(f"[{current_time}] Task [{task_id}] Current status: {status}")
 
             if status == task_type.status_complete:
                 logger.info(f"Task [{task_id}] completed at [{current_time}]")
                 future.set_result(task_id)
                 return
-            elif status in status_list:
+            elif status in task_type.permitted_statuses:
                 await asyncio.sleep(task_polling_interval)
             else:
-                logger.error(f"Unexpected status: {status} on type: {task_type}")
+                logger.error(f"Task [{task_id}] Unexpected status: {status} on type: {task_type}")
         except ClientError as e:
             raise e
 
@@ -649,6 +648,42 @@ def create_graph_snapshot(
     status_code = _get_status_code(response)
     if status_code == 201:
         return _get_status_check_future(na_client, TaskType.EXPORT_SNAPSHOT, graph_id)
+    else:
+        return _invalid_status_code(status_code, response)
+
+def reset_graph(
+    graph_id: str,
+    na_client: BaseClient = None,
+    skip_snapshot: bool = True,
+):
+    """Reset the Neptune Analytics graph by clearing all data while preserving the graph configuration.
+
+    Args:
+        na_client (BaseClient): The Neptune Analytics boto3 client. If None, a new client will be created.
+        graph_id (str): The ID of the Neptune Analytics graph to reset
+        skip_snapshot (bool, optional): Whether to skip creating a snapshot before resetting. Defaults to True.
+
+    Returns:
+        asyncio.Future: A Future that resolves when the reset completes successfully, or raises an exception on failure
+
+    Raises:
+        ClientError: If there's an issue with the AWS API call
+        ValueError: If an invalid status code is returned
+    """
+    if na_client is None:
+        na_client = boto3.client(
+            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+        )
+
+    logger.info(
+        f"Perform reset_graph action on graph: [{graph_id}] with skip_snapshot: [{skip_snapshot}]"
+    )
+    response = na_client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
+    status_code = _get_status_code(response)
+    if status_code == 200:
+        fut = TaskFuture(graph_id, TaskType.RESET_GRAPH, _ASYNC_POLLING_INTERVAL)
+        asyncio.create_task(_wait_until_task_complete(na_client, fut), name=graph_id)
+        return asyncio.wrap_future(fut)
     else:
         return _invalid_status_code(status_code, response)
 
