@@ -115,12 +115,18 @@ ignore-packages = [
     # Following packge has no license info embedded on package level.
     "cymple", # MIT: https://github.com/Accenture/Cymple/blob/master/LICENSE
     "urllib3", # MIT: https://github.com/urllib3/urllib3/blob/main/LICENSE.txt
+    "jupyter_core", # BSD 3-Clause License: https://github.com/jupyter/jupyter_core/blob/main/LICENSE
+    "types-python-dateutil", #  Apache: https://github.com/python/typeshed/blob/main/LICENSE
+    "pytest-asyncio", # Apache: https://github.com/pytest-dev/pytest-asyncio/blob/main/LICENSE
+    "jsonschema-specifications", # MIT: https://github.com/python-jsonschema/jsonschema-specifications?tab=MIT-1-ov-file#readme
+    "anyio", # MIT: https://github.com/agronholm/anyio/blob/master/LICENSE
+    "python-dotenv", # BSD 3-Caluse: https://github.com/theskumar/python-dotenv/blob/main/LICENSE
 ]
 
 allow-only = """
 Apache Software License;
-Apache-2.0;
-BSD License;
+Apache-2.0; Apache License, Version 2.0;
+BSD License; BSD-3-Clause;
 CC0 1.0 Universal (CC0 1.0) Public Domain Dedication;
 GNU General Public License (GPL);
 MIT;MIT License;
@@ -128,4 +134,5 @@ Mozilla Public License 2.0 (MPL 2.0);
 Public Domain;
 Python Software Foundation License;
 Zero-Clause BSD (0BSD);
+ISC License (ISCL);
 """
