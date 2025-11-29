@@ -18,7 +18,7 @@ import uuid
 from asyncio import Future
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, Tuple, List
 
 import boto3
 import jmespath
@@ -67,7 +67,7 @@ class TaskType(Enum):
     EXPORT = (2, ["INITIALIZING", "EXPORTING"], "SUCCEEDED")
     CREATE = (3, ["CREATING"], "AVAILABLE")
     DELETE = (4, ["DELETING"], "DELETED")
-    NOOP = (5, [], "AVAILABLE")
+    NOOP = (5, ["N/A"], "AVAILABLE")
     START = (6, ["STARTING"], "AVAILABLE")
     STOP = (7, ["STOPPING"], "STOPPED")
     EXPORT_SNAPSHOT = (8, ["SNAPSHOTTING"], "AVAILABLE")

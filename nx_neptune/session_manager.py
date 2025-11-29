@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from asyncio import Future
-from typing import Optional
+from typing import Optional, Callable
 
 import boto3
 import networkx as nx
@@ -331,7 +331,7 @@ class SessionManager:
         Returns:
             asyncio.Future: A future that resolves when all graphs have been deleted.
         """
-        return self._destroy_graphs()
+        return self._destroy_graphs([])
 
     def start_graph(self, graph_name: str | list[str]):
         """Start one or more Neptune Analytics graphs.
@@ -352,7 +352,7 @@ class SessionManager:
         Returns:
             asyncio.Future: A future that resolves when all graphs have been stopped.
         """
-        return self._start_graphs()
+        return self._start_graphs([])
 
     def stop_graph(self, graph_name: str | list[str]):
         """Stop one or more Neptune Analytics graphs.
@@ -373,7 +373,7 @@ class SessionManager:
         Returns:
             asyncio.Future: A future that resolves when all graphs have been stopped.
         """
-        return self._stop_graphs()
+        return self._stop_graphs([])
 
     def reset_graph(self, graph_name: str | list[str]):
         """Reset one or more Neptune Analytics graphs.
@@ -394,9 +394,9 @@ class SessionManager:
         Returns:
             asyncio.Future: A future that resolves when all graphs have been stopped.
         """
-        return self._reset_graphs()
+        return self._reset_graphs([])
 
-    def _destroy_graphs(self, graph_name: str | list[str] = None):
+    def _destroy_graphs(self, graph_name: str | list[str]):
         if isinstance(graph_name, str):
             graph_name = [graph_name]
         return self._graph_bulk_operation(
@@ -405,7 +405,7 @@ class SessionManager:
             graph_names=graph_name,
         )
 
-    def _stop_graphs(self, graph_name: str | list[str] = None):
+    def _stop_graphs(self, graph_name: str | list[str]):
         if isinstance(graph_name, str):
             graph_name = [graph_name]
         return self._graph_bulk_operation(
@@ -414,7 +414,7 @@ class SessionManager:
             graph_names=graph_name,
         )
 
-    def _start_graphs(self, graph_name: str | list[str] = None):
+    def _start_graphs(self, graph_name: str | list[str]):
         if isinstance(graph_name, str):
             graph_name = [graph_name]
         return self._graph_bulk_operation(
@@ -423,7 +423,7 @@ class SessionManager:
             graph_names=graph_name,
         )
 
-    def _reset_graphs(self, graph_name: str | list[str] = None):
+    def _reset_graphs(self, graph_name: str | list[str]):
         if isinstance(graph_name, str):
             graph_name = [graph_name]
         return self._graph_bulk_operation(
@@ -433,13 +433,13 @@ class SessionManager:
         )
 
     def _graph_bulk_operation(
-        self, operation: callable, status_to_check: str, graph_names: list[str] = None
+        self, operation: Callable, status_to_check: str, graph_names: list[str]
     ):
         # Get all graphs matching name filter if specified
         graphs = [
             graph
             for graph in self.list_graphs()
-            if graph_names is None or graph["name"] in graph_names
+            if len(graph_names) == 0 or graph["name"] in graph_names
         ]
         if graph_names and len(graphs) == 0:
             logger.warning(
