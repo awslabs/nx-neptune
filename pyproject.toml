@@ -121,8 +121,15 @@ ignore-packages = [
     "jsonschema-specifications", # MIT: https://github.com/python-jsonschema/jsonschema-specifications?tab=MIT-1-ov-file#readme
     "anyio", # MIT: https://github.com/agronholm/anyio/blob/master/LICENSE
     "python-dotenv", # BSD 3-Caluse: https://github.com/theskumar/python-dotenv/blob/main/LICENSE
-    "MarkupSafe",
+    "MarkupSafe", # BSD 3-Caluse: https://github.com/pallets/markupsafe/blob/main/LICENSE.txt
+    "Sphinx", # BSD 2-Caluse: https://github.com/sphinx-doc/sphinx/blob/master/LICENSE.rst
+    "argon2-cffi", # MIT: https://github.com/hynek/argon2-cffi/blob/main/LICENSE
+    "argon2-cffi-bindings", # MIT: https://github.com/hynek/argon2-cffi-bindings/blob/main/LICENSE
+    "jsonschema", # MIT: https://github.com/python-jsonschema/jsonschema?tab=MIT-1-ov-file#readme
+    "rpds-py", # MIT: https://github.com/crate-py/rpds/blob/main/LICENSE
+    "sqlglot", # MIT: https://github.com/tobymao/sqlglot/blob/main/LICENSE
 ]
+
 #
 #allow-only = """
 #Apache Software License;
