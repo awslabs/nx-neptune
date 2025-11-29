@@ -128,6 +128,13 @@ ignore-packages = [
     "jsonschema", # MIT: https://github.com/python-jsonschema/jsonschema?tab=MIT-1-ov-file#readme
     "rpds-py", # MIT: https://github.com/crate-py/rpds/blob/main/LICENSE
     "sqlglot", # MIT: https://github.com/tobymao/sqlglot/blob/main/LICENSE
+    "click", # BSD 3-Caluse: https://github.com/pallets/click/blob/main/LICENSE.txt
+    "referencing", # MIT: https://github.com/python-jsonschema/referencing
+    "docenv", # BSD 3-Caluse: https://github.com/theskumar/python-dotenv
+    "typing_extensions", # GPL-compatible  https://github.com/python/typing_extensions?tab=License-1-ov-file#readme
+    "mypy_extensions", # MIT: https://github.com/python/mypy_extensions?tab=License-1-ov-file#readme
+    "cffi", # MIT: https://github.com/python-cffi/cffi?tab=License-1-ov-file#readme
+
 ]
 
 #
