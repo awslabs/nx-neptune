@@ -134,20 +134,27 @@ ignore-packages = [
     "typing_extensions", # GPL-compatible  https://github.com/python/typing_extensions?tab=License-1-ov-file#readme
     "mypy_extensions", # MIT: https://github.com/python/mypy_extensions?tab=License-1-ov-file#readme
     "cffi", # MIT: https://github.com/python-cffi/cffi?tab=License-1-ov-file#readme
+    "pyparsing", # MIT: https://github.com/pyparsing/pyparsing
+    "prometheus_client", # Apache: https://github.com/pyparsing/pyparsing
+    "dotenv", # BDS 3-Calause: https://github.com/theskumar/python-dotenv
+    "attrs", # MIT: https://github.com/python-attrs/attrs
+    "pillow", # MIT: https://github.com/python-pillow/Pillow?tab=License-1-ov-file#readme
+    "ipykernel", # BSD 3-Clause
 
 ]
 
-#
-#allow-only = """
-#Apache Software License;
-#Apache-2.0; Apache License, Version 2.0;
-#BSD License; BSD-3-Clause;
-#CC0 1.0 Universal (CC0 1.0) Public Domain Dedication;
-#GNU General Public License (GPL);
-#MIT;MIT License;
-#Mozilla Public License 2.0 (MPL 2.0);
-#Public Domain;
-#Python Software Foundation License;
-#Zero-Clause BSD (0BSD);
-#ISC License (ISCL);
-#"""
+
+allow-only = """
+Apache Software License;
+Apache-2.0; Apache License, Version 2.0; Apache 2.0;
+BSD License; BSD-3-Clause;
+CC0 1.0 Universal (CC0 1.0) Public Domain Dedication;
+GNU General Public License (GPL);
+MIT;MIT License;  License :: OSI Approved :: MIT License;
+Mozilla Public License 2.0 (MPL 2.0);
+Public Domain;
+Python Software Foundation License;
+Zero-Clause BSD (0BSD);
+ISC License (ISCL);
+The Unlicense (Unlicense);
+"""
