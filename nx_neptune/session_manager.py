@@ -305,7 +305,9 @@ class SessionManager:
         logger.info(
             f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}"
         )
-        logger.info(f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}")
+        logger.info(
+            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}"
+        )
 
         return True
 
@@ -323,12 +325,12 @@ class SessionManager:
     def destroy_all_graphs(self):
         """Delete all Neptune Analytics graphs associated with this session.
 
-            Fetches all graph IDs for the current session and permanently deletes each graph instance.
-            This operation cannot be undone.
+        Fetches all graph IDs for the current session and permanently deletes each graph instance.
+        This operation cannot be undone.
 
-            Returns:
-                asyncio.Future: A future that resolves when all graphs have been deleted.
-            """
+        Returns:
+            asyncio.Future: A future that resolves when all graphs have been deleted.
+        """
         return self._destroy_graphs()
 
     def start_graph(self, graph_name: str | list[str]):
@@ -362,7 +364,6 @@ class SessionManager:
             asyncio.Future: A future that resolves when the graphs have been stopped.
         """
         return self._stop_graphs(graph_name)
-
 
     def stop_all_graphs(self):
         """Stop all Neptune Analytics graphs associated with this session.
@@ -400,8 +401,8 @@ class SessionManager:
             graph_name = [graph_name]
         return self._graph_bulk_operation(
             operation=instance_management.delete_na_instance,
-            status_to_check='AVAILABLE',
-            graph_names=graph_name
+            status_to_check="AVAILABLE",
+            graph_names=graph_name,
         )
 
     def _stop_graphs(self, graph_name: str | list[str] = None):
@@ -409,8 +410,8 @@ class SessionManager:
             graph_name = [graph_name]
         return self._graph_bulk_operation(
             operation=instance_management.stop_na_instance,
-            status_to_check='AVAILABLE',
-            graph_names=graph_name
+            status_to_check="AVAILABLE",
+            graph_names=graph_name,
         )
 
     def _start_graphs(self, graph_name: str | list[str] = None):
@@ -418,8 +419,8 @@ class SessionManager:
             graph_name = [graph_name]
         return self._graph_bulk_operation(
             operation=instance_management.start_na_instance,
-            status_to_check='STOPPED',
-            graph_names=graph_name
+            status_to_check="STOPPED",
+            graph_names=graph_name,
         )
 
     def _reset_graphs(self, graph_name: str | list[str] = None):
@@ -427,25 +428,33 @@ class SessionManager:
             graph_name = [graph_name]
         return self._graph_bulk_operation(
             operation=instance_management.reset_graph,
-            status_to_check='AVAILABLE',
-            graph_names=graph_name
+            status_to_check="AVAILABLE",
+            graph_names=graph_name,
         )
 
-    def _graph_bulk_operation(self, operation: callable, status_to_check: str, graph_names: list[str] = None):
+    def _graph_bulk_operation(
+        self, operation: callable, status_to_check: str, graph_names: list[str] = None
+    ):
         # Get all graphs matching name filter if specified
-        graphs = [graph for graph in self.list_graphs()
-                 if graph_names is None or graph['name'] in graph_names]
-
+        graphs = [
+            graph
+            for graph in self.list_graphs()
+            if graph_names is None or graph["name"] in graph_names
+        ]
         if graph_names and len(graphs) == 0:
-            logger.warning(f"No graphs found matching name: {graph_names} and status: {status_to_check}")
+            logger.warning(
+                f"No graphs found matching name: {graph_names} and status: {status_to_check}"
+            )
 
         # Filter for graphs in correct status, log warning for others
         graph_ids = []
         for graph in graphs:
-            if graph['status'] == status_to_check:
-                graph_ids.append(graph['id'])
+            if graph["status"] == status_to_check:
+                graph_ids.append(graph["id"])
             else:
-                logger.warning(f"Skipping graph {graph['id']} - status is {graph['status']}, expected {status_to_check}")
+                logger.warning(
+                    f"Skipping graph {graph['id']} - status is {graph['status']}, expected {status_to_check}"
+                )
 
         future_list = []
         for graph_id in graph_ids:

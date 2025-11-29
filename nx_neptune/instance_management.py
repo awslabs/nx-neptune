@@ -156,7 +156,9 @@ async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
             elif status in task_type.permitted_statuses:
                 await asyncio.sleep(task_polling_interval)
             else:
-                logger.error(f"Task [{task_id}] Unexpected status: {status} on type: {task_type}")
+                logger.error(
+                    f"Task [{task_id}] Unexpected status: {status} on type: {task_type}"
+                )
         except ClientError as e:
             raise e
 
@@ -651,6 +653,7 @@ def create_graph_snapshot(
     else:
         return _invalid_status_code(status_code, response)
 
+
 def reset_graph(
     graph_id: str,
     na_client: BaseClient = None,
@@ -681,9 +684,7 @@ def reset_graph(
     response = na_client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
     status_code = _get_status_code(response)
     if status_code == 200:
-        return _get_status_check_future(
-            na_client, TaskType.RESET_GRAPH, graph_id
-        )
+        return _get_status_check_future(na_client, TaskType.RESET_GRAPH, graph_id)
     else:
         return _invalid_status_code(status_code, response)
 
