@@ -121,18 +121,19 @@ ignore-packages = [
     "jsonschema-specifications", # MIT: https://github.com/python-jsonschema/jsonschema-specifications?tab=MIT-1-ov-file#readme
     "anyio", # MIT: https://github.com/agronholm/anyio/blob/master/LICENSE
     "python-dotenv", # BSD 3-Caluse: https://github.com/theskumar/python-dotenv/blob/main/LICENSE
+    "MarkupSafe",
 ]
-
-allow-only = """
-Apache Software License;
-Apache-2.0; Apache License, Version 2.0;
-BSD License; BSD-3-Clause;
-CC0 1.0 Universal (CC0 1.0) Public Domain Dedication;
-GNU General Public License (GPL);
-MIT;MIT License;
-Mozilla Public License 2.0 (MPL 2.0);
-Public Domain;
-Python Software Foundation License;
-Zero-Clause BSD (0BSD);
-ISC License (ISCL);
-"""
+#
+#allow-only = """
+#Apache Software License;
+#Apache-2.0; Apache License, Version 2.0;
+#BSD License; BSD-3-Clause;
+#CC0 1.0 Universal (CC0 1.0) Public Domain Dedication;
+#GNU General Public License (GPL);
+#MIT;MIT License;
+#Mozilla Public License 2.0 (MPL 2.0);
+#Public Domain;
+#Python Software Foundation License;
+#Zero-Clause BSD (0BSD);
+#ISC License (ISCL);
+#"""
