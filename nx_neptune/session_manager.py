@@ -1,8 +1,9 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+import asyncio
 import logging
 from asyncio import Future
-from typing import Optional
+from typing import Optional, Callable
 
 import boto3
 import networkx as nx
@@ -304,3 +305,158 @@ class SessionManager:
         logger.info(
             f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}"
         )
+        logger.info(
+            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}"
+        )
+
+        return True
+
+    def destroy_graph(self, graph_name: str | list[str]):
+        """Destroy one or more Neptune Analytics graphs.
+
+        Args:
+            graph_name (str | list[str]): Name or list of names of graphs to stop
+
+        Returns:
+            asyncio.Future: A future that resolves when the graphs have been stopped.
+        """
+        return self._destroy_graphs(graph_name)
+
+    def destroy_all_graphs(self):
+        """Delete all Neptune Analytics graphs associated with this session.
+
+        Fetches all graph IDs for the current session and permanently deletes each graph instance.
+        This operation cannot be undone.
+
+        Returns:
+            asyncio.Future: A future that resolves when all graphs have been deleted.
+        """
+        return self._destroy_graphs([])
+
+    def start_graph(self, graph_name: str | list[str]):
+        """Start one or more Neptune Analytics graphs.
+
+        Args:
+            graph_name (str | list[str]): Name or list of names of graphs to stop
+
+        Returns:
+            asyncio.Future: A future that resolves when the graphs have been stopped.
+        """
+        return self._start_graphs(graph_name)
+
+    def start_all_graphs(self):
+        """Start all Neptune Analytics graphs associated with this session.
+
+        Fetches all graph IDs for the current session and stops each graph instance.
+
+        Returns:
+            asyncio.Future: A future that resolves when all graphs have been stopped.
+        """
+        return self._start_graphs([])
+
+    def stop_graph(self, graph_name: str | list[str]):
+        """Stop one or more Neptune Analytics graphs.
+
+        Args:
+            graph_name (str | list[str]): Name or list of names of graphs to stop
+
+        Returns:
+            asyncio.Future: A future that resolves when the graphs have been stopped.
+        """
+        return self._stop_graphs(graph_name)
+
+    def stop_all_graphs(self):
+        """Stop all Neptune Analytics graphs associated with this session.
+
+        Fetches all graph IDs for the current session and stops each graph instance.
+
+        Returns:
+            asyncio.Future: A future that resolves when all graphs have been stopped.
+        """
+        return self._stop_graphs([])
+
+    def reset_graph(self, graph_name: str | list[str]):
+        """Reset one or more Neptune Analytics graphs.
+
+        Args:
+            graph_name (str | list[str]): Name or list of names of graphs to stop
+
+        Returns:
+            asyncio.Future: A future that resolves when the graphs have been stopped.
+        """
+        return self._reset_graphs(graph_name)
+
+    def reset_all_graphs(self):
+        """Stop all Neptune Analytics graphs associated with this session.
+
+        Fetches all graph IDs for the current session and stops each graph instance.
+
+        Returns:
+            asyncio.Future: A future that resolves when all graphs have been stopped.
+        """
+        return self._reset_graphs([])
+
+    def _destroy_graphs(self, graph_name: str | list[str]):
+        if isinstance(graph_name, str):
+            graph_name = [graph_name]
+        return self._graph_bulk_operation(
+            operation=instance_management.delete_na_instance,
+            status_to_check="AVAILABLE",
+            graph_names=graph_name,
+        )
+
+    def _stop_graphs(self, graph_name: str | list[str]):
+        if isinstance(graph_name, str):
+            graph_name = [graph_name]
+        return self._graph_bulk_operation(
+            operation=instance_management.stop_na_instance,
+            status_to_check="AVAILABLE",
+            graph_names=graph_name,
+        )
+
+    def _start_graphs(self, graph_name: str | list[str]):
+        if isinstance(graph_name, str):
+            graph_name = [graph_name]
+        return self._graph_bulk_operation(
+            operation=instance_management.start_na_instance,
+            status_to_check="STOPPED",
+            graph_names=graph_name,
+        )
+
+    def _reset_graphs(self, graph_name: str | list[str]):
+        if isinstance(graph_name, str):
+            graph_name = [graph_name]
+        return self._graph_bulk_operation(
+            operation=instance_management.reset_graph,
+            status_to_check="AVAILABLE",
+            graph_names=graph_name,
+        )
+
+    def _graph_bulk_operation(
+        self, operation: Callable, status_to_check: str, graph_names: list[str]
+    ):
+        # Get all graphs matching name filter if specified
+        graphs = [
+            graph
+            for graph in self.list_graphs()
+            if len(graph_names) == 0 or graph["name"] in graph_names
+        ]
+        if graph_names and len(graphs) == 0:
+            logger.warning(
+                f"No graphs found matching name: {graph_names} and status: {status_to_check}"
+            )
+
+        # Filter for graphs in correct status, log warning for others
+        graph_ids = []
+        for graph in graphs:
+            if graph["status"] == status_to_check:
+                graph_ids.append(graph["id"])
+            else:
+                logger.warning(
+                    f"Skipping graph {graph['id']} - status is {graph['status']}, expected {status_to_check}"
+                )
+
+        future_list = []
+        for graph_id in graph_ids:
+            future_list.append(operation(graph_id))
+        return asyncio.gather(*future_list)
