@@ -131,7 +131,7 @@ class IamClient:
             # Validate ARN formats
             if resource_arn != "*":
                 self._validate_arns([self.role_arn, resource_arn])
-            self.logger.info(
+            self.logger.debug(
                 f"Perform role permission check with: \n"
                 f" Role [{self.role_arn}], \n"
                 f" Permission: [{permissions}]\n"
@@ -201,7 +201,7 @@ class IamClient:
         Note:
             If key_arn is provided, both S3 and KMS permissions are checked and the results are merged.
         """
-        self.logger.info(
+        self.logger.debug(
             f"Permission check on ARN(s): {self.role_arn}, {bucket_arn}, {key_arn}"
         )
 
@@ -251,6 +251,114 @@ class IamClient:
         """
         na_permissions = ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]
         operation_name = "Create Neptune Instance"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
+    def has_start_na_permissions(self):
+        """Check if the configured IAM role has permissions to start a Neptune Analytics instance.
+
+        Verifies that the role has the necessary permissions required to start a stopped
+        Neptune Analytics instance.
+
+        Raises:
+            ValueError: If the role lacks required permissions for starting the instance
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:StartGraph
+        """
+        na_permissions = ["neptune-graph:StartGraph"]
+        operation_name = "Start Neptune Instance"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
+    def has_stop_na_permissions(self):
+        """Check if the configured IAM role has permissions to stop a Neptune Analytics instance.
+
+        Verifies that the role has the necessary permissions required to stop a running
+        Neptune Analytics instance.
+
+        Raises:
+            ValueError: If the role lacks required permissions for stopping the instance
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:StopGraph
+        """
+        na_permissions = ["neptune-graph:StopGraph"]
+        operation_name = "Stop Neptune Instance"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
+    def has_delete_snapshot_permissions(self):
+        """Check if the configured IAM role has permissions to delete a Neptune Analytics snapshot.
+
+        Verifies that the role has the necessary permissions required to delete a snapshot
+        of a Neptune Analytics instance.
+
+        Raises:
+            ValueError: If the role lacks required permissions for snapshot deletion operations
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:DeleteGraphSnapshot
+        """
+        na_permissions = ["neptune-graph:DeleteGraphSnapshot"]
+        operation_name = "Delete Neptune Snapshot"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
+    def has_create_na_from_snapshot_permissions(self):
+        """Check if the configured IAM role has permissions to create a Neptune Analytics instance from a snapshot.
+
+        Verifies that the role has the necessary permissions required to restore a Neptune Analytics
+        instance from an existing snapshot, including tagging resources and restoring from snapshot.
+
+        Raises:
+            ValueError: If the role lacks required permissions for snapshot restore operations
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:TagResource
+            - neptune-graph:RestoreGraphFromSnapshot
+        """
+        na_permissions = [
+            "neptune-graph:TagResource",
+            "neptune-graph:RestoreGraphFromSnapshot",
+        ]
+        operation_name = "Create Neptune Instance From Snapshot"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
+    def has_create_na_snapshot_permissions(self):
+        """Check if the configured IAM role has permissions to create a Neptune Analytics snapshot.
+
+        Verifies that the role has the necessary permissions required to create a snapshot
+        of a Neptune Analytics instance, including tagging resources and creating snapshots.
+
+        Raises:
+            ValueError: If the role lacks required permissions for snapshot creation operations
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        Required permissions:
+            - neptune-graph:TagResource
+            - neptune-graph:CreateGraphSnapshot
+        """
+        na_permissions = [
+            "neptune-graph:TagResource",
+            "neptune-graph:CreateGraphSnapshot",
+        ]
+        operation_name = "Create Neptune Analytics Snapshot"
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)
 
@@ -322,6 +430,157 @@ class IamClient:
 
         # All ARNs are valid if we reach here
         return True
+
+    def validate_permissions(
+        self,
+        arn_s3_bucket_import,
+        arn_kms_key_import,
+        arn_s3_bucket_export,
+        arn_kms_key_export,
+    ):
+        """
+        Validates all required permissions for Neptune Analytics operations.
+
+        This method checks permissions for creating/deleting Neptune Analytics instances and S3/KMS permissions
+        for import/export operations.
+
+        Args:
+            arn_s3_bucket_import (str): ARN of S3 bucket used for importing data
+            arn_kms_key_import (str): ARN of KMS key used for import encryption
+            arn_s3_bucket_export (str): ARN of S3 bucket used for exporting data
+            arn_kms_key_export (str): ARN of KMS key used for export encryption
+
+        Returns:
+            dict: Dictionary mapping operation names to boolean permission status:
+                {
+                    'create_graph': bool,
+                    'delete_na_instance': bool,
+                    'import_from_s3': bool,
+                    'export_to_s3': bool
+                }
+
+        The method checks the following permissions:
+            - Neptune Graph: CreateGraph, TagResource, DeleteGraph
+            - S3: GetObject (import), PutObject/ListBucket (export)
+            - KMS: Decrypt, GenerateDataKey, DescribeKey (for both import/export)
+        """
+        results = {}
+
+        # Convert s3 bucket urls to arn
+        s3_import = (
+            _get_s3_in_arn(arn_s3_bucket_import) if arn_s3_bucket_import else None
+        )
+        s3_export = (
+            _get_s3_in_arn(arn_s3_bucket_export) if arn_s3_bucket_export else None
+        )
+
+        checks = {
+            "create_na_instance": [
+                {
+                    "permissions": [
+                        "neptune-graph:CreateGraph",
+                        "neptune-graph:TagResource",
+                    ]
+                }
+            ],
+            "delete_na_instance": [{"permissions": ["neptune-graph:DeleteGraph"]}],
+            "start_graph": [{"permissions": ["neptune-graph:StartGraph"]}],
+            "stop_graph": [{"permissions": ["neptune-graph:StopGraph"]}],
+            "import_from_s3": [
+                {"permissions": ["s3:GetObject"], "arn": s3_import},
+                {
+                    "permissions": [
+                        "kms:Decrypt",
+                        "kms:GenerateDataKey",
+                        "kms:DescribeKey",
+                    ],
+                    "arn": arn_kms_key_import,
+                },
+            ],
+            "export_csv_to_s3": [
+                {"permissions": ["s3:PutObject", "s3:ListBucket"], "arn": s3_export},
+                {
+                    "permissions": [
+                        "kms:Decrypt",
+                        "kms:GenerateDataKey",
+                        "kms:DescribeKey",
+                    ],
+                    "arn": arn_kms_key_export,
+                },
+            ],
+            "export_athena_table_to_s3": [
+                {"permissions": ["s3:GetObject"], "arn": s3_import},
+                {
+                    "permissions": [
+                        "kms:Decrypt",
+                        "kms:GenerateDataKey",
+                        "kms:DescribeKey",
+                    ],
+                    "arn": arn_kms_key_import,
+                },
+                {
+                    "permissions": [
+                        "athena:StartQueryExecution",
+                        "athena:GetQueryExecution",
+                    ]
+                },
+            ],
+            "create_table_from_s3": [
+                {"permissions": ["s3:GetObject", "s3:ListBucket"], "arn": s3_export},
+                {
+                    "permissions": [
+                        "kms:Decrypt",
+                        "kms:GenerateDataKey",
+                        "kms:DescribeKey",
+                    ],
+                    "arn": arn_kms_key_export,
+                },
+                {
+                    "permissions": [
+                        "athena:StartQueryExecution",
+                        "athena:GetQueryExecution",
+                    ]
+                },
+            ],
+            "create_graph_snapshot": [
+                {
+                    "permissions": [
+                        "neptune-graph:TagResource",
+                        "neptune-graph:CreateGraphSnapshot",
+                    ]
+                },
+            ],
+            "create_na_instance_from_snapshot": [
+                {
+                    "permissions": [
+                        "neptune-graph:TagResource",
+                        "neptune-graph:RestoreGraphFromSnapshot",
+                    ]
+                },
+            ],
+            "delete_graph_snapshot": [
+                {
+                    "permissions": [
+                        "neptune-graph:DeleteGraphSnapshot",
+                    ]
+                },
+            ],
+        }
+
+        for op, permission_pairs in checks.items():
+            for pair in permission_pairs:
+                try:
+                    if "arn" in pair and pair["arn"]:
+                        self.check_aws_permission(op, pair["permissions"], pair["arn"])
+                    else:
+                        self.check_aws_permission(op, pair["permissions"])
+                except Exception as e:
+                    self.logger.debug(e)
+                    results[op] = False
+                    break
+                results.setdefault(op, True)
+
+        return results
 
 
 def _get_s3_in_arn(s3_path: str) -> str:

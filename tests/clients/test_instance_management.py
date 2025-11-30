@@ -30,6 +30,8 @@ from nx_neptune.instance_management import (
     export_csv_to_s3,
     delete_na_instance,
     _get_create_instance_config,
+    validate_athena_query,
+    ProjectionType,
 )
 
 NX_CREATE_SUCCESS_FIXTURE = """{
@@ -277,6 +279,60 @@ NX_DELETE_STATUS_DELETED = {
 def test_clean_s3_path(s3_path, expected_result):
     """Test the _clean_s3_path function with various input scenarios."""
     result = _clean_s3_path(s3_path)
+    assert result == expected_result
+
+
+@pytest.mark.parametrize(
+    "query,projection_type,expected_result",
+    [
+        ("some_invalid_SQL_query", ProjectionType.NODE, False),
+        # Python library couldn't infer the runtime DB schema, will print a warning and pass instead.
+        ("select * from test_table", ProjectionType.NODE, True),
+        # Simple query which satisfied all conditions for Node
+        ("select '~id' from test_table", ProjectionType.NODE, True),
+        # Simple query which satisfied all conditions for Edge
+        ("select '~id', '~from', '~to' from test_table", ProjectionType.EDGE, True),
+        # Projection with alias (Node)
+        ("select col_a as '~id' from test_table", ProjectionType.NODE, True),
+        # Projection with alias (Edge)
+        (
+            "select col_a as '~id', col_b as '~from', col_c as '~to' from test_table",
+            ProjectionType.EDGE,
+            True,
+        ),
+        # Alias with sub-queries (Node)
+        (
+            """ 
+            SELECT DISTINCT "~id", airport_name, 'airline' AS "~label" FROM (
+                SELECT source_airport_id as "~id", source_airport as "airport_name"
+                FROM air_routes_db.air_routes_table
+                WHERE source_airport_id IS NOT NULL
+                UNION ALL
+                SELECT dest_airport_id as "~id", dest_airport as "airport_name"
+                FROM air_routes_db.air_routes_table
+                WHERE dest_airport_id IS NOT NULL );
+        """,
+            ProjectionType.NODE,
+            True,
+        ),
+    ],
+)
+def test_validate_athena_query(query, projection_type, expected_result):
+    """Test the validate_athena_query function with various SQL query scenarios.
+
+    Args:
+        query (str): The SQL query to validate
+        projection_type (ProjectionType): The type of projection (NODE or EDGE)
+        expected_result (bool): The expected validation result
+
+    Tests validation of:
+    - Invalid SQL queries
+    - Simple SELECT queries
+    - Queries with required node/edge columns
+    - Queries with column aliases
+    - Complex queries with subqueries
+    """
+    result = validate_athena_query(query, projection_type)
     assert result == expected_result
 
 
@@ -753,6 +809,7 @@ async def test_export_csv_to_s3_success(
         "s3://test-bucket/test-folder/",
         "test-role-arn",
         None,
+        export_filter=None,
     )
     mock_create_task.assert_called_once()
 
@@ -802,6 +859,7 @@ async def test_export_csv_to_s3_with_kms_key(
         "s3://test-bucket/test-folder/",
         "test-role-arn",
         "test-kms-key-arn",
+        export_filter=None,
     )
     mock_create_task.assert_called_once()
 
@@ -946,3 +1004,219 @@ async def test_create_graph_config_override_default_options():
         "tags": {"agent": "nx-neptune", "additional_tag": "test_value"},
     }
     assert expected == result
+
+
+@pytest.mark.asyncio
+async def test_create_random_graph_name_default():
+    """Test _create_random_graph_name with default prefix."""
+    from nx_neptune.instance_management import _create_random_graph_name
+
+    result = _create_random_graph_name()
+    assert result.startswith("nx-neptune-")
+    assert len(result) > len("nx-neptune-")
+
+
+@pytest.mark.asyncio
+async def test_create_random_graph_name_custom_prefix():
+    """Test _create_random_graph_name with custom prefix."""
+    from nx_neptune.instance_management import _create_random_graph_name
+
+    result = _create_random_graph_name("custom-prefix")
+    assert result.startswith("custom-prefix-")
+    assert len(result) > len("custom-prefix-")
+
+
+@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("boto3.client")
+def test_start_na_instance_success(mock_boto3_client, mock_get_future):
+    """Test successful start of NA instance."""
+    from nx_neptune.instance_management import start_na_instance
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_future = MagicMock()
+    mock_get_future.return_value = mock_future
+
+    mock_na_client.get_graph.return_value = {"status": "STOPPED"}
+    mock_na_client.start_graph.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 200}
+    }
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {"EvalActionName": "neptune-graph:StartGraph", "EvalDecision": "allowed"}
+        ]
+    }
+
+    result = start_na_instance("test-graph-id")
+    assert result is mock_future
+
+
+@pytest.mark.asyncio
+@patch("boto3.client")
+async def test_start_na_instance_wrong_status(mock_boto3_client):
+    """Test start NA instance when graph is not in STOPPED state."""
+    from nx_neptune.instance_management import start_na_instance
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_na_client.get_graph.return_value = {"status": "AVAILABLE"}
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {"EvalActionName": "neptune-graph:StartGraph", "EvalDecision": "allowed"}
+        ]
+    }
+
+    result = start_na_instance("test-graph-id")
+    assert result is not None
+    # Should return a future with exception
+
+
+@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("boto3.client")
+def test_stop_na_instance_success(mock_boto3_client, mock_get_future):
+    """Test successful stop of NA instance."""
+    from nx_neptune.instance_management import stop_na_instance
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_future = MagicMock()
+    mock_get_future.return_value = mock_future
+
+    mock_na_client.get_graph.return_value = {"status": "AVAILABLE"}
+    mock_na_client.stop_graph.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 200}
+    }
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {"EvalActionName": "neptune-graph:StopGraph", "EvalDecision": "allowed"}
+        ]
+    }
+
+    result = stop_na_instance("test-graph-id")
+    assert result is mock_future
+
+
+@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("boto3.client")
+def test_create_graph_snapshot_success(mock_boto3_client, mock_get_future):
+    """Test successful creation of graph snapshot."""
+    from nx_neptune.instance_management import create_graph_snapshot
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_future = MagicMock()
+    mock_get_future.return_value = mock_future
+
+    mock_na_client.create_graph_snapshot.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 201}
+    }
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {
+                "EvalActionName": "neptune-graph:CreateGraphSnapshot",
+                "EvalDecision": "allowed",
+            }
+        ]
+    }
+
+    result = create_graph_snapshot("test-graph-id", "test-snapshot")
+    assert result is mock_future
+
+
+@pytest.mark.asyncio
+@patch("boto3.client")
+async def test_delete_graph_snapshot_success(mock_boto3_client):
+    """Test successful deletion of graph snapshot."""
+    from nx_neptune.instance_management import delete_graph_snapshot
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_na_client.delete_graph_snapshot.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 200}
+    }
+    mock_na_client.get_graph_snapshot.side_effect = ClientError(
+        {"Error": {"Code": "ResourceNotFoundException"}}, "GetGraphSnapshot"
+    )
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {
+                "EvalActionName": "neptune-graph:DeleteGraphSnapshot",
+                "EvalDecision": "allowed",
+            }
+        ]
+    }
+
+    result = await delete_graph_snapshot("test-snapshot-id")
+    assert result == "test-snapshot-id"
+
+
+@pytest.mark.asyncio
+@patch("boto3.client")
+async def test_create_na_instance_from_snapshot_success(mock_boto3_client):
+    """Test successful creation of NA instance from snapshot."""
+    from nx_neptune.instance_management import create_na_instance_from_snapshot
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_na_client.restore_graph_from_snapshot.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 201},
+        "id": "test-graph-id",
+    }
+    mock_na_client.get_graph.return_value = {"status": "AVAILABLE"}
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {
+                "EvalActionName": "neptune-graph:RestoreGraphFromSnapshot",
+                "EvalDecision": "allowed",
+            }
+        ]
+    }
+
+    result = create_na_instance_from_snapshot("test-snapshot-id")
+    assert result is not None
+
+
+def test_get_create_instance_with_import_config():
+    """Test _get_create_instance_with_import_config function."""
+    from nx_neptune.instance_management import _get_create_instance_with_import_config
+
+    result = _get_create_instance_with_import_config(
+        "test-graph",
+        "s3://test-bucket/data",
+        "arn:aws:iam::123456789012:role/test-role",
+    )
+
+    assert result["graphName"] == "test-graph"
+    assert result["source"] == "s3://test-bucket/data"
+    assert result["roleArn"] == "arn:aws:iam::123456789012:role/test-role"
+    assert result["format"] == "CSV"
+    assert result["publicConnectivity"] is True
+    assert result["tags"]["agent"] == "nx-neptune"
+
+
+def test_get_create_instance_with_import_config_custom():
+    """Test _get_create_instance_with_import_config with custom config."""
+    from nx_neptune.instance_management import _get_create_instance_with_import_config
+
+    config = {
+        "minProvisionedMemory": 32,
+        "maxProvisionedMemory": 64,
+        "format": "PARQUET",
+    }
+
+    result = _get_create_instance_with_import_config(
+        "test-graph",
+        "s3://test-bucket/data",
+        "arn:aws:iam::123456789012:role/test-role",
+        config,
+    )
+
+    assert result["minProvisionedMemory"] == 32
+    assert result["maxProvisionedMemory"] == 64
+    assert result["format"] == "PARQUET"

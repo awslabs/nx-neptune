@@ -84,7 +84,9 @@ class NeptuneGraph:
         self.current_jobs: set[Task] = set()
 
     @classmethod
-    def from_config(cls, config: NeptuneConfig | None = None, graph=None, logger=None):
+    def from_config(
+        cls, config: Optional[NeptuneConfig] = None, graph=None, logger=None
+    ):
         if config is None:
             config = get_config()
 
@@ -124,13 +126,6 @@ class NeptuneGraph:
             return PARAM_TRAVERSAL_DIRECTION_OUTBOUND
         else:
             return PARAM_TRAVERSAL_DIRECTION_INBOUND
-
-    def create_na_instance(self):
-        """
-        TODO: Connect to Boto3 and create a Neptune Analytic instance,
-        then return the graph ID.
-        """
-        return self.graph
 
     def add_node(self, node: Node):
         """
