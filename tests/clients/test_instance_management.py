@@ -1026,14 +1026,17 @@ async def test_create_random_graph_name_custom_prefix():
     assert len(result) > len("custom-prefix-")
 
 
-@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_status_check_future")
 @patch("boto3.client")
-async def test_start_na_instance_success(mock_boto3_client):
+def test_start_na_instance_success(mock_boto3_client, mock_get_future):
     """Test successful start of NA instance."""
     from nx_neptune.instance_management import start_na_instance
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
+
+    mock_future = MagicMock()
+    mock_get_future.return_value = mock_future
 
     mock_na_client.get_graph.return_value = {"status": "STOPPED"}
     mock_na_client.start_graph.return_value = {
@@ -1046,7 +1049,7 @@ async def test_start_na_instance_success(mock_boto3_client):
     }
 
     result = start_na_instance("test-graph-id")
-    assert result is not None
+    assert result is mock_future
 
 
 @pytest.mark.asyncio
@@ -1070,14 +1073,17 @@ async def test_start_na_instance_wrong_status(mock_boto3_client):
     # Should return a future with exception
 
 
-@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_status_check_future")
 @patch("boto3.client")
-async def test_stop_na_instance_success(mock_boto3_client):
+def test_stop_na_instance_success(mock_boto3_client, mock_get_future):
     """Test successful stop of NA instance."""
     from nx_neptune.instance_management import stop_na_instance
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
+
+    mock_future = MagicMock()
+    mock_get_future.return_value = mock_future
 
     mock_na_client.get_graph.return_value = {"status": "AVAILABLE"}
     mock_na_client.stop_graph.return_value = {
@@ -1090,17 +1096,20 @@ async def test_stop_na_instance_success(mock_boto3_client):
     }
 
     result = stop_na_instance("test-graph-id")
-    assert result is not None
+    assert result is mock_future
 
 
-@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_status_check_future")
 @patch("boto3.client")
-async def test_create_graph_snapshot_success(mock_boto3_client):
+def test_create_graph_snapshot_success(mock_boto3_client, mock_get_future):
     """Test successful creation of graph snapshot."""
     from nx_neptune.instance_management import create_graph_snapshot
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
+
+    mock_future = MagicMock()
+    mock_get_future.return_value = mock_future
 
     mock_na_client.create_graph_snapshot.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 201}
@@ -1115,7 +1124,7 @@ async def test_create_graph_snapshot_success(mock_boto3_client):
     }
 
     result = create_graph_snapshot("test-graph-id", "test-snapshot")
-    assert result is not None
+    assert result is mock_future
 
 
 @pytest.mark.asyncio
