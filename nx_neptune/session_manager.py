@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from asyncio import Future
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 import boto3
 import networkx as nx

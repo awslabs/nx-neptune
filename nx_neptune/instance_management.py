@@ -18,7 +18,7 @@ import uuid
 from asyncio import Future
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, Tuple, List
+from typing import Any, List, Optional, Tuple
 
 import boto3
 import jmespath

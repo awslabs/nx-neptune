@@ -876,3 +876,151 @@ class TestOpencypherBuilder(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestOpencypherBuilderAdditional(unittest.TestCase):
+    """Additional test cases for uncovered functions."""
+
+    def test_insert_nodes(self):
+        """Test insert_nodes batch operation."""
+        from nx_neptune.clients.opencypher_builder import insert_nodes
+
+        nodes = [
+            Node(id="1", labels=["Person"], properties={"name": "Alice"}),
+            Node(id="2", labels=["Person"], properties={"name": "Bob"}),
+        ]
+        queries, params = insert_nodes(nodes)
+        self.assertEqual(len(queries), 1)
+        self.assertEqual(len(params), 1)
+        self.assertIn("nodes", params[0])
+
+    def test_insert_edges(self):
+        """Test insert_edges batch operation."""
+        from nx_neptune.clients.opencypher_builder import insert_edges
+
+        edges = [
+            Edge(
+                label="KNOWS",
+                properties={},
+                node_src=Node(id="1", labels=["Person"]),
+                node_dest=Node(id="2", labels=["Person"]),
+            ),
+            Edge(
+                label="KNOWS",
+                properties={},
+                node_src=Node(id="2", labels=["Person"]),
+                node_dest=Node(id="3", labels=["Person"]),
+            ),
+        ]
+        queries, params = insert_edges(edges)
+        self.assertEqual(len(queries), 1)
+        self.assertEqual(len(params), 1)
+
+    def test_pagerank_mutation_query(self):
+        """Test pagerank_mutation_query."""
+        from nx_neptune.clients.opencypher_builder import pagerank_mutation_query
+
+        query, params = pagerank_mutation_query({"writeProperty": "rank"})
+        self.assertIn("pageRank", query)
+        self.assertIn("mutate", query)
+        self.assertEqual(params, {})
+
+    def test_label_propagation_query(self):
+        """Test label_propagation_query."""
+        from nx_neptune.clients.opencypher_builder import label_propagation_query
+
+        query, params = label_propagation_query()
+        self.assertIn("labelPropagation", query)
+        self.assertIn("YIELD", query)
+        self.assertEqual(params, {})
+
+    def test_label_propagation_mutation_query(self):
+        """Test label_propagation_mutation_query."""
+        from nx_neptune.clients.opencypher_builder import (
+            label_propagation_mutation_query,
+        )
+
+        query, params = label_propagation_mutation_query({"writeProperty": "community"})
+        self.assertIn("labelPropagation", query)
+        self.assertIn("mutate", query)
+        self.assertEqual(params, {})
+
+    def test_louvain_query(self):
+        """Test louvain_query."""
+        from nx_neptune.clients.opencypher_builder import louvain_query
+
+        query, params = louvain_query()
+        self.assertIn("louvain", query)
+        self.assertIn("YIELD", query)
+        self.assertEqual(params, {})
+
+    def test_louvain_mutation_query(self):
+        """Test louvain_mutation_query."""
+        from nx_neptune.clients.opencypher_builder import louvain_mutation_query
+
+        query, params = louvain_mutation_query({"writeProperty": "community"})
+        self.assertIn("louvain", query)
+        self.assertIn("mutate", query)
+        self.assertEqual(params, {})
+
+    def test_closeness_centrality_query(self):
+        """Test closeness_centrality_query."""
+        from nx_neptune.clients.opencypher_builder import closeness_centrality_query
+
+        query, params = closeness_centrality_query()
+        self.assertIn("closenessCentrality", query)
+        self.assertIn("YIELD", query)
+        self.assertEqual(params, {})
+
+    def test_closeness_centrality_mutation_query(self):
+        """Test closeness_centrality_mutation_query."""
+        from nx_neptune.clients.opencypher_builder import (
+            closeness_centrality_mutation_query,
+        )
+
+        query, params = closeness_centrality_mutation_query(
+            {"writeProperty": "closeness"}
+        )
+        self.assertIn("closenessCentrality", query)
+        self.assertIn("mutate", query)
+        self.assertEqual(params, {})
+
+    def test_degree_centrality_query(self):
+        """Test degree_centrality_query."""
+        from nx_neptune.clients.opencypher_builder import degree_centrality_query
+
+        query, params = degree_centrality_query()
+        self.assertIn("degree", query)
+        self.assertIn("YIELD", query)
+        self.assertEqual(params, {})
+
+    def test_degree_centrality_mutation_query(self):
+        """Test degree_centrality_mutation_query."""
+        from nx_neptune.clients.opencypher_builder import (
+            degree_centrality_mutation_query,
+        )
+
+        query, params = degree_centrality_mutation_query({"writeProperty": "degree"})
+        self.assertIn("degree", query)
+        self.assertIn("mutate", query)
+        self.assertEqual(params, {})
+
+    def test_descendants_at_distance_query(self):
+        """Test descendants_at_distance_query."""
+        from nx_neptune.clients.opencypher_builder import descendants_at_distance_query
+
+        query, params = descendants_at_distance_query(
+            "n", {"id(n)": "Alice"}, {"maxDepth": 2}
+        )
+        self.assertIn("bfs", query)
+        self.assertIn("level", query)
+        self.assertEqual(params["0"], "Alice")
+
+    def test_bfs_layers_query(self):
+        """Test bfs_layers_query."""
+        from nx_neptune.clients.opencypher_builder import bfs_layers_query
+
+        query, params = bfs_layers_query("n", {"id(n)": "Alice"}, {"maxDepth": 3})
+        self.assertIn("bfs", query)
+        self.assertIn("level", query)
+        self.assertEqual(params["0"], "Alice")
