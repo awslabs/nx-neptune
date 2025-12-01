@@ -49,7 +49,7 @@ developer = [
     "mypy",
     "sphinx",
     "isort",
-    "pip-licenses"
+    "pip-licenses>=5.5"
 ]
 test = [
     'pytest>=7.2',
@@ -114,47 +114,25 @@ exclude = []
 ignore-packages = [
     # Following packge has no license info embedded on package level.
     "cymple", # MIT: https://github.com/Accenture/Cymple/blob/master/LICENSE
-    "urllib3", # MIT: https://github.com/urllib3/urllib3/blob/main/LICENSE.txt
-    "jupyter_core", # BSD 3-Clause License: https://github.com/jupyter/jupyter_core/blob/main/LICENSE
-    "types-python-dateutil", #  Apache: https://github.com/python/typeshed/blob/main/LICENSE
-    "pytest-asyncio", # Apache: https://github.com/pytest-dev/pytest-asyncio/blob/main/LICENSE
-    "jsonschema-specifications", # MIT: https://github.com/python-jsonschema/jsonschema-specifications?tab=MIT-1-ov-file#readme
-    "anyio", # MIT: https://github.com/agronholm/anyio/blob/master/LICENSE
-    "python-dotenv", # BSD 3-Caluse: https://github.com/theskumar/python-dotenv/blob/main/LICENSE
-    "MarkupSafe", # BSD 3-Caluse: https://github.com/pallets/markupsafe/blob/main/LICENSE.txt
-    "Sphinx", # BSD 2-Caluse: https://github.com/sphinx-doc/sphinx/blob/master/LICENSE.rst
-    "argon2-cffi", # MIT: https://github.com/hynek/argon2-cffi/blob/main/LICENSE
-    "argon2-cffi-bindings", # MIT: https://github.com/hynek/argon2-cffi-bindings/blob/main/LICENSE
-    "jsonschema", # MIT: https://github.com/python-jsonschema/jsonschema?tab=MIT-1-ov-file#readme
-    "rpds-py", # MIT: https://github.com/crate-py/rpds/blob/main/LICENSE
-    "sqlglot", # MIT: https://github.com/tobymao/sqlglot/blob/main/LICENSE
-    "click", # BSD 3-Caluse: https://github.com/pallets/click/blob/main/LICENSE.txt
-    "referencing", # MIT: https://github.com/python-jsonschema/referencing
-    "docenv", # BSD 3-Caluse: https://github.com/theskumar/python-dotenv
-    "typing_extensions", # GPL-compatible  https://github.com/python/typing_extensions?tab=License-1-ov-file#readme
-    "mypy_extensions", # MIT: https://github.com/python/mypy_extensions?tab=License-1-ov-file#readme
-    "cffi", # MIT: https://github.com/python-cffi/cffi?tab=License-1-ov-file#readme
-    "pyparsing", # MIT: https://github.com/pyparsing/pyparsing
-    "prometheus_client", # Apache: https://github.com/pyparsing/pyparsing
     "dotenv", # BDS 3-Calause: https://github.com/theskumar/python-dotenv
-    "attrs", # MIT: https://github.com/python-attrs/attrs
-    "pillow", # MIT: https://github.com/python-pillow/Pillow?tab=License-1-ov-file#readme
     "ipykernel", # BSD 3-Clause
+    "filelock", # Unlicense: https://github.com/tox-dev/filelock
 
 ]
 
 
 allow-only = """
 Apache Software License;
-Apache-2.0; Apache License, Version 2.0; Apache 2.0;
-BSD License; BSD-3-Clause;
+Apache-2.0; Apache License, Version 2.0; Apache 2.0; Apache-2.0 AND BSD-2-Clause;
+BSD License; BSD-2-Clause; BSD-3-Clause;
 CC0 1.0 Universal (CC0 1.0) Public Domain Dedication;
 GNU General Public License (GPL);
-MIT;MIT License;  License :: OSI Approved :: MIT License;
+MIT;MIT License;  License :: OSI Approved :: MIT License; MIT-CMU;
 Mozilla Public License 2.0 (MPL 2.0);
 Public Domain;
 Python Software Foundation License;
 Zero-Clause BSD (0BSD);
 ISC License (ISCL);
 The Unlicense (Unlicense);
+PSF-2.0;
 """
