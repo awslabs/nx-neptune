@@ -344,9 +344,7 @@ class TestExecuteSetupNewGraph:
 
         # Mock create_na_instance
         with patch("nx_neptune.utils.decorators.create_na_instance") as mock_create:
-            future = asyncio.Future()
-            future.set_result("new-graph-id")
-            mock_create.return_value = future
+            mock_create.return_value = "new-graph-id"
 
             # Mock set_config_graph_id
             with patch(
@@ -424,9 +422,7 @@ class TestExecuteSetupNewGraph:
 
         # Mock create_na_instance
         with patch("nx_neptune.utils.decorators.create_na_instance") as mock_create:
-            future = asyncio.Future()
-            future.set_result("new-graph-id")
-            mock_create.return_value = future
+            mock_create.return_value = "new-graph-id"
 
             # Mock set_config_graph_id
             with patch(
@@ -437,15 +433,6 @@ class TestExecuteSetupNewGraph:
 
                 # Call the function
                 result = await _execute_setup_new_graph(mock_config, mock_graph)
-
-                # Verify create_na_instance was called
-                mock_create.assert_called_once()
-
-                # Verify set_config_graph_id was called
-                mock_set_config.assert_called_once_with("new-graph-id")
-
-                # Verify the result is the updated config
-                assert result == mock_updated_config
 
                 # Verify create_na_instance was called
                 mock_create.assert_called_once()

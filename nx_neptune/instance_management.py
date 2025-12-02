@@ -55,117 +55,13 @@ logger = logging.getLogger(__name__)
 _PROJECT_IDENTIFIER = "nx-neptune"
 
 
-def import_csv_from_s3(
-    na_graph: NeptuneGraph,
-    s3_arn,
-    reset_graph_ahead=True,
-    skip_snapshot=True,
-    polling_interval=None,
-) -> Future:
-    """Import CSV data from S3 into a Neptune Analytics graph.
-
-    This function handles the complete workflow for importing graph data:
-    1. Checks required permissions
-    2. Optionally resets the graph
-    3. Starts the import task
-    4. Returns a Future that can be awaited for completion
-
-    Args:
-        na_graph (NeptuneGraph): The Neptune Analytics graph instance
-        s3_arn (str): The S3 location containing CSV data (e.g., 's3://bucket-name/prefix/')
-        reset_graph_ahead (bool, optional): Whether to reset the graph before import. Defaults to True.
-        skip_snapshot (bool, optional): Whether to skip creating a snapshot when resetting. Defaults to True.
-        polling_interval (int): Time interval in seconds for job status query
-
-    Returns:
-        asyncio.Future: A Future that resolves when the import completes
-
-    Raises:
-        ValueError: If the role lacks required permissions
-    """
-    graph_id = na_graph.na_client.graph_id
-    na_client = na_graph.na_client.client
-    iam_client = na_graph.iam_client
-    role_arn = iam_client.role_arn
-
-    # Retrieve key_arn for the bucket and permission checks if present
-    key_arn = _get_bucket_encryption_key_arn(s3_arn)
-
-    # Run permission check
-    iam_client.has_import_from_s3_permissions(s3_arn, key_arn)
-
-    if reset_graph_ahead:
-        # Run reset
-        _reset_graph(na_client, graph_id, skip_snapshot)
-
-    # Run Import
-    task_id = _start_import_task(na_client, graph_id, s3_arn, role_arn)
-
-    # Packaging future
-    future = TaskFuture(task_id, TaskType.IMPORT, polling_interval)
-    task = asyncio.create_task(future.wait_until_complete(na_client), name=task_id)
-    na_graph.current_jobs.add(task)
-    task.add_done_callback(na_graph.current_jobs.discard)
-
-    return asyncio.wrap_future(future)
-
-
-def export_csv_to_s3(
-    na_graph: NeptuneGraph,
-    s3_arn: str,
-    polling_interval=None,
-    export_filter=None,
-) -> Future:
-    """Export graph data from Neptune Analytics to S3 in CSV format.
-
-    This function handles the complete workflow for exporting graph data:
-    1. Checks required permissions
-    2. Starts the export task
-    3. Returns a Future that can be awaited for completion
-
-    Args:
-        na_graph (NeptuneGraph): The Neptune Analytics graph instance
-        s3_arn (str): The S3 destination location (e.g., 's3://bucket-name/prefix/')
-        polling_interval (int): Time interval in seconds to perform job status query. Defaults to 30.
-        export_filter (dict, optional): Filter criteria for the export. Defaults to None.
-
-    Returns:
-        asyncio.Future: A Future that resolves when the export completes
-
-    Raises:
-        ValueError: If the role lacks required permissions
-    """
-    graph_id = na_graph.na_client.graph_id
-    na_client = na_graph.na_client.client
-    iam_client = na_graph.iam_client
-    role_arn = iam_client.role_arn
-
-    # Retrieve key_arn for the bucket and permission check if present
-    key_arn = _get_bucket_encryption_key_arn(s3_arn)
-
-    # Run permission check
-    iam_client.has_export_to_s3_permissions(s3_arn, key_arn)
-
-    # Run Import
-    task_id = _start_export_task(
-        na_client, graph_id, s3_arn, role_arn, key_arn, export_filter=export_filter
-    )
-
-    # Packaging future
-    future = TaskFuture(task_id, TaskType.EXPORT, polling_interval)
-    task = asyncio.create_task(future.wait_until_complete(na_client), name=task_id)
-    na_graph.current_jobs.add(task)
-    task.add_done_callback(na_graph.current_jobs.discard)
-    return asyncio.wrap_future(future)
-
-
-def create_na_instance(
+async def create_na_instance(
     config: Optional[dict] = None,
     na_client: Optional[BaseClient] = None,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     graph_name_prefix: Optional[str] = None,
-):
+) -> str:
     """
     Creates a new graph instance for Neptune Analytics.
 
@@ -182,32 +78,25 @@ def create_na_instance(
         iam_client (Optional[BaseClient]): Optional boto3 client for iam service
         graph_name_prefix (Optional[str]): Optional prefix for the generated graph name
 
+    Returns:
+        str: The graph ID of the created Neptune Analytics instance
+
     Raises:
         Exception: If the Neptune Analytics instance creation fails
     """
-    if na_client is None:
-        na_client = boto3.client(
-            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-        )
-
-    # Permissions check
-    if sts_client is None:
-        sts_client = boto3.client(SERVICE_STS)
-    user_arn = sts_client.get_caller_identity()["Arn"]
-
-    if iam_client is None:
-        iam_client = boto3.client(SERVICE_IAM)
-    iam_client_wrapper = IamClient(role_arn=user_arn, client=iam_client)
-    iam_client_wrapper.has_create_na_permissions()
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    iam_client.has_create_na_permissions()
 
     response = _create_na_instance_task(na_client, config, graph_name_prefix)
     prospective_graph_id = _get_graph_id(response)
     status_code = _get_status_code(response)
 
     if status_code == 201:
-        return _get_status_check_future(
-            na_client, TaskType.CREATE, prospective_graph_id
-        )
+        # fut = TaskFuture(prospective_graph_id, TaskType.CREATE)
+        # await fut.wait_until_complete(na_client)
+        # return prospective_graph_id
+        await _get_status_check_future(na_client, TaskType.CREATE, prospective_graph_id)
+        return prospective_graph_id
     else:
         raise Exception(
             f"Neptune instance creation failure with graph name {prospective_graph_id}"
@@ -326,18 +215,20 @@ def create_na_instance_from_snapshot(
         ValueError: If the role lacks required permissions
     """
     (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+
+    # Permissions check
     iam_client.has_create_na_from_snapshot_permissions()
 
     response = _create_na_instance_from_snapshot_task(na_client, snapshot_id, config)
     prospective_graph_id = _get_graph_id(response)
 
     if _get_status_code(response) == 201:
-        return _get_status_check_future(
+        return _get_status_check_future_tmp(
             na_client, TaskType.CREATE, prospective_graph_id
         )
     else:
         raise Exception(
-            f"Neptune instance creation failure with graph name {prospective_graph_id}"
+            f"Neptune instance creation failure with graph identifier {prospective_graph_id}"
         )
 
 
@@ -373,7 +264,7 @@ def delete_graph_snapshot(
     response = na_client.delete_graph_snapshot(snapshotIdentifier=snapshot_id)
 
     if _get_status_code(response) == 200:
-        return _get_status_check_future(
+        return _get_status_check_future_tmp(
             na_client, TaskType.DELETE_SNAPSHOT, snapshot_id
         )
     else:
@@ -414,7 +305,7 @@ def start_na_instance(
     response = na_client.start_graph(graphIdentifier=graph_id)
     status_code = _get_status_code(response)
     if status_code == 200:
-        return _get_status_check_future(na_client, TaskType.START, graph_id)
+        return _get_status_check_future_tmp(na_client, TaskType.START, graph_id)
     else:
         return _invalid_status_code(status_code, response)
 
@@ -452,7 +343,7 @@ def stop_na_instance(
     response = na_client.stop_graph(graphIdentifier=graph_id)
     status_code = _get_status_code(response)
     if status_code == 200:
-        return _get_status_check_future(na_client, TaskType.STOP, graph_id)
+        return _get_status_check_future_tmp(na_client, TaskType.STOP, graph_id)
     else:
         return _invalid_status_code(status_code, response)
 
@@ -490,7 +381,7 @@ def delete_na_instance(
     response = _delete_na_instance_task(na_client, graph_id)
     status_code = _get_status_code(response)
     if status_code == 200:
-        return _get_status_check_future(na_client, TaskType.DELETE, graph_id)
+        return _get_status_check_future_tmp(na_client, TaskType.DELETE, graph_id)
     else:
         return _invalid_status_code(status_code, response)
 
@@ -537,9 +428,115 @@ def create_graph_snapshot(
     response = na_client.create_graph_snapshot(**kwargs)
     status_code = _get_status_code(response)
     if status_code == 201:
-        return _get_status_check_future(na_client, TaskType.EXPORT_SNAPSHOT, graph_id)
+        return _get_status_check_future_tmp(
+            na_client, TaskType.EXPORT_SNAPSHOT, graph_id
+        )
     else:
         return _invalid_status_code(status_code, response)
+
+
+def import_csv_from_s3(
+    na_graph: NeptuneGraph,
+    s3_arn,
+    reset_graph_ahead=True,
+    skip_snapshot=True,
+    polling_interval=None,
+) -> Future:
+    """Import CSV data from S3 into a Neptune Analytics graph.
+
+    This function handles the complete workflow for importing graph data:
+    1. Checks required permissions
+    2. Optionally resets the graph
+    3. Starts the import task
+    4. Returns a Future that can be awaited for completion
+
+    Args:
+        na_graph (NeptuneGraph): The Neptune Analytics graph instance
+        s3_arn (str): The S3 location containing CSV data (e.g., 's3://bucket-name/prefix/')
+        reset_graph_ahead (bool, optional): Whether to reset the graph before import. Defaults to True.
+        skip_snapshot (bool, optional): Whether to skip creating a snapshot when resetting. Defaults to True.
+        polling_interval (int): Time interval in seconds for job status query
+
+    Returns:
+        asyncio.Future: A Future that resolves when the import completes
+
+    Raises:
+        ValueError: If the role lacks required permissions
+    """
+    graph_id = na_graph.na_client.graph_id
+    na_client = na_graph.na_client.client
+    iam_client = na_graph.iam_client
+    role_arn = iam_client.role_arn
+
+    # Retrieve key_arn for the bucket and permission checks if present
+    key_arn = _get_bucket_encryption_key_arn(s3_arn)
+
+    # Run permission check
+    iam_client.has_import_from_s3_permissions(s3_arn, key_arn)
+
+    # Run reset
+    if reset_graph_ahead:
+        reset_graph(graph_id, na_client, skip_snapshot)
+
+    # Run Import
+    task_id = _start_import_task(na_client, graph_id, s3_arn, role_arn)
+
+    # Packaging future
+    future = TaskFuture(task_id, TaskType.IMPORT, polling_interval)
+    task = asyncio.create_task(future.wait_until_complete(na_client), name=task_id)
+    na_graph.current_jobs.add(task)
+    task.add_done_callback(na_graph.current_jobs.discard)
+
+    return asyncio.wrap_future(future)
+
+
+def export_csv_to_s3(
+    na_graph: NeptuneGraph,
+    s3_arn: str,
+    polling_interval=None,
+    export_filter=None,
+) -> Future:
+    """Export graph data from Neptune Analytics to S3 in CSV format.
+
+    This function handles the complete workflow for exporting graph data:
+    1. Checks required permissions
+    2. Starts the export task
+    3. Returns a Future that can be awaited for completion
+
+    Args:
+        na_graph (NeptuneGraph): The Neptune Analytics graph instance
+        s3_arn (str): The S3 destination location (e.g., 's3://bucket-name/prefix/')
+        polling_interval (int): Time interval in seconds to perform job status query. Defaults to 30.
+        export_filter (dict, optional): Filter criteria for the export. Defaults to None.
+
+    Returns:
+        asyncio.Future: A Future that resolves when the export completes
+
+    Raises:
+        ValueError: If the role lacks required permissions
+    """
+    graph_id = na_graph.na_client.graph_id
+    na_client = na_graph.na_client.client
+    iam_client = na_graph.iam_client
+    role_arn = iam_client.role_arn
+
+    # Retrieve key_arn for the bucket and permission check if present
+    key_arn = _get_bucket_encryption_key_arn(s3_arn)
+
+    # Run permission check
+    iam_client.has_export_to_s3_permissions(s3_arn, key_arn)
+
+    # Run Import
+    task_id = _start_export_task(
+        na_client, graph_id, s3_arn, role_arn, key_arn, export_filter=export_filter
+    )
+
+    # Packaging future
+    future = TaskFuture(task_id, TaskType.EXPORT, polling_interval)
+    task = asyncio.create_task(future.wait_until_complete(na_client), name=task_id)
+    na_graph.current_jobs.add(task)
+    task.add_done_callback(na_graph.current_jobs.discard)
+    return asyncio.wrap_future(future)
 
 
 def reset_graph(
@@ -572,7 +569,7 @@ def reset_graph(
     response = na_client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
     status_code = _get_status_code(response)
     if status_code == 200:
-        return _get_status_check_future(na_client, TaskType.RESET_GRAPH, graph_id)
+        return _get_status_check_future_tmp(na_client, TaskType.RESET_GRAPH, graph_id)
     else:
         return _invalid_status_code(status_code, response)
 
@@ -817,42 +814,6 @@ def _start_export_task(
 
     except ClientError as e:
         raise e
-
-
-def _reset_graph(
-    client: BaseClient,
-    graph_id: str,
-    skip_snapshot: bool = True,
-    polling_interval=None,
-    max_attempts=None,
-) -> bool:
-    """Reset the Neptune Analytics graph.
-
-    Args:
-        client: The Neptune Analytics boto3 client
-        graph_id (str): The ID of the Neptune Analytics graph
-        skip_snapshot:
-
-    Returns:
-        bool: True if reset was successful, False otherwise
-    """
-    if max_attempts is None:
-        max_attempts = _ASYNC_MAX_ATTEMPTS
-
-    try:
-        logger.info(
-            f"Perform reset_graph action on graph: [{graph_id}] with skip_snapshot: [{skip_snapshot}]"
-        )
-        client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
-        waiter = client.get_waiter("graph_available")
-        waiter.wait(
-            graphIdentifier=graph_id,
-            WaiterConfig={"Delay": polling_interval, "MaxAttempts": max_attempts},
-        )
-        return True
-    except ClientError as e:
-        logger.error(f"Error resetting graph: {e}")
-        return False
 
 
 def _get_bucket_encryption_key_arn(s3_arn):
@@ -1500,7 +1461,7 @@ def _invalid_status_code(status_code, response):
     return asyncio.wrap_future(fut)
 
 
-def _get_status_check_future(na_client, task_type: TaskType, object_id):
+async def _get_status_check_future(na_client, task_type: TaskType, object_id):
     """Creates and returns a Future for monitoring Neptune Analytics task status.
 
     Args:
@@ -1512,7 +1473,27 @@ def _get_status_check_future(na_client, task_type: TaskType, object_id):
         asyncio.Future: A Future that resolves when the task completes
 
     The returned Future will monitor the task status by polling at regular intervals
-    defined by _ASYNC_POLLING_INTERVAL. The Future resolves when the task reaches
+    for a maximum number of attmpts. The Future resolves when the task reaches
+    its completion state as defined by the TaskType.
+    """
+    fut = TaskFuture(object_id, task_type)
+    await asyncio.create_task(fut.wait_until_complete(na_client), name=object_id)
+    return asyncio.wrap_future(fut)
+
+
+def _get_status_check_future_tmp(na_client, task_type: TaskType, object_id):
+    """Creates and returns a Future for monitoring Neptune Analytics task status.
+
+    Args:
+        na_client: The Neptune Analytics boto3 client
+        task_type (TaskType): The type of task being monitored (e.g. CREATE, DELETE, etc)
+        object_id (str): The identifier for the object being monitored (e.g. graph ID)
+
+    Returns:
+        asyncio.Future: A Future that resolves when the task completes
+
+    The returned Future will monitor the task status by polling at regular intervals
+    for a maximum number of attmpts. The Future resolves when the task reaches
     its completion state as defined by the TaskType.
     """
     fut = TaskFuture(object_id, task_type)

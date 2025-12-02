@@ -12,7 +12,7 @@
 # language governing permissions and limitations under the License.
 import json
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 from botocore.exceptions import ClientError
@@ -504,38 +504,33 @@ async def test_create_na_instance_graph_absent_create_fail(mock_boto3_client):
 
     with pytest.raises(Exception, match="Neptune instance creation failure"):
         # Make sure graph_id is absent.
-        result = create_na_instance()
-        await result
+        await create_na_instance()
 
 
-@patch("nx_neptune.instance_management._get_status_check_future")
+@pytest.mark.asyncio
+@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
-def test_create_na_instance_graph_absent_status_check_success(
-    mock_boto3_client, mock_get_future
+async def test_create_na_instance_graph_absent_status_check_success(
+    mock_boto3_client, mock_sleep
 ):
 
     # Mock boto client
     mock_nx_client = MagicMock()
     mock_boto3_client.return_value = mock_nx_client
 
-    # Mock future
-    mock_future = MagicMock()
-    mock_future.result.return_value = "test_graph_id"
-    mock_future.done.return_value = True
-    mock_get_future.return_value = mock_future
-
     # Mock creation
     test_response = json.loads(NX_CREATE_SUCCESS_FIXTURE)
     mock_nx_client.create_graph.return_value = test_response
 
-    # Mock status check
-    test_status_response = json.loads(NX_STATUS_CHECK_SUCCESS_FIXTURE)
-    mock_nx_client.get_graph.return_value = test_status_response
+    # Mock status check - return CREATING then AVAILABLE
+    test_status_creating = json.loads(NX_STATUS_CHECK_SUCCESS_FIXTURE)
+    test_status_creating["status"] = "CREATING"
+    test_status_available = json.loads(NX_STATUS_CHECK_SUCCESS_FIXTURE)
+    mock_nx_client.get_graph.side_effect = [test_status_creating, test_status_available]
 
     # Make sure graph_id is absent.
-    result = create_na_instance()
-    assert result.result() == "test_graph_id"
-    assert result.done()
+    graph_id = await create_na_instance()
+    assert graph_id == "test_graph_id"
 
 
 @pytest.mark.asyncio
@@ -557,8 +552,7 @@ async def test_create_na_instance_graph_absent_status_check_failure(mock_boto3_c
     )
 
     with pytest.raises(ClientError, match="InvalidGraphId"):
-        result = create_na_instance()
-        await result
+        await create_na_instance()
 
 
 @pytest.mark.asyncio
@@ -580,8 +574,7 @@ async def test_create_na_instance_insufficient_permissions(mock_boto3_client):
     with pytest.raises(
         Exception, match="Insufficient permission, neptune-graph:TagResource"
     ):
-        result = create_na_instance()
-        await result
+        await create_na_instance()
 
 
 @pytest.mark.asyncio
@@ -643,7 +636,7 @@ async def test_status_check_export(mock_boto3_client):
 
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management._start_import_task")
-@patch("nx_neptune.instance_management._reset_graph")
+@patch("nx_neptune.instance_management.reset_graph")
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
 @patch("asyncio.create_task")
 async def test_import_csv_from_s3_success(
@@ -682,7 +675,7 @@ async def test_import_csv_from_s3_success(
         "s3://test-bucket/test-folder/", None
     )
     mock_reset_graph.assert_called_once_with(
-        mock_na_graph.na_client.client, "test-graph-id", True
+        "test-graph-id", mock_na_graph.na_client.client, True
     )
     mock_start_import_task.assert_called_once_with(
         mock_na_graph.na_client.client,
@@ -699,7 +692,7 @@ async def test_import_csv_from_s3_success(
 
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management._start_import_task")
-@patch("nx_neptune.instance_management._reset_graph")
+@patch("nx_neptune.instance_management.reset_graph")
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
 @patch("asyncio.create_task")
 async def test_import_csv_from_s3_without_reset(
@@ -1032,19 +1025,22 @@ async def test_create_random_graph_name_custom_prefix():
     assert len(result) > len("custom-prefix-")
 
 
-@patch("nx_neptune.instance_management._get_status_check_future")
+@pytest.mark.asyncio
+@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
-def test_start_na_instance_success(mock_boto3_client, mock_get_future):
+async def test_start_na_instance_success(mock_boto3_client, mock_sleep):
     """Test successful start of NA instance."""
     from nx_neptune.instance_management import start_na_instance
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
 
-    mock_future = MagicMock()
-    mock_get_future.return_value = mock_future
-
-    mock_na_client.get_graph.return_value = {"status": "STOPPED"}
+    # Mock status progression: STOPPED -> STARTING -> AVAILABLE
+    mock_na_client.get_graph.side_effect = [
+        {"status": "STOPPED"},  # Initial check
+        {"status": "STARTING"},  # First poll
+        {"status": "AVAILABLE"},  # Complete
+    ]
     mock_na_client.start_graph.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 200}
     }
@@ -1054,8 +1050,8 @@ def test_start_na_instance_success(mock_boto3_client, mock_get_future):
         ]
     }
 
-    result = start_na_instance("test-graph-id")
-    assert result is mock_future
+    result = await start_na_instance("test-graph-id")
+    assert result == "test-graph-id"
 
 
 @pytest.mark.asyncio
@@ -1079,7 +1075,7 @@ async def test_start_na_instance_wrong_status(mock_boto3_client):
     # Should return a future with exception
 
 
-@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("nx_neptune.instance_management._get_status_check_future_tmp")
 @patch("boto3.client")
 def test_stop_na_instance_success(mock_boto3_client, mock_get_future):
     """Test successful stop of NA instance."""
@@ -1105,7 +1101,7 @@ def test_stop_na_instance_success(mock_boto3_client, mock_get_future):
     assert result is mock_future
 
 
-@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("nx_neptune.instance_management._get_status_check_future_tmp")
 @patch("boto3.client")
 def test_create_graph_snapshot_success(mock_boto3_client, mock_get_future):
     """Test successful creation of graph snapshot."""
