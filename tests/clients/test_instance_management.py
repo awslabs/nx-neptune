@@ -25,7 +25,6 @@ from nx_neptune.instance_management import (
     _get_status_code,
     _get_graph_id,
     create_na_instance,
-    _wait_until_task_complete,
     import_csv_from_s3,
     export_csv_to_s3,
     delete_na_instance,
@@ -509,13 +508,21 @@ async def test_create_na_instance_graph_absent_create_fail(mock_boto3_client):
         await result
 
 
-@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_status_check_future")
 @patch("boto3.client")
-async def test_create_na_instance_graph_absent_status_check_success(mock_boto3_client):
+def test_create_na_instance_graph_absent_status_check_success(
+    mock_boto3_client, mock_get_future
+):
 
     # Mock boto client
     mock_nx_client = MagicMock()
     mock_boto3_client.return_value = mock_nx_client
+
+    # Mock future
+    mock_future = MagicMock()
+    mock_future.result.return_value = "test_graph_id"
+    mock_future.done.return_value = True
+    mock_get_future.return_value = mock_future
 
     # Mock creation
     test_response = json.loads(NX_CREATE_SUCCESS_FIXTURE)
@@ -527,7 +534,6 @@ async def test_create_na_instance_graph_absent_status_check_success(mock_boto3_c
 
     # Make sure graph_id is absent.
     result = create_na_instance()
-    await result
     assert result.result() == "test_graph_id"
     assert result.done()
 
@@ -592,7 +598,7 @@ async def test_status_check_create(mock_boto3_client):
     test_status_response = json.loads(NX_STATUS_CHECK_SUCCESS_FIXTURE)
     mock_nx_client.get_graph.return_value = test_status_response
 
-    await _wait_until_task_complete(mock_nx_client, future)
+    await future.wait_until_complete(mock_nx_client)
     assert future.done()
     assert future.result() == "test-create-id"
 
@@ -611,7 +617,7 @@ async def test_status_check_import(mock_boto3_client):
     test_status_response = json.loads(NX_STATUS_CHECK_IMPORT_EXPORT_SUCCESS_FIXTURE)
     mock_nx_client.get_import_task.return_value = test_status_response
 
-    await _wait_until_task_complete(mock_nx_client, future)
+    await future.wait_until_complete(mock_nx_client)
     assert future.done()
     assert future.result() == "test-import-job-id"
 
@@ -630,7 +636,7 @@ async def test_status_check_export(mock_boto3_client):
     test_status_response = json.loads(NX_STATUS_CHECK_IMPORT_EXPORT_SUCCESS_FIXTURE)
     mock_nx_client.get_export_task.return_value = test_status_response
 
-    await _wait_until_task_complete(mock_nx_client, future)
+    await future.wait_until_complete(mock_nx_client)
     assert future.done()
     assert future.result() == "test-export-job-id"
 

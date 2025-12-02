@@ -16,9 +16,8 @@ import os
 import time
 import uuid
 from asyncio import Future
-from datetime import datetime
 from enum import Enum
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import boto3
 import jmespath
@@ -34,8 +33,6 @@ from .na_graph import NeptuneGraph
 __all__ = [
     "import_csv_from_s3",
     "export_csv_to_s3",
-    "TaskFuture",
-    "TaskType",
     "create_na_instance",
     "create_na_instance_with_s3_import",
     "create_na_instance_from_snapshot",
@@ -51,116 +48,11 @@ __all__ = [
     "delete_graph_snapshot",
 ]
 
+from .utils.task_future import _ASYNC_MAX_ATTEMPTS, TaskFuture, TaskType
+
 logger = logging.getLogger(__name__)
 
 _PROJECT_IDENTIFIER = "nx-neptune"
-
-_PERMISSIONS_CREATE = ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]
-
-_ASYNC_POLLING_INTERVAL = 30
-
-
-class TaskType(Enum):
-    # Allow import to run against an "INITIALIZING" state - the graph is sometimes in this state after creating graph
-    IMPORT = (1, ["INITIALIZING", "ANALYZING_DATA", "IMPORTING"], "SUCCEEDED")
-    # Allow export to run against an "INITIALIZING" state - the graph is sometimes in this state after running algorithms
-    EXPORT = (2, ["INITIALIZING", "EXPORTING"], "SUCCEEDED")
-    CREATE = (3, ["CREATING"], "AVAILABLE")
-    DELETE = (4, ["DELETING"], "DELETED")
-    NOOP = (5, ["N/A"], "AVAILABLE")
-    START = (6, ["STARTING"], "AVAILABLE")
-    STOP = (7, ["STOPPING"], "STOPPED")
-    EXPORT_SNAPSHOT = (8, ["SNAPSHOTTING"], "AVAILABLE")
-    DELETE_SNAPSHOT = (9, ["DELETING"], "DELETED")
-    RESET_GRAPH = (10, ["RESETTING"], "AVAILABLE")
-
-    def __init__(self, num_value, permitted_statuses, status_complete):
-        self._value_ = num_value
-        self.permitted_statuses = permitted_statuses
-        self.status_complete = status_complete
-
-
-class TaskFuture(Future):
-    """A Future subclass that tracks Neptune Analytics task information.
-
-    This class extends the standard Future to include task-specific identifiers
-    for Neptune Analytics import and export operations.
-
-    Args:
-        task_id (str): The Neptune Analytics task identifier
-        task_type (TaskType): The type of task ('import' or 'export')
-        polling_interval(int): Time interval in seconds to perform job status query
-    """
-
-    def __init__(
-        self,
-        task_id,
-        task_type,
-        polling_interval=_ASYNC_POLLING_INTERVAL,
-        max_attempts=60,
-    ):
-        super().__init__()
-        self.task_id = task_id
-        self.task_type = task_type
-        self.polling_interval = polling_interval
-        # TODO: add max attempts
-
-
-async def _wait_until_task_complete(client: BaseClient, future: TaskFuture):
-    """Asynchronously monitor a Neptune Analytics task until completion.
-
-    This function polls the status of an import or export task until it completes
-    or fails, then resolves the provided Future accordingly.
-
-    Args:
-        client (boto3.client): The Neptune Analytics boto3 client
-        future (TaskFuture): The Future object tracking the task
-
-    Raises:
-        ClientError: If there's an issue with the AWS API call
-        ValueError: If an unknown task type is provided
-    """
-    task_id = future.task_id
-    task_type = future.task_type
-    task_polling_interval = future.polling_interval
-    logger.debug(
-        f"Perform Neptune Analytics job status check on Type: [{task_type}] with ID: [{task_id}]"
-    )
-
-    while True:
-        try:
-            task_action_map = {
-                TaskType.IMPORT: lambda: client.get_import_task(taskIdentifier=task_id),  # type: ignore[attr-defined]
-                TaskType.EXPORT: lambda: client.get_export_task(taskIdentifier=task_id),  # type: ignore[attr-defined]
-                TaskType.CREATE: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
-                TaskType.DELETE: lambda: delete_status_check_wrapper(client, task_id),
-                TaskType.START: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
-                TaskType.STOP: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
-                TaskType.RESET_GRAPH: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
-                TaskType.EXPORT_SNAPSHOT: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
-                TaskType.DELETE_SNAPSHOT: lambda: delete_snapshot_status_check_wrapper(
-                    client, task_id
-                ),
-            }
-
-            response = task_action_map[task_type]()
-            status = response.get("status")
-
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            logger.info(f"[{current_time}] Task [{task_id}] Current status: {status}")
-
-            if status == task_type.status_complete:
-                logger.info(f"Task [{task_id}] completed at [{current_time}]")
-                future.set_result(task_id)
-                return
-            elif status in task_type.permitted_statuses:
-                await asyncio.sleep(task_polling_interval)
-            else:
-                logger.error(
-                    f"Task [{task_id}] Unexpected status: {status} on type: {task_type}"
-                )
-        except ClientError as e:
-            raise e
 
 
 def import_csv_from_s3(
@@ -168,7 +60,7 @@ def import_csv_from_s3(
     s3_arn,
     reset_graph_ahead=True,
     skip_snapshot=True,
-    polling_interval=_ASYNC_POLLING_INTERVAL,
+    polling_interval=None,
 ) -> Future:
     """Import CSV data from S3 into a Neptune Analytics graph.
 
@@ -211,9 +103,7 @@ def import_csv_from_s3(
 
     # Packaging future
     future = TaskFuture(task_id, TaskType.IMPORT, polling_interval)
-    task = asyncio.create_task(
-        _wait_until_task_complete(na_client, future), name=task_id
-    )
+    task = asyncio.create_task(future.wait_until_complete(na_client), name=task_id)
     na_graph.current_jobs.add(task)
     task.add_done_callback(na_graph.current_jobs.discard)
 
@@ -223,7 +113,7 @@ def import_csv_from_s3(
 def export_csv_to_s3(
     na_graph: NeptuneGraph,
     s3_arn: str,
-    polling_interval=_ASYNC_POLLING_INTERVAL,
+    polling_interval=None,
     export_filter=None,
 ) -> Future:
     """Export graph data from Neptune Analytics to S3 in CSV format.
@@ -263,9 +153,7 @@ def export_csv_to_s3(
 
     # Packaging future
     future = TaskFuture(task_id, TaskType.EXPORT, polling_interval)
-    task = asyncio.create_task(
-        _wait_until_task_complete(na_client, future), name=task_id
-    )
+    task = asyncio.create_task(future.wait_until_complete(na_client), name=task_id)
     na_graph.current_jobs.add(task)
     task.add_done_callback(na_graph.current_jobs.discard)
     return asyncio.wrap_future(future)
@@ -384,13 +272,13 @@ def create_na_instance_with_s3_import(
 
         async def combined_wait():
             # Import task status check.
-            fut = TaskFuture(task_id, TaskType.IMPORT, _ASYNC_POLLING_INTERVAL)
-            await _wait_until_task_complete(na_client, fut)
+            fut = TaskFuture(task_id, TaskType.IMPORT)
+            await fut.wait_until_complete(na_client)
 
             # Wait for instance at last
             graph_id = response.get("graphId")
-            fut_create = TaskFuture(graph_id, TaskType.CREATE, _ASYNC_POLLING_INTERVAL)
-            await _wait_until_task_complete(na_client, fut_create)
+            fut_create = TaskFuture(graph_id, TaskType.CREATE)
+            await fut_create.wait_until_complete(na_client)
 
             return graph_id
 
@@ -935,8 +823,8 @@ def _reset_graph(
     client: BaseClient,
     graph_id: str,
     skip_snapshot: bool = True,
-    polling_interval=_ASYNC_POLLING_INTERVAL,
-    max_attempts=60,
+    polling_interval=None,
+    max_attempts=None,
 ) -> bool:
     """Reset the Neptune Analytics graph.
 
@@ -948,6 +836,9 @@ def _reset_graph(
     Returns:
         bool: True if reset was successful, False otherwise
     """
+    if max_attempts is None:
+        max_attempts = _ASYNC_MAX_ATTEMPTS
+
     try:
         logger.info(
             f"Perform reset_graph action on graph: [{graph_id}] with skip_snapshot: [{skip_snapshot}]"
@@ -1068,60 +959,14 @@ def _create_random_graph_name(graph_name_prefix: Optional[str] = None) -> str:
     return f"{prefix}-{uuid_suffix}"
 
 
-def delete_status_check_wrapper(client, graph_id):
-    """
-    Wrapper method to suppress error when graph_id not found,
-    as this is an indicator of successful deletion.
-
-    Args:
-        client (client): The boto client
-        graph_id (str): The String identify for the remote Neptune Analytics graph
-
-    Returns:
-        str: The original response from Boto or a mocked response to represent
-        successful deletion, in the case of resource not found.
-    """
-    try:
-        return client.get_graph(graphIdentifier=graph_id)
-    except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        if error_code == "ResourceNotFoundException":
-            return {"status": "DELETED"}
-        else:
-            raise e
-
-
-def delete_snapshot_status_check_wrapper(client, snapshot_id: str):
-    """
-    Wrapper method to suppress error when snapshot_id not found,
-    as this is an indicator of successful deletion.
-
-    Args:
-        client (client): The boto client
-        snapshot_id (str): The String identifier for the Neptune Analytics snapshot
-
-    Returns:
-        str: The original response from Boto or a mocked response to represent
-        successful deletion, in the case of resource not found.
-    """
-    try:
-        return client.get_graph_snapshot(snapshotIdentifier=snapshot_id)
-    except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        if error_code == "ResourceNotFoundException":
-            return {"status": "DELETED"}
-        else:
-            raise e
-
-
 # TODO: provide an alternative to sql_queries - instead take a JSON import to map types
 def export_athena_table_to_s3(
     sql_queries: list,
     s3_bucket: str,
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
-    polling_interval=_ASYNC_POLLING_INTERVAL,
-    max_attempts=60,
+    polling_interval=None,
+    max_attempts=None,
 ):
     """Export Athena table data to S3 by executing SQL queries.
 
@@ -1202,8 +1047,8 @@ def create_csv_table_from_s3(
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
     table_columns: Optional[list[str]] = None,
-    polling_interval=_ASYNC_POLLING_INTERVAL,
-    max_attempts=60,
+    polling_interval=None,
+    max_attempts=None,
 ):
     """Create an external CSV table from S3 data using Athena queries.
 
@@ -1385,12 +1230,15 @@ def create_iceberg_table_from_table(
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
     table_columns: Optional[list[str]] = None,
-    polling_interval=_ASYNC_POLLING_INTERVAL,
-    max_attempts=60,
+    polling_interval=None,
+    max_attempts=None,
 ):
     select_columns = "*"
     if table_columns:
         select_columns = '"' + '","'.join(table_columns) + '"'
+
+    if max_attempts is None:
+        max_attempts = _ASYNC_MAX_ATTEMPTS
 
     sql_statement = f"""
 CREATE TABLE {table_name}
@@ -1438,8 +1286,8 @@ def create_table_schema_from_s3(
     table_schema: str,
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
-    polling_interval=_ASYNC_POLLING_INTERVAL,
-    max_attempts=60,
+    polling_interval=None,
+    max_attempts=None,
 ):
     """Create external table in Athena from S3 data.
 
@@ -1455,6 +1303,9 @@ def create_table_schema_from_s3(
     # TODO validate table_schema
     # TODO validate if table exists already
     # TODO check is skip drop table is False and table exists
+
+    if max_attempts is None:
+        max_attempts = _ASYNC_MAX_ATTEMPTS
 
     client = boto3.client(SERVICE_ATHENA)
     query_execution_id = _execute_athena_query(
@@ -1622,7 +1473,7 @@ def _graph_status_check(na_client, graph_id, expected_state):
     response_status = na_client.get_graph(graphIdentifier=graph_id)
     current_status = response_status.get("status")
     if current_status != expected_state:
-        fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
+        fut = TaskFuture("-1", TaskType.NOOP)
         fut.set_exception(
             Exception(f"Invalid graph ({graph_id}) instance state: {current_status}")
         )
@@ -1640,7 +1491,7 @@ def _invalid_status_code(status_code, response):
         asyncio.Future: A failed Future containing an exception with details about
                        the invalid status code and response
     """
-    fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
+    fut = TaskFuture("-1", TaskType.NOOP)
     fut.set_exception(
         Exception(
             f"Invalid response status code: {status_code} with full response:\n {response}"
@@ -1664,8 +1515,8 @@ def _get_status_check_future(na_client, task_type: TaskType, object_id):
     defined by _ASYNC_POLLING_INTERVAL. The Future resolves when the task reaches
     its completion state as defined by the TaskType.
     """
-    fut = TaskFuture(object_id, task_type, _ASYNC_POLLING_INTERVAL)
-    asyncio.create_task(_wait_until_task_complete(na_client, fut), name=object_id)
+    fut = TaskFuture(object_id, task_type)
+    asyncio.create_task(fut.wait_until_complete(na_client), name=object_id)
     return asyncio.wrap_future(fut)
 
 
