@@ -1093,21 +1093,23 @@ async def test_stop_na_instance_success(mock_boto3_client, mock_sleep):
     assert result == "test-graph-id"
 
 
-@patch("nx_neptune.instance_management._get_status_check_future_tmp")
+@pytest.mark.asyncio
+@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
-def test_create_graph_snapshot_success(mock_boto3_client, mock_get_future):
+async def test_create_graph_snapshot_success(mock_boto3_client, mock_sleep):
     """Test successful creation of graph snapshot."""
     from nx_neptune.instance_management import create_graph_snapshot
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
 
-    mock_future = MagicMock()
-    mock_get_future.return_value = mock_future
-
     mock_na_client.create_graph_snapshot.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 201}
     }
+    mock_na_client.get_graph.side_effect = [
+        {"status": "CREATING"},
+        {"status": "AVAILABLE"},
+    ]
     mock_na_client.simulate_principal_policy.return_value = {
         "EvaluationResults": [
             {
@@ -1117,28 +1119,29 @@ def test_create_graph_snapshot_success(mock_boto3_client, mock_get_future):
         ]
     }
 
-    result = create_graph_snapshot("test-graph-id", "test-snapshot")
-    assert result is mock_future
+    result = await create_graph_snapshot("test-graph-id", "test-snapshot")
+    assert result == "test-graph-id"
 
 
-@patch("nx_neptune.instance_management._get_status_check_future_tmp")
+@pytest.mark.asyncio
+@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
-def test_delete_graph_snapshot_success(mock_boto3_client, mock_get_future):
+async def test_delete_graph_snapshot_success(mock_boto3_client, mock_sleep):
     """Test successful deletion of graph snapshot."""
     from nx_neptune.instance_management import delete_graph_snapshot
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
 
-    mock_future = MagicMock()
-    mock_get_future.return_value = mock_future
-
     mock_na_client.delete_graph_snapshot.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 200}
     }
-    mock_na_client.get_graph_snapshot.side_effect = ClientError(
-        {"Error": {"Code": "ResourceNotFoundException"}}, "GetGraphSnapshot"
-    )
+    mock_na_client.get_graph_snapshot.side_effect = [
+        {"status": "DELETING"},
+        ClientError(
+            {"Error": {"Code": "ResourceNotFoundException"}}, "GetGraphSnapshot"
+        ),
+    ]
     mock_na_client.simulate_principal_policy.return_value = {
         "EvaluationResults": [
             {
@@ -1148,8 +1151,8 @@ def test_delete_graph_snapshot_success(mock_boto3_client, mock_get_future):
         ]
     }
 
-    result = delete_graph_snapshot("test-snapshot-id")
-    assert result is mock_future
+    result = await delete_graph_snapshot("test-snapshot-id")
+    assert result == "test-snapshot-id"
 
 
 @patch("nx_neptune.instance_management._get_status_check_future_tmp")

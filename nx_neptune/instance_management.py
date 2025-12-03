@@ -92,9 +92,6 @@ async def create_na_instance(
     status_code = _get_status_code(response)
 
     if status_code == 201:
-        # fut = TaskFuture(prospective_graph_id, TaskType.CREATE)
-        # await fut.wait_until_complete(na_client)
-        # return prospective_graph_id
         await _get_status_check_future(na_client, TaskType.CREATE, prospective_graph_id)
         return prospective_graph_id
     else:
@@ -226,18 +223,18 @@ def create_na_instance_from_snapshot(
         return _get_status_check_future_tmp(
             na_client, TaskType.CREATE, prospective_graph_id
         )
-    else:
-        raise Exception(
-            f"Neptune instance creation failure with graph identifier {prospective_graph_id}"
-        )
+
+    raise Exception(
+        f"Neptune instance creation failure with graph identifier {prospective_graph_id}"
+    )
 
 
-def delete_graph_snapshot(
+async def delete_graph_snapshot(
     snapshot_id: str,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
-):
+) -> str:
     """
     Delete a Neptune Analytics graph snapshot.
 
@@ -251,7 +248,7 @@ def delete_graph_snapshot(
             a new one will be created.
 
     Returns:
-        asyncio.Future: A Future that resolves when the snapshot deletion completes
+        str: The snapshot ID when the deletion completes
 
     Raises:
         Exception: If the snapshot deletion fails
@@ -263,12 +260,14 @@ def delete_graph_snapshot(
     iam_client.has_delete_snapshot_permissions()
     response = na_client.delete_graph_snapshot(snapshotIdentifier=snapshot_id)
 
-    if _get_status_code(response) == 200:
-        return _get_status_check_future_tmp(
-            na_client, TaskType.DELETE_SNAPSHOT, snapshot_id
-        )
-    else:
-        return _invalid_status_code(200, response)
+    status_code = _get_status_code(response)
+    if status_code == 200:
+        await _get_status_check_future(na_client, TaskType.DELETE_SNAPSHOT, snapshot_id)
+        return snapshot_id
+
+    raise Exception(
+        f"Invalid response status code: {status_code} with full response:\n {response}"
+    )
 
 
 async def start_na_instance(
@@ -398,14 +397,14 @@ async def delete_na_instance(
         )
 
 
-def create_graph_snapshot(
+async def create_graph_snapshot(
     graph_id: str,
     snapshot_name: str,
     tag: Optional[dict] = None,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
-):
+) -> str:
     """Create a snapshot of a Neptune Analytics graph.
 
     Args:
@@ -420,7 +419,7 @@ def create_graph_snapshot(
             a new one will be created.
 
     Returns:
-        asyncio.Future: A Future that resolves when the snapshot completes
+        str: The graph ID when the snapshot completes
 
     Raises:
         Exception: If the snapshot creation fails with an invalid status code
@@ -440,11 +439,11 @@ def create_graph_snapshot(
     response = na_client.create_graph_snapshot(**kwargs)
     status_code = _get_status_code(response)
     if status_code == 201:
-        return _get_status_check_future_tmp(
-            na_client, TaskType.EXPORT_SNAPSHOT, graph_id
-        )
-    else:
-        return _invalid_status_code(status_code, response)
+        await _get_status_check_future(na_client, TaskType.EXPORT_SNAPSHOT, graph_id)
+        return graph_id
+    raise Exception(
+        f"Invalid response status code: {status_code} with full response:\n {response}"
+    )
 
 
 async def import_csv_from_s3(
