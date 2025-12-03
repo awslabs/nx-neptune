@@ -1069,24 +1069,26 @@ async def test_start_na_instance_wrong_status(mock_boto3_client):
         ]
     }
 
-    result = start_na_instance("test-graph-id")
-    assert result is not None
-    # Should return a future with exception
+    with pytest.raises(Exception, match="Invalid graph .* instance state"):
+        await start_na_instance("test-graph-id")
 
 
-@patch("nx_neptune.instance_management._get_status_check_future_tmp")
+@pytest.mark.asyncio
+@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
-def test_stop_na_instance_success(mock_boto3_client, mock_get_future):
+async def test_stop_na_instance_success(mock_boto3_client, mock_sleep):
     """Test successful stop of NA instance."""
     from nx_neptune.instance_management import stop_na_instance
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
 
-    mock_future = MagicMock()
-    mock_get_future.return_value = mock_future
-
-    mock_na_client.get_graph.return_value = {"status": "AVAILABLE"}
+    # Mock status progression: AVAILABLE -> STOPPING -> STOPPED
+    mock_na_client.get_graph.side_effect = [
+        {"status": "AVAILABLE"},  # Initial check
+        {"status": "STOPPING"},  # First poll
+        {"status": "STOPPED"},  # Complete
+    ]
     mock_na_client.stop_graph.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 200}
     }
@@ -1096,8 +1098,8 @@ def test_stop_na_instance_success(mock_boto3_client, mock_get_future):
         ]
     }
 
-    result = stop_na_instance("test-graph-id")
-    assert result is mock_future
+    result = await stop_na_instance("test-graph-id")
+    assert result == "test-graph-id"
 
 
 @patch("nx_neptune.instance_management._get_status_check_future_tmp")

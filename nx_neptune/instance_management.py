@@ -271,12 +271,12 @@ def delete_graph_snapshot(
         return _invalid_status_code(200, response)
 
 
-def start_na_instance(
+async def start_na_instance(
     graph_id: str,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
-):
+) -> str:
     """
     Start a stopped Neptune Analytics graph instance.
 
@@ -290,7 +290,7 @@ def start_na_instance(
             a new one will be created.
 
     Returns:
-        asyncio.Future: A Future that resolves when the graph start completes
+        str: The graph ID of the started instance
 
     Raises:
         Exception: If the start operation fails with an invalid status code
@@ -300,22 +300,26 @@ def start_na_instance(
     iam_client.has_start_na_permissions()
 
     if status_exception := _graph_status_check(na_client, graph_id, "STOPPED"):
-        return status_exception
+        await status_exception  # This will raise the exception
 
     response = na_client.start_graph(graphIdentifier=graph_id)
     status_code = _get_status_code(response)
     if status_code == 200:
-        return _get_status_check_future_tmp(na_client, TaskType.START, graph_id)
+        fut = TaskFuture(graph_id, TaskType.START)
+        await fut.wait_until_complete(na_client)
+        return graph_id
     else:
-        return _invalid_status_code(status_code, response)
+        raise Exception(
+            f"Invalid response status code: {status_code} with full response:\n {response}"
+        )
 
 
-def stop_na_instance(
+async def stop_na_instance(
     graph_id: str,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
-):
+) -> str:
     """Stop a running Neptune Analytics graph instance.
 
     Args:
@@ -328,7 +332,7 @@ def stop_na_instance(
             a new one will be created.
 
     Returns:
-        asyncio.Future: A Future that resolves when the graph stop completes
+        str: The graph ID of the stopped instance
 
     Raises:
         Exception: If the stop operation fails with an invalid status code
@@ -338,14 +342,18 @@ def stop_na_instance(
     iam_client.has_stop_na_permissions()
 
     if status_exception := _graph_status_check(na_client, graph_id, "AVAILABLE"):
-        return status_exception
+        await status_exception  # This will raise the exception
 
     response = na_client.stop_graph(graphIdentifier=graph_id)
     status_code = _get_status_code(response)
     if status_code == 200:
-        return _get_status_check_future_tmp(na_client, TaskType.STOP, graph_id)
+        fut = TaskFuture(graph_id, TaskType.STOP)
+        await fut.wait_until_complete(na_client)
+        return graph_id
     else:
-        return _invalid_status_code(status_code, response)
+        raise Exception(
+            f"Invalid response status code: {status_code} with full response:\n {response}"
+        )
 
 
 async def delete_na_instance(
