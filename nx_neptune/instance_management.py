@@ -921,14 +921,14 @@ def _create_random_graph_name(graph_name_prefix: Optional[str] = None) -> str:
 
 
 # TODO: provide an alternative to sql_queries - instead take a JSON import to map types
-def export_athena_table_to_s3(
+async def export_athena_table_to_s3(
     sql_queries: list,
     s3_bucket: str,
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
     polling_interval=None,
     max_attempts=None,
-):
+) -> list[str]:
     """Export Athena table data to S3 by executing SQL queries.
 
     Args:
@@ -938,6 +938,9 @@ def export_athena_table_to_s3(
         :param database: (str, optional) the database to run the sql_query
         :param max_attempts:
         :param polling_interval:
+
+    Returns:
+        list: True if all queries succeeded, False otherwise
     """
     client = boto3.client(SERVICE_ATHENA)
 
@@ -957,48 +960,29 @@ def export_athena_table_to_s3(
     bucket_prefix = "/".join(s3_bucket.replace("s3://", "").split("/")[1:])
 
     for query_execution_id in query_execution_ids:
-        # TODO use TaskFuture instead
-        for _ in range(1, max_attempts):
-            response = client.get_query_execution(QueryExecutionId=query_execution_id)
-            status = response["QueryExecution"]["Status"]["State"]
-            if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
-                if status != "SUCCEEDED":
-                    logger.error(
-                        f"Query {query_execution_id} failed with status: {status}"
-                    )
-                    logger.error(
-                        f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}"
-                    )
-                    return False
+        # Wait for query to complete using TaskFuture
+        future = TaskFuture(
+            query_execution_id,
+            TaskType.EXPORT_ATHENA_TABLE,
+            polling_interval,
+            max_attempts,
+        )
+        await future.wait_until_complete(client)
 
-                # Sanity check that the CSV file exists
-                csv_key = f"{bucket_prefix}{query_execution_id}.csv"
-                try:
-                    s3_client.head_object(Bucket=bucket_name, Key=csv_key)
-                    logger.info(f"Confirmed CSV file exists: {csv_key}")
-                except ClientError:
-                    logger.error(f"CSV file not found: {csv_key}")
-                    return False
+        # Sanity check that the CSV file exists
+        csv_key = f"{bucket_prefix}{query_execution_id}.csv"
+        s3_client.head_object(Bucket=bucket_name, Key=csv_key)
+        logger.info(f"Confirmed CSV file exists: {csv_key}")
 
-                # Remove metadata file
-                metadata_key = f"{bucket_prefix}{query_execution_id}.csv.metadata"
-                try:
-                    s3_client.delete_object(Bucket=bucket_name, Key=metadata_key)
-                    logger.info(f"Deleted metadata file: {metadata_key}")
-                except ClientError as e:
-                    logger.warning(
-                        f"Could not delete metadata file {metadata_key}: {e}"
-                    )
+        # Remove metadata file
+        metadata_key = f"{bucket_prefix}{query_execution_id}.csv.metadata"
+        s3_client.delete_object(Bucket=bucket_name, Key=metadata_key)
+        logger.info(f"Deleted metadata file: {metadata_key}")
 
-                # TODO: remove execution id from the list
-
-                break
-            time.sleep(polling_interval)
     logger.info(
         f"Successfully completed execution of {len(query_execution_ids)} queries"
     )
-
-    return True
+    return query_execution_ids
 
 
 def create_csv_table_from_s3(

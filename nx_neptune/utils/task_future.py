@@ -40,6 +40,7 @@ class TaskType(Enum):
     EXPORT_SNAPSHOT = (8, ["SNAPSHOTTING"], "AVAILABLE")
     DELETE_SNAPSHOT = (9, ["DELETING"], "DELETED")
     RESET_GRAPH = (10, ["RESETTING"], "AVAILABLE")
+    EXPORT_ATHENA_TABLE = (11, ["QUEUED", "RUNNING"], "SUCCEEDED")
 
     def __init__(self, num_value, permitted_statuses, status_complete):
         self._value_ = num_value
@@ -106,6 +107,11 @@ def _get_task_action_map(client, task_id):
         TaskType.DELETE_SNAPSHOT: lambda: _delete_snapshot_status_check_wrapper(
             client, task_id
         ),
+        TaskType.EXPORT_ATHENA_TABLE: lambda: {
+            "status": client.get_query_execution(QueryExecutionId=task_id)[
+                "QueryExecution"
+            ]["Status"]["State"]
+        },  # type: ignore[attr-defined]
     }
 
 
@@ -146,23 +152,7 @@ class TaskFuture(Future):
 
         while True:
             try:
-                task_action_map = {
-                    TaskType.IMPORT: lambda: client.get_import_task(taskIdentifier=self.task_id),  # type: ignore[attr-defined]
-                    TaskType.EXPORT: lambda: client.get_export_task(taskIdentifier=self.task_id),  # type: ignore[attr-defined]
-                    TaskType.CREATE: lambda: client.get_graph(graphIdentifier=self.task_id),  # type: ignore[attr-defined]
-                    TaskType.DELETE: lambda: _delete_status_check_wrapper(
-                        client, self.task_id
-                    ),
-                    TaskType.START: lambda: client.get_graph(graphIdentifier=self.task_id),  # type: ignore[attr-defined]
-                    TaskType.STOP: lambda: client.get_graph(graphIdentifier=self.task_id),  # type: ignore[attr-defined]
-                    TaskType.RESET_GRAPH: lambda: client.get_graph(graphIdentifier=self.task_id),  # type: ignore[attr-defined]
-                    TaskType.EXPORT_SNAPSHOT: lambda: client.get_graph(
-                        graphIdentifier=self.task_id
-                    ),  # type: ignore[attr-defined]
-                    TaskType.DELETE_SNAPSHOT: lambda: _delete_snapshot_status_check_wrapper(
-                        client, self.task_id
-                    ),
-                }
+                task_action_map = _get_task_action_map(client, self.task_id)
 
                 response = task_action_map[self.task_type]()
                 status = response.get("status")

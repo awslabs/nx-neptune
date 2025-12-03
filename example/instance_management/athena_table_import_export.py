@@ -114,7 +114,7 @@ async def do_import_from_table():
     ]
     sql_queries_str = '\n'.join(sql_queries)
     print(f"running sql queries:{sql_queries_str}")
-    export_projection_status = export_athena_table_to_s3(
+    export_projection_status = await export_athena_table_to_s3(
         sql_queries,
         s3_location_import,
         catalog='s3tablescatalog/nx-fraud-detection-data',

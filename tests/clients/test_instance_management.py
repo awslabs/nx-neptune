@@ -1247,3 +1247,39 @@ def test_get_create_instance_with_import_config_custom():
     assert result["minProvisionedMemory"] == 32
     assert result["maxProvisionedMemory"] == 64
     assert result["format"] == "PARQUET"
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._execute_athena_query")
+@patch("boto3.client")
+async def test_export_athena_table_to_s3_success(
+    mock_boto3_client, mock_execute_athena_query
+):
+    """Test successful export of Athena table to S3."""
+    from nx_neptune.instance_management import export_athena_table_to_s3
+
+    mock_athena_client = MagicMock()
+    mock_s3_client = MagicMock()
+
+    def client_factory(service_name):
+        if service_name == "athena":
+            return mock_athena_client
+        elif service_name == "s3":
+            return mock_s3_client
+        return MagicMock()
+
+    mock_boto3_client.side_effect = client_factory
+    mock_execute_athena_query.side_effect = ["query-exec-id-1", "query-exec-id-2"]
+
+    mock_athena_client.get_query_execution.return_value = {
+        "QueryExecution": {"Status": {"State": "SUCCEEDED", "StateChangeReason": ""}}
+    }
+
+    result = await export_athena_table_to_s3(
+        ["SELECT * FROM table1", "SELECT * FROM table2"],
+        "s3://test-bucket/results/",
+        polling_interval=1,
+    )
+
+    assert result == ["query-exec-id-1", "query-exec-id-2"]
+    assert mock_execute_athena_query.call_count == 2

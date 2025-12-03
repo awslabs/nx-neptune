@@ -198,7 +198,7 @@ class SessionManager:
         skip_snapshot = True
 
         # export the datalake table to S3 as CSV projection data
-        projection_created = instance_management.export_athena_table_to_s3(
+        projection_created = await instance_management.export_athena_table_to_s3(
             sql_queries,
             s3_location,
             catalog,
