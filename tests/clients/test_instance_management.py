@@ -1176,6 +1176,39 @@ async def test_create_na_instance_from_snapshot_success(mock_boto3_client, mock_
     assert result == "test-graph-id"
 
 
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("nx_neptune.instance_management._get_or_create_clients")
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+async def test_create_na_instance_with_s3_import_success(
+    mock_get_bucket_encryption_key_arn,
+    mock_get_or_create_clients,
+    mock_get_status_check_future,
+):
+    """Test successful creation of NA instance with S3 import."""
+    from nx_neptune.instance_management import create_na_instance_with_s3_import
+
+    mock_na_client = MagicMock()
+    mock_iam_client = MagicMock()
+    mock_iam_client.role_arn = "arn:aws:iam::123456789012:role/test-role"
+
+    mock_get_or_create_clients.return_value = (mock_iam_client, mock_na_client)
+    mock_get_bucket_encryption_key_arn.return_value = None
+    mock_get_status_check_future.return_value = None
+
+    mock_na_client.create_graph_using_import_task.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 201},
+        "graphId": "test-graph-id",
+        "taskId": "test-task-id",
+    }
+
+    graph_id, task_id = await create_na_instance_with_s3_import(
+        "s3://test-bucket/test-data/"
+    )
+    assert graph_id == "test-graph-id"
+    assert task_id == "test-task-id"
+
+
 def test_get_create_instance_with_import_config():
     """Test _get_create_instance_with_import_config function."""
     from nx_neptune.instance_management import _get_create_instance_with_import_config

@@ -106,7 +106,7 @@ async def create_na_instance_with_s3_import(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
-) -> str:
+) -> tuple[str, str]:
     """Creates a new Neptune Analytics graph instance and imports data from S3.
 
     This function creates a new Neptune Analytics graph instance and immediately starts
@@ -132,7 +132,8 @@ async def create_na_instance_with_s3_import(
             a new one will be created.
 
     Returns:
-        str: The task ID when the import completes and instance is available for computation work
+        (str, str): A tuple with the graph and task ids. The graph ID is the new instance graph identifier.
+        The task ID is the execution task when the import completes and instance is available for computation work.
 
     Raises:
         Exception: If the Neptune Analytics instance creation or import task fails
@@ -151,19 +152,17 @@ async def create_na_instance_with_s3_import(
         graph_name, s3_arn, iam_client.role_arn, config
     )
     response = na_client.create_graph_using_import_task(**kwargs)
+    graph_id = response.get("graphId")
     task_id = response.get("taskId")
 
     if _get_status_code(response) == 201:
         # Import task status check
-        fut = TaskFuture(task_id, TaskType.IMPORT)
-        await fut.wait_until_complete(na_client)
+        await _get_status_check_future(task_id, TaskType.IMPORT, na_client)
 
         # Wait for instance creation
-        graph_id = response.get("graphId")
-        fut_create = TaskFuture(graph_id, TaskType.CREATE)
-        await fut_create.wait_until_complete(na_client)
+        await _get_status_check_future(graph_id, TaskType.CREATE, na_client)
 
-        return task_id
+        return graph_id, task_id
     else:
         raise Exception(
             f"Neptune instance creation failure with import task ID: {task_id}"
