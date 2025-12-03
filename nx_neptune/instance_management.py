@@ -100,20 +100,20 @@ async def create_na_instance(
         )
 
 
-def create_na_instance_with_s3_import(
+async def create_na_instance_with_s3_import(
     s3_arn: str,
     config: Optional[dict] = None,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
-) -> asyncio.Future:
+) -> str:
     """Creates a new Neptune Analytics graph instance and imports data from S3.
 
     This function creates a new Neptune Analytics graph instance and immediately starts
     importing data from the specified S3 location. It handles the complete workflow:
     1. Validates required permissions
     2. Creates a new graph instance and trigger the import task
-    3. Returns a Future that can be awaited for completion
+    3. Waits for both import and instance creation to complete
 
     Args:
         s3_arn (str): The S3 location containing CSV data (e.g., 's3://bucket-name/prefix/')
@@ -132,8 +132,7 @@ def create_na_instance_with_s3_import(
             a new one will be created.
 
     Returns:
-        asyncio.Task: A Task that resolves with the graph_id when the import completes and instance is available
-        for computation work.
+        str: The task ID when the import completes and instance is available for computation work
 
     Raises:
         Exception: If the Neptune Analytics instance creation or import task fails
@@ -155,23 +154,16 @@ def create_na_instance_with_s3_import(
     task_id = response.get("taskId")
 
     if _get_status_code(response) == 201:
+        # Import task status check
+        fut = TaskFuture(task_id, TaskType.IMPORT)
+        await fut.wait_until_complete(na_client)
 
-        async def combined_wait():
-            # Import task status check.
-            fut = TaskFuture(task_id, TaskType.IMPORT)
-            await fut.wait_until_complete(na_client)
+        # Wait for instance creation
+        graph_id = response.get("graphId")
+        fut_create = TaskFuture(graph_id, TaskType.CREATE)
+        await fut_create.wait_until_complete(na_client)
 
-            # Wait for instance at last
-            graph_id = response.get("graphId")
-            fut_create = TaskFuture(graph_id, TaskType.CREATE)
-            await fut_create.wait_until_complete(na_client)
-
-            return graph_id
-
-        return asyncio.create_task(
-            combined_wait(), name=f"create-with-s3-import-{task_id}"
-        )
-
+        return task_id
     else:
         raise Exception(
             f"Neptune instance creation failure with import task ID: {task_id}"
@@ -1487,26 +1479,6 @@ async def _get_status_check_future(na_client, task_type: TaskType, object_id):
     """
     fut = TaskFuture(object_id, task_type)
     await asyncio.create_task(fut.wait_until_complete(na_client), name=object_id)
-    return asyncio.wrap_future(fut)
-
-
-def _get_status_check_future_tmp(na_client, task_type: TaskType, object_id):
-    """Creates and returns a Future for monitoring Neptune Analytics task status.
-
-    Args:
-        na_client: The Neptune Analytics boto3 client
-        task_type (TaskType): The type of task being monitored (e.g. CREATE, DELETE, etc)
-        object_id (str): The identifier for the object being monitored (e.g. graph ID)
-
-    Returns:
-        asyncio.Future: A Future that resolves when the task completes
-
-    The returned Future will monitor the task status by polling at regular intervals
-    for a maximum number of attmpts. The Future resolves when the task reaches
-    its completion state as defined by the TaskType.
-    """
-    fut = TaskFuture(object_id, task_type)
-    asyncio.create_task(fut.wait_until_complete(na_client), name=object_id)
     return asyncio.wrap_future(fut)
 
 
