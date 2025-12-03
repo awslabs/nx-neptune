@@ -761,9 +761,7 @@ async def test_import_csv_from_s3_permission_error(mock_get_bucket_encryption_ke
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management._start_export_task")
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("asyncio.create_task")
 async def test_export_csv_to_s3_success(
-    mock_create_task,
     mock_get_bucket_encryption_key_arn,
     mock_start_export_task,
 ):
@@ -780,7 +778,7 @@ async def test_export_csv_to_s3_success(
     mock_na_graph.current_jobs = set()
 
     # Call the function
-    future = export_csv_to_s3(
+    task_id = await export_csv_to_s3(
         mock_na_graph,
         "s3://test-bucket/test-folder/",
         polling_interval=10,
@@ -801,19 +799,14 @@ async def test_export_csv_to_s3_success(
         None,
         export_filter=None,
     )
-    mock_create_task.assert_called_once()
 
-    # Verify the future is properly set up
-    assert isinstance(future, asyncio.Future)
-    assert not future.done()
+    assert task_id == "test-export-task-id"
 
 
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management._start_export_task")
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("asyncio.create_task")
 async def test_export_csv_to_s3_with_kms_key(
-    mock_create_task,
     mock_get_bucket_encryption_key_arn,
     mock_start_export_task,
 ):
@@ -830,7 +823,7 @@ async def test_export_csv_to_s3_with_kms_key(
     mock_na_graph.current_jobs = set()
 
     # Call the function
-    future = export_csv_to_s3(
+    task_id = await export_csv_to_s3(
         mock_na_graph,
         "s3://test-bucket/test-folder/",
         polling_interval=10,
@@ -851,11 +844,8 @@ async def test_export_csv_to_s3_with_kms_key(
         "test-kms-key-arn",
         export_filter=None,
     )
-    mock_create_task.assert_called_once()
 
-    # Verify the future is properly set up
-    assert isinstance(future, asyncio.Future)
-    assert not future.done()
+    assert task_id == "test-export-task-id"
 
 
 @pytest.mark.asyncio
@@ -877,7 +867,7 @@ async def test_export_csv_to_s3_permission_error(mock_get_bucket_encryption_key_
 
     # Call the function and expect ValueError
     with pytest.raises(ValueError, match="Insufficient permissions"):
-        export_csv_to_s3(mock_na_graph, "s3://test-bucket/test-folder/")
+        await export_csv_to_s3(mock_na_graph, "s3://test-bucket/test-folder/")
 
 
 @pytest.mark.asyncio
@@ -1155,23 +1145,24 @@ async def test_delete_graph_snapshot_success(mock_boto3_client, mock_sleep):
     assert result == "test-snapshot-id"
 
 
-@patch("nx_neptune.instance_management._get_status_check_future_tmp")
+@pytest.mark.asyncio
+@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
-def test_create_na_instance_from_snapshot_success(mock_boto3_client, mock_get_future):
+async def test_create_na_instance_from_snapshot_success(mock_boto3_client, mock_sleep):
     """Test successful creation of NA instance from snapshot."""
     from nx_neptune.instance_management import create_na_instance_from_snapshot
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
 
-    mock_future = MagicMock()
-    mock_get_future.return_value = mock_future
-
     mock_na_client.restore_graph_from_snapshot.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 201},
         "id": "test-graph-id",
     }
-    mock_na_client.get_graph.return_value = {"status": "AVAILABLE"}
+    mock_na_client.get_graph.side_effect = [
+        {"status": "CREATING"},
+        {"status": "AVAILABLE"},
+    ]
     mock_na_client.simulate_principal_policy.return_value = {
         "EvaluationResults": [
             {
@@ -1181,8 +1172,8 @@ def test_create_na_instance_from_snapshot_success(mock_boto3_client, mock_get_fu
         ]
     }
 
-    result = create_na_instance_from_snapshot("test-snapshot-id")
-    assert result is mock_future
+    result = await create_na_instance_from_snapshot("test-snapshot-id")
+    assert result == "test-graph-id"
 
 
 def test_get_create_instance_with_import_config():

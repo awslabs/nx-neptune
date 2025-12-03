@@ -53,17 +53,15 @@ async def main():
     na_graph = NeptuneGraph.from_config(graph=g)
 
     # Import blocking
-    future = import_csv_from_s3(
+    import_blocking_status = await import_csv_from_s3(
         na_graph, s3_location_import)
-    import_blocking_status = await future
     print("Import completed with status: " + import_blocking_status)
 
 
     # Export - blocking
-    future = export_csv_to_s3(
+    export_task_id = await export_csv_to_s3(
         na_graph, s3_location_export)
-    await future
-    print("Export completed with export location: " + s3_location_export)
+    print("Export completed with task ID: " + export_task_id)
 
 
 if __name__ == "__main__":

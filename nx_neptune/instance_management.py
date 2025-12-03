@@ -178,13 +178,13 @@ def create_na_instance_with_s3_import(
         )
 
 
-def create_na_instance_from_snapshot(
+async def create_na_instance_from_snapshot(
     snapshot_id: str,
     config: Optional[dict] = None,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
-):
+) -> str:
     """
     Creates a new Neptune Analytics graph instance from an existing snapshot.
 
@@ -205,7 +205,7 @@ def create_na_instance_from_snapshot(
             a new one will be created.
 
     Returns:
-        asyncio.Future: A Future that resolves when the graph creation completes
+        str: The graph ID when the graph creation completes
 
     Raises:
         Exception: If the Neptune Analytics instance creation fails
@@ -220,9 +220,8 @@ def create_na_instance_from_snapshot(
     prospective_graph_id = _get_graph_id(response)
 
     if _get_status_code(response) == 201:
-        return _get_status_check_future_tmp(
-            na_client, TaskType.CREATE, prospective_graph_id
-        )
+        await _get_status_check_future(na_client, TaskType.CREATE, prospective_graph_id)
+        return prospective_graph_id
 
     raise Exception(
         f"Neptune instance creation failure with graph identifier {prospective_graph_id}"
@@ -498,18 +497,18 @@ async def import_csv_from_s3(
     return task_id
 
 
-def export_csv_to_s3(
+async def export_csv_to_s3(
     na_graph: NeptuneGraph,
     s3_arn: str,
     polling_interval=None,
     export_filter=None,
-) -> Future:
+) -> str:
     """Export graph data from Neptune Analytics to S3 in CSV format.
 
     This function handles the complete workflow for exporting graph data:
     1. Checks required permissions
     2. Starts the export task
-    3. Returns a Future that can be awaited for completion
+    3. Waits for completion
 
     Args:
         na_graph (NeptuneGraph): The Neptune Analytics graph instance
@@ -518,7 +517,7 @@ def export_csv_to_s3(
         export_filter (dict, optional): Filter criteria for the export. Defaults to None.
 
     Returns:
-        asyncio.Future: A Future that resolves when the export completes
+        str: The task ID of the completed export
 
     Raises:
         ValueError: If the role lacks required permissions
@@ -534,17 +533,15 @@ def export_csv_to_s3(
     # Run permission check
     iam_client.has_export_to_s3_permissions(s3_arn, key_arn)
 
-    # Run Import
+    # Run Export
     task_id = _start_export_task(
         na_client, graph_id, s3_arn, role_arn, key_arn, export_filter=export_filter
     )
 
-    # Packaging future
+    # Wait for completion
     future = TaskFuture(task_id, TaskType.EXPORT, polling_interval)
-    task = asyncio.create_task(future.wait_until_complete(na_client), name=task_id)
-    na_graph.current_jobs.add(task)
-    task.add_done_callback(na_graph.current_jobs.discard)
-    return asyncio.wrap_future(future)
+    await future.wait_until_complete(na_client)
+    return task_id
 
 
 async def reset_graph(

@@ -210,7 +210,7 @@ class SessionManager:
         logger.info(f"Created projection data in {s3_location}")
 
         # import the S3 CSV files to Neptune
-        future = instance_management.import_csv_from_s3(
+        import_blocking_status = await instance_management.import_csv_from_s3(
             NeptuneGraph(
                 NeptuneAnalyticsClient(graph_id, self._neptune_client),
                 IamClient(self._s3_iam_role, self._iam_client),
@@ -220,7 +220,6 @@ class SessionManager:
             reset_graph_ahead,
             skip_snapshot,
         )
-        import_blocking_status = await future
         print("Import completed with status: " + import_blocking_status)
 
         # TODO Cleanup resources
