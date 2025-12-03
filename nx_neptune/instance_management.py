@@ -447,20 +447,20 @@ def create_graph_snapshot(
         return _invalid_status_code(status_code, response)
 
 
-def import_csv_from_s3(
+async def import_csv_from_s3(
     na_graph: NeptuneGraph,
     s3_arn,
     reset_graph_ahead=True,
     skip_snapshot=True,
     polling_interval=None,
-) -> Future:
+) -> str:
     """Import CSV data from S3 into a Neptune Analytics graph.
 
     This function handles the complete workflow for importing graph data:
     1. Checks required permissions
     2. Optionally resets the graph
     3. Starts the import task
-    4. Returns a Future that can be awaited for completion
+    4. Waits for completion
 
     Args:
         na_graph (NeptuneGraph): The Neptune Analytics graph instance
@@ -470,7 +470,7 @@ def import_csv_from_s3(
         polling_interval (int): Time interval in seconds for job status query
 
     Returns:
-        asyncio.Future: A Future that resolves when the import completes
+        str: The task ID of the completed import
 
     Raises:
         ValueError: If the role lacks required permissions
@@ -488,18 +488,15 @@ def import_csv_from_s3(
 
     # Run reset
     if reset_graph_ahead:
-        reset_graph(graph_id, na_client, skip_snapshot)
+        await reset_graph(graph_id, na_client, skip_snapshot)
 
     # Run Import
     task_id = _start_import_task(na_client, graph_id, s3_arn, role_arn)
 
-    # Packaging future
+    # Wait for completion
     future = TaskFuture(task_id, TaskType.IMPORT, polling_interval)
-    task = asyncio.create_task(future.wait_until_complete(na_client), name=task_id)
-    na_graph.current_jobs.add(task)
-    task.add_done_callback(na_graph.current_jobs.discard)
-
-    return asyncio.wrap_future(future)
+    await future.wait_until_complete(na_client)
+    return task_id
 
 
 def export_csv_to_s3(
@@ -551,11 +548,11 @@ def export_csv_to_s3(
     return asyncio.wrap_future(future)
 
 
-def reset_graph(
+async def reset_graph(
     graph_id: str,
     na_client: BaseClient = None,
     skip_snapshot: bool = True,
-):
+) -> str:
     """Reset the Neptune Analytics graph by clearing all data while preserving the graph configuration.
 
     Args:
@@ -564,11 +561,11 @@ def reset_graph(
         skip_snapshot (bool, optional): Whether to skip creating a snapshot before resetting. Defaults to True.
 
     Returns:
-        asyncio.Future: A Future that resolves when the reset completes successfully, or raises an exception on failure
+        str: The graph ID of the reset instance
 
     Raises:
         ClientError: If there's an issue with the AWS API call
-        ValueError: If an invalid status code is returned
+        Exception: If an invalid status code is returned
     """
     if na_client is None:
         na_client = boto3.client(
@@ -581,9 +578,13 @@ def reset_graph(
     response = na_client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
     status_code = _get_status_code(response)
     if status_code == 200:
-        return _get_status_check_future_tmp(na_client, TaskType.RESET_GRAPH, graph_id)
+        fut = TaskFuture(graph_id, TaskType.RESET_GRAPH)
+        await fut.wait_until_complete(na_client)
+        return graph_id
     else:
-        return _invalid_status_code(status_code, response)
+        raise Exception(
+            f"Invalid response status code: {status_code} with full response:\n {response}"
+        )
 
 
 def _get_create_instance_config(graph_name, config=None):
