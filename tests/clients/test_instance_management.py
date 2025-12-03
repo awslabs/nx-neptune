@@ -927,8 +927,7 @@ async def test_delete_na_instance_insufficient_permissions(mock_boto3_client):
     with pytest.raises(
         Exception, match="Insufficient permission, neptune-graph:DeleteGraph"
     ):
-        result = delete_na_instance("")
-        await result
+        await delete_na_instance("")
 
 
 @pytest.mark.asyncio
