@@ -1243,14 +1243,14 @@ AS SELECT {select_columns} FROM {csv_table_name};
     return query_execution_id
 
 
-def create_table_schema_from_s3(
+async def create_table_schema_from_s3(
     s3_bucket: str,
     table_schema: str,
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
     polling_interval=None,
     max_attempts=None,
-):
+) -> str:
     """Create external table in Athena from S3 data.
 
     Args:
@@ -1260,6 +1260,9 @@ def create_table_schema_from_s3(
         :param database: (str, optional) the database to run the sql_query
         :param max_attempts:
         :param polling_interval:
+
+    Returns:
+        str: Returns the query_execution_id if successful
     """
     # TODO check if s3_bucket is empty
     # TODO validate table_schema
@@ -1269,27 +1272,27 @@ def create_table_schema_from_s3(
     if max_attempts is None:
         max_attempts = _ASYNC_MAX_ATTEMPTS
 
-    client = boto3.client(SERVICE_ATHENA)
+    athena_client = boto3.client(SERVICE_ATHENA)
     query_execution_id = _execute_athena_query(
-        client, table_schema, s3_bucket, catalog=catalog, database=database
+        athena_client, table_schema, s3_bucket, catalog=catalog, database=database
     )
 
-    # TODO use TaskFuture instead
-    for _ in range(1, max_attempts):
-        response = client.get_query_execution(QueryExecutionId=query_execution_id)
-        status = response["QueryExecution"]["Status"]["State"]
-        if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
-            if status != "SUCCEEDED":
-                logger.error(f"Query {query_execution_id} failed with status: {status}")
-                logger.error(
-                    f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}"
-                )
-                return False
-            break
-        time.sleep(polling_interval)
-    logger.info(f"Successfully completed execution of query [{query_execution_id}]")
+    # Wait for query to complete using TaskFuture
+    future = TaskFuture(
+        query_execution_id, TaskType.EXPORT_ATHENA_TABLE, polling_interval, max_attempts
+    )
+    await future.wait_until_complete(athena_client)
 
-    return True
+    # Check the final status
+    final_status = future.current_status
+
+    if final_status != "SUCCEEDED":
+        raise Exception(
+            f"Query {query_execution_id} failed with status: {final_status}"
+        )
+
+    logger.info(f"Successfully completed execution of query [{query_execution_id}]")
+    return query_execution_id
 
 
 def _execute_athena_query(
@@ -1440,14 +1443,15 @@ def _graph_status_check(na_client, graph_id, expected_state):
             Exception(f"Invalid graph ({graph_id}) instance state: {current_status}")
         )
         return asyncio.wrap_future(fut)
+    return None
 
 
 def _invalid_status_code(status_code, response):
     """Create a failed Future for an invalid API response status code.
 
     Args:
-        status_code (int): The HTTP status code from the API response
-        response (dict): The full API response
+        status_code (int): The HTTP status code from the API response.
+        response (dict): The full API response.
 
     Returns:
         asyncio.Future: A failed Future containing an exception with details about
