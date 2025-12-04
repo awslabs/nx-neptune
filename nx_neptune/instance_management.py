@@ -985,7 +985,7 @@ async def export_athena_table_to_s3(
     return query_execution_ids
 
 
-def create_csv_table_from_s3(
+async def create_csv_table_from_s3(
     s3_bucket: str,
     s3_output_bucket: str,
     table_name: str,
@@ -994,7 +994,7 @@ def create_csv_table_from_s3(
     table_columns: Optional[list[str]] = None,
     polling_interval=None,
     max_attempts=None,
-):
+) -> list[str]:
     """Create an external CSV table from S3 data using Athena queries.
 
     Args:
@@ -1006,6 +1006,12 @@ def create_csv_table_from_s3(
         :param table_columns: (list, optional) table columns to include in the newly created query
         :param max_attempts:
         :param polling_interval:
+
+    Returns:
+        list[str]: List of query execution IDs if all queries succeeded
+
+    Raises:
+        Exception: If any query fails
     """
     # TODO check if s3_bucket is empty
     # TODO validate table_schema
@@ -1067,29 +1073,28 @@ def create_csv_table_from_s3(
         query_execution_ids.append(query_execution_id)
 
     for query_execution_id in query_execution_ids:
-        # TODO use TaskFuture instead
-        for _ in range(1, max_attempts):
-            response = athena_client.get_query_execution(
-                QueryExecutionId=query_execution_id
-            )
-            status = response["QueryExecution"]["Status"]["State"]
-            if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
-                if status != "SUCCEEDED":
-                    logger.error(
-                        f"Query {query_execution_id} failed with status: {status}"
-                    )
-                    logger.error(
-                        f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}"
-                    )
-                    return False
+        # Wait for query to complete using TaskFuture
+        future = TaskFuture(
+            query_execution_id,
+            TaskType.EXPORT_ATHENA_TABLE,
+            polling_interval,
+            max_attempts,
+        )
+        await future.wait_until_complete(athena_client)
 
-                break
-            time.sleep(polling_interval)
+        # Check the final status
+        final_status = future.current_status
+
+        if final_status != "SUCCEEDED":
+            logger.error(f"Query error: {final_status}")
+            raise Exception(
+                f"Query {query_execution_id} failed with status: {final_status}"
+            )
+
     logger.info(
         f"Successfully completed execution of {len(query_execution_ids)} queries"
     )
-
-    return True
+    return query_execution_ids
 
 
 def _build_sql_statement(
@@ -1168,7 +1173,7 @@ TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
 """
 
 
-def create_iceberg_table_from_table(
+async def create_iceberg_table_from_table(
     s3_output_bucket: str,
     table_name: str,
     csv_table_name: str,
@@ -1177,7 +1182,22 @@ def create_iceberg_table_from_table(
     table_columns: Optional[list[str]] = None,
     polling_interval=None,
     max_attempts=None,
-):
+) -> str:
+    """Create an Iceberg table from an existing CSV table using Athena.
+
+    Args:
+        :param s3_output_bucket: S3 path for query results
+        :param table_name: Name for the new Iceberg table
+        :param csv_table_name: Name of the source CSV table
+        :param catalog: (str, optional) catalog namespace to run the sql_query
+        :param database: (str, optional) the database to run the sql_query
+        :param table_columns: (list, optional) table columns to include
+        :param polling_interval: Polling interval for status checks
+        :param max_attempts: Maximum attempts for status checks
+
+    Returns:
+        str: Returns the query_execution_id if successful
+    """
     select_columns = "*"
     if table_columns:
         select_columns = '"' + '","'.join(table_columns) + '"'
@@ -1205,25 +1225,22 @@ AS SELECT {select_columns} FROM {csv_table_name};
         database=database,
     )
 
-    # TODO use TaskFuture instead
-    for _ in range(1, max_attempts):
-        response = athena_client.get_query_execution(
-            QueryExecutionId=query_execution_id
+    # Wait for query to complete using TaskFuture
+    future = TaskFuture(
+        query_execution_id, TaskType.EXPORT_ATHENA_TABLE, polling_interval, max_attempts
+    )
+    await future.wait_until_complete(athena_client)
+
+    # Check the final status
+    final_status = future.current_status
+
+    if final_status != "SUCCEEDED":
+        raise Exception(
+            f"Query {query_execution_id} failed with status: {final_status}"
         )
-        status = response["QueryExecution"]["Status"]["State"]
-        if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
-            if status != "SUCCEEDED":
-                logger.error(f"Query {query_execution_id} failed with status: {status}")
-                logger.error(
-                    f"Query error: {response['QueryExecution']['Status']['StateChangeReason']}"
-                )
-                return False
-            break
-        time.sleep(polling_interval)
 
     logger.info(f"Successfully completed execution of query [{query_execution_id}]")
-
-    return True
+    return query_execution_id
 
 
 def create_table_schema_from_s3(

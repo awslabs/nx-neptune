@@ -128,6 +128,7 @@ class TaskFuture(Future):
         super().__init__()
         self.task_id = task_id
         self.task_type = task_type
+        self.current_status = None
         self.polling_interval = polling_interval
         self.max_attempts = max_attempts
 
@@ -155,21 +156,21 @@ class TaskFuture(Future):
                 task_action_map = _get_task_action_map(client, self.task_id)
 
                 response = task_action_map[self.task_type]()
-                status = response.get("status")
+                self.current_status = response.get("status")
 
                 current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 logger.info(
-                    f"[{current_time}] Task [{self.task_id}] Current status: {status}"
+                    f"[{current_time}] Task [{self.task_id}] Current status: {self.current_status}"
                 )
 
-                if status == self.task_type.status_complete:
+                if self.current_status == self.task_type.status_complete:
                     logger.info(f"Task [{self.task_id}] completed at [{current_time}]")
                     self.set_result(self.task_id)
                     return
 
                 if attempt >= self.max_attempts:
                     logger.error(
-                        f"Maximum number of attempts reached: status is {status} on type: {self.task_type}"
+                        f"Maximum number of attempts reached: status is {self.current_status} on type: {self.task_type}"
                     )
                     self.set_exception(
                         ClientError(
@@ -186,11 +187,11 @@ class TaskFuture(Future):
                 else:
                     attempt += 1
 
-                if status in self.task_type.permitted_statuses:
+                if self.current_status in self.task_type.permitted_statuses:
                     await asyncio.sleep(self.polling_interval)
                 else:
                     logger.error(
-                        f"Unexpected status: {status} on type: {self.task_type}"
+                        f"Unexpected status: {self.current_status} on type: {self.task_type}"
                     )
                     self.set_exception(
                         ClientError(

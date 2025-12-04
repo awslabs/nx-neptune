@@ -150,7 +150,7 @@ async def do_export_to_csv_table():
     csv_table_name = 'transactions_csv'
 
     # Create table - blocking
-    create_csv_table_from_s3(s3_export_location, s3_sql_output, csv_table_name, catalog=catalog, database=database)
+    await create_csv_table_from_s3(s3_export_location, s3_sql_output, csv_table_name, catalog=catalog, database=database)
 
 async def do_export_to_iceberg_table():
 
@@ -160,11 +160,13 @@ async def do_export_to_iceberg_table():
 
     iceberg_table_name = 'transactions_updated'
     csv_table_name = 'AwsDataCatalog.bank_fraud_full.transactions_csv_edges'
-    create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, catalog=catalog, database=database)
+    query_id = await create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, catalog=catalog, database=database)
+    print(f"Created iceberg table {iceberg_table_name} with query ID: {query_id}")
 
     iceberg_table_name = 'customers_updated'
     csv_table_name = 'AwsDataCatalog.bank_fraud_full.transactions_csv_vertices'
-    create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, catalog=catalog, database=database)
+    query_id = await create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, catalog=catalog, database=database)
+    print(f"Created iceberg table {iceberg_table_name} with query ID: {query_id}")
 
 async def do_execute_opencypher():
     nx.config.backends.neptune.graph_id = os.getenv('NETWORKX_GRAPH_ID')

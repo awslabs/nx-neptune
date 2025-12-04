@@ -258,7 +258,7 @@ class SessionManager:
         logger.info(f"Creating CSV export table; SQL logs output to {s3_location}")
 
         # Create table - blocking
-        instance_management.create_csv_table_from_s3(
+        await instance_management.create_csv_table_from_s3(
             s3_export_location,
             s3_location,  # logs directory
             csv_table_name,
@@ -276,7 +276,7 @@ class SessionManager:
         csv_vertices_table_name = (
             f"{csv_catalog}.{csv_database}.{csv_table_name}_vertices"
         )
-        instance_management.create_iceberg_table_from_table(
+        query_id = await instance_management.create_iceberg_table_from_table(
             s3_location,
             iceberg_vertices_table_name,
             csv_vertices_table_name,
@@ -284,7 +284,7 @@ class SessionManager:
             database=iceberg_database,
         )
         logger.info(
-            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_vertices_table_name}"
+            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_vertices_table_name} with query ID: {query_id}"
         )
 
         ###
@@ -294,7 +294,7 @@ class SessionManager:
         logger.info(f"SQL logs output to {s3_location}")
 
         csv_edges_table_name = f"{csv_catalog}.{csv_database}.{csv_table_name}_edges"
-        instance_management.create_iceberg_table_from_table(
+        query_id = await instance_management.create_iceberg_table_from_table(
             s3_location,
             iceberg_edges_table_name,
             csv_edges_table_name,
@@ -302,10 +302,7 @@ class SessionManager:
             database=iceberg_database,
         )
         logger.info(
-            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}"
-        )
-        logger.info(
-            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}"
+            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name} with query ID: {query_id}"
         )
 
         return True
