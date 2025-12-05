@@ -115,6 +115,45 @@ def _get_task_action_map(client, task_id):
     }
 
 
+async def wait_until_all_complete(
+    task_ids: list[str],
+    task_type,
+    client: BaseClient,
+    polling_interval=None,
+    max_attempts=None,
+):
+    attempt = 0
+
+    tasks = [
+        TaskFuture(task_id, task_type, polling_interval, max_attempts)
+        for task_id in task_ids
+    ]
+    completed_tasks = []
+
+    while True:
+        try:
+            resolved_tasks = []
+            for task in tasks:
+                task.check_status(client, attempt)
+                if task.done():
+                    resolved_tasks.append(task)
+
+            for resolved_task in resolved_tasks:
+                completed_tasks.append(resolved_task)
+                tasks.remove(resolved_task)
+
+            if len(tasks) <= 0:
+                return completed_tasks
+
+            attempt += 1
+
+            # sleep for the polling interval
+            await asyncio.sleep(polling_interval)
+
+        except ClientError as e:
+            raise e
+
+
 class TaskFuture(Future):
     """A Future subclass that tracks Neptune Analytics task information."""
 
@@ -138,6 +177,62 @@ class TaskFuture(Future):
             max_attempts if max_attempts is not None else _ASYNC_MAX_ATTEMPTS
         )
 
+    def check_status(self, client: BaseClient, attempt: int) -> bool:
+
+        response = _get_task_action_map(client, self.task_id)[self.task_type]()
+        self.current_status = response.get("status")
+
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(
+            f"[{current_time}] Task [{self.task_id}] Current status: {self.current_status}"
+        )
+
+        if self.current_status == self.task_type.status_complete:
+            logger.info(f"Task [{self.task_id}] completed at [{current_time}]")
+            self.set_result(self.task_id)
+            # done with result
+            return True
+
+        # check max attempts
+        if attempt >= self.max_attempts:
+            logger.error(
+                f"Maximum number of attempts reached: status is {self.current_status} on type: {self.task_type}"
+            )
+            self.set_exception(
+                ClientError(
+                    {
+                        "Error": {
+                            "Code": "MaxAttemptsReached",
+                            "Message": "Maximum attempts reached",
+                        }
+                    },
+                    "wait_until_complete",
+                )
+            )
+            # done with error
+            return True
+
+        if self.current_status not in self.task_type.permitted_statuses:
+            logger.error(
+                f"Unexpected status: {self.current_status} on type: {self.task_type}"
+            )
+            self.set_exception(
+                ClientError(
+                    {
+                        "Error": {
+                            "Code": "UnexpectedStatus",
+                            "Message": "Unexpected status",
+                        }
+                    },
+                    "wait_until_complete",
+                )
+            )
+            # done with error
+            return True
+
+        # else not done
+        return False
+
     async def wait_until_complete(self, client: BaseClient):
         """Asynchronously monitor a Neptune Analytics task until completion.
 
@@ -159,57 +254,14 @@ class TaskFuture(Future):
 
         while True:
             try:
-                task_action_map = _get_task_action_map(client, self.task_id)
-
-                response = task_action_map[self.task_type]()
-                self.current_status = response.get("status")
-
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                logger.info(
-                    f"[{current_time}] Task [{self.task_id}] Current status: {self.current_status}"
-                )
-
-                if self.current_status == self.task_type.status_complete:
-                    logger.info(f"Task [{self.task_id}] completed at [{current_time}]")
-                    self.set_result(self.task_id)
+                self.check_status(client, attempt)
+                if self.done():
                     return
 
-                if attempt >= self.max_attempts:
-                    logger.error(
-                        f"Maximum number of attempts reached: status is {self.current_status} on type: {self.task_type}"
-                    )
-                    self.set_exception(
-                        ClientError(
-                            {
-                                "Error": {
-                                    "Code": "MaxAttemptsReached",
-                                    "Message": "Maximum attempts reached",
-                                }
-                            },
-                            "wait_until_complete",
-                        )
-                    )
-                    return
-                else:
-                    attempt += 1
+                attempt += 1
 
-                if self.current_status in self.task_type.permitted_statuses:
-                    await asyncio.sleep(self.polling_interval)
-                else:
-                    logger.error(
-                        f"Unexpected status: {self.current_status} on type: {self.task_type}"
-                    )
-                    self.set_exception(
-                        ClientError(
-                            {
-                                "Error": {
-                                    "Code": "UnexpectedStatus",
-                                    "Message": "Unexpected status",
-                                }
-                            },
-                            "wait_until_complete",
-                        )
-                    )
-                    return
+                # sleep for the polling interval
+                await asyncio.sleep(self.polling_interval)
+
             except ClientError as e:
                 raise e

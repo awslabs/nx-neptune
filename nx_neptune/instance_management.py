@@ -46,7 +46,7 @@ __all__ = [
     "delete_graph_snapshot",
 ]
 
-from .utils.task_future import TaskFuture, TaskType
+from .utils.task_future import TaskFuture, TaskType, wait_until_all_complete
 
 logger = logging.getLogger(__name__)
 
@@ -1025,16 +1025,16 @@ async def export_athena_table_to_s3(
     bucket_name = s3_bucket.replace("s3://", "").split("/")[0]
     bucket_prefix = "/".join(s3_bucket.replace("s3://", "").split("/")[1:])
 
-    for query_execution_id in query_execution_ids:
-        # Wait for query to complete using TaskFuture
-        future = TaskFuture(
-            query_execution_id,
-            TaskType.EXPORT_ATHENA_TABLE,
-            polling_interval,
-            max_attempts,
-        )
-        await future.wait_until_complete(client)
+    await wait_until_all_complete(
+        query_execution_ids,
+        TaskType.EXPORT_ATHENA_TABLE,
+        client,
+        polling_interval,
+        max_attempts,
+    )
 
+    # sanity check for files - and delete the metadata files
+    for query_execution_id in query_execution_ids:
         # Sanity check that the CSV file exists
         csv_key = f"{bucket_prefix}{query_execution_id}.csv"
         s3_client.head_object(Bucket=bucket_name, Key=csv_key)
@@ -1138,24 +1138,13 @@ async def create_csv_table_from_s3(
         )
         query_execution_ids.append(query_execution_id)
 
-    for query_execution_id in query_execution_ids:
-        # Wait for query to complete using TaskFuture
-        future = TaskFuture(
-            query_execution_id,
-            TaskType.EXPORT_ATHENA_TABLE,
-            polling_interval,
-            max_attempts,
-        )
-        await future.wait_until_complete(athena_client)
-
-        # Check the final status
-        final_status = future.current_status
-
-        if final_status != "SUCCEEDED":
-            logger.error(f"Query error: {final_status}")
-            raise Exception(
-                f"Query {query_execution_id} failed with status: {final_status}"
-            )
+    await wait_until_all_complete(
+        query_execution_ids,
+        TaskType.EXPORT_ATHENA_TABLE,
+        athena_client,
+        polling_interval,
+        max_attempts,
+    )
 
     logger.info(
         f"Successfully completed execution of {len(query_execution_ids)} queries"

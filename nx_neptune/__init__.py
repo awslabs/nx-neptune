@@ -93,7 +93,6 @@ __all__ = [
     "create_na_instance_with_s3_import",
     "create_na_instance_from_snapshot",
     "stop_na_instance",
-    "TaskFuture",
     "delete_graph_snapshot",
     # session management
     "SessionManager",
