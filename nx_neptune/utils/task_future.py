@@ -122,15 +122,21 @@ class TaskFuture(Future):
         self,
         task_id,
         task_type,
-        polling_interval=_ASYNC_POLLING_INTERVAL,
-        max_attempts=_ASYNC_MAX_ATTEMPTS,
+        polling_interval=None,
+        max_attempts=None,
     ):
         super().__init__()
         self.task_id = task_id
         self.task_type = task_type
         self.current_status = None
-        self.polling_interval = polling_interval
-        self.max_attempts = max_attempts
+        self.polling_interval = (
+            polling_interval
+            if polling_interval is not None
+            else _ASYNC_POLLING_INTERVAL
+        )
+        self.max_attempts = (
+            max_attempts if max_attempts is not None else _ASYNC_MAX_ATTEMPTS
+        )
 
     async def wait_until_complete(self, client: BaseClient):
         """Asynchronously monitor a Neptune Analytics task until completion.

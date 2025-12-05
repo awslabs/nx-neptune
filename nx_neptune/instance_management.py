@@ -13,9 +13,7 @@
 import asyncio
 import logging
 import os
-import time
 import uuid
-from asyncio import Future
 from enum import Enum
 from typing import Any, Optional, Tuple
 
@@ -48,7 +46,7 @@ __all__ = [
     "delete_graph_snapshot",
 ]
 
-from .utils.task_future import _ASYNC_MAX_ATTEMPTS, TaskFuture, TaskType
+from .utils.task_future import TaskFuture, TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +59,8 @@ async def create_na_instance(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     graph_name_prefix: Optional[str] = None,
+    polling_interval=None,
+    max_attempts=None,
 ) -> str:
     """
     Creates a new graph instance for Neptune Analytics.
@@ -77,6 +77,8 @@ async def create_na_instance(
         sts_client (Optional[BaseClient]): Optional boto3 client for sts service
         iam_client (Optional[BaseClient]): Optional boto3 client for iam service
         graph_name_prefix (Optional[str]): Optional prefix for the generated graph name
+        polling_interval (int): Time interval in seconds for job status query
+        max_attempts: Maximum attempts for status checks
 
     Returns:
         str: The graph ID of the created Neptune Analytics instance
@@ -92,7 +94,13 @@ async def create_na_instance(
     status_code = _get_status_code(response)
 
     if status_code == 201:
-        await _get_status_check_future(na_client, TaskType.CREATE, prospective_graph_id)
+        await _get_status_check_future(
+            na_client,
+            TaskType.CREATE,
+            prospective_graph_id,
+            polling_interval,
+            max_attempts,
+        )
         return prospective_graph_id
     else:
         raise Exception(
@@ -106,6 +114,8 @@ async def create_na_instance_with_s3_import(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
+    polling_interval=None,
+    max_attempts=None,
 ) -> tuple[str, str]:
     """Creates a new Neptune Analytics graph instance and imports data from S3.
 
@@ -130,6 +140,8 @@ async def create_na_instance_with_s3_import(
             a new one will be created using the current user's credentials.
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
             a new one will be created.
+        polling_interval (int): Time interval in seconds for job status query
+        max_attempts: Maximum attempts for status checks
 
     Returns:
         (str, str): A tuple with the graph and task ids. The graph ID is the new instance graph identifier.
@@ -157,10 +169,14 @@ async def create_na_instance_with_s3_import(
 
     if _get_status_code(response) == 201:
         # Import task status check
-        await _get_status_check_future(task_id, TaskType.IMPORT, na_client)
+        await _get_status_check_future(
+            na_client, TaskType.IMPORT, task_id, polling_interval, max_attempts
+        )
 
         # Wait for instance creation
-        await _get_status_check_future(graph_id, TaskType.CREATE, na_client)
+        await _get_status_check_future(
+            na_client, TaskType.CREATE, graph_id, polling_interval, max_attempts
+        )
 
         return graph_id, task_id
     else:
@@ -175,6 +191,8 @@ async def create_na_instance_from_snapshot(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
+    polling_interval=None,
+    max_attempts=None,
 ) -> str:
     """
     Creates a new Neptune Analytics graph instance from an existing snapshot.
@@ -194,6 +212,8 @@ async def create_na_instance_from_snapshot(
             a new one will be created using the current user's credentials.
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
             a new one will be created.
+        polling_interval (int): Time interval in seconds for job status query
+        max_attempts: Maximum attempts for status checks
 
     Returns:
         str: The graph ID when the graph creation completes
@@ -211,7 +231,13 @@ async def create_na_instance_from_snapshot(
     prospective_graph_id = _get_graph_id(response)
 
     if _get_status_code(response) == 201:
-        await _get_status_check_future(na_client, TaskType.CREATE, prospective_graph_id)
+        await _get_status_check_future(
+            na_client,
+            TaskType.CREATE,
+            prospective_graph_id,
+            polling_interval,
+            max_attempts,
+        )
         return prospective_graph_id
 
     raise Exception(
@@ -224,6 +250,8 @@ async def delete_graph_snapshot(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
+    polling_interval=None,
+    max_attempts=None,
 ) -> str:
     """
     Delete a Neptune Analytics graph snapshot.
@@ -236,6 +264,8 @@ async def delete_graph_snapshot(
             a new one will be created using the current user's credentials.
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
             a new one will be created.
+        polling_interval (int): Time interval in seconds for job status query
+        max_attempts: Maximum attempts for status checks
 
     Returns:
         str: The snapshot ID when the deletion completes
@@ -252,7 +282,13 @@ async def delete_graph_snapshot(
 
     status_code = _get_status_code(response)
     if status_code == 200:
-        await _get_status_check_future(na_client, TaskType.DELETE_SNAPSHOT, snapshot_id)
+        await _get_status_check_future(
+            na_client,
+            TaskType.DELETE_SNAPSHOT,
+            snapshot_id,
+            polling_interval,
+            max_attempts,
+        )
         return snapshot_id
 
     raise Exception(
@@ -265,6 +301,8 @@ async def start_na_instance(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
+    polling_interval=None,
+    max_attempts=None,
 ) -> str:
     """
     Start a stopped Neptune Analytics graph instance.
@@ -277,6 +315,8 @@ async def start_na_instance(
             a new one will be created using the current user's credentials.
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
             a new one will be created.
+        polling_interval (int): Time interval in seconds for job status query
+        max_attempts: Maximum attempts for status checks
 
     Returns:
         str: The graph ID of the started instance
@@ -294,7 +334,7 @@ async def start_na_instance(
     response = na_client.start_graph(graphIdentifier=graph_id)
     status_code = _get_status_code(response)
     if status_code == 200:
-        fut = TaskFuture(graph_id, TaskType.START)
+        fut = TaskFuture(graph_id, TaskType.START, polling_interval, max_attempts)
         await fut.wait_until_complete(na_client)
         return graph_id
     else:
@@ -308,6 +348,8 @@ async def stop_na_instance(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
+    polling_interval=None,
+    max_attempts=None,
 ) -> str:
     """Stop a running Neptune Analytics graph instance.
 
@@ -319,6 +361,8 @@ async def stop_na_instance(
             a new one will be created using the current user's credentials.
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
             a new one will be created.
+        polling_interval (int): Time interval in seconds for job status query
+        max_attempts: Maximum attempts for status checks
 
     Returns:
         str: The graph ID of the stopped instance
@@ -336,7 +380,7 @@ async def stop_na_instance(
     response = na_client.stop_graph(graphIdentifier=graph_id)
     status_code = _get_status_code(response)
     if status_code == 200:
-        fut = TaskFuture(graph_id, TaskType.STOP)
+        fut = TaskFuture(graph_id, TaskType.STOP, polling_interval, max_attempts)
         await fut.wait_until_complete(na_client)
         return graph_id
     else:
@@ -350,6 +394,8 @@ async def delete_na_instance(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
+    polling_interval=None,
+    max_attempts=None,
 ) -> str:
     """
     Delete a Neptune Analytics graph instance.
@@ -362,6 +408,8 @@ async def delete_na_instance(
             a new one will be created using the current user's credentials.
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
             a new one will be created.
+        polling_interval (int): Time interval in seconds for job status query
+        max_attempts: Maximum attempts for status checks
 
     Returns:
         str: The graph ID of the deleted instance
@@ -378,7 +426,7 @@ async def delete_na_instance(
     response = _delete_na_instance_task(na_client, graph_id)
     status_code = _get_status_code(response)
     if status_code == 200:
-        fut = TaskFuture(graph_id, TaskType.DELETE)
+        fut = TaskFuture(graph_id, TaskType.DELETE, polling_interval, max_attempts)
         await fut.wait_until_complete(na_client)
         return graph_id
     else:
@@ -394,6 +442,8 @@ async def create_graph_snapshot(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
+    polling_interval=None,
+    max_attempts=None,
 ) -> str:
     """Create a snapshot of a Neptune Analytics graph.
 
@@ -407,6 +457,8 @@ async def create_graph_snapshot(
             a new one will be created using the current user's credentials.
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
             a new one will be created.
+        polling_interval (int): Time interval in seconds for job status query
+        max_attempts: Maximum attempts for status checks
 
     Returns:
         str: The graph ID when the snapshot completes
@@ -429,7 +481,13 @@ async def create_graph_snapshot(
     response = na_client.create_graph_snapshot(**kwargs)
     status_code = _get_status_code(response)
     if status_code == 201:
-        await _get_status_check_future(na_client, TaskType.EXPORT_SNAPSHOT, graph_id)
+        await _get_status_check_future(
+            na_client,
+            TaskType.EXPORT_SNAPSHOT,
+            graph_id,
+            polling_interval,
+            max_attempts,
+        )
         return graph_id
     raise Exception(
         f"Invalid response status code: {status_code} with full response:\n {response}"
@@ -442,6 +500,7 @@ async def import_csv_from_s3(
     reset_graph_ahead=True,
     skip_snapshot=True,
     polling_interval=None,
+    max_attempts=None,
 ) -> str:
     """Import CSV data from S3 into a Neptune Analytics graph.
 
@@ -457,6 +516,7 @@ async def import_csv_from_s3(
         reset_graph_ahead (bool, optional): Whether to reset the graph before import. Defaults to True.
         skip_snapshot (bool, optional): Whether to skip creating a snapshot when resetting. Defaults to True.
         polling_interval (int): Time interval in seconds for job status query
+        max_attempts: Maximum attempts for status checks
 
     Returns:
         str: The task ID of the completed import
@@ -483,7 +543,7 @@ async def import_csv_from_s3(
     task_id = _start_import_task(na_client, graph_id, s3_arn, role_arn)
 
     # Wait for completion
-    future = TaskFuture(task_id, TaskType.IMPORT, polling_interval)
+    future = TaskFuture(task_id, TaskType.IMPORT, polling_interval, max_attempts)
     await future.wait_until_complete(na_client)
     return task_id
 
@@ -491,8 +551,9 @@ async def import_csv_from_s3(
 async def export_csv_to_s3(
     na_graph: NeptuneGraph,
     s3_arn: str,
-    polling_interval=None,
     export_filter=None,
+    polling_interval=None,
+    max_attempts=None,
 ) -> str:
     """Export graph data from Neptune Analytics to S3 in CSV format.
 
@@ -504,8 +565,9 @@ async def export_csv_to_s3(
     Args:
         na_graph (NeptuneGraph): The Neptune Analytics graph instance
         s3_arn (str): The S3 destination location (e.g., 's3://bucket-name/prefix/')
-        polling_interval (int): Time interval in seconds to perform job status query. Defaults to 30.
         export_filter (dict, optional): Filter criteria for the export. Defaults to None.
+        polling_interval (int): Time interval in seconds to perform job status query
+        max_attempts: Maximum attempts for status checks
 
     Returns:
         str: The task ID of the completed export
@@ -530,7 +592,7 @@ async def export_csv_to_s3(
     )
 
     # Wait for completion
-    future = TaskFuture(task_id, TaskType.EXPORT, polling_interval)
+    future = TaskFuture(task_id, TaskType.EXPORT, polling_interval, max_attempts)
     await future.wait_until_complete(na_client)
     return task_id
 
@@ -539,6 +601,8 @@ async def reset_graph(
     graph_id: str,
     na_client: BaseClient = None,
     skip_snapshot: bool = True,
+    polling_interval=None,
+    max_attempts=None,
 ) -> str:
     """Reset the Neptune Analytics graph by clearing all data while preserving the graph configuration.
 
@@ -546,6 +610,8 @@ async def reset_graph(
         na_client (BaseClient): The Neptune Analytics boto3 client. If None, a new client will be created.
         graph_id (str): The ID of the Neptune Analytics graph to reset
         skip_snapshot (bool, optional): Whether to skip creating a snapshot before resetting. Defaults to True.
+        polling_interval (int): Time interval in seconds for job status query
+        max_attempts: Maximum attempts for status checks
 
     Returns:
         str: The graph ID of the reset instance
@@ -565,7 +631,7 @@ async def reset_graph(
     response = na_client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
     status_code = _get_status_code(response)
     if status_code == 200:
-        fut = TaskFuture(graph_id, TaskType.RESET_GRAPH)
+        fut = TaskFuture(graph_id, TaskType.RESET_GRAPH, polling_interval, max_attempts)
         await fut.wait_until_complete(na_client)
         return graph_id
     else:
@@ -936,8 +1002,8 @@ async def export_athena_table_to_s3(
         :param s3_bucket: S3 bucket path for query results
         :param catalog: (str, optional) catalog namespace to run the sql_query
         :param database: (str, optional) the database to run the sql_query
-        :param max_attempts:
-        :param polling_interval:
+        :param polling_interval: Polling interval for status checks
+        :param max_attempts: Maximum attempts for status checks
 
     Returns:
         list: True if all queries succeeded, False otherwise
@@ -1004,8 +1070,8 @@ async def create_csv_table_from_s3(
         :param catalog: (str, optional) catalog namespace to run the sql_query
         :param database: (str, optional) the database to run the sql_query
         :param table_columns: (list, optional) table columns to include in the newly created query
-        :param max_attempts:
-        :param polling_interval:
+        :param polling_interval: Polling interval for status checks
+        :param max_attempts: Maximum attempts for status checks
 
     Returns:
         list[str]: List of query execution IDs if all queries succeeded
@@ -1202,9 +1268,6 @@ async def create_iceberg_table_from_table(
     if table_columns:
         select_columns = '"' + '","'.join(table_columns) + '"'
 
-    if max_attempts is None:
-        max_attempts = _ASYNC_MAX_ATTEMPTS
-
     sql_statement = f"""
 CREATE TABLE {table_name}
   WITH (
@@ -1258,8 +1321,8 @@ async def create_table_schema_from_s3(
         :param s3_bucket: S3 bucket path containing data
         :param catalog: (str, optional) catalog namespace to run the sql_query
         :param database: (str, optional) the database to run the sql_query
-        :param max_attempts:
-        :param polling_interval:
+        :param polling_interval: Polling interval for status checks
+        :param max_attempts: Maximum attempts for status checks
 
     Returns:
         str: Returns the query_execution_id if successful
@@ -1268,9 +1331,6 @@ async def create_table_schema_from_s3(
     # TODO validate table_schema
     # TODO validate if table exists already
     # TODO check is skip drop table is False and table exists
-
-    if max_attempts is None:
-        max_attempts = _ASYNC_MAX_ATTEMPTS
 
     athena_client = boto3.client(SERVICE_ATHENA)
     query_execution_id = _execute_athena_query(
@@ -1466,13 +1526,17 @@ def _invalid_status_code(status_code, response):
     return asyncio.wrap_future(fut)
 
 
-async def _get_status_check_future(na_client, task_type: TaskType, object_id):
+async def _get_status_check_future(
+    na_client, task_type: TaskType, object_id, polling_interval=None, max_attempts=None
+):
     """Creates and returns a Future for monitoring Neptune Analytics task status.
 
     Args:
         na_client: The Neptune Analytics boto3 client
         task_type (TaskType): The type of task being monitored (e.g. CREATE, DELETE, etc)
         object_id (str): The identifier for the object being monitored (e.g. graph ID)
+        polling_interval (int): Time interval in seconds for job status query
+        max_attempts: Maximum attempts for status checks
 
     Returns:
         asyncio.Future: A Future that resolves when the task completes
@@ -1481,7 +1545,7 @@ async def _get_status_check_future(na_client, task_type: TaskType, object_id):
     for a maximum number of attmpts. The Future resolves when the task reaches
     its completion state as defined by the TaskType.
     """
-    fut = TaskFuture(object_id, task_type)
+    fut = TaskFuture(object_id, task_type, polling_interval, max_attempts)
     await asyncio.create_task(fut.wait_until_complete(na_client), name=object_id)
     return asyncio.wrap_future(fut)
 
