@@ -57,11 +57,11 @@ class TestLPA:
     def test_fast_label_propagation_communities_basic(self, air_route_graph):
         """Test fast label propagation communities on airline routes data"""
         result = nx.community.fast_label_propagation_communities(air_route_graph, backend=BACKEND)
-        
+
         communities = list(result)
         assert isinstance(communities, list)
         assert len(communities) > 0
-        
+
         for community in communities:
             assert isinstance(community, set)
             assert len(community) > 0
@@ -69,11 +69,11 @@ class TestLPA:
     def test_asyn_lpa_communities_basic(self, air_route_graph):
         """Test asynchronous label propagation communities on airline routes data"""
         result = nx.community.asyn_lpa_communities(air_route_graph, backend=BACKEND)
-        
+
         communities = list(result)
         assert isinstance(communities, list)
         assert len(communities) > 0
-        
+
         for community in communities:
             assert isinstance(community, set)
             assert len(community) > 0
@@ -85,7 +85,7 @@ class TestLPA:
             backend=BACKEND,
             write_property="communities"
         )
-        
+
         nodes = neptune_graph.get_all_nodes()[:10]
         assert len(nodes) > 0
         for n in nodes:
@@ -103,7 +103,7 @@ class TestLPA:
             write_property="communities"
         )
         assert len(result) == 0
-        
+
         nodes = neptune_graph.get_all_nodes()[:10]
         assert len(nodes) > 0
         for n in nodes:
@@ -119,7 +119,7 @@ class TestLPA:
             backend=BACKEND,
             write_property="communities"
         )
-        
+
         nodes = neptune_graph.get_all_nodes()[:10]
         assert len(nodes) > 0
         for n in nodes:
@@ -130,7 +130,7 @@ class TestLPA:
     def test_label_propagation_empty_graph(self, graph):
         """Test label propagation on empty graph"""
         result = nx.community.label_propagation_communities(graph, backend=BACKEND)
-        
+
         communities = list(result)
         assert isinstance(communities, list)
         assert len(communities) == 0
@@ -139,7 +139,7 @@ class TestLPA:
         """Test label propagation on single node graph"""
         graph.add_node("A")
         result = nx.community.label_propagation_communities(graph, backend=BACKEND)
-        
+
         communities = list(result)
         assert isinstance(communities, list)
         assert len(communities) == 1

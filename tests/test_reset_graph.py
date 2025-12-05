@@ -17,7 +17,8 @@ import nx_neptune.instance_management as InstanceUtil
 from botocore.exceptions import EndpointConnectionError
 
 
-def test_reset_graph_success():
+@pytest.mark.asyncio
+async def test_reset_graph_success():
     """Test that reset_graph returns True when the operation is successful"""
     # Create a mock client
     mock_client = MagicMock()
@@ -53,13 +54,14 @@ def test_reset_graph_success():
     }
 
     # Call the method with test parameters
-    result = InstanceUtil._reset_graph(mock_client, "test-graph-id")
+    result = await InstanceUtil.reset_graph("test-graph-id", mock_client)
 
     # Verify the result is True
-    assert result is True
+    assert result is "test-graph-id"
 
 
-def test_reset_graph_endpoint_connection_error():
+@pytest.mark.asyncio
+async def test_reset_graph_endpoint_connection_error():
     """Test that reset_graph returns False when an EndpointConnectionError occurs"""
     # Create a mock client
     mock_client = MagicMock()
@@ -70,4 +72,4 @@ def test_reset_graph_endpoint_connection_error():
     )
 
     with pytest.raises(EndpointConnectionError, match="Could not connect"):
-        InstanceUtil._reset_graph(mock_client, "test-graph-id")
+        await InstanceUtil.reset_graph("test-graph-id", mock_client)
