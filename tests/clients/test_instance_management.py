@@ -13,6 +13,8 @@
 import json
 import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
+import os
+from unittest.mock import patch, MagicMock
 
 import pytest
 from botocore.exceptions import ClientError
@@ -1289,3 +1291,109 @@ async def test_export_athena_table_to_s3_success(
 
     assert result == ["query-exec-id-1", "query-exec-id-2"]
     assert mock_execute_athena_query.call_count == 2
+
+
+@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("boto3.client")
+def test_update_instance_size_env_not_set(mock_boto3_client, mock_get_future):
+    """Test successful start of NA instance."""
+    from nx_neptune.instance_management import update_na_instance_size
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_future = MagicMock()
+    mock_get_future.return_value = mock_future
+
+    os.unsetenv("NETWORKX_GRAPH_SIZE_LIMIT")
+
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {"EvalActionName": "neptune-graph:UpdateGraph", "EvalDecision": "allowed"}
+        ]
+    }
+
+    result_future = update_na_instance_size("test-graph-id", 64)
+    with pytest.raises(Exception, match="Size limit not set"):
+        result_future.result()
+
+
+@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("boto3.client")
+def test_update_instance_size_exceed_limit(mock_boto3_client, mock_get_future):
+    """Test successful start of NA instance."""
+    from nx_neptune.instance_management import update_na_instance_size
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_future = MagicMock()
+    mock_get_future.return_value = mock_future
+
+    os.environ.pop("NETWORKX_GRAPH_SIZE_LIMIT", None)
+    os.environ["NETWORKX_GRAPH_SIZE_LIMIT"] = "128"
+
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {"EvalActionName": "neptune-graph:UpdateGraph", "EvalDecision": "allowed"}
+        ]
+    }
+
+    result_future = update_na_instance_size("test-graph-id", 99999)
+    with pytest.raises(Exception, match="Exceed size limit"):
+        result_future.result()
+
+
+@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("boto3.client")
+def test_update_instance_size_junk_env(mock_boto3_client, mock_get_future):
+    """Test successful start of NA instance."""
+    from nx_neptune.instance_management import update_na_instance_size
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_future = MagicMock()
+    mock_get_future.return_value = mock_future
+
+    os.environ.pop("NETWORKX_GRAPH_SIZE_LIMIT", None)
+    os.environ["NETWORKX_GRAPH_SIZE_LIMIT"] = "abc123"
+
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {"EvalActionName": "neptune-graph:UpdateGraph", "EvalDecision": "allowed"}
+        ]
+    }
+
+    result_future = update_na_instance_size("test-graph-id", 32)
+    with pytest.raises(Exception, match="Invalid size limit"):
+        result_future.result()
+
+
+@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("boto3.client")
+def test_update_instance_size_success(mock_boto3_client, mock_get_future):
+    """Test successful start of NA instance."""
+    from nx_neptune.instance_management import update_na_instance_size
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_future = MagicMock()
+    mock_get_future.return_value = mock_future
+
+    os.environ.pop("NETWORKX_GRAPH_SIZE_LIMIT", None)
+    os.environ["NETWORKX_GRAPH_SIZE_LIMIT"] = "128"
+
+    mock_na_client.get_graph.return_value = {"status": "AVAILABLE"}
+    mock_na_client.update_graph.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 200}
+    }
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {"EvalActionName": "neptune-graph:UpdateGraph", "EvalDecision": "allowed"}
+        ]
+    }
+
+    result_future = update_na_instance_size("test-graph-id", 32)
+    assert mock_future == result_future

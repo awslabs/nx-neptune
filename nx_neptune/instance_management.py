@@ -53,6 +53,8 @@ logger = logging.getLogger(__name__)
 _PROJECT_IDENTIFIER = "nx-neptune"
 
 
+_ENV_SIZE_LIMIT = "NETWORKX_GRAPH_SIZE_LIMIT"
+
 async def create_na_instance(
     config: Optional[dict] = None,
     na_client: Optional[BaseClient] = None,
@@ -1570,3 +1572,17 @@ def _get_or_create_clients(
         )
 
     return iam_client, na_client
+
+
+def _get_exception(message: str):
+    """Create a failed Future with the given exception message.
+
+    Args:
+        message (str): The error message for the exception
+
+    Returns:
+        asyncio.Future: A failed Future containing an Exception with the provided message
+    """
+    fut = TaskFuture("-1", TaskType.NOOP, _ASYNC_POLLING_INTERVAL)
+    fut.set_exception(Exception(message))
+    return asyncio.wrap_future(fut)
