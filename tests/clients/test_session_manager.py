@@ -288,6 +288,52 @@ class TestSessionManager:
         assert "provisionedMemory" in graphs[0]
 
     @patch("boto3.client")
+    def test_get_graph_success(self, mock_boto3_client):
+        """Test listing graphs with full details."""
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        mock_client.list_graphs.return_value = {
+            "graphs": [
+                {
+                    "name": "graph-1",
+                    "id": "g-1",
+                    "status": "AVAILABLE",
+                    "endpoint": "test-endpoint",
+                    "provisionedMemory": 16,
+                },
+            ]
+        }
+
+        sm = SessionManager()
+        graph = sm.get_graph("g-1")
+
+        assert isinstance(graph, dict)
+        assert graph["name"] == "graph-1"
+
+    @patch("boto3.client")
+    def test_get_graph_failed(self, mock_boto3_client):
+        """Test listing graphs with full details."""
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        mock_client.list_graphs.return_value = {
+            "graphs": [
+                {
+                    "name": "graph-1",
+                    "id": "g-1",
+                    "status": "AVAILABLE",
+                    "endpoint": "test-endpoint",
+                    "provisionedMemory": 16,
+                },
+            ]
+        }
+
+        sm = SessionManager()
+        with pytest.raises(Exception):
+            sm.get_graph("g-2")
+
+    @patch("boto3.client")
     def test_get_existing_graph_multiple_status_filters(self, mock_boto3_client):
         """Test getting existing graph with multiple status filters."""
         mock_client = MagicMock()
