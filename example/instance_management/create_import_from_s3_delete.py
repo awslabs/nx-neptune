@@ -40,8 +40,11 @@ logger = logging.getLogger(__name__)
 graph_id = os.getenv('NETWORKX_GRAPH_ID')
 
 async def do_create_instance():
+    global graph_id
+
     # ---------------------- Create ---------------------------
     logger.info("Creating new graph")
+
     graph_id = await create_na_instance()
     logger.info(f"A new instance is created with graph-id: {graph_id}")
 
