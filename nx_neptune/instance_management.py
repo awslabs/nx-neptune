@@ -1515,7 +1515,7 @@ def _invalid_status_code(status_code, response):
     return asyncio.wrap_future(fut)
 
 
-async def _get_status_check_future(
+def _get_status_check_future(
     na_client, task_type: TaskType, object_id, polling_interval=None, max_attempts=None
 ):
     """Creates and returns a Future for monitoring Neptune Analytics task status.
@@ -1535,7 +1535,7 @@ async def _get_status_check_future(
     its completion state as defined by the TaskType.
     """
     fut = TaskFuture(object_id, task_type, polling_interval, max_attempts)
-    await asyncio.create_task(fut.wait_until_complete(na_client), name=object_id)
+    asyncio.create_task(fut.wait_until_complete(na_client), name=object_id)
     return asyncio.wrap_future(fut)
 
 

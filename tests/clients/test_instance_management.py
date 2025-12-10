@@ -1097,7 +1097,7 @@ async def test_create_graph_snapshot_success(mock_boto3_client, mock_sleep):
         "ResponseMetadata": {"HTTPStatusCode": 201}
     }
     mock_na_client.get_graph.side_effect = [
-        {"status": "CREATING"},
+        {"status": "SNAPSHOTTING"},
         {"status": "AVAILABLE"},
     ]
     mock_na_client.simulate_principal_policy.return_value = {
@@ -1194,7 +1194,13 @@ async def test_create_na_instance_with_s3_import_success(
 
     mock_get_or_create_clients.return_value = (mock_iam_client, mock_na_client)
     mock_get_bucket_encryption_key_arn.return_value = None
-    mock_get_status_check_future.return_value = None
+
+    # Create an async function that returns None
+    async def mock_future():
+        return None
+
+    # Return a new coroutine each time the function is called
+    mock_get_status_check_future.side_effect = lambda *args, **kwargs: mock_future()
 
     mock_na_client.create_graph_using_import_task.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 201},
