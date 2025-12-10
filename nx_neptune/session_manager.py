@@ -138,6 +138,27 @@ class SessionManager:
                 return graph
         return None
 
+    def get_graph(self, graph_id: str):
+        """Get details for a specific graph by ID.
+
+        Args:
+            graph_id (str): ID of the graph to retrieve
+
+        Returns:
+            dict: Graph details if found
+
+        Raises:
+            Exception: If no graph is found with the given ID
+        """
+        graphs = self.list_graphs()
+
+        for graph in graphs:
+            if graph["id"] == graph_id:
+                return graph
+
+        # Package that as nx object
+        raise Exception(f"No graph instance with id {graph_id} found")
+
     async def get_or_create_graph(self, config: Optional[dict] = None):
         """Get the first available graph or create a new one if none exist.
 
