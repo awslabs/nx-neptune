@@ -11,7 +11,7 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 import jmespath
 from botocore.client import BaseClient
@@ -402,7 +402,7 @@ class IamClient:
         )
 
     @staticmethod
-    def _validate_arns(arns: str | list) -> bool:
+    def _validate_arns(arns: Union[str, list]) -> bool:
         """
         Validates a list of ARNs using the ArnParser.
 

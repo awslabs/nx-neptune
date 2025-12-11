@@ -12,7 +12,7 @@
 # language governing permissions and limitations under the License.
 import json
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 from botocore.exceptions import ClientError
@@ -25,7 +25,6 @@ from nx_neptune.instance_management import (
     _get_status_code,
     _get_graph_id,
     create_na_instance,
-    _wait_until_task_complete,
     import_csv_from_s3,
     export_csv_to_s3,
     delete_na_instance,
@@ -505,13 +504,15 @@ async def test_create_na_instance_graph_absent_create_fail(mock_boto3_client):
 
     with pytest.raises(Exception, match="Neptune instance creation failure"):
         # Make sure graph_id is absent.
-        result = create_na_instance()
-        await result
+        await create_na_instance()
 
 
 @pytest.mark.asyncio
+@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
-async def test_create_na_instance_graph_absent_status_check_success(mock_boto3_client):
+async def test_create_na_instance_graph_absent_status_check_success(
+    mock_boto3_client, mock_sleep
+):
 
     # Mock boto client
     mock_nx_client = MagicMock()
@@ -521,15 +522,15 @@ async def test_create_na_instance_graph_absent_status_check_success(mock_boto3_c
     test_response = json.loads(NX_CREATE_SUCCESS_FIXTURE)
     mock_nx_client.create_graph.return_value = test_response
 
-    # Mock status check
-    test_status_response = json.loads(NX_STATUS_CHECK_SUCCESS_FIXTURE)
-    mock_nx_client.get_graph.return_value = test_status_response
+    # Mock status check - return CREATING then AVAILABLE
+    test_status_creating = json.loads(NX_STATUS_CHECK_SUCCESS_FIXTURE)
+    test_status_creating["status"] = "CREATING"
+    test_status_available = json.loads(NX_STATUS_CHECK_SUCCESS_FIXTURE)
+    mock_nx_client.get_graph.side_effect = [test_status_creating, test_status_available]
 
     # Make sure graph_id is absent.
-    result = create_na_instance()
-    await result
-    assert result.result() == "test_graph_id"
-    assert result.done()
+    graph_id = await create_na_instance()
+    assert graph_id == "test_graph_id"
 
 
 @pytest.mark.asyncio
@@ -551,8 +552,7 @@ async def test_create_na_instance_graph_absent_status_check_failure(mock_boto3_c
     )
 
     with pytest.raises(ClientError, match="InvalidGraphId"):
-        result = create_na_instance()
-        await result
+        await create_na_instance()
 
 
 @pytest.mark.asyncio
@@ -574,8 +574,7 @@ async def test_create_na_instance_insufficient_permissions(mock_boto3_client):
     with pytest.raises(
         Exception, match="Insufficient permission, neptune-graph:TagResource"
     ):
-        result = create_na_instance()
-        await result
+        await create_na_instance()
 
 
 @pytest.mark.asyncio
@@ -592,7 +591,7 @@ async def test_status_check_create(mock_boto3_client):
     test_status_response = json.loads(NX_STATUS_CHECK_SUCCESS_FIXTURE)
     mock_nx_client.get_graph.return_value = test_status_response
 
-    await _wait_until_task_complete(mock_nx_client, future)
+    await future.wait_until_complete(mock_nx_client)
     assert future.done()
     assert future.result() == "test-create-id"
 
@@ -611,7 +610,7 @@ async def test_status_check_import(mock_boto3_client):
     test_status_response = json.loads(NX_STATUS_CHECK_IMPORT_EXPORT_SUCCESS_FIXTURE)
     mock_nx_client.get_import_task.return_value = test_status_response
 
-    await _wait_until_task_complete(mock_nx_client, future)
+    await future.wait_until_complete(mock_nx_client)
     assert future.done()
     assert future.result() == "test-import-job-id"
 
@@ -630,18 +629,16 @@ async def test_status_check_export(mock_boto3_client):
     test_status_response = json.loads(NX_STATUS_CHECK_IMPORT_EXPORT_SUCCESS_FIXTURE)
     mock_nx_client.get_export_task.return_value = test_status_response
 
-    await _wait_until_task_complete(mock_nx_client, future)
+    await future.wait_until_complete(mock_nx_client)
     assert future.done()
     assert future.result() == "test-export-job-id"
 
 
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management._start_import_task")
-@patch("nx_neptune.instance_management._reset_graph")
+@patch("nx_neptune.instance_management.reset_graph")
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("asyncio.create_task")
 async def test_import_csv_from_s3_success(
-    mock_create_task,
     mock_get_bucket_encryption_key_arn,
     mock_reset_graph,
     mock_start_import_task,
@@ -660,7 +657,7 @@ async def test_import_csv_from_s3_success(
     mock_na_graph.current_jobs = set()
 
     # Call the function
-    future = import_csv_from_s3(
+    task_id = await import_csv_from_s3(
         mock_na_graph,
         "s3://test-bucket/test-folder/",
         reset_graph_ahead=True,
@@ -676,7 +673,7 @@ async def test_import_csv_from_s3_success(
         "s3://test-bucket/test-folder/", None
     )
     mock_reset_graph.assert_called_once_with(
-        mock_na_graph.na_client.client, "test-graph-id", True
+        "test-graph-id", mock_na_graph.na_client.client, True
     )
     mock_start_import_task.assert_called_once_with(
         mock_na_graph.na_client.client,
@@ -684,20 +681,15 @@ async def test_import_csv_from_s3_success(
         "s3://test-bucket/test-folder/",
         "test-role-arn",
     )
-    mock_create_task.assert_called_once()
 
-    # Verify the future is properly set up
-    assert isinstance(future, asyncio.Future)
-    assert not future.done()
+    assert task_id == "test-import-task-id"
 
 
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management._start_import_task")
-@patch("nx_neptune.instance_management._reset_graph")
+@patch("nx_neptune.instance_management.reset_graph")
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("asyncio.create_task")
 async def test_import_csv_from_s3_without_reset(
-    mock_create_task,
     mock_get_bucket_encryption_key_arn,
     mock_reset_graph,
     mock_start_import_task,
@@ -715,7 +707,7 @@ async def test_import_csv_from_s3_without_reset(
     mock_na_graph.current_jobs = set()
 
     # Call the function with reset_graph_ahead=False
-    future = import_csv_from_s3(
+    task_id = await import_csv_from_s3(
         mock_na_graph,
         "s3://test-bucket/test-folder/",
         reset_graph_ahead=False,
@@ -737,11 +729,9 @@ async def test_import_csv_from_s3_without_reset(
         "s3://test-bucket/test-folder/",
         "test-role-arn",
     )
-    mock_create_task.assert_called_once()
 
-    # Verify the future is properly set up
-    assert isinstance(future, asyncio.Future)
-    assert not future.done()
+    # verify return
+    assert task_id == "test-import-task-id"
 
 
 @pytest.mark.asyncio
@@ -763,7 +753,7 @@ async def test_import_csv_from_s3_permission_error(mock_get_bucket_encryption_ke
 
     # Call the function and expect ValueError
     with pytest.raises(ValueError, match="Insufficient permissions"):
-        import_csv_from_s3(
+        await import_csv_from_s3(
             mock_na_graph, "s3://test-bucket/test-folder/", reset_graph_ahead=True
         )
 
@@ -771,9 +761,7 @@ async def test_import_csv_from_s3_permission_error(mock_get_bucket_encryption_ke
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management._start_export_task")
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("asyncio.create_task")
 async def test_export_csv_to_s3_success(
-    mock_create_task,
     mock_get_bucket_encryption_key_arn,
     mock_start_export_task,
 ):
@@ -790,7 +778,7 @@ async def test_export_csv_to_s3_success(
     mock_na_graph.current_jobs = set()
 
     # Call the function
-    future = export_csv_to_s3(
+    task_id = await export_csv_to_s3(
         mock_na_graph,
         "s3://test-bucket/test-folder/",
         polling_interval=10,
@@ -811,19 +799,14 @@ async def test_export_csv_to_s3_success(
         None,
         export_filter=None,
     )
-    mock_create_task.assert_called_once()
 
-    # Verify the future is properly set up
-    assert isinstance(future, asyncio.Future)
-    assert not future.done()
+    assert task_id == "test-export-task-id"
 
 
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management._start_export_task")
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("asyncio.create_task")
 async def test_export_csv_to_s3_with_kms_key(
-    mock_create_task,
     mock_get_bucket_encryption_key_arn,
     mock_start_export_task,
 ):
@@ -840,7 +823,7 @@ async def test_export_csv_to_s3_with_kms_key(
     mock_na_graph.current_jobs = set()
 
     # Call the function
-    future = export_csv_to_s3(
+    task_id = await export_csv_to_s3(
         mock_na_graph,
         "s3://test-bucket/test-folder/",
         polling_interval=10,
@@ -861,11 +844,8 @@ async def test_export_csv_to_s3_with_kms_key(
         "test-kms-key-arn",
         export_filter=None,
     )
-    mock_create_task.assert_called_once()
 
-    # Verify the future is properly set up
-    assert isinstance(future, asyncio.Future)
-    assert not future.done()
+    assert task_id == "test-export-task-id"
 
 
 @pytest.mark.asyncio
@@ -887,7 +867,7 @@ async def test_export_csv_to_s3_permission_error(mock_get_bucket_encryption_key_
 
     # Call the function and expect ValueError
     with pytest.raises(ValueError, match="Insufficient permissions"):
-        export_csv_to_s3(mock_na_graph, "s3://test-bucket/test-folder/")
+        await export_csv_to_s3(mock_na_graph, "s3://test-bucket/test-folder/")
 
 
 @pytest.mark.asyncio
@@ -928,8 +908,7 @@ async def test_delete_na_instance_insufficient_permissions(mock_boto3_client):
     with pytest.raises(
         Exception, match="Insufficient permission, neptune-graph:DeleteGraph"
     ):
-        result = delete_na_instance("")
-        await result
+        await delete_na_instance("")
 
 
 @pytest.mark.asyncio
@@ -1026,19 +1005,22 @@ async def test_create_random_graph_name_custom_prefix():
     assert len(result) > len("custom-prefix-")
 
 
-@patch("nx_neptune.instance_management._get_status_check_future")
+@pytest.mark.asyncio
+@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
-def test_start_na_instance_success(mock_boto3_client, mock_get_future):
+async def test_start_na_instance_success(mock_boto3_client, mock_sleep):
     """Test successful start of NA instance."""
     from nx_neptune.instance_management import start_na_instance
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
 
-    mock_future = MagicMock()
-    mock_get_future.return_value = mock_future
-
-    mock_na_client.get_graph.return_value = {"status": "STOPPED"}
+    # Mock status progression: STOPPED -> STARTING -> AVAILABLE
+    mock_na_client.get_graph.side_effect = [
+        {"status": "STOPPED"},  # Initial check
+        {"status": "STARTING"},  # First poll
+        {"status": "AVAILABLE"},  # Complete
+    ]
     mock_na_client.start_graph.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 200}
     }
@@ -1048,8 +1030,8 @@ def test_start_na_instance_success(mock_boto3_client, mock_get_future):
         ]
     }
 
-    result = start_na_instance("test-graph-id")
-    assert result is mock_future
+    result = await start_na_instance("test-graph-id")
+    assert result == "test-graph-id"
 
 
 @pytest.mark.asyncio
@@ -1068,24 +1050,26 @@ async def test_start_na_instance_wrong_status(mock_boto3_client):
         ]
     }
 
-    result = start_na_instance("test-graph-id")
-    assert result is not None
-    # Should return a future with exception
+    with pytest.raises(Exception, match="Invalid graph .* instance state"):
+        await start_na_instance("test-graph-id")
 
 
-@patch("nx_neptune.instance_management._get_status_check_future")
+@pytest.mark.asyncio
+@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
-def test_stop_na_instance_success(mock_boto3_client, mock_get_future):
+async def test_stop_na_instance_success(mock_boto3_client, mock_sleep):
     """Test successful stop of NA instance."""
     from nx_neptune.instance_management import stop_na_instance
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
 
-    mock_future = MagicMock()
-    mock_get_future.return_value = mock_future
-
-    mock_na_client.get_graph.return_value = {"status": "AVAILABLE"}
+    # Mock status progression: AVAILABLE -> STOPPING -> STOPPED
+    mock_na_client.get_graph.side_effect = [
+        {"status": "AVAILABLE"},  # Initial check
+        {"status": "STOPPING"},  # First poll
+        {"status": "STOPPED"},  # Complete
+    ]
     mock_na_client.stop_graph.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 200}
     }
@@ -1095,25 +1079,27 @@ def test_stop_na_instance_success(mock_boto3_client, mock_get_future):
         ]
     }
 
-    result = stop_na_instance("test-graph-id")
-    assert result is mock_future
+    result = await stop_na_instance("test-graph-id")
+    assert result == "test-graph-id"
 
 
-@patch("nx_neptune.instance_management._get_status_check_future")
+@pytest.mark.asyncio
+@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
-def test_create_graph_snapshot_success(mock_boto3_client, mock_get_future):
+async def test_create_graph_snapshot_success(mock_boto3_client, mock_sleep):
     """Test successful creation of graph snapshot."""
     from nx_neptune.instance_management import create_graph_snapshot
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
 
-    mock_future = MagicMock()
-    mock_get_future.return_value = mock_future
-
     mock_na_client.create_graph_snapshot.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 201}
     }
+    mock_na_client.get_graph.side_effect = [
+        {"status": "SNAPSHOTTING"},
+        {"status": "AVAILABLE"},
+    ]
     mock_na_client.simulate_principal_policy.return_value = {
         "EvaluationResults": [
             {
@@ -1123,13 +1109,14 @@ def test_create_graph_snapshot_success(mock_boto3_client, mock_get_future):
         ]
     }
 
-    result = create_graph_snapshot("test-graph-id", "test-snapshot")
-    assert result is mock_future
+    result = await create_graph_snapshot("test-graph-id", "test-snapshot")
+    assert result == "test-graph-id"
 
 
 @pytest.mark.asyncio
+@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
-async def test_delete_graph_snapshot_success(mock_boto3_client):
+async def test_delete_graph_snapshot_success(mock_boto3_client, mock_sleep):
     """Test successful deletion of graph snapshot."""
     from nx_neptune.instance_management import delete_graph_snapshot
 
@@ -1139,9 +1126,12 @@ async def test_delete_graph_snapshot_success(mock_boto3_client):
     mock_na_client.delete_graph_snapshot.return_value = {
         "ResponseMetadata": {"HTTPStatusCode": 200}
     }
-    mock_na_client.get_graph_snapshot.side_effect = ClientError(
-        {"Error": {"Code": "ResourceNotFoundException"}}, "GetGraphSnapshot"
-    )
+    mock_na_client.get_graph_snapshot.side_effect = [
+        {"status": "DELETING"},
+        ClientError(
+            {"Error": {"Code": "ResourceNotFoundException"}}, "GetGraphSnapshot"
+        ),
+    ]
     mock_na_client.simulate_principal_policy.return_value = {
         "EvaluationResults": [
             {
@@ -1156,8 +1146,9 @@ async def test_delete_graph_snapshot_success(mock_boto3_client):
 
 
 @pytest.mark.asyncio
+@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
-async def test_create_na_instance_from_snapshot_success(mock_boto3_client):
+async def test_create_na_instance_from_snapshot_success(mock_boto3_client, mock_sleep):
     """Test successful creation of NA instance from snapshot."""
     from nx_neptune.instance_management import create_na_instance_from_snapshot
 
@@ -1168,7 +1159,10 @@ async def test_create_na_instance_from_snapshot_success(mock_boto3_client):
         "ResponseMetadata": {"HTTPStatusCode": 201},
         "id": "test-graph-id",
     }
-    mock_na_client.get_graph.return_value = {"status": "AVAILABLE"}
+    mock_na_client.get_graph.side_effect = [
+        {"status": "CREATING"},
+        {"status": "AVAILABLE"},
+    ]
     mock_na_client.simulate_principal_policy.return_value = {
         "EvaluationResults": [
             {
@@ -1178,8 +1172,47 @@ async def test_create_na_instance_from_snapshot_success(mock_boto3_client):
         ]
     }
 
-    result = create_na_instance_from_snapshot("test-snapshot-id")
-    assert result is not None
+    result = await create_na_instance_from_snapshot("test-snapshot-id")
+    assert result == "test-graph-id"
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("nx_neptune.instance_management._get_or_create_clients")
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+async def test_create_na_instance_with_s3_import_success(
+    mock_get_bucket_encryption_key_arn,
+    mock_get_or_create_clients,
+    mock_get_status_check_future,
+):
+    """Test successful creation of NA instance with S3 import."""
+    from nx_neptune.instance_management import create_na_instance_with_s3_import
+
+    mock_na_client = MagicMock()
+    mock_iam_client = MagicMock()
+    mock_iam_client.role_arn = "arn:aws:iam::123456789012:role/test-role"
+
+    mock_get_or_create_clients.return_value = (mock_iam_client, mock_na_client)
+    mock_get_bucket_encryption_key_arn.return_value = None
+
+    # Create an async function that returns None
+    async def mock_future():
+        return None
+
+    # Return a new coroutine each time the function is called
+    mock_get_status_check_future.side_effect = lambda *args, **kwargs: mock_future()
+
+    mock_na_client.create_graph_using_import_task.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 201},
+        "graphId": "test-graph-id",
+        "taskId": "test-task-id",
+    }
+
+    graph_id, task_id = await create_na_instance_with_s3_import(
+        "s3://test-bucket/test-data/"
+    )
+    assert graph_id == "test-graph-id"
+    assert task_id == "test-task-id"
 
 
 def test_get_create_instance_with_import_config():
@@ -1220,3 +1253,39 @@ def test_get_create_instance_with_import_config_custom():
     assert result["minProvisionedMemory"] == 32
     assert result["maxProvisionedMemory"] == 64
     assert result["format"] == "PARQUET"
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._execute_athena_query")
+@patch("boto3.client")
+async def test_export_athena_table_to_s3_success(
+    mock_boto3_client, mock_execute_athena_query
+):
+    """Test successful export of Athena table to S3."""
+    from nx_neptune.instance_management import export_athena_table_to_s3
+
+    mock_athena_client = MagicMock()
+    mock_s3_client = MagicMock()
+
+    def client_factory(service_name):
+        if service_name == "athena":
+            return mock_athena_client
+        elif service_name == "s3":
+            return mock_s3_client
+        return MagicMock()
+
+    mock_boto3_client.side_effect = client_factory
+    mock_execute_athena_query.side_effect = ["query-exec-id-1", "query-exec-id-2"]
+
+    mock_athena_client.get_query_execution.return_value = {
+        "QueryExecution": {"Status": {"State": "SUCCEEDED", "StateChangeReason": ""}}
+    }
+
+    result = await export_athena_table_to_s3(
+        ["SELECT * FROM table1", "SELECT * FROM table2"],
+        "s3://test-bucket/results/",
+        polling_interval=1,
+    )
+
+    assert result == ["query-exec-id-1", "query-exec-id-2"]
+    assert mock_execute_athena_query.call_count == 2

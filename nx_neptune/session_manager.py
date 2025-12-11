@@ -219,7 +219,7 @@ class SessionManager:
         skip_snapshot = True
 
         # export the datalake table to S3 as CSV projection data
-        projection_created = instance_management.export_athena_table_to_s3(
+        projection_created = await instance_management.export_athena_table_to_s3(
             sql_queries,
             s3_location,
             catalog,
@@ -231,7 +231,7 @@ class SessionManager:
         logger.info(f"Created projection data in {s3_location}")
 
         # import the S3 CSV files to Neptune
-        future = instance_management.import_csv_from_s3(
+        import_blocking_status = await instance_management.import_csv_from_s3(
             NeptuneGraph(
                 NeptuneAnalyticsClient(graph_id, self._neptune_client),
                 IamClient(self._s3_iam_role, self._iam_client),
@@ -241,7 +241,6 @@ class SessionManager:
             reset_graph_ahead,
             skip_snapshot,
         )
-        import_blocking_status = await future
         print("Import completed with status: " + import_blocking_status)
 
         # TODO Cleanup resources
@@ -280,7 +279,7 @@ class SessionManager:
         logger.info(f"Creating CSV export table; SQL logs output to {s3_location}")
 
         # Create table - blocking
-        instance_management.create_csv_table_from_s3(
+        await instance_management.create_csv_table_from_s3(
             s3_export_location,
             s3_location,  # logs directory
             csv_table_name,
@@ -298,7 +297,7 @@ class SessionManager:
         csv_vertices_table_name = (
             f"{csv_catalog}.{csv_database}.{csv_table_name}_vertices"
         )
-        instance_management.create_iceberg_table_from_table(
+        query_id = await instance_management.create_iceberg_table_from_table(
             s3_location,
             iceberg_vertices_table_name,
             csv_vertices_table_name,
@@ -306,7 +305,7 @@ class SessionManager:
             database=iceberg_database,
         )
         logger.info(
-            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_vertices_table_name}"
+            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_vertices_table_name} with query ID: {query_id}"
         )
 
         ###
@@ -316,7 +315,7 @@ class SessionManager:
         logger.info(f"SQL logs output to {s3_location}")
 
         csv_edges_table_name = f"{csv_catalog}.{csv_database}.{csv_table_name}_edges"
-        instance_management.create_iceberg_table_from_table(
+        query_id = await instance_management.create_iceberg_table_from_table(
             s3_location,
             iceberg_edges_table_name,
             csv_edges_table_name,
@@ -324,10 +323,7 @@ class SessionManager:
             database=iceberg_database,
         )
         logger.info(
-            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}"
-        )
-        logger.info(
-            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name}"
+            f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name} with query ID: {query_id}"
         )
 
         return True
