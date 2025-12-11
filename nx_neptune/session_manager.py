@@ -332,6 +332,31 @@ class SessionManager:
             export_filter=export_filter,
         )
 
+    async def create_multiple_instances(
+        self, count: int, config: Optional[dict] = None
+    ) -> list[str]:
+        """Create multiple Neptune Analytics instances in parallel.
+
+        Args:
+            count (int): Number of instances to create.
+            config (Optional[dict]): Optional configuration to pass to each instance creation.
+
+        Returns:
+            list[str]: List of graph IDs for the created instances.
+        """
+        tasks = [
+            instance_management.create_na_instance(
+                config=config,
+                na_client=self._neptune_client,
+                sts_client=self._sts_client,
+                iam_client=self._iam_client,
+                graph_name_prefix=self.session_name,
+            )
+            for _ in range(count)
+        ]
+        graph_ids = await asyncio.gather(*tasks)
+        return graph_ids
+
     async def import_from_csv(
         self,
         graph: Union[str, dict[str, str]],
