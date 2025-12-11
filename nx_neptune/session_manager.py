@@ -184,6 +184,21 @@ class SessionManager:
                 return graph
         return None
 
+    def _get_all_graph_names(
+        self, filter_status: Optional[list[str]] = None
+    ) -> list[str]:
+        graphs = self.list_graphs()
+
+        if filter_status is None:
+            return [g["name"] for g in graphs]
+
+        filter_status_lower = [s.lower() for s in filter_status]
+        filtered_graph_names = []
+        for graph in graphs:
+            if graph.get("status", "").lower() in filter_status_lower:
+                filtered_graph_names.append(graph["name"])
+        return filtered_graph_names
+
     def get_graph(self, graph_id: str):
         """Get details for a specific graph by ID.
 
