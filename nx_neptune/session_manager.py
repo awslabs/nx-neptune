@@ -4,7 +4,7 @@ import asyncio
 import logging
 from asyncio import Future
 from enum import Enum
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 import boto3
 import networkx as nx
@@ -109,11 +109,8 @@ class SessionManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit the context manager and clean up graphs."""
 
-        if self.cleanup_task.DESTROY:
-            if self.session_name:
-                self.destroy_graph(self.session_name)
-            else:
-                self.destroy_all_graphs()
+        if self.cleanup_task == CleanupTask.DESTROY:
+            self.destroy_all_graphs()
 
     def validate_permissions(self):
         """Validate AWS permissions for Neptune Analytics operations.
@@ -143,7 +140,7 @@ class SessionManager:
 
         return graphs
 
-    def _get_existing_graph(self, filter_status: list[str] | None = None):
+    def _get_existing_graph(self, filter_status: Optional[list[str]] = None):
         """Get the first existing graph, optionally filtered by status.
 
         Args:
@@ -165,6 +162,21 @@ class SessionManager:
             if graph.get("status", "").lower() in filter_status_lower:
                 return graph
         return None
+
+    def _get_all_graph_names(
+        self, filter_status: Optional[list[str]] = None
+    ) -> list[str]:
+        graphs = self.list_graphs()
+
+        if filter_status is None:
+            return [g["name"] for g in graphs]
+
+        filter_status_lower = [s.lower() for s in filter_status]
+        filtered_graph_names = []
+        for graph in graphs:
+            if graph.get("status", "").lower() in filter_status_lower:
+                filtered_graph_names.append(graph["name"])
+        return filtered_graph_names
 
     def get_graph(self, graph_id: str):
         """Get details for a specific graph by ID.
@@ -194,7 +206,7 @@ class SessionManager:
             dict or asyncio.Future: Graph metadata dict if a graph exists,
                                    or Future that resolves when new graph is created.
         """
-        graph = self._get_existing_graph()
+        graph = self._get_existing_graph(filter_status=["AVAILABLE"])
         if graph:
             return _format_output_graph(graph)
         # create a new graph and return
@@ -206,7 +218,7 @@ class SessionManager:
             iam_client=self._iam_client,
             graph_name_prefix=self.session_name,
         )
-        return {"id": graph_id, "status": "CREATING"}
+        return self.get_graph(graph_id)
 
     async def create_multiple_instances(
         self, count: int, config: Optional[dict] = None
@@ -235,7 +247,7 @@ class SessionManager:
 
     async def import_from_csv(
         self,
-        graph: str | dict[str, str],
+        graph: Union[str, dict[str, str]],
         s3_location,
     ):
         graph_id = _get_graph_id(graph)
@@ -258,7 +270,7 @@ class SessionManager:
 
     async def import_from_table(
         self,
-        graph: str | dict[str, str],
+        graph: Union[str, dict[str, str]],
         s3_location,
         sql_queries,
         catalog=None,
@@ -302,7 +314,7 @@ class SessionManager:
 
     async def export_to_table(
         self,
-        graph: str | dict[str, str],
+        graph: Union[str, dict[str, str]],
         s3_location: str,
         csv_table_name: str,
         csv_catalog: str,
@@ -381,11 +393,11 @@ class SessionManager:
 
         return True
 
-    def destroy_graph(self, graph_name: str | list[str]):
+    def destroy_graph(self, graph_name: Union[str, list[str]]):
         """Destroy one or more Neptune Analytics graphs.
 
         Args:
-            graph_name (str | list[str]): Name or list of names of graphs to stop
+            graph_name (Union[str, list[str]]): Name or list of names of graphs to stop
 
         Returns:
             asyncio.Future: A future that resolves when the graphs have been stopped.
@@ -403,11 +415,11 @@ class SessionManager:
         """
         return self._destroy_graphs([])
 
-    def start_graph(self, graph_name: str | list[str]):
+    def start_graph(self, graph_name: Union[str, list[str]]):
         """Start one or more Neptune Analytics graphs.
 
         Args:
-            graph_name (str | list[str]): Name or list of names of graphs to stop
+            graph_name (Union[str, list[str]]): Name or list of names of graphs to stop
 
         Returns:
             asyncio.Future: A future that resolves when the graphs have been stopped.
@@ -424,11 +436,11 @@ class SessionManager:
         """
         return self._start_graphs([])
 
-    def stop_graph(self, graph_name: str | list[str]):
+    def stop_graph(self, graph_name: Union[str, list[str]]):
         """Stop one or more Neptune Analytics graphs.
 
         Args:
-            graph_name (str | list[str]): Name or list of names of graphs to stop
+            graph_name (Union[str, list[str]]): Name or list of names of graphs to stop
 
         Returns:
             asyncio.Future: A future that resolves when the graphs have been stopped.
@@ -445,11 +457,11 @@ class SessionManager:
         """
         return self._stop_graphs([])
 
-    def reset_graph(self, graph_name: str | list[str]):
+    def reset_graph(self, graph_name: Union[str, list[str]]):
         """Reset one or more Neptune Analytics graphs.
 
         Args:
-            graph_name (str | list[str]): Name or list of names of graphs to stop
+            graph_name (Union[str, list[str]]): Name or list of names of graphs to stop
 
         Returns:
             asyncio.Future: A future that resolves when the graphs have been stopped.
@@ -466,7 +478,7 @@ class SessionManager:
         """
         return self._reset_graphs([])
 
-    def _destroy_graphs(self, graph_name: str | list[str]):
+    def _destroy_graphs(self, graph_name: Union[str, list[str]]):
         if isinstance(graph_name, str):
             graph_name = [graph_name]
         return self._graph_bulk_operation(
@@ -475,7 +487,7 @@ class SessionManager:
             graph_names=graph_name,
         )
 
-    def _stop_graphs(self, graph_name: str | list[str]):
+    def _stop_graphs(self, graph_name: Union[str, list[str]]):
         if isinstance(graph_name, str):
             graph_name = [graph_name]
         return self._graph_bulk_operation(
@@ -484,7 +496,7 @@ class SessionManager:
             graph_names=graph_name,
         )
 
-    def _start_graphs(self, graph_name: str | list[str]):
+    def _start_graphs(self, graph_name: Union[str, list[str]]):
         if isinstance(graph_name, str):
             graph_name = [graph_name]
         return self._graph_bulk_operation(
@@ -493,7 +505,7 @@ class SessionManager:
             graph_names=graph_name,
         )
 
-    def _reset_graphs(self, graph_name: str | list[str]):
+    def _reset_graphs(self, graph_name: Union[str, list[str]]):
         if isinstance(graph_name, str):
             graph_name = [graph_name]
         return self._graph_bulk_operation(
