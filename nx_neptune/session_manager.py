@@ -75,6 +75,9 @@ class SessionManager:
         Args:
             session_name (str, optional): Name prefix for filtering graphs.
             cleanup_task (CleanupTask, optional): Cleanup task to perform on exit. Defaults to None.
+              When set to DESTROY, will destroy all instances in the session on exit.
+              When set to RESET, will reset all instances in the session on exit.
+              When set to STOP, will stop all instances in the session on exit.
         """
         self.session_name = session_name
         self.cleanup_task = cleanup_task or CleanupTask.NONE
@@ -162,21 +165,6 @@ class SessionManager:
             if graph.get("status", "").lower() in filter_status_lower:
                 return graph
         return None
-
-    def _get_all_graph_names(
-        self, filter_status: Optional[list[str]] = None
-    ) -> list[str]:
-        graphs = self.list_graphs()
-
-        if filter_status is None:
-            return [g["name"] for g in graphs]
-
-        filter_status_lower = [s.lower() for s in filter_status]
-        filtered_graph_names = []
-        for graph in graphs:
-            if graph.get("status", "").lower() in filter_status_lower:
-                filtered_graph_names.append(graph["name"])
-        return filtered_graph_names
 
     def get_graph(self, graph_id: str):
         """Get details for a specific graph by ID.
