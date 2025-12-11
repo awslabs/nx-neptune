@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from asyncio import Future
+from enum import Enum
 from typing import Callable, Optional
 
 import boto3
@@ -14,6 +15,15 @@ from .clients import IamClient, NeptuneAnalyticsClient
 from .clients.neptune_constants import APP_ID_NX, SERVICE_IAM, SERVICE_NA, SERVICE_STS
 
 logger = logging.getLogger(__name__)
+
+
+class CleanupTask(Enum):
+    """Enum for cleanup task types."""
+
+    NONE = None
+    DESTROY = "destroy"
+    RESET = "reset"
+    STOP = "stop"
 
 
 def _format_output_graph(graph_details: dict[str, str], with_details=False):
@@ -59,13 +69,15 @@ def _get_graph_id(graph: str | dict[str, str]) -> str:
 class SessionManager:
     """Manages Neptune Analytics sessions and graph operations."""
 
-    def __init__(self, session_name=None):
+    def __init__(self, session_name=None, cleanup_task=None):
         """Initialize a SessionManager instance.
 
         Args:
             session_name (str, optional): Name prefix for filtering graphs.
+            cleanup_task (CleanupTask, optional): Cleanup task to perform on exit. Defaults to None.
         """
         self.session_name = session_name
+        self.cleanup_task = cleanup_task or CleanupTask.NONE
         self._neptune_client = boto3.client(
             service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
         )
@@ -76,16 +88,32 @@ class SessionManager:
         self._iam_client = boto3.client(SERVICE_IAM)
 
     @classmethod
-    def session(cls, session_name=None):
+    def session(cls, session_name=None, cleanup_task=None):
         """Create a new SessionManager instance.
 
         Args:
             session_name (str, optional): Name prefix for filtering graphs.
+            cleanup_task (CleanupTask, optional): Cleanup task to perform on exit. Defaults to None.
 
         Returns:
             SessionManager: A new SessionManager instance.
         """
-        return cls(session_name)
+        return cls(session_name, cleanup_task)
+
+    def __enter__(self):
+        """Enter the session manager."""
+
+        # TODO: consider creating graphs here
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager and clean up graphs."""
+
+        if self.cleanup_task.DESTROY:
+            if self.session_name:
+                self.destroy_graph(self.session_name)
+            else:
+                self.destroy_all_graphs()
 
     def validate_permissions(self):
         """Validate AWS permissions for Neptune Analytics operations.
@@ -179,6 +207,31 @@ class SessionManager:
             graph_name_prefix=self.session_name,
         )
         return {"id": graph_id, "status": "CREATING"}
+
+    async def create_multiple_instances(
+        self, count: int, config: Optional[dict] = None
+    ) -> list[str]:
+        """Create multiple Neptune Analytics instances in parallel.
+
+        Args:
+            count (int): Number of instances to create.
+            config (Optional[dict]): Optional configuration to pass to each instance creation.
+
+        Returns:
+            list[str]: List of graph IDs for the created instances.
+        """
+        tasks = [
+            instance_management.create_na_instance(
+                config=config,
+                na_client=self._neptune_client,
+                sts_client=self._sts_client,
+                iam_client=self._iam_client,
+                graph_name_prefix=self.session_name,
+            )
+            for _ in range(count)
+        ]
+        graph_ids = await asyncio.gather(*tasks)
+        return graph_ids
 
     async def import_from_csv(
         self,
