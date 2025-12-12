@@ -648,7 +648,7 @@ async def reset_graph(
 
 async def update_na_instance_size(
     graph_id: str,
-    prospect_size=None,
+    prospect_size: int,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
@@ -658,12 +658,11 @@ async def update_na_instance_size(
     """Update the provisioned memory size of a Neptune Analytics graph instance.
 
     This function handles updating the memory size of an existing Neptune Analytics graph instance.
-    If no prospect_size is provided, it will double the current size. The new size must not exceed
-    the limit specified in NETWORKX_GRAPH_SIZE_LIMIT environment variable.
+    The new size must be a valid memory size supported by Neptune Analytics.
 
     Args:
         graph_id (str): The ID of the Neptune Analytics graph to resize
-        prospect_size (Optional[int]): The desired new memory size in GB. If None, doubles current size.
+        prospect_size (int): The desired new memory size in GB
         sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided, a new one will be created.
         iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided, a new one will be created.
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided, a new one will be created.
@@ -674,38 +673,13 @@ async def update_na_instance_size(
         str: The graph ID when the resize operation completes
 
     Raises:
-        Exception: If the resize operation fails or exceeds size limits
-        ValueError: If the role lacks required permissions or NETWORKX_GRAPH_SIZE_LIMIT is not set
+        Exception: If the resize operation fails
+        ValueError: If the role lacks required permissions
     """
     (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
 
     # Permission check
     iam_client.has_update_na_permissions()
-
-    raw_size_limit = os.getenv(_ENV_SIZE_LIMIT)
-
-    if raw_size_limit is None:
-        logger.warning(
-            "Instance resizing operation aborted due to missing NETWORKX_GRAPH_SIZE_LIMIT environment variable"
-        )
-        return _get_exception("Size limit not set")
-
-    try:
-        size_limit = int(raw_size_limit)
-    except (TypeError, ValueError):
-        return _get_exception("Invalid size limit")
-
-    if not prospect_size:
-        # Fetch the current size, then double it.
-        response_status = na_client.get_graph(graphIdentifier=graph_id)
-        current_size = response_status.get("provisionedMemory")
-        prospect_size = current_size * 2
-
-    if prospect_size > size_limit:
-        logger.warning(
-            f"Proposed NCU size: {prospect_size} exceed the limit: {size_limit}"
-        )
-        return _get_exception("Exceed size limit")
 
     logger.info(f"Resizing graph: {graph_id} with size: {prospect_size}")
     response = na_client.update_graph(
