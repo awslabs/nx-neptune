@@ -41,6 +41,7 @@ class TaskType(Enum):
     DELETE_SNAPSHOT = (9, ["DELETING"], "DELETED")
     RESET_GRAPH = (10, ["RESETTING"], "AVAILABLE")
     EXPORT_ATHENA_TABLE = (11, ["QUEUED", "RUNNING"], "SUCCEEDED")
+    UPDATE = (12, ["UPDATING"], "AVAILABLE")
 
     def __init__(self, num_value, permitted_statuses, status_complete):
         self._value_ = num_value
@@ -112,6 +113,7 @@ def _get_task_action_map(client, task_id):
                 "QueryExecution"
             ]["Status"]["State"]
         },  # type: ignore[attr-defined]
+        TaskType.UPDATE: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
     }
 
 
