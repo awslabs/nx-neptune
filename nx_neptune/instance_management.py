@@ -646,31 +646,39 @@ async def reset_graph(
             f"Invalid response status code: {status_code} with full response:\n {response}"
         )
 
-
-def update_na_instance_size(
+async def update_na_instance_size(
     graph_id: str,
     prospect_size=None,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
+    polling_interval=None,
+    max_attempts=None,
 ):
     """Update the provisioned memory size of a Neptune Analytics graph instance.
+
     This function handles updating the memory size of an existing Neptune Analytics graph instance.
     If no prospect_size is provided, it will double the current size. The new size must not exceed
     the limit specified in NETWORKX_GRAPH_SIZE_LIMIT environment variable.
+
     Args:
         graph_id (str): The ID of the Neptune Analytics graph to resize
-        prospect_size (int, optional): The desired new memory size in GB. If None, doubles current size.
+        prospect_size (Optional[int]): The desired new memory size in GB. If None, doubles current size.
         sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided, a new one will be created.
         iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided, a new one will be created.
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided, a new one will be created.
+        polling_interval (Optional[int]): Time interval in seconds for job status query
+        max_attempts (Optional[int]): Maximum attempts for status checks
+
     Returns:
-        asyncio.Future: A Future that resolves when the resize operation completes
+        str: The graph ID when the resize operation completes
+
     Raises:
         Exception: If the resize operation fails or exceeds size limits
         ValueError: If the role lacks required permissions or NETWORKX_GRAPH_SIZE_LIMIT is not set
     """
     (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+
     # Permission check
     iam_client.has_update_na_permissions()
 
@@ -705,9 +713,13 @@ def update_na_instance_size(
     )
     status_code = _get_status_code(response)
     if status_code == 200:
-        return _get_status_check_future(na_client, TaskType.UPDATE, graph_id)
+        fut = TaskFuture(graph_id, TaskType.UPDATE, polling_interval, max_attempts)
+        await fut.wait_until_complete(na_client)
+        return graph_id
     else:
-        return _invalid_status_code(status_code, response)
+        raise Exception(
+            f"Invalid response status code: {status_code} with full response:\n {response}"
+        )
 
 
 def _get_create_instance_config(graph_name, config=None):
