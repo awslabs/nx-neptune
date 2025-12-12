@@ -646,6 +646,7 @@ async def reset_graph(
             f"Invalid response status code: {status_code} with full response:\n {response}"
         )
 
+
 async def update_na_instance_size(
     graph_id: str,
     prospect_size: int,
