@@ -139,7 +139,7 @@ class SessionManager:
         Returns:
             bool: True if permissions are valid, False otherwise.
         """
-        return instance_management.validate_permissions()
+        return self._neptune_client
 
     def list_graphs(self, with_details=False):
         """List available Neptune Analytics graphs.
