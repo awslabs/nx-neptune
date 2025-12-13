@@ -247,21 +247,35 @@ class TestSessionManager:
         self, mock_create, mock_boto3_client
     ):
         """Test get_or_create_graph when no graphs exist."""
-        from unittest.mock import AsyncMock
 
         mock_client = MagicMock()
         mock_boto3_client.return_value = mock_client
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-        mock_client.list_graphs.return_value = {"graphs": []}
 
-        # Use AsyncMock for async function
-        mock_create.return_value = AsyncMock(return_value="test-graph-id")()
+        # First call returns empty list, second call returns the created graph
+        mock_client.list_graphs.side_effect = [
+            {"graphs": []},  # First call - no graphs exist
+            {
+                "graphs": [
+                    {
+                        "id": "test-graph-id",
+                        "name": "test-session-graph",
+                        "status": "AVAILABLE",
+                    }
+                ]
+            },  # Second call - graph exists
+        ]
+
+        # Mock the async function to return a string
+        mock_create.return_value = "test-graph-id"
 
         sm = SessionManager(session_name="test-session")
         result = await sm.get_or_create_graph()
 
         # Should call create_na_instance
         mock_create.assert_called_once()
+        # Should return the graph details
+        assert result["id"] == "test-graph-id"
 
     @patch("boto3.client")
     def test_list_graphs_with_details(self, mock_boto3_client):
