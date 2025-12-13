@@ -1094,7 +1094,8 @@ async def test_create_graph_snapshot_success(mock_boto3_client, mock_sleep):
     mock_boto3_client.return_value = mock_na_client
 
     mock_na_client.create_graph_snapshot.return_value = {
-        "ResponseMetadata": {"HTTPStatusCode": 201}
+        "ResponseMetadata": {"HTTPStatusCode": 201},
+        "id": "test-snapshot-id",
     }
     mock_na_client.get_graph.side_effect = [
         {"status": "SNAPSHOTTING"},
@@ -1110,7 +1111,7 @@ async def test_create_graph_snapshot_success(mock_boto3_client, mock_sleep):
     }
 
     result = await create_graph_snapshot("test-graph-id", "test-snapshot")
-    assert result == "test-graph-id"
+    assert result == "test-snapshot-id"
 
 
 @pytest.mark.asyncio

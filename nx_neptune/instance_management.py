@@ -236,7 +236,9 @@ async def create_na_instance_from_snapshot(
     # Permissions check
     iam_client_wrapper.has_create_na_from_snapshot_permissions()
 
-    response = _create_na_instance_from_snapshot_task(na_client, snapshot_id, config, graph_name_prefix)
+    response = _create_na_instance_from_snapshot_task(
+        na_client, snapshot_id, config, graph_name_prefix
+    )
     prospective_graph_id = _get_graph_id(response)
 
     if _get_status_code(response) == 201:
@@ -760,7 +762,10 @@ def _create_na_instance_task(
 
 
 def _create_na_instance_from_snapshot_task(
-    client, snapshot_identifier: str, config: Optional[dict] = None, graph_name_prefix: Optional[str] = None
+    client,
+    snapshot_identifier: str,
+    config: Optional[dict] = None,
+    graph_name_prefix: Optional[str] = None,
 ):
     """Create a new Neptune Analytics graph instance with default settings.
 

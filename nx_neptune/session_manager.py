@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
 import logging
-from asyncio import Future
 from enum import Enum
 from typing import Callable, Optional, Union
 
@@ -15,6 +14,11 @@ from .clients import IamClient, NeptuneAnalyticsClient
 from .clients.neptune_constants import APP_ID_NX, SERVICE_IAM, SERVICE_NA, SERVICE_STS
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "CleanupTask",
+    "SessionManager",
+]
 
 
 class CleanupTask(Enum):
@@ -129,14 +133,13 @@ class SessionManager:
         na_client = NeptuneAnalyticsClient(graph_id, self._neptune_client)
         return na_client.execute_generic_query(opencypher)
 
-
     def validate_permissions(self):
         """Validate AWS permissions for Neptune Analytics operations.
 
         Returns:
             bool: True if permissions are valid, False otherwise.
         """
-        return self._neptune_client
+        return instance_management.validate_permissions()
 
     def list_graphs(self, with_details=False):
         """List available Neptune Analytics graphs.
@@ -223,7 +226,9 @@ class SessionManager:
         return self.get_graph(graph_id)
 
     async def create_from_snapshot(
-            self, snapshot_id: str, config: Optional[dict] = None,
+        self,
+        snapshot_id: str,
+        config: Optional[dict] = None,
     ) -> dict:
         """Create a new Neptune Analytics instance from a snapshot.
 
@@ -234,7 +239,9 @@ class SessionManager:
         Returns:
             dict with the graph status
         """
-        logger.info(f"Creating new graph from snapshot {snapshot_id} named with prefix: {self.session_name}")
+        logger.info(
+            f"Creating new graph from snapshot {snapshot_id} named with prefix: {self.session_name}"
+        )
         graph_id = await instance_management.create_na_instance_from_snapshot(
             snapshot_id,
             config=config,
@@ -246,7 +253,9 @@ class SessionManager:
         return self.get_graph(graph_id)
 
     async def create_from_csv(
-            self, s3_arn: str, config: Optional[dict] = None,
+        self,
+        s3_arn: str,
+        config: Optional[dict] = None,
     ) -> dict:
         """Create a new Neptune Analytics instance from a s3 bucket location with CSV data.
 
@@ -257,8 +266,10 @@ class SessionManager:
         Returns:
             dict with the graph status
         """
-        logger.info(f"Creating new graph from csv {s3_arn} named with prefix: {self.session_name}")
-        graph_id = await instance_management.create_na_instance_with_s3_import(
+        logger.info(
+            f"Creating new graph from csv {s3_arn} named with prefix: {self.session_name}"
+        )
+        graph_id, task_id = await instance_management.create_na_instance_with_s3_import(
             s3_arn,
             config=config,
             graph_name_prefix=self.session_name,
@@ -297,7 +308,7 @@ class SessionManager:
         self,
         graph: Union[str, dict[str, str]],
         s3_location,
-        export_filter = None,
+        export_filter=None,
     ) -> str:
         """Export Neptune Analytics graph data to CSV files in S3.
 
@@ -504,7 +515,9 @@ class SessionManager:
 
         return query_id
 
-    async def create_snapshot(self, graph: Union[str, dict[str, str]], snapshot_name: str):
+    async def create_snapshot(
+        self, graph: Union[str, dict[str, str]], snapshot_name: str
+    ):
         """Create a Neptune Analytics graph snapshot.
 
         Args:
@@ -521,9 +534,9 @@ class SessionManager:
         snapshot_id = await instance_management.create_graph_snapshot(
             graph_id,
             snapshot_name,
-            sts_client = self._sts_client,
-            iam_client = self._iam_client,
-            na_client = self._neptune_client,
+            sts_client=self._sts_client,
+            iam_client=self._iam_client,
+            na_client=self._neptune_client,
         )
 
         logger.info(f"Snapshot [{snapshot_id}] create complete")
@@ -542,9 +555,9 @@ class SessionManager:
         logger.info(f"Deleting snapshot: {snapshot_id}")
         deleted_snapshot_id = await instance_management.delete_graph_snapshot(
             snapshot_id,
-            sts_client = self._sts_client,
-            iam_client = self._iam_client,
-            na_client = self._neptune_client,
+            sts_client=self._sts_client,
+            iam_client=self._iam_client,
+            na_client=self._neptune_client,
         )
 
         logger.info(f"Snapshot [{deleted_snapshot_id}] delete complete")

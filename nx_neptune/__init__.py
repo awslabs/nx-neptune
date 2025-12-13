@@ -49,7 +49,7 @@ from .na_graph import (
     NeptuneGraph,
     set_config_graph_id,
 )
-from .session_manager import SessionManager
+from .session_manager import CleanupTask, SessionManager
 from .utils.decorators import configure_if_nx_active
 
 __version__ = "0.4.4"
@@ -96,4 +96,5 @@ __all__ = [
     "delete_graph_snapshot",
     # session management
     "SessionManager",
+    "CleanupTask",
 ]
