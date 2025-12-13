@@ -387,7 +387,7 @@ class IamClient:
             ValueError: If the role lacks required permissions for updating the instance
 
         Returns:
-            None: The function doesn't return a value but raises an exception if permissions are insufficient
+            None
 
         Required permissions:
             - neptune-graph:UpdateGraph
