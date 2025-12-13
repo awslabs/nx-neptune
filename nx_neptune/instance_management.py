@@ -57,8 +57,6 @@ logger = logging.getLogger(__name__)
 
 _PROJECT_IDENTIFIER = "nx-neptune"
 
-_ENV_SIZE_LIMIT = "NETWORKX_GRAPH_SIZE_LIMIT"
-
 
 async def create_na_instance(
     config: Optional[dict] = None,
