@@ -47,7 +47,6 @@ __all__ = [
 ]
 
 from .utils.task_future import (
-    _ASYNC_POLLING_INTERVAL,
     TaskFuture,
     TaskType,
     wait_until_all_complete,
@@ -1463,9 +1462,69 @@ def _execute_athena_query(
     return query_execution_id
 
 
-def empty_s3_bucket(s3_bucket: str):
-    # TODO Empty bucket and delete folder?
-    pass
+def empty_s3_bucket(
+    s3_arn: str, 
+    s3_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None
+):
+    """Empty an S3 bucket at the specified location.
+    
+    Args:
+        s3_arn (str): S3 ARN or path to the bucket location to empty.
+        s3_client (Optional[BaseClient]): Optional S3 client. If not provided, creates a new one.
+        iam_client (Optional[BaseClient]): Optional IAM client for permission validation.
+        
+    Raises:
+        ValueError: If s3_arn is not a valid S3 location.
+        Exception: If permission validation fails or S3 operations fail.
+    """
+    # Validate S3 ARN format
+    if not s3_arn or not isinstance(s3_arn, str):
+        raise ValueError("s3_arn must be a non-empty string")
+    
+    # Normalize S3 path and validate format
+    if not (s3_arn.startswith("s3://") or s3_arn.startswith("arn:aws:s3:::")):
+        raise ValueError("s3_arn must be a valid S3 location (s3:// or arn:aws:s3:::)")
+    
+    # Create S3 client if not provided
+    if s3_client is None:
+        s3_client = boto3.client(SERVICE_S3)
+    
+    # Validate permissions if IAM client provided
+    if iam_client is not None:
+        iam_client_wrapper = IamClient(
+            iam_client.get_caller_identity()["Arn"], iam_client
+        )
+        # Get bucket encryption key for permission check
+        key_arn = _get_bucket_encryption_key_arn(s3_arn)
+        # Use export permissions as they include delete operations
+        iam_client_wrapper.has_export_to_s3_permissions(s3_arn, key_arn)
+    
+    # Extract bucket name and prefix from S3 ARN
+    if s3_arn.startswith("s3://"):
+        s3_path = s3_arn.replace("s3://", "")
+    else:  # arn:aws:s3::: format
+        s3_path = s3_arn.replace("arn:aws:s3:::", "")
+    
+    path_parts = s3_path.split("/")
+    bucket_name = path_parts[0]
+    prefix = "/".join(path_parts[1:]) if len(path_parts) > 1 else ""
+    
+    # List and delete all objects in the bucket/prefix
+    try:
+        paginator = s3_client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
+        
+        for page in pages:
+            if 'Contents' in page:
+                objects = [{'Key': obj['Key']} for obj in page['Contents']]
+                if objects:
+                    s3_client.delete_objects(
+                        Bucket=bucket_name,
+                        Delete={'Objects': objects}
+                    )
+    except ClientError as e:
+        raise Exception(f"Failed to empty S3 bucket {s3_arn}: {e}")
 
 
 def validate_permissions():
