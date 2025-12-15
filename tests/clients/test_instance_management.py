@@ -13,6 +13,8 @@
 import json
 import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
+import os
+from unittest.mock import patch, MagicMock
 
 import pytest
 from botocore.exceptions import ClientError
@@ -1290,3 +1292,30 @@ async def test_export_athena_table_to_s3_success(
 
     assert result == ["query-exec-id-1", "query-exec-id-2"]
     assert mock_execute_athena_query.call_count == 2
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("boto3.client")
+async def test_update_instance_size_success(mock_boto3_client, mock_get_future):
+    """Test successful to upsize a NA instance."""
+    from nx_neptune.instance_management import update_na_instance_size
+
+    mock_na_client = MagicMock()
+    mock_boto3_client.return_value = mock_na_client
+
+    mock_future = MagicMock()
+    mock_get_future.return_value = mock_future
+
+    mock_na_client.get_graph.return_value = {"status": "AVAILABLE"}
+    mock_na_client.update_graph.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 200}
+    }
+    mock_na_client.simulate_principal_policy.return_value = {
+        "EvaluationResults": [
+            {"EvalActionName": "neptune-graph:UpdateGraph", "EvalDecision": "allowed"}
+        ]
+    }
+
+    graph_id = await update_na_instance_size("test-graph-id", 32)
+    assert graph_id == "test-graph-id"

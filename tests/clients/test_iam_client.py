@@ -234,6 +234,22 @@ class TestIamClient:
         # Should not raise exception
         iam_client.has_stop_na_permissions()
 
+    def test_has_update_na_permissions_success(self, mock_iam_client):
+        """Test has_update_na_permissions with valid permissions."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {
+                    "EvalActionName": "neptune-graph:UpdateGraph",
+                    "EvalDecision": "allowed",
+                }
+            ]
+        }
+
+        # Should not raise exception
+        iam_client.has_update_na_permissions()
+
     def test_has_create_na_snapshot_permissions_success(self, mock_iam_client):
         """Test has_create_na_snapshot_permissions with valid permissions."""
         iam_client, mock_client = mock_iam_client

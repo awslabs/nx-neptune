@@ -46,7 +46,12 @@ __all__ = [
     "delete_graph_snapshot",
 ]
 
-from .utils.task_future import TaskFuture, TaskType, wait_until_all_complete
+from .utils.task_future import (
+    _ASYNC_POLLING_INTERVAL,
+    TaskFuture,
+    TaskType,
+    wait_until_all_complete,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -650,6 +655,56 @@ async def reset_graph(
     status_code = _get_status_code(response)
     if status_code == 200:
         fut = TaskFuture(graph_id, TaskType.RESET_GRAPH, polling_interval, max_attempts)
+        await fut.wait_until_complete(na_client)
+        return graph_id
+    else:
+        raise Exception(
+            f"Invalid response status code: {status_code} with full response:\n {response}"
+        )
+
+
+async def update_na_instance_size(
+    graph_id: str,
+    prospect_size: int,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    na_client: Optional[BaseClient] = None,
+    polling_interval=None,
+    max_attempts=None,
+):
+    """Update the provisioned memory size of a Neptune Analytics graph instance.
+
+    This function handles updating the memory size of an existing Neptune Analytics graph instance.
+    The new size must be a valid memory size supported by Neptune Analytics.
+
+    Args:
+        graph_id (str): The ID of the Neptune Analytics graph to resize
+        prospect_size (int): The desired new memory size in GB
+        sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided, a new one will be created.
+        iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided, a new one will be created.
+        na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided, a new one will be created.
+        polling_interval (Optional[int]): Time interval in seconds for job status query
+        max_attempts (Optional[int]): Maximum attempts for status checks
+
+    Returns:
+        str: The graph ID when the resize operation completes
+
+    Raises:
+        Exception: If the resize operation fails
+        ValueError: If the role lacks required permissions
+    """
+    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+
+    # Permission check
+    iam_client.has_update_na_permissions()
+
+    logger.info(f"Resizing graph: {graph_id} with size: {prospect_size}")
+    response = na_client.update_graph(
+        graphIdentifier=graph_id, provisionedMemory=prospect_size
+    )
+    status_code = _get_status_code(response)
+    if status_code == 200:
+        fut = TaskFuture(graph_id, TaskType.UPDATE, polling_interval, max_attempts)
         await fut.wait_until_complete(na_client)
         return graph_id
     else:
