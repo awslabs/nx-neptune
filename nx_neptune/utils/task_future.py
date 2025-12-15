@@ -19,7 +19,7 @@ from enum import Enum
 from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 
-__all__ = ["TaskType", "TaskFuture"]
+__all__ = ["TaskType", "TaskFuture", "wait_until_all_complete"]
 
 logger = logging.getLogger(__name__)
 
