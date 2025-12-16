@@ -158,15 +158,15 @@ async def do_export_to_iceberg_table():
     catalog = 's3tablescatalog/nx-fraud-detection-data'
     database = 'bank_fraud_full'
 
-    iceberg_table_name = 'transactions_updated'
-    csv_table_name = 'AwsDataCatalog.bank_fraud_full.transactions_csv_edges'
-    query_id = await create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, catalog=catalog, database=database)
-    print(f"Created iceberg table {iceberg_table_name} with query ID: {query_id}")
+    iceberg_transactions_table_name = 'transactions_updated'
+    csv_transactions_table_name = 'AwsDataCatalog.bank_fraud_full.transactions_csv_edges'
+    transactions_query_id = await create_iceberg_table_from_table(s3_sql_output, iceberg_transactions_table_name, csv_transactions_table_name, catalog=catalog, database=database)
+    print(f"Created iceberg table {iceberg_transactions_table_name} with query ID: {transactions_query_id}")
 
-    iceberg_table_name = 'customers_updated'
-    csv_table_name = 'AwsDataCatalog.bank_fraud_full.transactions_csv_vertices'
-    query_id = await create_iceberg_table_from_table(s3_sql_output, iceberg_table_name, csv_table_name, catalog=catalog, database=database)
-    print(f"Created iceberg table {iceberg_table_name} with query ID: {query_id}")
+    iceberg_customers_table_name = 'customers_updated'
+    csv_customers_table_name = 'AwsDataCatalog.bank_fraud_full.transactions_csv_vertices'
+    customers_query_id = await create_iceberg_table_from_table(s3_sql_output, iceberg_customers_table_name, csv_customers_table_name, catalog=catalog, database=database)
+    print(f"Created iceberg table {iceberg_customers_table_name} with query ID: {customers_query_id}")
 
 async def do_execute_opencypher():
     nx.config.backends.neptune.graph_id = os.getenv('NETWORKX_GRAPH_ID')
