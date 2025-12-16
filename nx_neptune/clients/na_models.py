@@ -16,7 +16,7 @@ __all__ = [
 ]
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Union
 
 DEFAULT_NODE_LABEL_TYPE = "Node"
 
@@ -42,7 +42,7 @@ class Node:
     @classmethod
     def convert_from_nx(
         cls,
-        node: Any | Tuple[Any, Dict[str, Any]],
+        node: Union[Any, Tuple[Any, Dict[str, Any]]],
         labels=None,
     ):
         if labels is None:
@@ -163,7 +163,7 @@ class Edge:
     @classmethod
     def convert_from_nx(
         cls,
-        edge: Tuple[Any, Any] | Tuple[Any, Any, Dict[str, Any]],
+        edge: Union[Tuple[Any, Any], Tuple[Any, Any, Dict[str, Any]]],
         relationship=DEFAULT_EDGE_RELATIONSHIP,
         is_directed=True,
     ):

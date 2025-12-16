@@ -11,7 +11,7 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 import jmespath
 from botocore.client import BaseClient
@@ -377,6 +377,26 @@ class IamClient:
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)
 
+    def has_update_na_permissions(self):
+        """Check if the configured IAM role has permissions to update a Neptune Analytics instance.
+
+        Verifies that the role has the necessary permissions required to update a
+        Neptune Analytics instance configuration.
+
+        Raises:
+            ValueError: If the role lacks required permissions for updating the instance
+
+        Returns:
+            None
+
+        Required permissions:
+            - neptune-graph:UpdateGraph
+        """
+        na_permissions = ["neptune-graph:UpdateGraph"]
+        operation_name = "Update Neptune Instance"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
     def has_import_from_s3_permissions(self, bucket_arn, key_arn=None):
         """Check if the configured IAM role has permissions to import data from S3.
 
@@ -402,7 +422,7 @@ class IamClient:
         )
 
     @staticmethod
-    def _validate_arns(arns: str | list) -> bool:
+    def _validate_arns(arns: Union[str, list]) -> bool:
         """
         Validates a list of ARNs using the ArnParser.
 

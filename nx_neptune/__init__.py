@@ -39,6 +39,7 @@ from .instance_management import (
     import_csv_from_s3,
     start_na_instance,
     stop_na_instance,
+    update_na_instance_size,
     validate_athena_query,
     validate_permissions,
 )
@@ -93,8 +94,8 @@ __all__ = [
     "create_na_instance_with_s3_import",
     "create_na_instance_from_snapshot",
     "stop_na_instance",
-    "TaskFuture",
     "delete_graph_snapshot",
+    "update_na_instance_size",
     # session management
     "SessionManager",
 ]

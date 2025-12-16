@@ -45,7 +45,7 @@ class TestBFS:
     def test_bfs_edges_directed_graph(self, digraph):
         """Test BFS edges on directed graph with named nodes"""
         r = list(nx.bfs_edges(digraph, "Alice", backend=BACKEND))
-        
+
         assert isinstance(r, list)
         assert len(r) == 2
         assert ["Alice", "Bob"] in r
@@ -60,7 +60,7 @@ class TestBFS:
         digraph.add_edge("Alice", "Carl")
 
         r = list(nx.bfs_edges(digraph, "Bob", backend=BACKEND, reverse=True, depth_limit=1))
-        
+
         assert isinstance(r, list)
         assert len(r) == 1
         assert ["Bob", "Alice"] in r
@@ -78,7 +78,7 @@ class TestBFS:
         G = nx.path_graph(3)
 
         r = list(nx.bfs_edges(G, "0", backend=BACKEND))
-        
+
         assert isinstance(r, list)
         assert len(r) == 2
         assert ["0", "1"] in r
@@ -89,7 +89,7 @@ class TestBFS:
         G = nx.path_graph(3)
 
         r = list(nx.bfs_edges(G, source="0", depth_limit=1, backend=BACKEND))
-        
+
         assert len(r) == 1
         assert ["0", "1"] in r
 
@@ -98,7 +98,7 @@ class TestBFS:
         G = nx.path_graph(3)
 
         r = list(nx.bfs_edges(G, source="1", backend=BACKEND))
-        
+
         assert len(r) == 2
         assert ["1", "0"] in r
         assert ["1", "2"] in r
@@ -108,7 +108,7 @@ class TestBFS:
         G = nx.path_graph(3)
 
         r = list(nx.bfs_edges(G, source="1", reverse=True, backend=BACKEND))
-        
+
         assert isinstance(r, list)
         assert len(r) == 2
         assert ["1", "0"] in r
@@ -119,7 +119,7 @@ class TestBFS:
         G = nx.path_graph(3)
 
         r = list(nx.bfs_edges(G, source="1", reverse=False, backend=BACKEND))
-        
+
         assert isinstance(r, list)
         assert len(r) == 2
         assert ["1", "0"] in r
@@ -130,10 +130,10 @@ class TestBFS:
         G = nx.path_graph(12)
 
         r = list(nx.bfs_edges(G, source="6", backend=BACKEND))
-        
+
         assert isinstance(r, list)
         assert len(r) == 11
-        
+
         result_tuples = [tuple(edge) for edge in r]
         # Check forward edges
         for i in [6, 7, 8, 9, 10]:
@@ -145,8 +145,8 @@ class TestBFS:
     def test_bfs_edges_with_aws_options(self, graph):
         """Test BFS edges with AWS-specific options"""
         r = list(nx.bfs_edges(graph, source="Alice", backend=BACKEND,
-                             vertex_label="Node", edge_labels=["RELATES_TO"], concurrency=0))
-        
+                              vertex_label="Node", edge_labels=["RELATES_TO"], concurrency=0))
+
         assert isinstance(r, list)
         assert len(r) == 2
         assert ["Alice", "Bob"] in r
@@ -155,31 +155,31 @@ class TestBFS:
     def test_descendants_at_distance(self, graph):
         """Test descendants_at_distance function"""
         r = nx.descendants_at_distance(graph, backend=BACKEND, source="Alice", distance=1)
-        
+
         assert r == {'Bob', 'Carl'}
 
     def test_descendants_at_distance_with_aws_options(self, graph):
         """Test descendants_at_distance with AWS-specific options"""
-        r = nx.descendants_at_distance(graph, backend=BACKEND, source="Alice", distance=1, 
-                                     vertex_label="Node", edge_labels=["RELATES_TO"], concurrency=0)
-        
+        r = nx.descendants_at_distance(graph, backend=BACKEND, source="Alice", distance=1,
+                                       vertex_label="Node", edge_labels=["RELATES_TO"], concurrency=0)
+
         assert r == {'Bob', 'Carl'}
 
     def test_bfs_layers_path_graph(self):
         """Test BFS layers on path graph"""
         g = nx.path_graph(5)
-        
+
         result = list(nx.bfs_layers(g, backend=BACKEND, sources=["1", "4"]))
-        
+
         assert set(result[0]) == {'4', '1'}
         assert set(result[1]) == {'2', '3', '0'}
 
     def test_bfs_layers_with_aws_options(self):
         """Test BFS layers with AWS-specific options"""
         g = nx.path_graph(5)
-        
-        result = list(nx.bfs_layers(g, backend=BACKEND, sources=["1", "4"], 
-                                   edge_labels=["RELATES_TO"], traversal_direction="both", concurrency=0))
-        
+
+        result = list(nx.bfs_layers(g, backend=BACKEND, sources=["1", "4"],
+                                    edge_labels=["RELATES_TO"], traversal_direction="both", concurrency=0))
+
         assert set(result[0]) == {'4', '1'}
         assert set(result[1]) == {'2', '3', '0'}
