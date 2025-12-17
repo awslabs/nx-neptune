@@ -11,7 +11,7 @@ from botocore.config import Config
 
 from . import NeptuneGraph, instance_management
 from .clients import IamClient, NeptuneAnalyticsClient
-from .clients.neptune_constants import APP_ID_NX, SERVICE_IAM, SERVICE_NA, SERVICE_STS
+from .clients.neptune_constants import APP_ID_NX, SERVICE_IAM, SERVICE_NA, SERVICE_STS, SERVICE_S3
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +89,9 @@ class SessionManager:
             service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
         )
         self._sts_client = boto3.client(SERVICE_STS)
-
         self._s3_iam_role = self._sts_client.get_caller_identity()["Arn"]
-
         self._iam_client = boto3.client(SERVICE_IAM)
+        self._s3_client = boto3.client(SERVICE_S3)
 
     @classmethod
     def session(cls, session_name=None, cleanup_task=None):
@@ -394,6 +393,7 @@ class SessionManager:
         sql_queries,
         catalog=None,
         database=None,
+        remove_buckets = True,
     ) -> str:
         """Import data from Athena table query results into a Neptune Analytics graph.
 
@@ -403,6 +403,7 @@ class SessionManager:
             sql_queries (list): List of SQL queries to execute against Athena tables.
             catalog (str, optional): Athena catalog name. Defaults to None.
             database (str, optional): Athena database name. Defaults to None.
+            remove_buckets (bool): After a successful import, delete the S3 bucket contents if True.
 
         Returns:
             str: Graph ID of the target graph.
@@ -415,14 +416,14 @@ class SessionManager:
         skip_snapshot = True
 
         # export the datalake table to S3 as CSV projection data
-        projection_created = await instance_management.export_athena_table_to_s3(
+        query_execution_ids = await instance_management.export_athena_table_to_s3(
             sql_queries,
             s3_location,
             catalog,
             database,
         )
-        if not projection_created:
-            raise Exception("Projection not created.")
+        if not query_execution_ids:
+            raise Exception("Projections not created.")
 
         logger.info(f"Created projection data in {s3_location}")
 
@@ -438,7 +439,10 @@ class SessionManager:
             skip_snapshot,
         )
 
-        # TODO Cleanup resources
+        if remove_buckets:
+            for query_execution_id in query_execution_ids:
+                logger.info(f"deleting bucket {query_execution_id}")
+                instance_management.empty_s3_bucket(query_execution_id, self._s3_client, self._iam_client)
 
         logger.info(f"Graph data imported to graph {graph_id} using task {task_id}")
         return task_id
@@ -454,6 +458,7 @@ class SessionManager:
         iceberg_edges_table_name: str,
         iceberg_catalog: str,
         iceberg_database: str,
+        remove_resources = True,
     ) -> str:
         """Export Neptune Analytics graph data to Athena tables via S3.
 
@@ -467,6 +472,7 @@ class SessionManager:
             iceberg_edges_table_name (str): Name for the edges Iceberg table.
             iceberg_catalog (str): Athena catalog for Iceberg tables.
             iceberg_database (str): Athena database for Iceberg tables.
+            remove_resources (bool): After a successful import, delete all temporary resources if True.
 
         Returns:
             str: Query execution ID from the final Athena operation.
@@ -537,6 +543,12 @@ class SessionManager:
         logger.info(
             f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name} with query ID: {query_id}"
         )
+
+        if remove_resources:
+            # remove export bucket
+            instance_management.empty_s3_bucket(s3_export_location, self._s3_client, self._iam_client)
+
+            # remove
 
         return query_id
 
