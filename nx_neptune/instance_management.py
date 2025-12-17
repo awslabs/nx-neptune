@@ -1079,13 +1079,13 @@ async def export_athena_table_to_s3(
     Args:
         :param sql_queries: List of SQL query strings to execute
         :param s3_bucket: S3 bucket path for query results
-        :param catalog: (str, optional) catalog namespace to run the sql_query
-        :param database: (str, optional) the database to run the sql_query
+        :param catalog: (str, optional) Catalog namespace to run the sql_query
+        :param database: (str, optional) The database to run the sql_query
         :param polling_interval: Polling interval for status checks
         :param max_attempts: Maximum attempts for status checks
 
     Returns:
-        list: True if all queries succeeded, False otherwise
+        list: List of successfully processed query execute ids.
     """
     # TODO: validate permissions (include S3 delete, and S3 getObject)
     # TODO: check s3 bucket location is empty - or fail
@@ -1388,7 +1388,7 @@ async def create_table_schema_from_s3(
 
     Args:
         :param table_schema: SQL CREATE EXTRNAL TABLE statement
-        :param s3_bucket: S3 bucket path containing data
+        :param s3_bucket: S3 bucket path for query results
         :param catalog: (str, optional) catalog namespace to run the sql_query
         :param database: (str, optional) the database to run the sql_query
         :param polling_interval: Polling interval for status checks
@@ -1405,6 +1405,56 @@ async def create_table_schema_from_s3(
     athena_client = boto3.client(SERVICE_ATHENA)
     query_execution_id = _execute_athena_query(
         athena_client, table_schema, s3_bucket, catalog=catalog, database=database
+    )
+
+    # Wait for query to complete using TaskFuture
+    future = TaskFuture(
+        query_execution_id, TaskType.EXPORT_ATHENA_TABLE, polling_interval, max_attempts
+    )
+    await future.wait_until_complete(athena_client)
+
+    # Check the final status
+    final_status = future.current_status
+
+    if final_status != "SUCCEEDED":
+        raise Exception(
+            f"Query {query_execution_id} failed with status: {final_status}"
+        )
+
+    logger.info(f"Successfully completed execution of query [{query_execution_id}]")
+    return query_execution_id
+
+
+async def drop_athena_table(
+        table: str,
+        s3_bucket: str,
+        catalog: str = None,  # type: ignore[assignment]
+        database: str = None,  # type: ignore[assignment]
+        polling_interval=None,
+        max_attempts=None,
+) -> str:
+    """Create external table in Athena from S3 data.
+
+    Args:
+        :param table: table to drop
+        :param s3_bucket: S3 bucket path output location
+        :param catalog: (str, optional) catalog namespace to run the sql_query
+        :param database: (str, optional) the database to run the sql_query
+        :param polling_interval: Polling interval for status checks
+        :param max_attempts: Maximum attempts for status checks
+
+    Returns:
+        str: Returns the query_execution_id if successful
+    """
+    # TODO check if s3_bucket is empty
+    # TODO validate table_schema
+    # TODO validate if table exists already
+    # TODO check is skip drop table is False and table exists
+
+    athena_client = boto3.client(SERVICE_ATHENA)
+    drop_table_sql_statement = f"DROP TABLE {table}"
+    query_execution_id = _execute_athena_query(
+        athena_client, drop_table_sql_statement, s3_bucket, catalog=catalog, database=database
     )
 
     # Wait for query to complete using TaskFuture

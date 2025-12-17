@@ -536,7 +536,7 @@ class IamClient:
                 },
             ],
             "export_csv_to_s3": [
-                {"permissions": ["s3:PutObject", "s3:ListBucket"], "arn": s3_export},
+                {"permissions": ["s3:DeleteObject", "s3:ListBucket"], "arn": s3_export},
                 {
                     "permissions": [
                         "kms:Decrypt",
@@ -545,6 +545,9 @@ class IamClient:
                     ],
                     "arn": arn_kms_key_export,
                 },
+            ],
+            "empty_s3_bucket": [
+                {"permissions": ["s3:PutObject", "s3:ListBucket"], "arn": s3_export},
             ],
             "export_athena_table_to_s3": [
                 {"permissions": ["s3:GetObject"], "arn": s3_import},
@@ -563,7 +566,7 @@ class IamClient:
                     ]
                 },
             ],
-            "create_table_from_s3": [
+            "create_csv_table_from_s3": [
                 {"permissions": ["s3:GetObject", "s3:ListBucket"], "arn": s3_export},
                 {
                     "permissions": [
@@ -573,6 +576,14 @@ class IamClient:
                     ],
                     "arn": arn_kms_key_export,
                 },
+                {
+                    "permissions": [
+                        "athena:StartQueryExecution",
+                        "athena:GetQueryExecution",
+                    ]
+                },
+            ],
+            "create_iceberg_table_from_table": [
                 {
                     "permissions": [
                         "athena:StartQueryExecution",
