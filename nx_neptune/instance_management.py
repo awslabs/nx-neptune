@@ -29,21 +29,23 @@ from .clients.neptune_constants import APP_ID_NX, SERVICE_ATHENA, SERVICE_S3
 from .na_graph import NeptuneGraph
 
 __all__ = [
-    "import_csv_from_s3",
-    "export_csv_to_s3",
+    "validate_permissions",
     "create_na_instance",
     "create_na_instance_with_s3_import",
     "create_na_instance_from_snapshot",
-    "create_graph_snapshot",
     "delete_na_instance",
+    "update_na_instance_size",
+    "start_na_instance",
+    "stop_na_instance",
+    "create_graph_snapshot",
+    "delete_graph_snapshot",
+    "import_csv_from_s3",
+    "export_csv_to_s3",
+    "empty_s3_bucket",
+    "validate_athena_query",
     "export_athena_table_to_s3",
     "create_csv_table_from_s3",
     "create_iceberg_table_from_table",
-    "validate_athena_query",
-    "validate_permissions",
-    "start_na_instance",
-    "stop_na_instance",
-    "delete_graph_snapshot",
 ]
 
 from .utils.task_future import (
@@ -1085,10 +1087,11 @@ async def export_athena_table_to_s3(
     Returns:
         list: True if all queries succeeded, False otherwise
     """
-    client = boto3.client(SERVICE_ATHENA)
-
-    # TODO: validate permissions - or fail
+    # TODO: validate permissions (include S3 delete, and S3 getObject)
     # TODO: check s3 bucket location is empty - or fail
+    # TODO: pass clients into function
+
+    client = boto3.client(SERVICE_ATHENA)
 
     query_execution_ids = []
     for query in sql_queries:
@@ -1157,6 +1160,7 @@ async def create_csv_table_from_s3(
         Exception: If any query fails
     """
     # TODO check if s3_bucket is empty
+    # TODO validate permissions
     # TODO validate table_schema
     # TODO validate if table exists already
     # TODO check is skip drop table is False and table exists
@@ -1469,6 +1473,9 @@ def empty_s3_bucket(
 ):
     """Empty an S3 bucket at the specified location.
     
+    Deletes contents of an S3 folder (if path ends with '/' or is empty) or 
+    a specific key (if path doesn't end with '/').
+    
     Args:
         s3_arn (str): S3 ARN or path to the bucket location to empty.
         s3_client (Optional[BaseClient]): Optional S3 client. If not provided, creates a new one.
@@ -1481,48 +1488,53 @@ def empty_s3_bucket(
     # Validate S3 ARN format
     if not s3_arn or not isinstance(s3_arn, str):
         raise ValueError("s3_arn must be a non-empty string")
-    
-    # Normalize S3 path and validate format
-    if not (s3_arn.startswith("s3://") or s3_arn.startswith("arn:aws:s3:::")):
-        raise ValueError("s3_arn must be a valid S3 location (s3:// or arn:aws:s3:::)")
-    
+
     # Create S3 client if not provided
     if s3_client is None:
         s3_client = boto3.client(SERVICE_S3)
-    
-    # Validate permissions if IAM client provided
-    if iam_client is not None:
-        iam_client_wrapper = IamClient(
-            iam_client.get_caller_identity()["Arn"], iam_client
-        )
-        # Get bucket encryption key for permission check
-        key_arn = _get_bucket_encryption_key_arn(s3_arn)
-        # Use export permissions as they include delete operations
-        iam_client_wrapper.has_export_to_s3_permissions(s3_arn, key_arn)
-    
-    # Extract bucket name and prefix from S3 ARN
-    if s3_arn.startswith("s3://"):
-        s3_path = s3_arn.replace("s3://", "")
-    else:  # arn:aws:s3::: format
-        s3_path = s3_arn.replace("arn:aws:s3:::", "")
-    
-    path_parts = s3_path.split("/")
-    bucket_name = path_parts[0]
-    prefix = "/".join(path_parts[1:]) if len(path_parts) > 1 else ""
-    
-    # List and delete all objects in the bucket/prefix
+
+    # Create IamClient
+    if iam_client is None:
+        iam_client = boto3.client(SERVICE_IAM)
+    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
+    iam_client_wrapper = IamClient(role_arn=user_arn, client=iam_client)
+
+    # raises an error validation fails
+    iam_client_wrapper.has_delete_s3_permissions(s3_arn)
+
+    bucket_path = s3_arn.replace("s3://", "").split("/")
+    bucket_name = bucket_path.pop(0)
+    bucket_path_str = "/".join(bucket_path)
+
+    # Delete object(s) in s3 bucket/path
     try:
-        paginator = s3_client.get_paginator('list_objects_v2')
-        pages = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
+        # Check if path ends with '/' or is empty (folder) vs specific key
+        if bucket_path_str.endswith('/') or bucket_path_str == '':
+            # Delete all objects with this prefix (folder deletion)
+            paginator = s3_client.get_paginator('list_objects_v2')
+            pages = paginator.paginate(Bucket=bucket_name, Prefix=bucket_path_str)
+            
+            for page in pages:
+                if 'Contents' in page:
+                    objects = [{'Key': obj['Key']} for obj in page['Contents']]
+                    if objects:
+                        response = s3_client.delete_objects(
+                            Bucket=bucket_name,
+                            Delete={'Objects': objects, 'Quiet': False}
+                        )
+                        print(f"Deleted {len(objects)} objects from folder: {bucket_name}/{bucket_path_str}")
+        else:
+            # Delete specific key
+            response = s3_client.delete_objects(
+                Bucket=bucket_name,
+                Delete={
+                    'Objects': [{'Key': bucket_path_str}],
+                    'Quiet': False,
+                },
+            )
+            print(f"Deleted specific key: {bucket_name}/{bucket_path_str}")
         
-        for page in pages:
-            if 'Contents' in page:
-                objects = [{'Key': obj['Key']} for obj in page['Contents']]
-                if objects:
-                    s3_client.delete_objects(
-                        Bucket=bucket_name,
-                        Delete={'Objects': objects}
-                    )
+        print(f"Response: {response}")
     except ClientError as e:
         raise Exception(f"Failed to empty S3 bucket {s3_arn}: {e}")
 
