@@ -239,6 +239,24 @@ class IamClient:
             operation_name, bucket_arn, key_arn, s3_permissions, kms_permissions
         )
 
+    def has_delete_s3_permissions(self, bucket_arn):
+        """Check if the configured IAM role has permissions to delete data from S3.
+
+        Args:
+            bucket_arn (str): The ARN of the S3 bucket
+
+        Raises:
+            ValueError: If the role lacks required permissions
+
+        Returns:
+            None
+        """
+        s3_permissions = ["s3:DeleteObject", "s3:ListBucket"]
+        operation_name = "S3-Delete"
+        self._s3_kms_permission_check(
+            operation_name, bucket_arn, None, s3_permissions, []
+        )
+
     def has_create_na_permissions(self):
         """Check if the configured IAM role has permissions to create a Neptune Analytics instance.
 
