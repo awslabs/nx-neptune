@@ -548,8 +548,6 @@ class SessionManager:
             # remove export bucket
             instance_management.empty_s3_bucket(s3_export_location, self._s3_client, self._iam_client)
 
-            # remove
-
         return query_id
 
     async def create_snapshot(
