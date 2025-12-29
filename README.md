@@ -57,7 +57,7 @@ These permissions are required to read, write, and manage graph data via queries
   - `neptune-graph:WriteDataViaQuery`
   - `neptune-graph:DeleteDataViaQuery`
 
- These permissions are required to start/stop a Neptune Analytics graph:
+These permissions are required to start/stop a Neptune Analytics graph:
 
   - `neptune-graph:StartGraph`
   - `neptune-graph:StopGraph`
@@ -71,23 +71,25 @@ These permissions are required to save/restore a Neptune Analytics snapshot:
 
 These permissions are required to import/export between S3 and Neptune Analytics:
 
-- `s3:GetObject` (for import)
-- `s3:PutObject` (for export)
-- `s3:ListBucket` (for export)
-- `s3:DeleteBucket` (for delete)
-- `kms:Decrypt`
-- `kms:GenerateDataKey`
-- `kms:DescribeKey`
+  - `s3:GetObject` (for import)
+  - `s3:PutObject` (for export)
+  - `s3:ListBucket` (for export)
+  - `s3:DeleteBucket` (for delete)
+  - `kms:Decrypt`
+  - `kms:GenerateDataKey`
+  - `kms:DescribeKey`
 
-In Addition to the S3 import/export permissions, to read from/write to an existing T3 Tables datalake: 
-    - `athena:StartQueryExecution`
-    - `athena:GetQueryExecution`
+In Addition to the S3 import/export permissions, to read from/write to an existing S3 Tables datalake: 
+
+  - `athena:StartQueryExecution`
+  - `athena:GetQueryExecution`
 
 The ARN with the above permissions must be added to your environment variables
 
 ### Python Runtime
- - Python 3.11 is required.
- - Ensure your environment uses Python 3.11 to maintain compatibility with dependencies and API integrations.
+
+  - Python 3.11 is required.
+  - Ensure your environment uses Python 3.11 to maintain compatibility with dependencies and API integrations.
 
 _Note: As part of the preview status, we are recommending that you run the library using Python 3.11_. 
 

@@ -26,19 +26,19 @@ You can run these notebooks on AWS Neptune Notebook, which provides a flexible J
       - `neptune-graph:ReadDataViaQuery`
       - `neptune-graph:WriteDataViaQuery`
       - `neptune-graph:DeleteDataViaQuery`
-   1. To create/delete a new Neptune Analytics graph:
+   2. To create/delete a new Neptune Analytics graph:
       - `neptune-graph:CreateGraph`
       - `neptune-graph:TagResource`
       - `neptune-graph:DeleteGraph` (for delete)
-   1. To start/stop a Neptune Analytics graph:
+   3. To start/stop a Neptune Analytics graph:
       - `neptune-graph:StartGraph`
       - `neptune-graph:StopGraph`
-   1. To save/restore a Neptune Analytics snapshot:
+   4. To save/restore a Neptune Analytics snapshot:
       - `neptune-graph:CreateGraphSnapshot` (for save)
       - `neptune-graph:RestoreGraphFromSnapshot` (for restore)
       - `neptune-graph:DeleteGraphSnapshot` (for delete)
       - `neptune-graph:TagResource`
-   1. To import/export data with S3: 
+   5. To import/export data with S3: 
       - `s3:GetObject` (for import)
       - `s3:PutObject` (for export)
       - `s3:ListBucket` (for export)
@@ -46,7 +46,7 @@ You can run these notebooks on AWS Neptune Notebook, which provides a flexible J
       - `kms:Decrypt`
       - `kms:GenerateDataKey`
       - `kms:DescribeKey`
-   1. To read/write data with a datalake in S3 Tables:
+   6. To read/write data with a datalake in S3 Tables:
       - _The S3 bucket permissions listed above, plus:_
       - `athena:StartQueryExecution`
       - `athena:GetQueryExecution`
