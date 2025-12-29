@@ -116,6 +116,7 @@ async def create_na_instance(
 async def create_na_instance_with_s3_import(
     s3_arn: str,
     config: Optional[dict] = None,
+    graph_name_prefix: Optional[str] = None,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
@@ -139,6 +140,7 @@ async def create_na_instance_with_s3_import(
 
             Reference:
             https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph_using_import_task.html
+        graph_name_prefix (Optional[str]): Optional prefix for the generated graph name
         sts_client (Optional[IamClient]): Optional StsClient instance. If not provided,
             a new one will be created using the current user's credentials.
         iam_client (Optional[IamClient]): Optional IamClient instance. If not provided,
@@ -157,16 +159,18 @@ async def create_na_instance_with_s3_import(
         ValueError: If the role lacks required permissions
     """
 
-    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    (iam_client_wrapper, na_client) = _get_or_create_clients(
+        sts_client, iam_client, na_client
+    )
     # Retrieve key_arn for the bucket and permission check if present
     key_arn = _get_bucket_encryption_key_arn(s3_arn)
     # Permission checks
-    iam_client.has_create_na_permissions()
-    iam_client.has_import_from_s3_permissions(s3_arn, key_arn)
+    iam_client_wrapper.has_create_na_permissions()
+    iam_client_wrapper.has_import_from_s3_permissions(s3_arn, key_arn)
 
-    graph_name = _create_random_graph_name()
+    graph_name = _create_random_graph_name(graph_name_prefix)
     kwargs = _get_create_instance_with_import_config(
-        graph_name, s3_arn, iam_client.role_arn, config
+        graph_name, s3_arn, iam_client_wrapper.role_arn, config
     )
     response = na_client.create_graph_using_import_task(**kwargs)
     graph_id = response.get("graphId")
@@ -193,6 +197,7 @@ async def create_na_instance_with_s3_import(
 async def create_na_instance_from_snapshot(
     snapshot_id: str,
     config: Optional[dict] = None,
+    graph_name_prefix: Optional[str] = None,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
@@ -204,6 +209,7 @@ async def create_na_instance_from_snapshot(
 
     Args:
         snapshot_id (str): The ID of the snapshot to restore from
+
         config (Optional[dict]): Optional dictionary of custom configuration parameters
             to use when creating the Neptune Analytics instance. If not provided,
             default settings will be applied.
@@ -211,6 +217,7 @@ async def create_na_instance_from_snapshot(
 
             Reference:
             https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/restore_graph_from_snapshot.html
+        graph_name_prefix (Optional[str]): Optional prefix for the generated graph name
         sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided,
             a new one will be created.
         iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided,
@@ -227,12 +234,16 @@ async def create_na_instance_from_snapshot(
         Exception: If the Neptune Analytics instance creation fails
         ValueError: If the role lacks required permissions
     """
-    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    (iam_client_wrapper, na_client) = _get_or_create_clients(
+        sts_client, iam_client, na_client
+    )
 
     # Permissions check
-    iam_client.has_create_na_from_snapshot_permissions()
+    iam_client_wrapper.has_create_na_from_snapshot_permissions()
 
-    response = _create_na_instance_from_snapshot_task(na_client, snapshot_id, config)
+    response = _create_na_instance_from_snapshot_task(
+        na_client, snapshot_id, config, graph_name_prefix
+    )
     prospective_graph_id = _get_graph_id(response)
 
     if _get_status_code(response) == 201:
@@ -279,10 +290,12 @@ async def delete_graph_snapshot(
         Exception: If the snapshot deletion fails
         ValueError: If the role lacks required permissions
     """
-    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    (iam_client_wrapper, na_client) = _get_or_create_clients(
+        sts_client, iam_client, na_client
+    )
 
     # Permissions check
-    iam_client.has_delete_snapshot_permissions()
+    iam_client_wrapper.has_delete_snapshot_permissions()
     response = na_client.delete_graph_snapshot(snapshotIdentifier=snapshot_id)
 
     status_code = _get_status_code(response)
@@ -330,8 +343,10 @@ async def start_na_instance(
         Exception: If the start operation fails with an invalid status code
         ValueError: If the role lacks required permissions or if graph is not in STOPPED state
     """
-    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
-    iam_client.has_start_na_permissions()
+    (iam_client_wrapper, na_client) = _get_or_create_clients(
+        sts_client, iam_client, na_client
+    )
+    iam_client_wrapper.has_start_na_permissions()
 
     if status_exception := _graph_status_check(na_client, graph_id, "STOPPED"):
         await status_exception  # This will raise the exception
@@ -376,8 +391,10 @@ async def stop_na_instance(
         Exception: If the stop operation fails with an invalid status code
         ValueError: If the role lacks required permissions or if graph is not in AVAILABLE state
     """
-    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
-    iam_client.has_stop_na_permissions()
+    (iam_client_wrapper, na_client) = _get_or_create_clients(
+        sts_client, iam_client, na_client
+    )
+    iam_client_wrapper.has_stop_na_permissions()
 
     if status_exception := _graph_status_check(na_client, graph_id, "AVAILABLE"):
         await status_exception  # This will raise the exception
@@ -466,7 +483,7 @@ async def create_graph_snapshot(
         max_attempts: Maximum attempts for status checks
 
     Returns:
-        str: The graph ID when the snapshot completes
+        str: The snapshot ID of the completed snapshot
 
     Raises:
         Exception: If the snapshot creation fails with an invalid status code
@@ -484,6 +501,7 @@ async def create_graph_snapshot(
         kwargs["tags"] = tag
 
     response = na_client.create_graph_snapshot(**kwargs)
+    snapshot_id = response["id"]
     status_code = _get_status_code(response)
     if status_code == 201:
         await _get_status_check_future(
@@ -493,7 +511,7 @@ async def create_graph_snapshot(
             polling_interval,
             max_attempts,
         )
-        return graph_id
+        return snapshot_id
     raise Exception(
         f"Invalid response status code: {status_code} with full response:\n {response}"
     )
@@ -799,7 +817,10 @@ def _create_na_instance_task(
 
 
 def _create_na_instance_from_snapshot_task(
-    client, snapshot_identifier: str, config: Optional[dict] = None
+    client,
+    snapshot_identifier: str,
+    config: Optional[dict] = None,
+    graph_name_prefix: Optional[str] = None,
 ):
     """Create a new Neptune Analytics graph instance with default settings.
 
@@ -808,6 +829,8 @@ def _create_na_instance_from_snapshot_task(
 
     Args:
         client (boto3.client): The Neptune Analytics boto3 client
+        config (Optional[dict]): Optional configuration parameters
+        graph_name_prefix (Optional[str]): Optional prefix for the generated graph name
 
     Returns:
         dict: The API response containing information about the created graph
@@ -816,7 +839,7 @@ def _create_na_instance_from_snapshot_task(
         ClientError: If there's an issue with the AWS API call
     """
     # Permission check
-    graph_name = _create_random_graph_name()
+    graph_name = _create_random_graph_name(graph_name_prefix)
     kwargs = _get_create_instance_config(graph_name, config)
     kwargs["snapshotIdentifier"] = snapshot_identifier
     response = client.restore_graph_from_snapshot(**kwargs)
@@ -1614,9 +1637,10 @@ def _get_or_create_clients(
         sts_client = boto3.client(SERVICE_STS)
     user_arn = sts_client.get_caller_identity()["Arn"]
 
-    # Create IAM client if not provided
+    # Create IamClient
     if iam_client is None:
-        iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+        iam_client = boto3.client(SERVICE_IAM)
+    iam_client_wrapper = IamClient(role_arn=user_arn, client=iam_client)
 
     # Create Neptune Analytics client if not provided
     if na_client is None:
@@ -1624,4 +1648,4 @@ def _get_or_create_clients(
             service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
         )
 
-    return iam_client, na_client
+    return iam_client_wrapper, na_client
