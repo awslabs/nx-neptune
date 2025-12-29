@@ -53,24 +53,43 @@ The IAM role or user accessing Neptune Analytics must have the following permiss
 
 These permissions are required to read, write, and manage graph data via queries on Neptune Analytics:
 
- - neptune-graph:ReadDataViaQuery
- - neptune-graph:WriteDataViaQuery
- - neptune-graph:DeleteDataViaQuery
+  - `neptune-graph:ReadDataViaQuery`
+  - `neptune-graph:WriteDataViaQuery`
+  - `neptune-graph:DeleteDataViaQuery`
 
-These permissions are required to import/export between S3 and Neptune Analytics: 
+These permissions are required to start/stop a Neptune Analytics graph:
 
- - s3:GetObject (for import)
- - s3:PutObject (for export)
- - s3:ListBucket (for export)
- - kms:Decrypt
- - kms:GenerateDataKey
- - kms:DescribeKey
+  - `neptune-graph:StartGraph`
+  - `neptune-graph:StopGraph`
+
+These permissions are required to save/restore a Neptune Analytics snapshot:
+
+  - `neptune-graph:CreateGraphSnapshot` (for save)
+  - `neptune-graph:RestoreGraphFromSnapshot` (for restore)
+  - `neptune-graph:DeleteGraphSnapshot` (for delete)
+  - `neptune-graph:TagResource`
+
+These permissions are required to import/export between S3 and Neptune Analytics:
+
+  - `s3:GetObject` (for import)
+  - `s3:PutObject` (for export)
+  - `s3:ListBucket` (for export)
+  - `s3:DeleteBucket` (for delete)
+  - `kms:Decrypt`
+  - `kms:GenerateDataKey`
+  - `kms:DescribeKey`
+
+In Addition to the S3 import/export permissions, to read from/write to an existing S3 Tables datalake: 
+
+  - `athena:StartQueryExecution`
+  - `athena:GetQueryExecution`
 
 The ARN with the above permissions must be added to your environment variables
 
 ### Python Runtime
- - Python 3.11 is required.
- - Ensure your environment uses Python 3.11 to maintain compatibility with dependencies and API integrations.
+
+  - Python 3.11 is required.
+  - Ensure your environment uses Python 3.11 to maintain compatibility with dependencies and API integrations.
 
 _Note: As part of the preview status, we are recommending that you run the library using Python 3.11_. 
 
@@ -131,23 +150,16 @@ For interactive exploration and visualization, you can use the Jupyter notebook 
 The notebooks directory contains interactive demonstrations of using Neptune Analytics with NetworkX:
 
 - [pagerank_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/pagerank_demo.ipynb): Focused demonstration of the PageRank algorithm
-
 - [bfs_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/bfs_demo.ipynb): Demonstration of Breadth-First Search traversal
-
 - [degree_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/degree_demo.ipynb): Demonstration of Degree Centrality algorithm
-
 - [label_propagation_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/label_propagation_demo.ipynb): Demonstration of Label Propagation algorithm
-
 - [closeness_centrality_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/closeness_centrality_demo.ipynb): Focused demonstration of the Closeness Centrality algorithm
-
 - [louvain_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/louvain_demo.ipynb): Demonstration of Louvain algorithm
-
 - [s3_import_export_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/s3_import_export_demo.ipynb): A notebook demonstrating the process of importing from and exporting to an S3 bucket.
-
-- [instance_mgmt_lifecycle_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_lifecycle_demo.ipynb): A notebook to demonstrates the explicit workflow for managing the lifecycle of an instance.   
-
+- [import_s3_table_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_table_demo.ipynb): Demonstrates creating a view from S3 Tables and adding data back to a datalake
+- [instance_mgmt_lifecycle_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_lifecycle_demo.ipynb): A notebook to demonstrates the explicit workflow for managing the lifecycle of an instance.
 - [instance_mgmt_with_configuration.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_with_configuration.ipynb): A notebook to demonstrates a simplified approach to instance lifecycle management.   
-
+- [session_manager_comprehensive_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/session_manager_comprehensive_demo.ipynb): Demonstrates use-cases for the SessionManager wrapper
 
 ### Uploading a package wheel
 
