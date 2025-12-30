@@ -430,7 +430,10 @@ class SessionManager:
             for query_execution_id in query_execution_ids:
                 logger.info(f"deleting bucket {query_execution_id}")
                 instance_management.empty_s3_bucket(
-                    query_execution_id, self._s3_client, self._iam_client
+                    query_execution_id,
+                    self._s3_client,
+                    self._sts_client,
+                    self._iam_client,
                 )
 
         logger.info(f"Graph data imported to graph {graph_id} using task {task_id}")
@@ -546,7 +549,7 @@ class SessionManager:
         if remove_resources:
             # remove export bucket
             instance_management.empty_s3_bucket(
-                s3_export_location, self._s3_client, self._iam_client
+                s3_export_location, self._s3_client, self._sts_client, self._iam_client
             )
 
             # drop CSV table
@@ -555,6 +558,9 @@ class SessionManager:
                 s3_location,
                 catalog=csv_catalog,
                 database=csv_database,
+                athena_client=self._athena_client,
+                sts_client=self._sts_client,
+                iam_client=self._iam_client,
             )
 
         return query_id

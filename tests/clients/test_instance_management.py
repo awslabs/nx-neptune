@@ -1333,24 +1333,16 @@ async def test_update_instance_size_success(mock_boto3_client, mock_get_future):
 
 
 @patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management.IamClient")
-def test_empty_s3_bucket_folder_success(mock_iam_client_class, mock_boto3_client):
+@patch("nx_neptune.instance_management._get_or_create_clients")
+def test_empty_s3_bucket_folder_success(mock_get_or_create_clients, mock_boto3_client):
     """Test empty_s3_bucket with folder path (ends with /)."""
     # Setup mocks
     mock_s3_client = MagicMock()
     mock_iam_client = MagicMock()
-    mock_sts_client = MagicMock()
-    mock_iam_boto_client = MagicMock()
-
-    mock_boto3_client.side_effect = lambda service: {
-        "s3": mock_s3_client,
-        "sts": mock_sts_client,
-        "iam": mock_iam_boto_client,
-    }[service]
-
-    mock_sts_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-    mock_iam_client_class.return_value = mock_iam_client
     mock_iam_client.has_delete_s3_permissions.return_value = True
+
+    mock_boto3_client.return_value = mock_s3_client
+    mock_get_or_create_clients.return_value = (mock_iam_client, None)
 
     # Mock paginator for folder deletion
     mock_paginator = MagicMock()
@@ -1372,24 +1364,18 @@ def test_empty_s3_bucket_folder_success(mock_iam_client_class, mock_boto3_client
 
 
 @patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management.IamClient")
-def test_empty_s3_bucket_specific_key_success(mock_iam_client_class, mock_boto3_client):
+@patch("nx_neptune.instance_management._get_or_create_clients")
+def test_empty_s3_bucket_specific_key_success(
+    mock_get_or_create_clients, mock_boto3_client
+):
     """Test empty_s3_bucket with specific key path."""
     # Setup mocks
     mock_s3_client = MagicMock()
     mock_iam_client = MagicMock()
-    mock_sts_client = MagicMock()
-    mock_iam_boto_client = MagicMock()
-
-    mock_boto3_client.side_effect = lambda service: {
-        "s3": mock_s3_client,
-        "sts": mock_sts_client,
-        "iam": mock_iam_boto_client,
-    }[service]
-
-    mock_sts_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-    mock_iam_client_class.return_value = mock_iam_client
     mock_iam_client.has_delete_s3_permissions.return_value = True
+
+    mock_boto3_client.return_value = mock_s3_client
+    mock_get_or_create_clients.return_value = (mock_iam_client, None)
 
     mock_s3_client.delete_objects.return_value = {"Deleted": []}
 
@@ -1413,23 +1399,17 @@ def test_empty_s3_bucket_invalid_arn(mock_boto3_client):
 
 
 @patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management.IamClient")
-def test_empty_s3_bucket_permission_error(mock_iam_client_class, mock_boto3_client):
+@patch("nx_neptune.instance_management._get_or_create_clients")
+def test_empty_s3_bucket_permission_error(
+    mock_get_or_create_clients, mock_boto3_client
+):
     """Test empty_s3_bucket with permission error."""
     # Setup mocks
     mock_iam_client = MagicMock()
-    mock_sts_client = MagicMock()
-    mock_iam_boto_client = MagicMock()
     mock_s3_client = MagicMock()
 
-    mock_boto3_client.side_effect = lambda service: {
-        "sts": mock_sts_client,
-        "iam": mock_iam_boto_client,
-        "s3": mock_s3_client,
-    }[service]
-
-    mock_sts_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-    mock_iam_client_class.return_value = mock_iam_client
+    mock_boto3_client.return_value = mock_s3_client
+    mock_get_or_create_clients.return_value = (mock_iam_client, None)
     mock_iam_client.has_delete_s3_permissions.side_effect = Exception(
         "Permission denied"
     )
@@ -1440,23 +1420,15 @@ def test_empty_s3_bucket_permission_error(mock_iam_client_class, mock_boto3_clie
 
 
 @patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management.IamClient")
-def test_empty_s3_bucket_client_error(mock_iam_client_class, mock_boto3_client):
+@patch("nx_neptune.instance_management._get_or_create_clients")
+def test_empty_s3_bucket_client_error(mock_get_or_create_clients, mock_boto3_client):
     """Test empty_s3_bucket with S3 client error."""
     # Setup mocks
     mock_s3_client = MagicMock()
     mock_iam_client = MagicMock()
-    mock_sts_client = MagicMock()
-    mock_iam_boto_client = MagicMock()
 
-    mock_boto3_client.side_effect = lambda service: {
-        "s3": mock_s3_client,
-        "sts": mock_sts_client,
-        "iam": mock_iam_boto_client,
-    }[service]
-
-    mock_sts_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-    mock_iam_client_class.return_value = mock_iam_client
+    mock_boto3_client.return_value = mock_s3_client
+    mock_get_or_create_clients.return_value = (mock_iam_client, None)
     mock_iam_client.has_delete_s3_permissions.return_value = True
 
     # Mock S3 client error
@@ -1473,15 +1445,26 @@ def test_empty_s3_bucket_client_error(mock_iam_client_class, mock_boto3_client):
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management.boto3.client")
 @patch("nx_neptune.instance_management._execute_athena_query")
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("nx_neptune.instance_management._get_or_create_clients")
 @patch("nx_neptune.instance_management.TaskFuture")
 async def test_drop_athena_table_success(
-    mock_task_future, mock_execute_athena_query, mock_boto3_client
+    mock_task_future,
+    mock_get_or_create_clients,
+    mock_get_bucket_encryption,
+    mock_execute_athena_query,
+    mock_boto3_client,
 ):
     """Test drop_athena_table with successful execution."""
     # Setup mocks
     mock_athena_client = MagicMock()
     mock_boto3_client.return_value = mock_athena_client
     mock_execute_athena_query.return_value = "test-query-execution-id"
+
+    mock_iam_client = MagicMock()
+    mock_iam_client.has_athena_permissions.return_value = True
+    mock_get_or_create_clients.return_value = (mock_iam_client, None)
+    mock_get_bucket_encryption.return_value = None
 
     mock_future = AsyncMock()
     mock_future.current_status = "SUCCEEDED"
@@ -1508,15 +1491,26 @@ async def test_drop_athena_table_success(
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management.boto3.client")
 @patch("nx_neptune.instance_management._execute_athena_query")
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("nx_neptune.instance_management._get_or_create_clients")
 @patch("nx_neptune.instance_management.TaskFuture")
 async def test_drop_athena_table_with_catalog_database(
-    mock_task_future, mock_execute_athena_query, mock_boto3_client
+    mock_task_future,
+    mock_get_or_create_clients,
+    mock_get_bucket_encryption,
+    mock_execute_athena_query,
+    mock_boto3_client,
 ):
     """Test drop_athena_table with catalog and database parameters."""
     # Setup mocks
     mock_athena_client = MagicMock()
     mock_boto3_client.return_value = mock_athena_client
     mock_execute_athena_query.return_value = "test-query-execution-id"
+
+    mock_iam_client = MagicMock()
+    mock_iam_client.has_athena_permissions.return_value = True
+    mock_get_or_create_clients.return_value = (mock_iam_client, None)
+    mock_get_bucket_encryption.return_value = None
 
     mock_future = AsyncMock()
     mock_future.current_status = "SUCCEEDED"
@@ -1545,15 +1539,26 @@ async def test_drop_athena_table_with_catalog_database(
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management.boto3.client")
 @patch("nx_neptune.instance_management._execute_athena_query")
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("nx_neptune.instance_management._get_or_create_clients")
 @patch("nx_neptune.instance_management.TaskFuture")
 async def test_drop_athena_table_with_polling_params(
-    mock_task_future, mock_execute_athena_query, mock_boto3_client
+    mock_task_future,
+    mock_get_or_create_clients,
+    mock_get_bucket_encryption,
+    mock_execute_athena_query,
+    mock_boto3_client,
 ):
     """Test drop_athena_table with polling parameters."""
     # Setup mocks
     mock_athena_client = MagicMock()
     mock_boto3_client.return_value = mock_athena_client
     mock_execute_athena_query.return_value = "test-query-execution-id"
+
+    mock_iam_client = MagicMock()
+    mock_iam_client.has_athena_permissions.return_value = True
+    mock_get_or_create_clients.return_value = (mock_iam_client, None)
+    mock_get_bucket_encryption.return_value = None
 
     mock_future = AsyncMock()
     mock_future.current_status = "SUCCEEDED"

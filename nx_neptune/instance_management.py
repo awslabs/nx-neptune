@@ -1425,6 +1425,9 @@ async def create_table_schema_from_s3(
     database: str = None,  # type: ignore[assignment]
     polling_interval=None,
     max_attempts=None,
+    athena_client=None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
 ) -> str:
     """Create external table in Athena from S3 data.
 
@@ -1435,16 +1438,23 @@ async def create_table_schema_from_s3(
         :param database: (str, optional) the database to run the sql_query
         :param polling_interval: Polling interval for status checks
         :param max_attempts: Maximum attempts for status checks
+        :param athena_client: (optional) Pre-configured Athena client
+        :param sts_client: (optional) Pre-configured STS client
+        :param iam_client: (optional) Pre-configured IAM client
 
     Returns:
         str: Returns the query_execution_id if successful
     """
-    # TODO check if s3_bucket is empty
-    # TODO validate table_schema
-    # TODO validate if table exists already
-    # TODO check is skip drop table is False and table exists
+    # Permission checks
+    (iam_client_wrapper, _) = _get_or_create_clients(sts_client, iam_client, None)
 
-    athena_client = boto3.client(SERVICE_ATHENA)
+    # Get KMS key if bucket is encrypted
+    key_arn = _get_bucket_encryption_key_arn(s3_bucket)
+
+    # Check Athena and S3/KMS permissions
+    iam_client_wrapper.has_athena_permissions(s3_bucket, key_arn)
+
+    athena_client = athena_client or boto3.client(SERVICE_ATHENA)
     query_execution_id = _execute_athena_query(
         athena_client, table_schema, s3_bucket, catalog=catalog, database=database
     )
@@ -1474,6 +1484,9 @@ async def drop_athena_table(
     database: str = None,  # type: ignore[assignment]
     polling_interval=None,
     max_attempts=None,
+    athena_client=None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
 ) -> str:
     """Create external table in Athena from S3 data.
 
@@ -1484,16 +1497,23 @@ async def drop_athena_table(
         :param database: (str, optional) the database to run the sql_query
         :param polling_interval: Polling interval for status checks
         :param max_attempts: Maximum attempts for status checks
+        :param athena_client: (optional) Pre-configured Athena client
+        :param sts_client: (optional) Pre-configured STS client
+        :param iam_client: (optional) Pre-configured IAM client
 
     Returns:
         str: Returns the query_execution_id if successful
     """
-    # TODO check if s3_bucket is empty
-    # TODO validate table_schema
-    # TODO validate if table exists already
-    # TODO check is skip drop table is False and table exists
+    # Permission checks
+    (iam_client_wrapper, _) = _get_or_create_clients(sts_client, iam_client, None)
 
-    athena_client = boto3.client(SERVICE_ATHENA)
+    # Get KMS key if bucket is encrypted
+    key_arn = _get_bucket_encryption_key_arn(s3_bucket)
+
+    # Check Athena and S3/KMS permissions
+    iam_client_wrapper.has_athena_permissions(s3_bucket, key_arn)
+
+    athena_client = athena_client or boto3.client(SERVICE_ATHENA)
     drop_table_sql_statement = f"DROP TABLE {table}"
     query_execution_id = _execute_athena_query(
         athena_client,
@@ -1565,6 +1585,7 @@ def _execute_athena_query(
 def empty_s3_bucket(
     s3_arn: str,
     s3_client: Optional[BaseClient] = None,
+    sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
 ):
     """Empty an S3 bucket at the specified location.
@@ -1575,6 +1596,7 @@ def empty_s3_bucket(
     Args:
         s3_arn (str): S3 ARN or path to the bucket location to empty.
         s3_client (Optional[BaseClient]): Optional S3 client. If not provided, creates a new one.
+        sts_client (Optional[BaseClient]): Optional STS client for permission validation.
         iam_client (Optional[BaseClient]): Optional IAM client for permission validation.
 
     Raises:
@@ -1589,11 +1611,8 @@ def empty_s3_bucket(
     if s3_client is None:
         s3_client = boto3.client(SERVICE_S3)
 
-    # Create IamClient
-    if iam_client is None:
-        iam_client = boto3.client(SERVICE_IAM)
-    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
-    iam_client_wrapper = IamClient(role_arn=user_arn, client=iam_client)
+    # Create IamClient using _get_or_create_clients
+    (iam_client_wrapper, _) = _get_or_create_clients(sts_client, iam_client, None)
 
     # raises an error validation fails
     iam_client_wrapper.has_delete_s3_permissions(s3_arn)
