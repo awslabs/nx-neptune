@@ -1426,12 +1426,12 @@ async def create_table_schema_from_s3(
 
 
 async def drop_athena_table(
-        table: str,
-        s3_bucket: str,
-        catalog: str = None,  # type: ignore[assignment]
-        database: str = None,  # type: ignore[assignment]
-        polling_interval=None,
-        max_attempts=None,
+    table: str,
+    s3_bucket: str,
+    catalog: str = None,  # type: ignore[assignment]
+    database: str = None,  # type: ignore[assignment]
+    polling_interval=None,
+    max_attempts=None,
 ) -> str:
     """Create external table in Athena from S3 data.
 
@@ -1454,7 +1454,11 @@ async def drop_athena_table(
     athena_client = boto3.client(SERVICE_ATHENA)
     drop_table_sql_statement = f"DROP TABLE {table}"
     query_execution_id = _execute_athena_query(
-        athena_client, drop_table_sql_statement, s3_bucket, catalog=catalog, database=database
+        athena_client,
+        drop_table_sql_statement,
+        s3_bucket,
+        catalog=catalog,
+        database=database,
     )
 
     # Wait for query to complete using TaskFuture
@@ -1517,20 +1521,20 @@ def _execute_athena_query(
 
 
 def empty_s3_bucket(
-    s3_arn: str, 
+    s3_arn: str,
     s3_client: Optional[BaseClient] = None,
-    iam_client: Optional[BaseClient] = None
+    iam_client: Optional[BaseClient] = None,
 ):
     """Empty an S3 bucket at the specified location.
-    
-    Deletes contents of an S3 folder (if path ends with '/' or is empty) or 
+
+    Deletes contents of an S3 folder (if path ends with '/' or is empty) or
     a specific key (if path doesn't end with '/').
-    
+
     Args:
         s3_arn (str): S3 ARN or path to the bucket location to empty.
         s3_client (Optional[BaseClient]): Optional S3 client. If not provided, creates a new one.
         iam_client (Optional[BaseClient]): Optional IAM client for permission validation.
-        
+
     Raises:
         ValueError: If s3_arn is not a valid S3 location.
         Exception: If permission validation fails or S3 operations fail.
@@ -1559,31 +1563,33 @@ def empty_s3_bucket(
     # Delete object(s) in s3 bucket/path
     try:
         # Check if path ends with '/' or is empty (folder) vs specific key
-        if bucket_path_str.endswith('/') or bucket_path_str == '':
+        if bucket_path_str.endswith("/") or bucket_path_str == "":
             # Delete all objects with this prefix (folder deletion)
-            paginator = s3_client.get_paginator('list_objects_v2')
+            paginator = s3_client.get_paginator("list_objects_v2")
             pages = paginator.paginate(Bucket=bucket_name, Prefix=bucket_path_str)
-            
+
             for page in pages:
-                if 'Contents' in page:
-                    objects = [{'Key': obj['Key']} for obj in page['Contents']]
+                if "Contents" in page:
+                    objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
                     if objects:
                         response = s3_client.delete_objects(
                             Bucket=bucket_name,
-                            Delete={'Objects': objects, 'Quiet': False}
+                            Delete={"Objects": objects, "Quiet": False},
                         )
-                        print(f"Deleted {len(objects)} objects from folder: {bucket_name}/{bucket_path_str}")
+                        print(
+                            f"Deleted {len(objects)} objects from folder: {bucket_name}/{bucket_path_str}"
+                        )
         else:
             # Delete specific key
             response = s3_client.delete_objects(
                 Bucket=bucket_name,
                 Delete={
-                    'Objects': [{'Key': bucket_path_str}],
-                    'Quiet': False,
+                    "Objects": [{"Key": bucket_path_str}],
+                    "Quiet": False,
                 },
             )
             print(f"Deleted specific key: {bucket_name}/{bucket_path_str}")
-        
+
         print(f"Response: {response}")
     except ClientError as e:
         raise Exception(f"Failed to empty S3 bucket {s3_arn}: {e}")
