@@ -534,8 +534,9 @@ class SessionManager:
             )
 
             # drop CSV table
-            await instance_management.drop_table_from_s3(
+            await instance_management.drop_athena_table(
                 csv_table_name,
+                s3_location,
                 catalog=csv_catalog,
                 database=csv_database,
             )

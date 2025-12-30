@@ -34,6 +34,7 @@ from .instance_management import (
     create_na_instance_with_s3_import,
     delete_graph_snapshot,
     delete_na_instance,
+    drop_athena_table,
     empty_s3_bucket,
     export_athena_table_to_s3,
     export_csv_to_s3,
@@ -98,6 +99,7 @@ __all__ = [
     "export_athena_table_to_s3",
     "create_csv_table_from_s3",
     "create_iceberg_table_from_table",
+    "drop_athena_table",
     # session management
     "SessionManager",
     "CleanupTask",

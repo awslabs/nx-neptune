@@ -34,7 +34,7 @@ from nx_neptune.instance_management import (
     validate_athena_query,
     ProjectionType,
     empty_s3_bucket,
-    drop_table_from_s3,
+    drop_athena_table,
 )
 
 NX_CREATE_SUCCESS_FIXTURE = """{
@@ -1465,27 +1465,28 @@ def test_empty_s3_bucket_client_error(mock_iam_client_class, mock_boto3_client):
 @patch("nx_neptune.instance_management.boto3.client")
 @patch("nx_neptune.instance_management._execute_athena_query")
 @patch("nx_neptune.instance_management.TaskFuture")
-async def test_drop_table_from_s3_success(
+async def test_drop_athena_table_success(
     mock_task_future, mock_execute_athena_query, mock_boto3_client
 ):
-    """Test drop_table_from_s3 with successful execution."""
+    """Test drop_athena_table with successful execution."""
     # Setup mocks
     mock_athena_client = MagicMock()
     mock_boto3_client.return_value = mock_athena_client
     mock_execute_athena_query.return_value = "test-query-execution-id"
 
     mock_future = AsyncMock()
+    mock_future.current_status = "SUCCEEDED"
     mock_task_future.return_value = mock_future
 
     # Test the function
-    result = await drop_table_from_s3("test_table")
+    result = await drop_athena_table("test_table", "s3://test-bucket/results/")
 
     # Verify calls
     mock_boto3_client.assert_called_once_with("athena")
     mock_execute_athena_query.assert_called_once_with(
         mock_athena_client,
         "DROP TABLE test_table",
-        "s3://aws-athena-query-results-temp/",
+        "s3://test-bucket/results/",
         catalog=None,
         database=None,
     )
@@ -1499,28 +1500,32 @@ async def test_drop_table_from_s3_success(
 @patch("nx_neptune.instance_management.boto3.client")
 @patch("nx_neptune.instance_management._execute_athena_query")
 @patch("nx_neptune.instance_management.TaskFuture")
-async def test_drop_table_from_s3_with_catalog_database(
+async def test_drop_athena_table_with_catalog_database(
     mock_task_future, mock_execute_athena_query, mock_boto3_client
 ):
-    """Test drop_table_from_s3 with catalog and database parameters."""
+    """Test drop_athena_table with catalog and database parameters."""
     # Setup mocks
     mock_athena_client = MagicMock()
     mock_boto3_client.return_value = mock_athena_client
     mock_execute_athena_query.return_value = "test-query-execution-id"
 
     mock_future = AsyncMock()
+    mock_future.current_status = "SUCCEEDED"
     mock_task_future.return_value = mock_future
 
     # Test the function with catalog and database
-    result = await drop_table_from_s3(
-        "test_table", catalog="test_catalog", database="test_database"
+    result = await drop_athena_table(
+        "test_table",
+        "s3://test-bucket/results/",
+        catalog="test_catalog",
+        database="test_database",
     )
 
     # Verify calls
     mock_execute_athena_query.assert_called_once_with(
         mock_athena_client,
         "DROP TABLE test_table",
-        "s3://aws-athena-query-results-temp/",
+        "s3://test-bucket/results/",
         catalog="test_catalog",
         database="test_database",
     )
@@ -1532,21 +1537,22 @@ async def test_drop_table_from_s3_with_catalog_database(
 @patch("nx_neptune.instance_management.boto3.client")
 @patch("nx_neptune.instance_management._execute_athena_query")
 @patch("nx_neptune.instance_management.TaskFuture")
-async def test_drop_table_from_s3_with_polling_params(
+async def test_drop_athena_table_with_polling_params(
     mock_task_future, mock_execute_athena_query, mock_boto3_client
 ):
-    """Test drop_table_from_s3 with polling parameters."""
+    """Test drop_athena_table with polling parameters."""
     # Setup mocks
     mock_athena_client = MagicMock()
     mock_boto3_client.return_value = mock_athena_client
     mock_execute_athena_query.return_value = "test-query-execution-id"
 
     mock_future = AsyncMock()
+    mock_future.current_status = "SUCCEEDED"
     mock_task_future.return_value = mock_future
 
     # Test the function with polling parameters
-    result = await drop_table_from_s3(
-        "test_table", polling_interval=30, max_attempts=10
+    result = await drop_athena_table(
+        "test_table", "s3://test-bucket/results/", polling_interval=30, max_attempts=10
     )
 
     # Verify TaskFuture was called with correct parameters
