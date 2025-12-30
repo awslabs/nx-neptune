@@ -46,6 +46,7 @@ __all__ = [
     "export_athena_table_to_s3",
     "create_csv_table_from_s3",
     "create_iceberg_table_from_table",
+    "drop_table_from_s3",
 ]
 
 from .utils.task_future import (
@@ -1476,6 +1477,48 @@ async def drop_athena_table(
         )
 
     logger.info(f"Successfully completed execution of query [{query_execution_id}]")
+    return query_execution_id
+
+
+async def drop_table_from_s3(
+    table_name: str,
+    catalog: str = None,  # type: ignore[assignment]
+    database: str = None,  # type: ignore[assignment]
+    polling_interval=None,
+    max_attempts=None,
+) -> str:
+    """Drop a table from Athena.
+
+    Args:
+        table_name: Name of the table to drop
+        catalog: (str, optional) catalog namespace to run the query
+        database: (str, optional) the database to run the query
+        polling_interval: Polling interval for status checks
+        max_attempts: Maximum attempts for status checks
+
+    Returns:
+        str: Returns the query_execution_id if successful
+    """
+    athena_client = boto3.client(SERVICE_ATHENA)
+    sql_statement = f"DROP TABLE {table_name}"
+
+    # Use a temporary S3 location for query results (required by Athena)
+    output_location = "s3://aws-athena-query-results-temp/"
+
+    query_execution_id = _execute_athena_query(
+        athena_client,
+        sql_statement,
+        output_location,
+        catalog=catalog,
+        database=database,
+    )
+
+    # Wait for query to complete using TaskFuture
+    future = TaskFuture(
+        query_execution_id, TaskType.EXPORT_ATHENA_TABLE, polling_interval, max_attempts
+    )
+    await future.wait_until_complete(athena_client)
+
     return query_execution_id
 
 

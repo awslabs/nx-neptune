@@ -34,6 +34,7 @@ from nx_neptune.instance_management import (
     validate_athena_query,
     ProjectionType,
     empty_s3_bucket,
+    drop_table_from_s3,
 )
 
 NX_CREATE_SUCCESS_FIXTURE = """{
@@ -1458,3 +1459,99 @@ def test_empty_s3_bucket_client_error(mock_iam_client_class, mock_boto3_client):
     # Test S3 client error
     with pytest.raises(Exception, match="Failed to empty S3 bucket"):
         empty_s3_bucket("s3://test-bucket/file.txt")
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management.boto3.client")
+@patch("nx_neptune.instance_management._execute_athena_query")
+@patch("nx_neptune.instance_management.TaskFuture")
+async def test_drop_table_from_s3_success(
+    mock_task_future, mock_execute_athena_query, mock_boto3_client
+):
+    """Test drop_table_from_s3 with successful execution."""
+    # Setup mocks
+    mock_athena_client = MagicMock()
+    mock_boto3_client.return_value = mock_athena_client
+    mock_execute_athena_query.return_value = "test-query-execution-id"
+
+    mock_future = AsyncMock()
+    mock_task_future.return_value = mock_future
+
+    # Test the function
+    result = await drop_table_from_s3("test_table")
+
+    # Verify calls
+    mock_boto3_client.assert_called_once_with("athena")
+    mock_execute_athena_query.assert_called_once_with(
+        mock_athena_client,
+        "DROP TABLE test_table",
+        "s3://aws-athena-query-results-temp/",
+        catalog=None,
+        database=None,
+    )
+    mock_task_future.assert_called_once()
+    mock_future.wait_until_complete.assert_called_once_with(mock_athena_client)
+
+    assert result == "test-query-execution-id"
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management.boto3.client")
+@patch("nx_neptune.instance_management._execute_athena_query")
+@patch("nx_neptune.instance_management.TaskFuture")
+async def test_drop_table_from_s3_with_catalog_database(
+    mock_task_future, mock_execute_athena_query, mock_boto3_client
+):
+    """Test drop_table_from_s3 with catalog and database parameters."""
+    # Setup mocks
+    mock_athena_client = MagicMock()
+    mock_boto3_client.return_value = mock_athena_client
+    mock_execute_athena_query.return_value = "test-query-execution-id"
+
+    mock_future = AsyncMock()
+    mock_task_future.return_value = mock_future
+
+    # Test the function with catalog and database
+    result = await drop_table_from_s3(
+        "test_table", catalog="test_catalog", database="test_database"
+    )
+
+    # Verify calls
+    mock_execute_athena_query.assert_called_once_with(
+        mock_athena_client,
+        "DROP TABLE test_table",
+        "s3://aws-athena-query-results-temp/",
+        catalog="test_catalog",
+        database="test_database",
+    )
+
+    assert result == "test-query-execution-id"
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management.boto3.client")
+@patch("nx_neptune.instance_management._execute_athena_query")
+@patch("nx_neptune.instance_management.TaskFuture")
+async def test_drop_table_from_s3_with_polling_params(
+    mock_task_future, mock_execute_athena_query, mock_boto3_client
+):
+    """Test drop_table_from_s3 with polling parameters."""
+    # Setup mocks
+    mock_athena_client = MagicMock()
+    mock_boto3_client.return_value = mock_athena_client
+    mock_execute_athena_query.return_value = "test-query-execution-id"
+
+    mock_future = AsyncMock()
+    mock_task_future.return_value = mock_future
+
+    # Test the function with polling parameters
+    result = await drop_table_from_s3(
+        "test_table", polling_interval=30, max_attempts=10
+    )
+
+    # Verify TaskFuture was called with correct parameters
+    mock_task_future.assert_called_once_with(
+        "test-query-execution-id", TaskType.EXPORT_ATHENA_TABLE, 30, 10
+    )
+
+    assert result == "test-query-execution-id"

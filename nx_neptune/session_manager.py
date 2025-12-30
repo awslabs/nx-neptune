@@ -533,6 +533,13 @@ class SessionManager:
                 s3_export_location, self._s3_client, self._iam_client
             )
 
+            # drop CSV table
+            await instance_management.drop_table_from_s3(
+                csv_table_name,
+                catalog=csv_catalog,
+                database=csv_database,
+            )
+
         return query_id
 
     async def create_snapshot(
