@@ -33,6 +33,7 @@ from nx_neptune.instance_management import (
     _get_create_instance_config,
     validate_athena_query,
     ProjectionType,
+    empty_s3_bucket,
 )
 
 NX_CREATE_SUCCESS_FIXTURE = """{
@@ -1319,3 +1320,141 @@ async def test_update_instance_size_success(mock_boto3_client, mock_get_future):
 
     graph_id = await update_na_instance_size("test-graph-id", 32)
     assert graph_id == "test-graph-id"
+
+
+@patch("nx_neptune.instance_management.boto3.client")
+@patch("nx_neptune.instance_management.IamClient")
+def test_empty_s3_bucket_folder_success(mock_iam_client_class, mock_boto3_client):
+    """Test empty_s3_bucket with folder path (ends with /)."""
+    # Setup mocks
+    mock_s3_client = MagicMock()
+    mock_iam_client = MagicMock()
+    mock_sts_client = MagicMock()
+    mock_iam_boto_client = MagicMock()
+
+    mock_boto3_client.side_effect = lambda service: {
+        "s3": mock_s3_client,
+        "sts": mock_sts_client,
+        "iam": mock_iam_boto_client,
+    }[service]
+
+    mock_sts_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+    mock_iam_client_class.return_value = mock_iam_client
+    mock_iam_client.has_delete_s3_permissions.return_value = True
+
+    # Mock paginator for folder deletion
+    mock_paginator = MagicMock()
+    mock_s3_client.get_paginator.return_value = mock_paginator
+    mock_paginator.paginate.return_value = [
+        {"Contents": [{"Key": "folder/file1.txt"}, {"Key": "folder/file2.txt"}]}
+    ]
+    mock_s3_client.delete_objects.return_value = {"Deleted": []}
+
+    # Test folder deletion
+    empty_s3_bucket("s3://test-bucket/folder/")
+
+    # Verify calls
+    mock_s3_client.get_paginator.assert_called_once_with("list_objects_v2")
+    mock_paginator.paginate.assert_called_once_with(
+        Bucket="test-bucket", Prefix="folder/"
+    )
+    mock_s3_client.delete_objects.assert_called_once()
+
+
+@patch("nx_neptune.instance_management.boto3.client")
+@patch("nx_neptune.instance_management.IamClient")
+def test_empty_s3_bucket_specific_key_success(mock_iam_client_class, mock_boto3_client):
+    """Test empty_s3_bucket with specific key path."""
+    # Setup mocks
+    mock_s3_client = MagicMock()
+    mock_iam_client = MagicMock()
+    mock_sts_client = MagicMock()
+    mock_iam_boto_client = MagicMock()
+
+    mock_boto3_client.side_effect = lambda service: {
+        "s3": mock_s3_client,
+        "sts": mock_sts_client,
+        "iam": mock_iam_boto_client,
+    }[service]
+
+    mock_sts_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+    mock_iam_client_class.return_value = mock_iam_client
+    mock_iam_client.has_delete_s3_permissions.return_value = True
+
+    mock_s3_client.delete_objects.return_value = {"Deleted": []}
+
+    # Test specific key deletion
+    empty_s3_bucket("s3://test-bucket/file.txt")
+
+    # Verify calls
+    mock_s3_client.delete_objects.assert_called_once_with(
+        Bucket="test-bucket", Delete={"Objects": [{"Key": "file.txt"}], "Quiet": False}
+    )
+
+
+@patch("nx_neptune.instance_management.boto3.client")
+def test_empty_s3_bucket_invalid_arn(mock_boto3_client):
+    """Test empty_s3_bucket with invalid S3 ARN."""
+    with pytest.raises(ValueError, match="s3_arn must be a non-empty string"):
+        empty_s3_bucket("")
+
+    with pytest.raises(ValueError, match="s3_arn must be a non-empty string"):
+        empty_s3_bucket(None)
+
+
+@patch("nx_neptune.instance_management.boto3.client")
+@patch("nx_neptune.instance_management.IamClient")
+def test_empty_s3_bucket_permission_error(mock_iam_client_class, mock_boto3_client):
+    """Test empty_s3_bucket with permission error."""
+    # Setup mocks
+    mock_iam_client = MagicMock()
+    mock_sts_client = MagicMock()
+    mock_iam_boto_client = MagicMock()
+    mock_s3_client = MagicMock()
+
+    mock_boto3_client.side_effect = lambda service: {
+        "sts": mock_sts_client,
+        "iam": mock_iam_boto_client,
+        "s3": mock_s3_client,
+    }[service]
+
+    mock_sts_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+    mock_iam_client_class.return_value = mock_iam_client
+    mock_iam_client.has_delete_s3_permissions.side_effect = Exception(
+        "Permission denied"
+    )
+
+    # Test permission error
+    with pytest.raises(Exception, match="Permission denied"):
+        empty_s3_bucket("s3://test-bucket/folder/")
+
+
+@patch("nx_neptune.instance_management.boto3.client")
+@patch("nx_neptune.instance_management.IamClient")
+def test_empty_s3_bucket_client_error(mock_iam_client_class, mock_boto3_client):
+    """Test empty_s3_bucket with S3 client error."""
+    # Setup mocks
+    mock_s3_client = MagicMock()
+    mock_iam_client = MagicMock()
+    mock_sts_client = MagicMock()
+    mock_iam_boto_client = MagicMock()
+
+    mock_boto3_client.side_effect = lambda service: {
+        "s3": mock_s3_client,
+        "sts": mock_sts_client,
+        "iam": mock_iam_boto_client,
+    }[service]
+
+    mock_sts_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+    mock_iam_client_class.return_value = mock_iam_client
+    mock_iam_client.has_delete_s3_permissions.return_value = True
+
+    # Mock S3 client error
+    mock_s3_client.delete_objects.side_effect = ClientError(
+        {"Error": {"Code": "NoSuchBucket", "Message": "Bucket does not exist"}},
+        "delete_objects",
+    )
+
+    # Test S3 client error
+    with pytest.raises(Exception, match="Failed to empty S3 bucket"):
+        empty_s3_bucket("s3://test-bucket/file.txt")
