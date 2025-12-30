@@ -1262,15 +1262,22 @@ def test_get_create_instance_with_import_config_custom():
 
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management._execute_athena_query")
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("nx_neptune.instance_management._get_or_create_clients")
 @patch("boto3.client")
 async def test_export_athena_table_to_s3_success(
-    mock_boto3_client, mock_execute_athena_query
+    mock_boto3_client,
+    mock_get_or_create_clients,
+    mock_get_bucket_encryption,
+    mock_execute_athena_query,
 ):
     """Test successful export of Athena table to S3."""
     from nx_neptune.instance_management import export_athena_table_to_s3
 
     mock_athena_client = MagicMock()
     mock_s3_client = MagicMock()
+    mock_iam_client = MagicMock()
+    mock_iam_client.has_athena_permissions.return_value = True
 
     def client_factory(service_name):
         if service_name == "athena":
@@ -1280,6 +1287,8 @@ async def test_export_athena_table_to_s3_success(
         return MagicMock()
 
     mock_boto3_client.side_effect = client_factory
+    mock_get_or_create_clients.return_value = (mock_iam_client, None)
+    mock_get_bucket_encryption.return_value = None
     mock_execute_athena_query.side_effect = ["query-exec-id-1", "query-exec-id-2"]
 
     mock_athena_client.get_query_execution.return_value = {

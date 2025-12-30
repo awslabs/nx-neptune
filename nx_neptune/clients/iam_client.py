@@ -469,6 +469,36 @@ class IamClient:
         # All ARNs are valid if we reach here
         return True
 
+    def has_athena_permissions(
+        self, s3_bucket: Optional[str] = None, kms_key_arn: Optional[str] = None
+    ):
+        """Check if the role has required Athena/S3/KMS permissions.
+
+        Args:
+            s3_bucket: S3 bucket path for query results
+            kms_key_arn: KMS key ARN for encryption
+
+        Returns:
+            bool: True if all permissions are available
+
+        Raises:
+            Exception: If permissions are insufficient
+        """
+        permissions = ["athena:StartQueryExecution", "athena:GetQueryExecution"]
+        operation_name = "Athena query execution"
+        self.check_aws_permission(operation_name, permissions)
+
+        if s3_bucket:
+            s3_arn = _get_s3_in_arn(s3_bucket)
+            s3_permissions = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+            self.check_aws_permission(operation_name, s3_permissions, s3_arn)
+
+        if kms_key_arn:
+            kms_permissions = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
+            self.check_aws_permission(operation_name, kms_permissions, kms_key_arn)
+
+        return True
+
     def validate_permissions(
         self,
         arn_s3_bucket_import,

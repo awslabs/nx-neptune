@@ -1070,8 +1070,12 @@ def _create_random_graph_name(graph_name_prefix: Optional[str] = None) -> str:
 async def export_athena_table_to_s3(
     sql_queries: list,
     s3_bucket: str,
-    catalog: str = None,  # type: ignore[assignment]
-    database: str = None,  # type: ignore[assignment]
+    catalog: Optional[str] = None,
+    database: Optional[str] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    athena_client: Optional[BaseClient] = None,
+    s3_client: Optional[BaseClient] = None,
     polling_interval=None,
     max_attempts=None,
 ) -> list[str]:
@@ -1082,34 +1086,43 @@ async def export_athena_table_to_s3(
         :param s3_bucket: S3 bucket path for query results
         :param catalog: (str, optional) Catalog namespace to run the sql_query
         :param database: (str, optional) The database to run the sql_query
+        :param sts_client: (optional) Pre-configured STS client
+        :param iam_client: (optional) Pre-configured IAM client
+        :param athena_client: (optional) Pre-configured Athena client
+        :param s3_client: (optional) Pre-configured S3 client
         :param polling_interval: Polling interval for status checks
         :param max_attempts: Maximum attempts for status checks
 
     Returns:
         list: List of successfully processed query execute ids.
     """
-    # TODO: validate permissions (include S3 delete, and S3 getObject)
-    # TODO: check s3 bucket location is empty - or fail
-    # TODO: pass clients into function
+    # Permission checks
+    (iam_client_wrapper, _) = _get_or_create_clients(sts_client, iam_client, None)
 
-    client = boto3.client(SERVICE_ATHENA)
+    # Get KMS key if bucket is encrypted
+    key_arn = _get_bucket_encryption_key_arn(s3_bucket)
+
+    # Check Athena and S3/KMS permissions
+    iam_client_wrapper.has_athena_permissions(s3_bucket, key_arn)
+
+    athena_client = athena_client or boto3.client(SERVICE_ATHENA)
 
     query_execution_ids = []
     for query in sql_queries:
         query_execution_id = _execute_athena_query(
-            client, query, s3_bucket, catalog=catalog, database=database
+            athena_client, query, s3_bucket, catalog=catalog, database=database
         )
         query_execution_ids.append(query_execution_id)
 
     # Wait on all query execution IDs
-    s3_client = boto3.client(SERVICE_S3)
+    s3_client = s3_client or boto3.client(SERVICE_S3)
     bucket_name = s3_bucket.replace("s3://", "").split("/")[0]
     bucket_prefix = "/".join(s3_bucket.replace("s3://", "").split("/")[1:])
 
     await wait_until_all_complete(
         query_execution_ids,
         TaskType.EXPORT_ATHENA_TABLE,
-        client,
+        athena_client,
         polling_interval,
         max_attempts,
     )
@@ -1136,9 +1149,13 @@ async def create_csv_table_from_s3(
     s3_bucket: str,
     s3_output_bucket: str,
     table_name: str,
-    catalog: str = None,  # type: ignore[assignment]
-    database: str = None,  # type: ignore[assignment]
+    catalog: Optional[str] = None,
+    database: Optional[str] = None,
     table_columns: Optional[list[str]] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    athena_client: Optional[BaseClient] = None,
+    s3_client: Optional[BaseClient] = None,
     polling_interval=None,
     max_attempts=None,
 ) -> list[str]:
@@ -1151,6 +1168,10 @@ async def create_csv_table_from_s3(
         :param catalog: (str, optional) catalog namespace to run the sql_query
         :param database: (str, optional) the database to run the sql_query
         :param table_columns: (list, optional) table columns to include in the newly created query
+        :param sts_client: (optional) Pre-configured STS client
+        :param iam_client: (optional) Pre-configured IAM client
+        :param athena_client: (optional) Pre-configured Athena client
+        :param s3_client: (optional) Pre-configured S3 client
         :param polling_interval: Polling interval for status checks
         :param max_attempts: Maximum attempts for status checks
 
@@ -1160,14 +1181,19 @@ async def create_csv_table_from_s3(
     Raises:
         Exception: If any query fails
     """
-    # TODO check if s3_bucket is empty
-    # TODO validate permissions
-    # TODO validate table_schema
-    # TODO validate if table exists already
-    # TODO check is skip drop table is False and table exists
+    # Permission checks
+    (iam_client_wrapper, _) = _get_or_create_clients(sts_client, iam_client, None)
+
+    # Get KMS keys if buckets are encrypted
+    s3_key_arn = _get_bucket_encryption_key_arn(s3_bucket)
+    output_key_arn = _get_bucket_encryption_key_arn(s3_output_bucket)
+
+    # Check Athena and S3/KMS permissions for both buckets
+    iam_client_wrapper.has_athena_permissions(s3_bucket, s3_key_arn)
+    iam_client_wrapper.has_athena_permissions(s3_output_bucket, output_key_arn)
 
     # Wait on all query execution IDs
-    s3_client = boto3.client(SERVICE_S3)
+    s3_client = s3_client or boto3.client(SERVICE_S3)
     bucket_path = s3_bucket.replace("s3://", "").split("/")
     bucket_name = bucket_path.pop(0)
     bucket_prefix = "/".join(bucket_path)
@@ -1207,7 +1233,7 @@ async def create_csv_table_from_s3(
         f"{table_name}_vertices",
     )
 
-    athena_client = boto3.client(SERVICE_ATHENA)
+    athena_client = athena_client or boto3.client(SERVICE_ATHENA)
     query_execution_ids = []
     for sql_statement in [edge_sql_statement, vertex_sql_statement]:
         logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
@@ -1317,6 +1343,9 @@ async def create_iceberg_table_from_table(
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
     table_columns: Optional[list[str]] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    athena_client: Optional[BaseClient] = None,
     polling_interval=None,
     max_attempts=None,
 ) -> str:
@@ -1329,12 +1358,24 @@ async def create_iceberg_table_from_table(
         :param catalog: (str, optional) catalog namespace to run the sql_query
         :param database: (str, optional) the database to run the sql_query
         :param table_columns: (list, optional) table columns to include
+        :param sts_client: (optional) Pre-configured STS client
+        :param iam_client: (optional) Pre-configured IAM client
+        :param athena_client: (optional) Pre-configured Athena client
         :param polling_interval: Polling interval for status checks
         :param max_attempts: Maximum attempts for status checks
 
     Returns:
         str: Returns the query_execution_id if successful
     """
+    # Permission checks
+    (iam_client_wrapper, _) = _get_or_create_clients(sts_client, iam_client, None)
+
+    # Get KMS key if output bucket is encrypted
+    output_key_arn = _get_bucket_encryption_key_arn(s3_output_bucket)
+
+    # Check Athena and S3/KMS permissions
+    iam_client_wrapper.has_athena_permissions(s3_output_bucket, output_key_arn)
+
     select_columns = "*"
     if table_columns:
         select_columns = '"' + '","'.join(table_columns) + '"'
@@ -1350,7 +1391,7 @@ AS SELECT {select_columns} FROM {csv_table_name};
 
     logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
 
-    athena_client = boto3.client(SERVICE_ATHENA)
+    athena_client = athena_client or boto3.client(SERVICE_ATHENA)
     query_execution_id = _execute_athena_query(
         athena_client,
         sql_statement,
@@ -1484,8 +1525,8 @@ def _execute_athena_query(
     client,
     sql_statement: str,
     output_location: str,
-    catalog: str = None,  # type: ignore[assignment]
-    database: str = None,  # type: ignore[assignment]
+    catalog: Optional[str] = None,
+    database: Optional[str] = None,
 ) -> str:
     """
     :param client: boto3 Athena client to run a query

@@ -13,6 +13,7 @@ from . import NeptuneGraph, instance_management
 from .clients import IamClient, NeptuneAnalyticsClient
 from .clients.neptune_constants import (
     APP_ID_NX,
+    SERVICE_ATHENA,
     SERVICE_IAM,
     SERVICE_NA,
     SERVICE_S3,
@@ -98,6 +99,7 @@ class SessionManager:
         self._s3_iam_role = self._sts_client.get_caller_identity()["Arn"]
         self._iam_client = boto3.client(SERVICE_IAM)
         self._s3_client = boto3.client(SERVICE_S3)
+        self._athena_client = boto3.client(SERVICE_ATHENA)
 
     @classmethod
     def session(cls, session_name=None, cleanup_task=None):
@@ -402,6 +404,10 @@ class SessionManager:
             s3_location,
             catalog,
             database,
+            athena_client=self._athena_client,
+            s3_client=self._s3_client,
+            iam_client=self._iam_client,
+            sts_client=self._sts_client,
         )
         if not query_execution_ids:
             raise Exception("Projections not created.")
@@ -486,6 +492,10 @@ class SessionManager:
             csv_table_name,
             catalog=csv_catalog,
             database=csv_database,
+            athena_client=self._athena_client,
+            s3_client=self._s3_client,
+            iam_client=self._iam_client,
+            sts_client=self._sts_client,
         )
         logger.info(f"Table created {csv_catalog}/{csv_database}/{csv_table_name}")
 
@@ -504,6 +514,9 @@ class SessionManager:
             csv_vertices_table_name,
             catalog=iceberg_catalog,
             database=iceberg_database,
+            athena_client=self._athena_client,
+            iam_client=self._iam_client,
+            sts_client=self._sts_client,
         )
         logger.info(
             f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_vertices_table_name} with query ID: {query_id}"
@@ -522,6 +535,9 @@ class SessionManager:
             csv_edges_table_name,
             catalog=iceberg_catalog,
             database=iceberg_database,
+            athena_client=self._athena_client,
+            iam_client=self._iam_client,
+            sts_client=self._sts_client,
         )
         logger.info(
             f"Table created {iceberg_catalog}/{iceberg_database}/{iceberg_edges_table_name} with query ID: {query_id}"

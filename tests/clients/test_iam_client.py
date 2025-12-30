@@ -540,3 +540,32 @@ class TestIamClient:
         assert result["delete_na_instance"] is False
         assert result["start_graph"] is True
         assert result["stop_graph"] is True
+
+    def test_has_athena_permissions_success(self, mock_iam_client):
+        """Test has_athena_permissions with valid permissions."""
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {
+                    "EvalActionName": "athena:StartQueryExecution",
+                    "EvalDecision": "allowed",
+                },
+                {
+                    "EvalActionName": "athena:GetQueryExecution",
+                    "EvalDecision": "allowed",
+                },
+                {"EvalActionName": "s3:GetObject", "EvalDecision": "allowed"},
+                {"EvalActionName": "s3:PutObject", "EvalDecision": "allowed"},
+                {"EvalActionName": "s3:ListBucket", "EvalDecision": "allowed"},
+                {"EvalActionName": "kms:Decrypt", "EvalDecision": "allowed"},
+                {"EvalActionName": "kms:GenerateDataKey", "EvalDecision": "allowed"},
+                {"EvalActionName": "kms:DescribeKey", "EvalDecision": "allowed"},
+            ]
+        }
+
+        # Should not raise exception
+        result = iam_client.has_athena_permissions(
+            "s3://test-bucket/", "arn:aws:kms:us-east-1:123456789012:key/test-key"
+        )
+        assert result is True
