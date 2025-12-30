@@ -351,6 +351,7 @@ class SessionManager:
         graph_id = _get_graph_id(graph)
         skip_snapshot = True
 
+        # Store the task_id instead, and try and cath upon the error
         return await instance_management.import_csv_from_s3(
             NeptuneGraph(
                 NeptuneAnalyticsClient(graph_id, self._neptune_client),
@@ -361,6 +362,9 @@ class SessionManager:
             reset_graph_ahead,
             skip_snapshot,
         )
+
+        # In the case of the error, trigger the size up and retry (once).
+
 
     async def import_from_table(
         self,
