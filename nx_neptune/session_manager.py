@@ -11,7 +11,13 @@ from botocore.config import Config
 
 from . import NeptuneGraph, instance_management
 from .clients import IamClient, NeptuneAnalyticsClient
-from .clients.neptune_constants import APP_ID_NX, SERVICE_IAM, SERVICE_NA, SERVICE_STS, SERVICE_S3
+from .clients.neptune_constants import (
+    APP_ID_NX,
+    SERVICE_IAM,
+    SERVICE_NA,
+    SERVICE_S3,
+    SERVICE_STS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -331,31 +337,6 @@ class SessionManager:
             export_filter=export_filter,
         )
 
-    async def create_multiple_instances(
-        self, count: int, config: Optional[dict] = None
-    ) -> list[str]:
-        """Create multiple Neptune Analytics instances in parallel.
-
-        Args:
-            count (int): Number of instances to create.
-            config (Optional[dict]): Optional configuration to pass to each instance creation.
-
-        Returns:
-            list[str]: List of graph IDs for the created instances.
-        """
-        tasks = [
-            instance_management.create_na_instance(
-                config=config,
-                na_client=self._neptune_client,
-                sts_client=self._sts_client,
-                iam_client=self._iam_client,
-                graph_name_prefix=self.session_name,
-            )
-            for _ in range(count)
-        ]
-        graph_ids = await asyncio.gather(*tasks)
-        return graph_ids
-
     async def import_from_csv(
         self,
         graph: Union[str, dict[str, str]],
@@ -393,7 +374,7 @@ class SessionManager:
         sql_queries,
         catalog=None,
         database=None,
-        remove_buckets = True,
+        remove_buckets=True,
     ) -> str:
         """Import data from Athena table query results into a Neptune Analytics graph.
 
@@ -442,7 +423,9 @@ class SessionManager:
         if remove_buckets:
             for query_execution_id in query_execution_ids:
                 logger.info(f"deleting bucket {query_execution_id}")
-                instance_management.empty_s3_bucket(query_execution_id, self._s3_client, self._iam_client)
+                instance_management.empty_s3_bucket(
+                    query_execution_id, self._s3_client, self._iam_client
+                )
 
         logger.info(f"Graph data imported to graph {graph_id} using task {task_id}")
         return task_id
@@ -458,7 +441,7 @@ class SessionManager:
         iceberg_edges_table_name: str,
         iceberg_catalog: str,
         iceberg_database: str,
-        remove_resources = True,
+        remove_resources=True,
     ) -> str:
         """Export Neptune Analytics graph data to Athena tables via S3.
 
@@ -546,7 +529,17 @@ class SessionManager:
 
         if remove_resources:
             # remove export bucket
-            instance_management.empty_s3_bucket(s3_export_location, self._s3_client, self._iam_client)
+            instance_management.empty_s3_bucket(
+                s3_export_location, self._s3_client, self._iam_client
+            )
+
+            # drop CSV table
+            await instance_management.drop_athena_table(
+                csv_table_name,
+                s3_location,
+                catalog=csv_catalog,
+                database=csv_database,
+            )
 
         return query_id
 

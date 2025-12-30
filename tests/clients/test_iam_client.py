@@ -500,7 +500,7 @@ class TestIamClient:
         assert result["import_from_s3"] is True
         assert result["export_csv_to_s3"] is True
         assert result["export_athena_table_to_s3"] is True
-        assert result["create_table_from_s3"] is True
+        assert result["create_csv_table_from_s3"] is True
         assert result["create_graph_snapshot"] is True
         assert result["create_na_instance_from_snapshot"] is True
         assert result["delete_graph_snapshot"] is True
