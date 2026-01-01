@@ -259,7 +259,6 @@ class TaskFuture(Future):
             # done with error
             return True
 
-
         if self.current_status not in self.task_type.permitted_statuses:
             logger.error(
                 f"Unexpected status: {self.current_status} on type: {self.task_type}"
@@ -277,7 +276,6 @@ class TaskFuture(Future):
             )
             # done with error
             return True
-
 
         # else not done
         return False
@@ -305,7 +303,6 @@ class TaskFuture(Future):
             try:
                 self.check_status(client, attempt)
                 if self.done():
-                    print("Future is done, returning")
                     return
 
                 attempt += 1
@@ -313,6 +310,5 @@ class TaskFuture(Future):
                 # sleep for the polling interval
                 await asyncio.sleep(self.polling_interval)
 
-            except ClientError:
-                print("Rethrowing - TaskFuture.py")
-                raise
+            except ClientError as e:
+                raise e
