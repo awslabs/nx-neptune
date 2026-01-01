@@ -29,7 +29,17 @@ _ASYNC_MAX_ATTEMPTS = 60
 
 class TaskType(Enum):
     # Allow import to run against an "INITIALIZING" state - the graph is sometimes in this state after creating graph
-    IMPORT = (1, ["INITIALIZING", "ANALYZING_DATA", "IMPORTING", "REPROVISIONING", "ROLLING_BACK"], "SUCCEEDED")
+    IMPORT = (
+        1,
+        [
+            "INITIALIZING",
+            "ANALYZING_DATA",
+            "IMPORTING",
+            "REPROVISIONING",
+            "ROLLING_BACK",
+        ],
+        "SUCCEEDED",
+    )
     # Allow export to run against an "INITIALIZING" state - the graph is sometimes in this state after running algorithms
     EXPORT = (2, ["INITIALIZING", "EXPORTING"], "SUCCEEDED")
     CREATE = (3, ["CREATING"], "AVAILABLE")
@@ -86,14 +96,20 @@ def _import_status_check_wrapper(client, task_id):
         successful deletion, in the case of resource not found.
     """
 
-    response =  client.get_import_task(taskIdentifier=task_id)
+    response = client.get_import_task(taskIdentifier=task_id)
 
     if "status" in response and response["status"] == "FAILED":
 
-        if "importTaskDetails" in response and response["importTaskDetails"]["status"] == "IN_PROGRESS":
+        if (
+            "importTaskDetails" in response
+            and response["importTaskDetails"]["status"] == "IN_PROGRESS"
+        ):
             return {"status": "IMPORTING"}
 
-        if "statusReason" in response and response["statusReason"].find("insufficient memory") != -1:
+        if (
+            "statusReason" in response
+            and response["statusReason"].find("insufficient memory") != -1
+        ):
             return {"status": "INSUFFICIENT_MEMORY"}
 
     return response
@@ -223,7 +239,9 @@ class TaskFuture(Future):
             return True
 
         if self.current_status == "INSUFFICIENT_MEMORY":
-            logger.info(f"Task [{self.task_id}] hit an insufficient memory issue [{current_time}]")
+            logger.info(
+                f"Task [{self.task_id}] hit an insufficient memory issue [{current_time}]"
+            )
             self.set_exception(
                 ClientError(
                     {

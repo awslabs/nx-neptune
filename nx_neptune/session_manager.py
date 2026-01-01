@@ -332,12 +332,13 @@ class SessionManager:
             s3_location,
             export_filter=export_filter,
         )
+
     async def import_from_csv(
         self,
         graph: Union[str, dict[str, str]],
         s3_location,
         reset_graph_ahead=False,
-        max_size=None
+        max_size=None,
     ) -> str:
         """Import CSV data from S3 into a Neptune Analytics graph.
 
@@ -371,9 +372,10 @@ class SessionManager:
             if e.response["Error"]["Code"] == "InsufficientMemory":
                 current_size = self.get_graph(graph_id)["provisionedMemory"]
 
-                while max_size and max_size >= current_size*2:
+                while max_size and max_size >= current_size * 2:
                     await instance_management.update_na_instance_size(
-                        graph_id=graph_id, prospect_size=current_size * 2)
+                        graph_id=graph_id, prospect_size=current_size * 2
+                    )
                     current_size = current_size * 2
 
                     try:
