@@ -8,6 +8,7 @@ from typing import Callable, Optional, Union
 import boto3
 import networkx as nx
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from . import NeptuneGraph, instance_management
 from .clients import IamClient, NeptuneAnalyticsClient
@@ -337,6 +338,7 @@ class SessionManager:
         graph: Union[str, dict[str, str]],
         s3_location,
         reset_graph_ahead=False,
+        max_size=None
     ) -> str:
         """Import CSV data from S3 into a Neptune Analytics graph.
 
@@ -350,21 +352,44 @@ class SessionManager:
 
         graph_id = _get_graph_id(graph)
         skip_snapshot = True
+        try:
+            return await instance_management.import_csv_from_s3(
+                NeptuneGraph(
+                    NeptuneAnalyticsClient(graph_id, self._neptune_client),
+                    IamClient(self._s3_iam_role, self._iam_client),
+                    nx.Graph(),
+                ),
+                s3_location,
+                reset_graph_ahead,
+                skip_snapshot,
+            )
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "InsufficientMemory":
+                current_size = self.get_graph(graph_id)["provisionedMemory"]
 
-        # Store the task_id instead, and try and cath upon the error
-        return await instance_management.import_csv_from_s3(
-            NeptuneGraph(
-                NeptuneAnalyticsClient(graph_id, self._neptune_client),
-                IamClient(self._s3_iam_role, self._iam_client),
-                nx.Graph(),
-            ),
-            s3_location,
-            reset_graph_ahead,
-            skip_snapshot,
-        )
+                while max_size and max_size >= current_size*2:
+                    await instance_management.update_na_instance_size(
+                        graph_id=graph_id, prospect_size=current_size * 2)
+                    current_size = current_size * 2
 
-        # In the case of the error, trigger the size up and retry (once).
-
+                    try:
+                        return await instance_management.import_csv_from_s3(
+                            NeptuneGraph(
+                                NeptuneAnalyticsClient(graph_id, self._neptune_client),
+                                IamClient(self._s3_iam_role, self._iam_client),
+                                nx.Graph(),
+                            ),
+                            s3_location,
+                            reset_graph_ahead,
+                            skip_snapshot,
+                        )
+                    except ClientError as e:
+                        if e.response["Error"]["Code"] == "InsufficientMemory":
+                            continue
+                        else:
+                            raise e
+            else:
+                print(e)
 
     async def import_from_table(
         self,

@@ -305,6 +305,7 @@ class TaskFuture(Future):
             try:
                 self.check_status(client, attempt)
                 if self.done():
+                    print("Future is done, returning")
                     return
 
                 attempt += 1
@@ -312,5 +313,6 @@ class TaskFuture(Future):
                 # sleep for the polling interval
                 await asyncio.sleep(self.polling_interval)
 
-            except ClientError as e:
-                raise e
+            except ClientError:
+                print("Rethrowing - TaskFuture.py")
+                raise
