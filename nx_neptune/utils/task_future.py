@@ -79,7 +79,7 @@ def _import_status_check_wrapper(client, task_id):
 
     Args:
         client (client): The boto client
-        graph_id (str): The String identify for the remote Neptune Analytics graph
+        task_id (str): The String identify for the remote Neptune Analytics graph
 
     Returns:
         str: The original response from Boto or a mocked response to represent
@@ -87,8 +87,6 @@ def _import_status_check_wrapper(client, task_id):
     """
 
     response =  client.get_import_task(taskIdentifier=task_id)
-
-    print(response)
 
     if "status" in response and response["status"] == "FAILED":
 

@@ -332,7 +332,6 @@ class SessionManager:
             s3_location,
             export_filter=export_filter,
         )
-
     async def import_from_csv(
         self,
         graph: Union[str, dict[str, str]],
@@ -345,9 +344,14 @@ class SessionManager:
         Args:
             graph (Union[str, dict[str, str]]): Graph ID string or graph metadata dict.
             s3_location (str): S3 location containing CSV data to import.
+            reset_graph_ahead (bool, optional): Whether to reset the graph before import. Defaults to False.
+            max_size (int, optional): Maximum memory size in GB to scale up to if import fails due to insufficient memory. Defaults to None.
 
         Returns:
             str: Task ID of the import operation.
+
+        Raises:
+            ClientError: If import fails due to insufficient memory and max_size is exceeded, or other AWS client errors.
         """
 
         graph_id = _get_graph_id(graph)
