@@ -346,7 +346,7 @@ class SessionManager:
             graph (Union[str, dict[str, str]]): Graph ID string or graph metadata dict.
             s3_location (str): S3 location containing CSV data to import.
             reset_graph_ahead (bool, optional): Whether to reset the graph before import. Defaults to False.
-            max_size (int, optional): Maximum memory size in GB to scale up to if import fails due to insufficient memory. Defaults to None.
+            max_size (int, optional): Maximum memory size in GB to scale up to. Defaults to None.
 
         Returns:
             str: Task ID of the import operation.
@@ -389,11 +389,12 @@ class SessionManager:
                             reset_graph_ahead,
                             skip_snapshot,
                         )
-                    except ClientError as e:
-                        if e.response["Error"]["Code"] == "InsufficientMemory":
+                    except ClientError as error:
+                        if error.response["Error"]["Code"] == "InsufficientMemory":
                             continue
                         else:
-                            raise e
+                            raise error
+            raise e
 
     async def import_from_table(
         self,
