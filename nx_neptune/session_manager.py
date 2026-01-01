@@ -388,8 +388,6 @@ class SessionManager:
                             continue
                         else:
                             raise e
-            else:
-                print(e)
 
     async def import_from_table(
         self,
