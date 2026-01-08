@@ -1091,12 +1091,11 @@ async def export_athena_table_to_s3(
     # TODO: validate permissions - or fail
     # TODO: check s3 bucket location is empty - or fail
 
-    # TODO: In json mode, the annotated embedding fields shlould be handled via
+    # TODO: In json mode, the annotated embedding field should be handled via
     #  array_join(transform("test_arr", x -> cast(x as varchar)), ';')
 
     query_execution_ids = []
     for query in sql_queries:
-
         query_execution_id = _execute_athena_query(
             client, query, s3_bucket, catalog=catalog, database=database
         )
