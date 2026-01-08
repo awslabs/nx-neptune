@@ -316,6 +316,20 @@ def test_clean_s3_path(s3_path, expected_result):
             ProjectionType.NODE,
             True,
         ),
+        # Valid embedding header (Node)
+        (
+            "select col_a as '~id', col_b as 'embedding:vector' from test_table",
+            ProjectionType.NODE,
+            True,
+        ),
+        # Invalid embedding type (Node)
+        (
+            "select col_a as 'embedding:xxxx' from test_table",
+            ProjectionType.NODE,
+            False,
+        ),
+        # Invalid variable naming for embedding column (Node)
+        ("select col_a as 'xxx:vector' from test_table", ProjectionType.NODE, False),
     ],
 )
 def test_validate_athena_query(query, projection_type, expected_result):

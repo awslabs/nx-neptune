@@ -1091,8 +1091,12 @@ async def export_athena_table_to_s3(
     # TODO: validate permissions - or fail
     # TODO: check s3 bucket location is empty - or fail
 
+    # TODO: In json mode, the annotated embedding fields shlould be handled via
+    #  array_join(transform("test_arr", x -> cast(x as varchar)), ';')
+
     query_execution_ids = []
     for query in sql_queries:
+
         query_execution_id = _execute_athena_query(
             client, query, s3_bucket, catalog=catalog, database=database
         )
@@ -1536,13 +1540,23 @@ def validate_athena_query(query: str, projection_type: ProjectionType):
                 logger.warning(
                     f"Missing required fields for node projection. Required fields: {mandate_fields_node}"
                 )
-            return mandate_fields_node.issubset(column_names)
+                return False
+            for name in column_names:
+                if (name.startswith("embedding:") and name != "embedding:vector") or (
+                    name.endswith(":vector") and name != "embedding:vector"
+                ):
+                    logger.warning(
+                        f"Invalid embedding column name: {name}. Embedding column must be named 'embedding:vector'"
+                    )
+                    return False
+            return True
         case ProjectionType.EDGE:
             mandate_fields_edge = {"~from", "~to"}
             if not mandate_fields_edge.issubset(column_names):
                 logger.warning(
                     f"Missing required fields for edge projection. Required fields: {mandate_fields_edge}"
                 )
+                return False
             return mandate_fields_edge.issubset(column_names)
         case _:
             logger.warning(f"Unknown projection type: {projection_type}")
