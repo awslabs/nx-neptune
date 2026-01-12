@@ -346,7 +346,7 @@ class SessionManager:
             graph (Union[str, dict[str, str]]): Graph ID string or graph metadata dict.
             s3_location (str): S3 location containing CSV data to import.
             reset_graph_ahead (bool, optional): Whether to reset the graph before import. Defaults to False.
-            max_size (int, optional): Maximum memory size in GB to scale up to. Defaults to None.
+            max_size (int, optional): If defined, maximum memory size in GB to scale up to. Defaults to None.
 
         Returns:
             str: Task ID of the import operation.
