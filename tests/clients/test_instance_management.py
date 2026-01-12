@@ -1197,7 +1197,7 @@ async def test_create_na_instance_with_s3_import_success(
     mock_iam_client = MagicMock()
     mock_iam_client.role_arn = "arn:aws:iam::123456789012:role/test-role"
 
-    mock_get_or_create_clients.return_value = (mock_iam_client, mock_na_client)
+    mock_get_or_create_clients.return_value = (mock_iam_client, mock_na_client, None)
     mock_get_bucket_encryption_key_arn.return_value = None
 
     # Create an async function that returns None
@@ -1287,7 +1287,11 @@ async def test_export_athena_table_to_s3_success(
         return MagicMock()
 
     mock_boto3_client.side_effect = client_factory
-    mock_get_or_create_clients.return_value = (mock_iam_client, None)
+    mock_get_or_create_clients.return_value = (
+        mock_iam_client,
+        None,
+        mock_athena_client,
+    )
     mock_get_bucket_encryption.return_value = None
     mock_execute_athena_query.side_effect = ["query-exec-id-1", "query-exec-id-2"]
 
@@ -1342,7 +1346,7 @@ def test_empty_s3_bucket_folder_success(mock_get_or_create_clients, mock_boto3_c
     mock_iam_client.has_delete_s3_permissions.return_value = True
 
     mock_boto3_client.return_value = mock_s3_client
-    mock_get_or_create_clients.return_value = (mock_iam_client, None)
+    mock_get_or_create_clients.return_value = (mock_iam_client, None, None)
 
     # Mock paginator for folder deletion
     mock_paginator = MagicMock()
@@ -1375,7 +1379,7 @@ def test_empty_s3_bucket_specific_key_success(
     mock_iam_client.has_delete_s3_permissions.return_value = True
 
     mock_boto3_client.return_value = mock_s3_client
-    mock_get_or_create_clients.return_value = (mock_iam_client, None)
+    mock_get_or_create_clients.return_value = (mock_iam_client, None, None)
 
     mock_s3_client.delete_objects.return_value = {"Deleted": []}
 
@@ -1409,7 +1413,7 @@ def test_empty_s3_bucket_permission_error(
     mock_s3_client = MagicMock()
 
     mock_boto3_client.return_value = mock_s3_client
-    mock_get_or_create_clients.return_value = (mock_iam_client, None)
+    mock_get_or_create_clients.return_value = (mock_iam_client, None, None)
     mock_iam_client.has_delete_s3_permissions.side_effect = Exception(
         "Permission denied"
     )
@@ -1428,7 +1432,7 @@ def test_empty_s3_bucket_client_error(mock_get_or_create_clients, mock_boto3_cli
     mock_iam_client = MagicMock()
 
     mock_boto3_client.return_value = mock_s3_client
-    mock_get_or_create_clients.return_value = (mock_iam_client, None)
+    mock_get_or_create_clients.return_value = (mock_iam_client, None, None)
     mock_iam_client.has_delete_s3_permissions.return_value = True
 
     # Mock S3 client error
@@ -1463,7 +1467,11 @@ async def test_drop_athena_table_success(
 
     mock_iam_client = MagicMock()
     mock_iam_client.has_athena_permissions.return_value = True
-    mock_get_or_create_clients.return_value = (mock_iam_client, None)
+    mock_get_or_create_clients.return_value = (
+        mock_iam_client,
+        None,
+        mock_athena_client,
+    )
     mock_get_bucket_encryption.return_value = None
 
     mock_future = AsyncMock()
@@ -1474,7 +1482,6 @@ async def test_drop_athena_table_success(
     result = await drop_athena_table("test_table", "s3://test-bucket/results/")
 
     # Verify calls
-    mock_boto3_client.assert_called_once_with("athena")
     mock_execute_athena_query.assert_called_once_with(
         mock_athena_client,
         "DROP TABLE test_table",
@@ -1509,7 +1516,11 @@ async def test_drop_athena_table_with_catalog_database(
 
     mock_iam_client = MagicMock()
     mock_iam_client.has_athena_permissions.return_value = True
-    mock_get_or_create_clients.return_value = (mock_iam_client, None)
+    mock_get_or_create_clients.return_value = (
+        mock_iam_client,
+        None,
+        mock_athena_client,
+    )
     mock_get_bucket_encryption.return_value = None
 
     mock_future = AsyncMock()
@@ -1557,7 +1568,11 @@ async def test_drop_athena_table_with_polling_params(
 
     mock_iam_client = MagicMock()
     mock_iam_client.has_athena_permissions.return_value = True
-    mock_get_or_create_clients.return_value = (mock_iam_client, None)
+    mock_get_or_create_clients.return_value = (
+        mock_iam_client,
+        None,
+        mock_athena_client,
+    )
     mock_get_bucket_encryption.return_value = None
 
     mock_future = AsyncMock()

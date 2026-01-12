@@ -25,6 +25,7 @@ from botocore.exceptions import ClientError
 from sqlglot import exp, parse_one
 
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
+from .clients.iam_client import split_s3_arn_to_bucket_and_path
 from .clients.neptune_constants import APP_ID_NX, SERVICE_ATHENA, SERVICE_S3
 from .na_graph import NeptuneGraph
 
@@ -93,7 +94,9 @@ async def create_na_instance(
     Raises:
         Exception: If the Neptune Analytics instance creation fails
     """
-    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    (iam_client, na_client, _) = _get_or_create_clients(
+        sts_client, iam_client, na_client
+    )
     iam_client.has_create_na_permissions()
 
     response = _create_na_instance_task(na_client, config, graph_name_prefix)
@@ -161,7 +164,7 @@ async def create_na_instance_with_s3_import(
         ValueError: If the role lacks required permissions
     """
 
-    (iam_client_wrapper, na_client) = _get_or_create_clients(
+    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
     # Retrieve key_arn for the bucket and permission check if present
@@ -236,7 +239,7 @@ async def create_na_instance_from_snapshot(
         Exception: If the Neptune Analytics instance creation fails
         ValueError: If the role lacks required permissions
     """
-    (iam_client_wrapper, na_client) = _get_or_create_clients(
+    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
 
@@ -292,7 +295,7 @@ async def delete_graph_snapshot(
         Exception: If the snapshot deletion fails
         ValueError: If the role lacks required permissions
     """
-    (iam_client_wrapper, na_client) = _get_or_create_clients(
+    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
 
@@ -345,7 +348,7 @@ async def start_na_instance(
         Exception: If the start operation fails with an invalid status code
         ValueError: If the role lacks required permissions or if graph is not in STOPPED state
     """
-    (iam_client_wrapper, na_client) = _get_or_create_clients(
+    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
     iam_client_wrapper.has_start_na_permissions()
@@ -393,7 +396,7 @@ async def stop_na_instance(
         Exception: If the stop operation fails with an invalid status code
         ValueError: If the role lacks required permissions or if graph is not in AVAILABLE state
     """
-    (iam_client_wrapper, na_client) = _get_or_create_clients(
+    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
     iam_client_wrapper.has_stop_na_permissions()
@@ -443,7 +446,9 @@ async def delete_na_instance(
         ValueError: If the role lacks required permissions
     """
 
-    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    (iam_client, na_client, _) = _get_or_create_clients(
+        sts_client, iam_client, na_client
+    )
     # Permission check
     iam_client.has_delete_na_permissions()
 
@@ -492,7 +497,9 @@ async def create_graph_snapshot(
         ValueError: If the role lacks required permissions
     """
     # Permission check
-    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    (iam_client, na_client, _) = _get_or_create_clients(
+        sts_client, iam_client, na_client
+    )
     iam_client.has_create_na_snapshot_permissions()
 
     kwargs: dict[str, Any] = {
@@ -695,7 +702,9 @@ async def update_na_instance_size(
         Exception: If the resize operation fails
         ValueError: If the role lacks required permissions
     """
-    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    (iam_client, na_client, _) = _get_or_create_clients(
+        sts_client, iam_client, na_client
+    )
 
     # Permission check
     iam_client.has_update_na_permissions()
@@ -1096,16 +1105,15 @@ async def export_athena_table_to_s3(
     Returns:
         list: List of successfully processed query execute ids.
     """
-    # Permission checks
-    (iam_client_wrapper, _) = _get_or_create_clients(sts_client, iam_client, None)
+    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+        sts_client, iam_client, None, athena_client
+    )
 
     # Get KMS key if bucket is encrypted
     key_arn = _get_bucket_encryption_key_arn(s3_bucket)
 
     # Check Athena and S3/KMS permissions
     iam_client_wrapper.has_athena_permissions(s3_bucket, key_arn)
-
-    athena_client = athena_client or boto3.client(SERVICE_ATHENA)
 
     query_execution_ids = []
     for query in sql_queries:
@@ -1116,8 +1124,7 @@ async def export_athena_table_to_s3(
 
     # Wait on all query execution IDs
     s3_client = s3_client or boto3.client(SERVICE_S3)
-    bucket_name = s3_bucket.replace("s3://", "").split("/")[0]
-    bucket_prefix = "/".join(s3_bucket.replace("s3://", "").split("/")[1:])
+    bucket_name, bucket_prefix = split_s3_arn_to_bucket_and_path(s3_bucket)
 
     await wait_until_all_complete(
         query_execution_ids,
@@ -1182,7 +1189,9 @@ async def create_csv_table_from_s3(
         Exception: If any query fails
     """
     # Permission checks
-    (iam_client_wrapper, _) = _get_or_create_clients(sts_client, iam_client, None)
+    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+        sts_client, iam_client, None, athena_client
+    )
 
     # Get KMS keys if buckets are encrypted
     s3_key_arn = _get_bucket_encryption_key_arn(s3_bucket)
@@ -1194,9 +1203,7 @@ async def create_csv_table_from_s3(
 
     # Wait on all query execution IDs
     s3_client = s3_client or boto3.client(SERVICE_S3)
-    bucket_path = s3_bucket.replace("s3://", "").split("/")
-    bucket_name = bucket_path.pop(0)
-    bucket_prefix = "/".join(bucket_path)
+    bucket_name, bucket_prefix = split_s3_arn_to_bucket_and_path(s3_bucket)
 
     logger.debug(f"Inspecting files from {s3_bucket}")
 
@@ -1233,7 +1240,6 @@ async def create_csv_table_from_s3(
         f"{table_name}_vertices",
     )
 
-    athena_client = athena_client or boto3.client(SERVICE_ATHENA)
     query_execution_ids = []
     for sql_statement in [edge_sql_statement, vertex_sql_statement]:
         logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
@@ -1368,7 +1374,9 @@ async def create_iceberg_table_from_table(
         str: Returns the query_execution_id if successful
     """
     # Permission checks
-    (iam_client_wrapper, _) = _get_or_create_clients(sts_client, iam_client, None)
+    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+        sts_client, iam_client, None, athena_client
+    )
 
     # Get KMS key if output bucket is encrypted
     output_key_arn = _get_bucket_encryption_key_arn(s3_output_bucket)
@@ -1391,7 +1399,6 @@ AS SELECT {select_columns} FROM {csv_table_name};
 
     logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
 
-    athena_client = athena_client or boto3.client(SERVICE_ATHENA)
     query_execution_id = _execute_athena_query(
         athena_client,
         sql_statement,
@@ -1446,7 +1453,9 @@ async def create_table_schema_from_s3(
         str: Returns the query_execution_id if successful
     """
     # Permission checks
-    (iam_client_wrapper, _) = _get_or_create_clients(sts_client, iam_client, None)
+    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+        sts_client, iam_client, None, athena_client
+    )
 
     # Get KMS key if bucket is encrypted
     key_arn = _get_bucket_encryption_key_arn(s3_bucket)
@@ -1454,7 +1463,6 @@ async def create_table_schema_from_s3(
     # Check Athena and S3/KMS permissions
     iam_client_wrapper.has_athena_permissions(s3_bucket, key_arn)
 
-    athena_client = athena_client or boto3.client(SERVICE_ATHENA)
     query_execution_id = _execute_athena_query(
         athena_client, table_schema, s3_bucket, catalog=catalog, database=database
     )
@@ -1488,7 +1496,7 @@ async def drop_athena_table(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
 ) -> str:
-    """Create external table in Athena from S3 data.
+    """Drop table in Athena.
 
     Args:
         :param table: table to drop
@@ -1505,7 +1513,9 @@ async def drop_athena_table(
         str: Returns the query_execution_id if successful
     """
     # Permission checks
-    (iam_client_wrapper, _) = _get_or_create_clients(sts_client, iam_client, None)
+    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+        sts_client, iam_client, None, athena_client
+    )
 
     # Get KMS key if bucket is encrypted
     key_arn = _get_bucket_encryption_key_arn(s3_bucket)
@@ -1513,7 +1523,6 @@ async def drop_athena_table(
     # Check Athena and S3/KMS permissions
     iam_client_wrapper.has_athena_permissions(s3_bucket, key_arn)
 
-    athena_client = athena_client or boto3.client(SERVICE_ATHENA)
     drop_table_sql_statement = f"DROP TABLE {table}"
     query_execution_id = _execute_athena_query(
         athena_client,
@@ -1612,22 +1621,20 @@ def empty_s3_bucket(
         s3_client = boto3.client(SERVICE_S3)
 
     # Create IamClient using _get_or_create_clients
-    (iam_client_wrapper, _) = _get_or_create_clients(sts_client, iam_client, None)
+    (iam_client_wrapper, _, _) = _get_or_create_clients(sts_client, iam_client, None)
 
     # raises an error validation fails
     iam_client_wrapper.has_delete_s3_permissions(s3_arn)
 
-    bucket_path = s3_arn.replace("s3://", "").split("/")
-    bucket_name = bucket_path.pop(0)
-    bucket_path_str = "/".join(bucket_path)
+    bucket_name, bucket_path = split_s3_arn_to_bucket_and_path(s3_arn)
 
     # Delete object(s) in s3 bucket/path
     try:
         # Check if path ends with '/' or is empty (folder) vs specific key
-        if bucket_path_str.endswith("/") or bucket_path_str == "":
+        if bucket_path.endswith("/") or bucket_path == "":
             # Delete all objects with this prefix (folder deletion)
             paginator = s3_client.get_paginator("list_objects_v2")
-            pages = paginator.paginate(Bucket=bucket_name, Prefix=bucket_path_str)
+            pages = paginator.paginate(Bucket=bucket_name, Prefix=bucket_path)
 
             for page in pages:
                 if "Contents" in page:
@@ -1638,18 +1645,18 @@ def empty_s3_bucket(
                             Delete={"Objects": objects, "Quiet": False},
                         )
                         print(
-                            f"Deleted {len(objects)} objects from folder: {bucket_name}/{bucket_path_str}"
+                            f"Deleted {len(objects)} objects from folder: {bucket_name}/{bucket_path}"
                         )
         else:
             # Delete specific key
             response = s3_client.delete_objects(
                 Bucket=bucket_name,
                 Delete={
-                    "Objects": [{"Key": bucket_path_str}],
+                    "Objects": [{"Key": bucket_path}],
                     "Quiet": False,
                 },
             )
-            print(f"Deleted specific key: {bucket_name}/{bucket_path_str}")
+            print(f"Deleted specific key: {bucket_name}/{bucket_path}")
 
         print(f"Response: {response}")
     except ClientError as e:
@@ -1809,6 +1816,7 @@ def _get_or_create_clients(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
+    athena_client: Optional[BaseClient] = None,
 ):
     """
     Create or reuse provided AWS clients.
@@ -1817,9 +1825,10 @@ def _get_or_create_clients(
         sts_client (Optional[BaseClient]): Optional STS boto3 client
         iam_client (Optional[BaseClient]): Optional IAM boto3 client
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client
+        athena_client (Optional[BaseClient]): Optional Athena boto3 client
 
     Returns:
-        Tuple[BaseClient, IamClient, BaseClient]: Tuple containing (sts_client, iam_client, na_client)
+        Tuple[IamClient, BaseClient, BaseClient]: Tuple containing (iam_client, na_client, athena_client)
     """
     if sts_client is None:
         sts_client = boto3.client(SERVICE_STS)
@@ -1836,4 +1845,8 @@ def _get_or_create_clients(
             service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
         )
 
-    return iam_client_wrapper, na_client
+    # Create Athena client if not provided
+    if athena_client is None:
+        athena_client = boto3.client(SERVICE_ATHENA)
+
+    return iam_client_wrapper, na_client, athena_client

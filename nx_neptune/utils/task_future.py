@@ -126,6 +126,9 @@ async def wait_until_all_complete(
 ):
     attempt = 0
 
+    if not polling_interval:
+        polling_interval = _ASYNC_POLLING_INTERVAL
+
     tasks = [
         TaskFuture(task_id, task_type, polling_interval, max_attempts)
         for task_id in task_ids

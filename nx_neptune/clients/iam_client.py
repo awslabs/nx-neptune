@@ -18,7 +18,7 @@ from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 from botocore.utils import ArnParser
 
-__all__ = ["IamClient"]
+__all__ = ["IamClient", "split_s3_arn_to_bucket_and_path"]
 
 from .neptune_constants import SERVICE_NA
 
@@ -49,7 +49,7 @@ class IamClient:
             logger (logging.Logger): Custom logger. Creates a default logger if None is provided.
         """
         if "sts" in role_arn:
-            self.role_arn = convert_sts_to_iam_arn(role_arn)
+            self.role_arn = _convert_sts_to_iam_arn(role_arn)
         else:
             self.role_arn = role_arn
         self.client = client
@@ -232,7 +232,7 @@ class IamClient:
         Returns:
             None
         """
-        s3_permissions = ["s3:PutObject", "s3:ListBucket"]
+        s3_permissions = ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
         kms_permissions = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
         operation_name = "S3-Export"
         self._s3_kms_permission_check(
@@ -566,7 +566,10 @@ class IamClient:
                 },
             ],
             "export_csv_to_s3": [
-                {"permissions": ["s3:DeleteObject", "s3:ListBucket"], "arn": s3_export},
+                {
+                    "permissions": ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
+                    "arn": s3_export,
+                },
                 {
                     "permissions": [
                         "kms:Decrypt",
@@ -662,9 +665,23 @@ class IamClient:
         return results
 
 
+def split_s3_arn_to_bucket_and_path(s3_arn: str) -> tuple:
+    """
+    Splits out the s3 arn as a bucket and path
+    :param s3_arn:
+    :return: (str, str) - a tuple containing the bucket and path
+    """
+
+    bucket_path = s3_arn.replace("s3://", "").split("/")
+    bucket_name = bucket_path.pop(0)
+    bucket_path_str = "/".join(bucket_path)
+
+    return bucket_name, bucket_path_str
+
+
 def _get_s3_in_arn(s3_path: str) -> str:
     """
-    Converts a S3 path to an ARN format for use in IAM policy evaluation.
+    Converts an S3 path to an ARN format for use in IAM policy evaluation.
 
     This method transforms S3 paths by:
     1. Removing any trailing slashes
@@ -683,7 +700,7 @@ def _get_s3_in_arn(s3_path: str) -> str:
     return s3_path
 
 
-def convert_sts_to_iam_arn(sts_arn):
+def _convert_sts_to_iam_arn(sts_arn):
     """
     Convert an STS assumed-role ARN to an IAM role ARN.
 

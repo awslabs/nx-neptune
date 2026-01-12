@@ -430,7 +430,7 @@ class SessionManager:
             for query_execution_id in query_execution_ids:
                 logger.info(f"deleting bucket {query_execution_id}")
                 instance_management.empty_s3_bucket(
-                    query_execution_id,
+                    s3_location,
                     self._s3_client,
                     self._sts_client,
                     self._iam_client,

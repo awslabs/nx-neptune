@@ -15,7 +15,8 @@ import pytest
 from nx_neptune.clients.iam_client import (
     IamClient,
     _get_s3_in_arn,
-    convert_sts_to_iam_arn,
+    _convert_sts_to_iam_arn,
+    split_s3_arn_to_bucket_and_path,
 )
 
 
@@ -71,15 +72,45 @@ def test_validate_arns(arn):
     ],
 )
 def test_sts_to_iam_arn(arn, expected):
-    result = convert_sts_to_iam_arn(arn)
+    result = _convert_sts_to_iam_arn(arn)
     assert result == expected
 
 
 def test_sts_to_iam_arn_with_invalid_str():
     with pytest.raises(ValueError, match="Input is not a valid STS assumed-role ARN"):
-        convert_sts_to_iam_arn(
+        _convert_sts_to_iam_arn(
             "INVALID_PREFIX::ACCOUNT_ID:assumed-role/ROLE_NAME/SESSION_NAME"
         )
+
+
+@pytest.mark.parametrize(
+    "s3_arn,expected_bucket,expected_path",
+    [
+        ("s3://my-bucket/my-folder", "my-bucket", "my-folder"),
+        ("s3://my-bucket", "my-bucket", ""),
+        ("s3://my-bucket/", "my-bucket", ""),
+        (
+            "s3://my-bucket/folder1/folder2/folder3",
+            "my-bucket",
+            "folder1/folder2/folder3",
+        ),
+        (
+            "s3://test-bucket-name/path/to/file.txt",
+            "test-bucket-name",
+            "path/to/file.txt",
+        ),
+        (
+            "s3://bucket-with-hyphens/deep/nested/path/",
+            "bucket-with-hyphens",
+            "deep/nested/path/",
+        ),
+    ],
+)
+def test_split_s3_arn_to_bucket_and_path(s3_arn, expected_bucket, expected_path):
+    """Test split_s3_arn_to_bucket_and_path with various S3 ARN formats."""
+    bucket, path = split_s3_arn_to_bucket_and_path(s3_arn)
+    assert bucket == expected_bucket
+    assert path == expected_path
 
 
 class TestIamClient:
