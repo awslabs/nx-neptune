@@ -1644,7 +1644,7 @@ def empty_s3_bucket(
                             Bucket=bucket_name,
                             Delete={"Objects": objects, "Quiet": False},
                         )
-                        print(
+                        logger.debug(
                             f"Deleted {len(objects)} objects from folder: {bucket_name}/{bucket_path}"
                         )
         else:
@@ -1656,7 +1656,7 @@ def empty_s3_bucket(
                     "Quiet": False,
                 },
             )
-            print(f"Deleted specific key: {bucket_name}/{bucket_path}")
+            logger.debug(f"Deleted specific key: {bucket_name}/{bucket_path}")
 
         print(f"Response: {response}")
     except ClientError as e:
