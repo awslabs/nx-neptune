@@ -253,7 +253,7 @@ class TaskFuture(Future):
                     "wait_until_complete",
                 )
             )
-            # done with result
+            # done with exception
             return True
 
         # check max attempts
