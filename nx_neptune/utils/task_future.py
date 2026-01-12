@@ -104,6 +104,9 @@ def _import_status_check_wrapper(client, task_id):
             "importTaskDetails" in response
             and response["importTaskDetails"]["status"] == "IN_PROGRESS"
         ):
+            # If the overall status is FAILED but importTaskDetails shows IN_PROGRESS,
+            # we return IMPORTING status to allow the task to complete since the statusReason
+            # may still be being generated
             return {"status": "IMPORTING"}
 
         if (
@@ -113,6 +116,7 @@ def _import_status_check_wrapper(client, task_id):
             return {"status": "INSUFFICIENT_MEMORY"}
 
     return response
+
 
 
 def _delete_snapshot_status_check_wrapper(client, snapshot_id: str):
