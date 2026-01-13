@@ -357,44 +357,36 @@ class SessionManager:
 
         graph_id = _get_graph_id(graph)
         skip_snapshot = True
-        try:
-            return await instance_management.import_csv_from_s3(
-                NeptuneGraph(
-                    NeptuneAnalyticsClient(graph_id, self._neptune_client),
-                    IamClient(self._s3_iam_role, self._iam_client),
-                    nx.Graph(),
-                ),
-                s3_location,
-                reset_graph_ahead,
-                skip_snapshot,
-            )
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "InsufficientMemory":
-                current_size = self.get_graph(graph_id)["provisionedMemory"]
+        while True:
+            try:
+                return await instance_management.import_csv_from_s3(
+                    NeptuneGraph(
+                        NeptuneAnalyticsClient(graph_id, self._neptune_client),
+                        IamClient(self._s3_iam_role, self._iam_client),
+                        nx.Graph(),
+                    ),
+                    s3_location,
+                    reset_graph_ahead,
+                    skip_snapshot,
+                )
+            except ClientError as e:
+                if max_size and e.response["Error"]["Code"] == "InsufficientMemory":
+                    current_size = self.get_graph(graph_id)["provisionedMemory"]
+                    if max_size > current_size:
+                        prospect_size = current_size * 2
 
-                while max_size and max_size >= current_size * 2:
-                    await instance_management.update_na_instance_size(
-                        graph_id=graph_id, prospect_size=current_size * 2
-                    )
-                    current_size = current_size * 2
+                        if prospect_size > max_size > current_size:
+                            prospect_size = max_size
 
-                    try:
-                        return await instance_management.import_csv_from_s3(
-                            NeptuneGraph(
-                                NeptuneAnalyticsClient(graph_id, self._neptune_client),
-                                IamClient(self._s3_iam_role, self._iam_client),
-                                nx.Graph(),
-                            ),
-                            s3_location,
-                            reset_graph_ahead,
-                            skip_snapshot,
+                        await instance_management.update_na_instance_size(
+                            graph_id=graph_id, prospect_size=prospect_size
                         )
-                    except ClientError as error:
-                        if error.response["Error"]["Code"] == "InsufficientMemory":
-                            continue
-                        else:
-                            raise error
-            raise e
+                        continue
+                    else:
+                        raise e
+                else:
+                    raise e
+
 
     async def import_from_table(
         self,
