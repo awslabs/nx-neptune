@@ -118,7 +118,6 @@ def _import_status_check_wrapper(client, task_id):
     return response
 
 
-
 def _delete_snapshot_status_check_wrapper(client, snapshot_id: str):
     """
     Wrapper method to suppress error when snapshot_id not found,

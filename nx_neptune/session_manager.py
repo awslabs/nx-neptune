@@ -387,7 +387,6 @@ class SessionManager:
                 else:
                     raise e
 
-
     async def import_from_table(
         self,
         graph: Union[str, dict[str, str]],
