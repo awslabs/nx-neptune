@@ -82,13 +82,13 @@ def _delete_status_check_wrapper(client, graph_id):
             raise e
 
 
-def _import_status_check_wrapper(client, task_id):
+def _import_status_check_wrapper(client: BaseClient, task_id: str):
     """
     Wrapper method to suppress error when graph_id not found,
     as this is an indicator of successful deletion.
 
     Args:
-        client (client): The boto client
+        client (BaseClient): The boto client
         task_id (str): The String identify for the remote Neptune Analytics graph
 
     Returns:

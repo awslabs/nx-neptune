@@ -338,7 +338,7 @@ class SessionManager:
         graph: Union[str, dict[str, str]],
         s3_location,
         reset_graph_ahead=False,
-        max_size=None,
+        max_size: Optional[int] = None,
     ) -> str:
         """Import CSV data from S3 into a Neptune Analytics graph.
 
@@ -370,20 +370,21 @@ class SessionManager:
                     skip_snapshot,
                 )
             except ClientError as e:
-                if max_size and e.response["Error"]["Code"] == "InsufficientMemory":
-                    current_size = self.get_graph(graph_id)["provisionedMemory"]
-                    if max_size > current_size:
-                        prospect_size = current_size * 2
+                if (
+                    max_size is not None
+                    and e.response["Error"]["Code"] == "InsufficientMemory"
+                    and max_size
+                    > (current_size := self.get_graph(graph_id)["provisionedMemory"])
+                ):
+                    prospect_size = current_size * 2
 
-                        if prospect_size > max_size > current_size:
-                            prospect_size = max_size
+                    if prospect_size > max_size > current_size:
+                        prospect_size = max_size
 
-                        await instance_management.update_na_instance_size(
-                            graph_id=graph_id, prospect_size=prospect_size
-                        )
-                        continue
-                    else:
-                        raise e
+                    await instance_management.update_na_instance_size(
+                        graph_id=graph_id, prospect_size=prospect_size
+                    )
+                    continue
                 else:
                     raise e
 
