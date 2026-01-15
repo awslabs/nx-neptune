@@ -29,7 +29,17 @@ _ASYNC_MAX_ATTEMPTS = 60
 
 class TaskType(Enum):
     # Allow import to run against an "INITIALIZING" state - the graph is sometimes in this state after creating graph
-    IMPORT = (1, ["INITIALIZING", "ANALYZING_DATA", "IMPORTING"], "SUCCEEDED")
+    IMPORT = (
+        1,
+        [
+            "INITIALIZING",
+            "ANALYZING_DATA",
+            "IMPORTING",
+            "REPROVISIONING",
+            "ROLLING_BACK",
+        ],
+        "SUCCEEDED",
+    )
     # Allow export to run against an "INITIALIZING" state - the graph is sometimes in this state after running algorithms
     EXPORT = (2, ["INITIALIZING", "EXPORTING"], "SUCCEEDED")
     CREATE = (3, ["CREATING"], "AVAILABLE")
@@ -72,6 +82,42 @@ def _delete_status_check_wrapper(client, graph_id):
             raise e
 
 
+def _import_status_check_wrapper(client: BaseClient, task_id: str):
+    """
+    Wrapper method to suppress error when graph_id not found,
+    as this is an indicator of successful deletion.
+
+    Args:
+        client (BaseClient): The boto client
+        task_id (str): The String identify for the remote Neptune Analytics graph
+
+    Returns:
+        str: The original response from Boto or a mocked response to represent
+        successful deletion, in the case of resource not found.
+    """
+
+    response = client.get_import_task(taskIdentifier=task_id)
+
+    if "status" in response and response["status"] == "FAILED":
+
+        if (
+            "importTaskDetails" in response
+            and response["importTaskDetails"]["status"] == "IN_PROGRESS"
+        ):
+            # If the overall status is FAILED but importTaskDetails shows IN_PROGRESS,
+            # we return IMPORTING status to allow the task to complete since the statusReason
+            # may still be being generated
+            return {"status": "IMPORTING"}
+
+        if (
+            "statusReason" in response
+            and response["statusReason"].find("insufficient memory") != -1
+        ):
+            return {"status": "INSUFFICIENT_MEMORY"}
+
+    return response
+
+
 def _delete_snapshot_status_check_wrapper(client, snapshot_id: str):
     """
     Wrapper method to suppress error when snapshot_id not found,
@@ -97,7 +143,7 @@ def _delete_snapshot_status_check_wrapper(client, snapshot_id: str):
 
 def _get_task_action_map(client, task_id):
     return {
-        TaskType.IMPORT: lambda: client.get_import_task(taskIdentifier=task_id),  # type: ignore[attr-defined]
+        TaskType.IMPORT: lambda: _import_status_check_wrapper(client, task_id=task_id),  # type: ignore[attr-defined]
         TaskType.EXPORT: lambda: client.get_export_task(taskIdentifier=task_id),  # type: ignore[attr-defined]
         TaskType.CREATE: lambda: client.get_graph(graphIdentifier=task_id),  # type: ignore[attr-defined]
         TaskType.DELETE: lambda: _delete_status_check_wrapper(client, task_id),
@@ -193,6 +239,24 @@ class TaskFuture(Future):
             logger.info(f"Task [{self.task_id}] completed at [{current_time}]")
             self.set_result(self.task_id)
             # done with result
+            return True
+
+        if self.current_status == "INSUFFICIENT_MEMORY":
+            logger.info(
+                f"Task [{self.task_id}] hit an insufficient memory issue [{current_time}]"
+            )
+            self.set_exception(
+                ClientError(
+                    {
+                        "Error": {
+                            "Code": "InsufficientMemory",
+                            "Message": "Import failed due to insufficient memory",
+                        }
+                    },
+                    "wait_until_complete",
+                )
+            )
+            # done with exception
             return True
 
         # check max attempts

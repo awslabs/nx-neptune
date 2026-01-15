@@ -671,6 +671,8 @@ async def test_import_csv_from_s3_success(
     mock_na_graph.iam_client = MagicMock()
     mock_na_graph.iam_client.role_arn = "test-role-arn"
     mock_na_graph.current_jobs = set()
+    test_status_response = json.loads(NX_STATUS_CHECK_IMPORT_EXPORT_SUCCESS_FIXTURE)
+    mock_na_graph.na_client.client.get_import_task.return_value = test_status_response
 
     # Call the function
     task_id = await import_csv_from_s3(
@@ -721,6 +723,8 @@ async def test_import_csv_from_s3_without_reset(
     mock_na_graph.iam_client = MagicMock()
     mock_na_graph.iam_client.role_arn = "test-role-arn"
     mock_na_graph.current_jobs = set()
+    test_status_response = json.loads(NX_STATUS_CHECK_IMPORT_EXPORT_SUCCESS_FIXTURE)
+    mock_na_graph.na_client.client.get_import_task.return_value = test_status_response
 
     # Call the function with reset_graph_ahead=False
     task_id = await import_csv_from_s3(

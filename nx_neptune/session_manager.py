@@ -8,6 +8,7 @@ from typing import Callable, Optional, Union
 import boto3
 import networkx as nx
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from . import NeptuneGraph, instance_management
 from .clients import IamClient, NeptuneAnalyticsClient
@@ -337,30 +338,55 @@ class SessionManager:
         graph: Union[str, dict[str, str]],
         s3_location,
         reset_graph_ahead=False,
+        max_size: Optional[int] = None,
     ) -> str:
         """Import CSV data from S3 into a Neptune Analytics graph.
 
         Args:
             graph (Union[str, dict[str, str]]): Graph ID string or graph metadata dict.
             s3_location (str): S3 location containing CSV data to import.
+            reset_graph_ahead (bool, optional): Whether to reset the graph before import. Defaults to False.
+            max_size (int, optional): If defined, maximum memory size in GB to scale up to. Defaults to None.
 
         Returns:
             str: Task ID of the import operation.
+
+        Raises:
+            ClientError: If import fails due to insufficient memory and max_size is exceeded, or other AWS client errors.
         """
 
         graph_id = _get_graph_id(graph)
         skip_snapshot = True
+        while True:
+            try:
+                return await instance_management.import_csv_from_s3(
+                    NeptuneGraph(
+                        NeptuneAnalyticsClient(graph_id, self._neptune_client),
+                        IamClient(self._s3_iam_role, self._iam_client),
+                        nx.Graph(),
+                    ),
+                    s3_location,
+                    reset_graph_ahead,
+                    skip_snapshot,
+                )
+            except ClientError as e:
+                if (
+                    max_size is not None
+                    and e.response["Error"]["Code"] == "InsufficientMemory"
+                    and max_size
+                    > (current_size := self.get_graph(graph_id)["provisionedMemory"])
+                ):
+                    prospect_size = current_size * 2
 
-        return await instance_management.import_csv_from_s3(
-            NeptuneGraph(
-                NeptuneAnalyticsClient(graph_id, self._neptune_client),
-                IamClient(self._s3_iam_role, self._iam_client),
-                nx.Graph(),
-            ),
-            s3_location,
-            reset_graph_ahead,
-            skip_snapshot,
-        )
+                    if prospect_size > max_size > current_size:
+                        prospect_size = max_size
+
+                    await instance_management.update_na_instance_size(
+                        graph_id=graph_id, prospect_size=prospect_size
+                    )
+                    continue
+                else:
+                    raise e
 
     async def import_from_table(
         self,

@@ -568,6 +568,7 @@ async def import_csv_from_s3(
     # Wait for completion
     future = TaskFuture(task_id, TaskType.IMPORT, polling_interval, max_attempts)
     await future.wait_until_complete(na_client)
+    future.result()
     return task_id
 
 
