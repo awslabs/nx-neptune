@@ -1115,6 +1115,9 @@ async def export_athena_table_to_s3(
     # Check Athena and S3/KMS permissions
     iam_client_wrapper.has_athena_permissions(s3_bucket, key_arn)
 
+    # TODO: In json mode, the annotated embedding field should be handled via
+    #  array_join(transform("test_arr", x -> cast(x as varchar)), ';')
+
     query_execution_ids = []
     for query in sql_queries:
         query_execution_id = _execute_athena_query(
@@ -1725,18 +1728,32 @@ def validate_athena_query(query: str, projection_type: ProjectionType):
 
     match projection_type:
         case ProjectionType.NODE:
-            mandate_fields_node = {"~id"}
-            if not mandate_fields_node.issubset(column_names):
+            mandatory_fields_node = {"~id"}
+            if not mandatory_fields_node.issubset(column_names):
                 logger.warning(
-                    f"Missing required fields for node projection. Required fields: {mandate_fields_node}"
+                    f"Missing required fields for node projection. Required fields: {mandatory_fields_node}"
                 )
-            return mandate_fields_node.issubset(column_names)
+                return False
+            for column_name in column_names:
+                if (
+                    column_name.startswith("embedding:")
+                    and column_name != "embedding:vector"
+                ) or (
+                    column_name.endswith(":vector")
+                    and column_name != "embedding:vector"
+                ):
+                    logger.warning(
+                        f"Invalid embedding column name: {column_name}. Embedding column must be named 'embedding:vector'"
+                    )
+                    return False
+            return True
         case ProjectionType.EDGE:
             mandate_fields_edge = {"~from", "~to"}
             if not mandate_fields_edge.issubset(column_names):
                 logger.warning(
                     f"Missing required fields for edge projection. Required fields: {mandate_fields_edge}"
                 )
+                return False
             return mandate_fields_edge.issubset(column_names)
         case _:
             logger.warning(f"Unknown projection type: {projection_type}")
