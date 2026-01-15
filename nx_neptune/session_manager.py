@@ -428,9 +428,10 @@ class SessionManager:
 
         if remove_buckets:
             for query_execution_id in query_execution_ids:
-                logger.info(f"deleting bucket {query_execution_id}")
+                delete_location = f"{s3_location}{query_execution_id}.csv"
+                logger.info(f"deleting bucket at {delete_location}")
                 instance_management.empty_s3_bucket(
-                    s3_location,
+                    delete_location,
                     self._s3_client,
                     self._sts_client,
                     self._iam_client,

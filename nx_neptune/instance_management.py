@@ -1640,7 +1640,7 @@ def empty_s3_bucket(
                 if "Contents" in page:
                     objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
                     if objects:
-                        response = s3_client.delete_objects(
+                        s3_client.delete_objects(
                             Bucket=bucket_name,
                             Delete={"Objects": objects, "Quiet": False},
                         )
@@ -1649,7 +1649,7 @@ def empty_s3_bucket(
                         )
         else:
             # Delete specific key
-            response = s3_client.delete_objects(
+            s3_client.delete_objects(
                 Bucket=bucket_name,
                 Delete={
                     "Objects": [{"Key": bucket_path}],
@@ -1658,7 +1658,6 @@ def empty_s3_bucket(
             )
             logger.debug(f"Deleted specific key: {bucket_name}/{bucket_path}")
 
-        print(f"Response: {response}")
     except ClientError as e:
         raise Exception(f"Failed to empty S3 bucket {s3_arn}: {e}")
 
