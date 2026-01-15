@@ -1534,18 +1534,22 @@ def validate_athena_query(query: str, projection_type: ProjectionType):
 
     match projection_type:
         case ProjectionType.NODE:
-            mandate_fields_node = {"~id"}
-            if not mandate_fields_node.issubset(column_names):
+            mandatory_fields_node = {"~id"}
+            if not mandatory_fields_node.issubset(column_names):
                 logger.warning(
-                    f"Missing required fields for node projection. Required fields: {mandate_fields_node}"
+                    f"Missing required fields for node projection. Required fields: {mandatory_fields_node}"
                 )
                 return False
-            for name in column_names:
-                if (name.startswith("embedding:") and name != "embedding:vector") or (
-                    name.endswith(":vector") and name != "embedding:vector"
+            for column_name in column_names:
+                if (
+                    column_name.startswith("embedding:")
+                    and column_name != "embedding:vector"
+                ) or (
+                    column_name.endswith(":vector")
+                    and column_name != "embedding:vector"
                 ):
                     logger.warning(
-                        f"Invalid embedding column name: {name}. Embedding column must be named 'embedding:vector'"
+                        f"Invalid embedding column name: {column_name}. Embedding column must be named 'embedding:vector'"
                     )
                     return False
             return True
