@@ -18,7 +18,7 @@ from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 from botocore.utils import ArnParser
 
-__all__ = ["IamClient"]
+__all__ = ["IamClient", "split_s3_arn_to_bucket_and_path"]
 
 from .neptune_constants import SERVICE_NA
 
@@ -49,7 +49,7 @@ class IamClient:
             logger (logging.Logger): Custom logger. Creates a default logger if None is provided.
         """
         if "sts" in role_arn:
-            self.role_arn = convert_sts_to_iam_arn(role_arn)
+            self.role_arn = _convert_sts_to_iam_arn(role_arn)
         else:
             self.role_arn = role_arn
         self.client = client
@@ -232,11 +232,29 @@ class IamClient:
         Returns:
             None
         """
-        s3_permissions = ["s3:PutObject", "s3:ListBucket"]
+        s3_permissions = ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
         kms_permissions = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
         operation_name = "S3-Export"
         self._s3_kms_permission_check(
             operation_name, bucket_arn, key_arn, s3_permissions, kms_permissions
+        )
+
+    def has_delete_s3_permissions(self, bucket_arn):
+        """Check if the configured IAM role has permissions to delete data from S3.
+
+        Args:
+            bucket_arn (str): The ARN of the S3 bucket
+
+        Raises:
+            ValueError: If the role lacks required permissions
+
+        Returns:
+            None
+        """
+        s3_permissions = ["s3:DeleteObject", "s3:ListBucket"]
+        operation_name = "S3-Delete"
+        self._s3_kms_permission_check(
+            operation_name, bucket_arn, None, s3_permissions, []
         )
 
     def has_create_na_permissions(self):
@@ -451,6 +469,36 @@ class IamClient:
         # All ARNs are valid if we reach here
         return True
 
+    def has_athena_permissions(
+        self, s3_bucket: Optional[str] = None, kms_key_arn: Optional[str] = None
+    ):
+        """Check if the role has required Athena/S3/KMS permissions.
+
+        Args:
+            s3_bucket: S3 bucket path for query results
+            kms_key_arn: KMS key ARN for encryption
+
+        Returns:
+            bool: True if all permissions are available
+
+        Raises:
+            Exception: If permissions are insufficient
+        """
+        permissions = ["athena:StartQueryExecution", "athena:GetQueryExecution"]
+        operation_name = "Athena query execution"
+        self.check_aws_permission(operation_name, permissions)
+
+        if s3_bucket:
+            s3_arn = _get_s3_in_arn(s3_bucket)
+            s3_permissions = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+            self.check_aws_permission(operation_name, s3_permissions, s3_arn)
+
+        if kms_key_arn:
+            kms_permissions = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
+            self.check_aws_permission(operation_name, kms_permissions, kms_key_arn)
+
+        return True
+
     def validate_permissions(
         self,
         arn_s3_bucket_import,
@@ -518,7 +566,10 @@ class IamClient:
                 },
             ],
             "export_csv_to_s3": [
-                {"permissions": ["s3:PutObject", "s3:ListBucket"], "arn": s3_export},
+                {
+                    "permissions": ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
+                    "arn": s3_export,
+                },
                 {
                     "permissions": [
                         "kms:Decrypt",
@@ -527,6 +578,9 @@ class IamClient:
                     ],
                     "arn": arn_kms_key_export,
                 },
+            ],
+            "empty_s3_bucket": [
+                {"permissions": ["s3:PutObject", "s3:ListBucket"], "arn": s3_export},
             ],
             "export_athena_table_to_s3": [
                 {"permissions": ["s3:GetObject"], "arn": s3_import},
@@ -545,7 +599,7 @@ class IamClient:
                     ]
                 },
             ],
-            "create_table_from_s3": [
+            "create_csv_table_from_s3": [
                 {"permissions": ["s3:GetObject", "s3:ListBucket"], "arn": s3_export},
                 {
                     "permissions": [
@@ -555,6 +609,14 @@ class IamClient:
                     ],
                     "arn": arn_kms_key_export,
                 },
+                {
+                    "permissions": [
+                        "athena:StartQueryExecution",
+                        "athena:GetQueryExecution",
+                    ]
+                },
+            ],
+            "create_iceberg_table_from_table": [
                 {
                     "permissions": [
                         "athena:StartQueryExecution",
@@ -603,9 +665,23 @@ class IamClient:
         return results
 
 
+def split_s3_arn_to_bucket_and_path(s3_arn: str) -> tuple:
+    """
+    Splits out the s3 arn as a bucket and path
+    :param s3_arn:
+    :return: (str, str) - a tuple containing the bucket and path
+    """
+
+    bucket_path = s3_arn.replace("s3://", "").split("/")
+    bucket_name = bucket_path.pop(0)
+    bucket_path_str = "/".join(bucket_path)
+
+    return bucket_name, bucket_path_str
+
+
 def _get_s3_in_arn(s3_path: str) -> str:
     """
-    Converts a S3 path to an ARN format for use in IAM policy evaluation.
+    Converts an S3 path to an ARN format for use in IAM policy evaluation.
 
     This method transforms S3 paths by:
     1. Removing any trailing slashes
@@ -624,7 +700,7 @@ def _get_s3_in_arn(s3_path: str) -> str:
     return s3_path
 
 
-def convert_sts_to_iam_arn(sts_arn):
+def _convert_sts_to_iam_arn(sts_arn):
     """
     Convert an STS assumed-role ARN to an IAM role ARN.
 

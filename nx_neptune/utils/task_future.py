@@ -19,7 +19,7 @@ from enum import Enum
 from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 
-__all__ = ["TaskType", "TaskFuture"]
+__all__ = ["TaskType", "TaskFuture", "wait_until_all_complete"]
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +171,9 @@ async def wait_until_all_complete(
     max_attempts=None,
 ):
     attempt = 0
+
+    if not polling_interval:
+        polling_interval = _ASYNC_POLLING_INTERVAL
 
     tasks = [
         TaskFuture(task_id, task_type, polling_interval, max_attempts)

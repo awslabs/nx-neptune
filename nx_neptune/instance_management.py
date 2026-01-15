@@ -25,29 +25,32 @@ from botocore.exceptions import ClientError
 from sqlglot import exp, parse_one
 
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
+from .clients.iam_client import split_s3_arn_to_bucket_and_path
 from .clients.neptune_constants import APP_ID_NX, SERVICE_ATHENA, SERVICE_S3
 from .na_graph import NeptuneGraph
 
 __all__ = [
-    "import_csv_from_s3",
-    "export_csv_to_s3",
+    "validate_permissions",
     "create_na_instance",
     "create_na_instance_with_s3_import",
     "create_na_instance_from_snapshot",
-    "create_graph_snapshot",
     "delete_na_instance",
+    "update_na_instance_size",
+    "start_na_instance",
+    "stop_na_instance",
+    "create_graph_snapshot",
+    "delete_graph_snapshot",
+    "import_csv_from_s3",
+    "export_csv_to_s3",
+    "empty_s3_bucket",
+    "validate_athena_query",
     "export_athena_table_to_s3",
     "create_csv_table_from_s3",
     "create_iceberg_table_from_table",
-    "validate_athena_query",
-    "validate_permissions",
-    "start_na_instance",
-    "stop_na_instance",
-    "delete_graph_snapshot",
+    "drop_athena_table",
 ]
 
 from .utils.task_future import (
-    _ASYNC_POLLING_INTERVAL,
     TaskFuture,
     TaskType,
     wait_until_all_complete,
@@ -91,7 +94,9 @@ async def create_na_instance(
     Raises:
         Exception: If the Neptune Analytics instance creation fails
     """
-    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    (iam_client, na_client, _) = _get_or_create_clients(
+        sts_client, iam_client, na_client
+    )
     iam_client.has_create_na_permissions()
 
     response = _create_na_instance_task(na_client, config, graph_name_prefix)
@@ -159,7 +164,7 @@ async def create_na_instance_with_s3_import(
         ValueError: If the role lacks required permissions
     """
 
-    (iam_client_wrapper, na_client) = _get_or_create_clients(
+    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
     # Retrieve key_arn for the bucket and permission check if present
@@ -234,7 +239,7 @@ async def create_na_instance_from_snapshot(
         Exception: If the Neptune Analytics instance creation fails
         ValueError: If the role lacks required permissions
     """
-    (iam_client_wrapper, na_client) = _get_or_create_clients(
+    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
 
@@ -290,7 +295,7 @@ async def delete_graph_snapshot(
         Exception: If the snapshot deletion fails
         ValueError: If the role lacks required permissions
     """
-    (iam_client_wrapper, na_client) = _get_or_create_clients(
+    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
 
@@ -343,7 +348,7 @@ async def start_na_instance(
         Exception: If the start operation fails with an invalid status code
         ValueError: If the role lacks required permissions or if graph is not in STOPPED state
     """
-    (iam_client_wrapper, na_client) = _get_or_create_clients(
+    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
     iam_client_wrapper.has_start_na_permissions()
@@ -391,7 +396,7 @@ async def stop_na_instance(
         Exception: If the stop operation fails with an invalid status code
         ValueError: If the role lacks required permissions or if graph is not in AVAILABLE state
     """
-    (iam_client_wrapper, na_client) = _get_or_create_clients(
+    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
     iam_client_wrapper.has_stop_na_permissions()
@@ -441,7 +446,9 @@ async def delete_na_instance(
         ValueError: If the role lacks required permissions
     """
 
-    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    (iam_client, na_client, _) = _get_or_create_clients(
+        sts_client, iam_client, na_client
+    )
     # Permission check
     iam_client.has_delete_na_permissions()
 
@@ -490,7 +497,9 @@ async def create_graph_snapshot(
         ValueError: If the role lacks required permissions
     """
     # Permission check
-    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    (iam_client, na_client, _) = _get_or_create_clients(
+        sts_client, iam_client, na_client
+    )
     iam_client.has_create_na_snapshot_permissions()
 
     kwargs: dict[str, Any] = {
@@ -694,7 +703,9 @@ async def update_na_instance_size(
         Exception: If the resize operation fails
         ValueError: If the role lacks required permissions
     """
-    (iam_client, na_client) = _get_or_create_clients(sts_client, iam_client, na_client)
+    (iam_client, na_client, _) = _get_or_create_clients(
+        sts_client, iam_client, na_client
+    )
 
     # Permission check
     iam_client.has_update_na_permissions()
@@ -1069,8 +1080,12 @@ def _create_random_graph_name(graph_name_prefix: Optional[str] = None) -> str:
 async def export_athena_table_to_s3(
     sql_queries: list,
     s3_bucket: str,
-    catalog: str = None,  # type: ignore[assignment]
-    database: str = None,  # type: ignore[assignment]
+    catalog: Optional[str] = None,
+    database: Optional[str] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    athena_client: Optional[BaseClient] = None,
+    s3_client: Optional[BaseClient] = None,
     polling_interval=None,
     max_attempts=None,
 ) -> list[str]:
@@ -1079,18 +1094,27 @@ async def export_athena_table_to_s3(
     Args:
         :param sql_queries: List of SQL query strings to execute
         :param s3_bucket: S3 bucket path for query results
-        :param catalog: (str, optional) catalog namespace to run the sql_query
-        :param database: (str, optional) the database to run the sql_query
+        :param catalog: (str, optional) Catalog namespace to run the sql_query
+        :param database: (str, optional) The database to run the sql_query
+        :param sts_client: (optional) Pre-configured STS client
+        :param iam_client: (optional) Pre-configured IAM client
+        :param athena_client: (optional) Pre-configured Athena client
+        :param s3_client: (optional) Pre-configured S3 client
         :param polling_interval: Polling interval for status checks
         :param max_attempts: Maximum attempts for status checks
 
     Returns:
-        list: True if all queries succeeded, False otherwise
+        list: List of successfully processed query execute ids.
     """
-    client = boto3.client(SERVICE_ATHENA)
+    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+        sts_client, iam_client, None, athena_client
+    )
 
-    # TODO: validate permissions - or fail
-    # TODO: check s3 bucket location is empty - or fail
+    # Get KMS key if bucket is encrypted
+    key_arn = _get_bucket_encryption_key_arn(s3_bucket)
+
+    # Check Athena and S3/KMS permissions
+    iam_client_wrapper.has_athena_permissions(s3_bucket, key_arn)
 
     # TODO: In json mode, the annotated embedding field should be handled via
     #  array_join(transform("test_arr", x -> cast(x as varchar)), ';')
@@ -1098,19 +1122,18 @@ async def export_athena_table_to_s3(
     query_execution_ids = []
     for query in sql_queries:
         query_execution_id = _execute_athena_query(
-            client, query, s3_bucket, catalog=catalog, database=database
+            athena_client, query, s3_bucket, catalog=catalog, database=database
         )
         query_execution_ids.append(query_execution_id)
 
     # Wait on all query execution IDs
-    s3_client = boto3.client(SERVICE_S3)
-    bucket_name = s3_bucket.replace("s3://", "").split("/")[0]
-    bucket_prefix = "/".join(s3_bucket.replace("s3://", "").split("/")[1:])
+    s3_client = s3_client or boto3.client(SERVICE_S3)
+    bucket_name, bucket_prefix = split_s3_arn_to_bucket_and_path(s3_bucket)
 
     await wait_until_all_complete(
         query_execution_ids,
         TaskType.EXPORT_ATHENA_TABLE,
-        client,
+        athena_client,
         polling_interval,
         max_attempts,
     )
@@ -1137,9 +1160,13 @@ async def create_csv_table_from_s3(
     s3_bucket: str,
     s3_output_bucket: str,
     table_name: str,
-    catalog: str = None,  # type: ignore[assignment]
-    database: str = None,  # type: ignore[assignment]
+    catalog: Optional[str] = None,
+    database: Optional[str] = None,
     table_columns: Optional[list[str]] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    athena_client: Optional[BaseClient] = None,
+    s3_client: Optional[BaseClient] = None,
     polling_interval=None,
     max_attempts=None,
 ) -> list[str]:
@@ -1152,6 +1179,10 @@ async def create_csv_table_from_s3(
         :param catalog: (str, optional) catalog namespace to run the sql_query
         :param database: (str, optional) the database to run the sql_query
         :param table_columns: (list, optional) table columns to include in the newly created query
+        :param sts_client: (optional) Pre-configured STS client
+        :param iam_client: (optional) Pre-configured IAM client
+        :param athena_client: (optional) Pre-configured Athena client
+        :param s3_client: (optional) Pre-configured S3 client
         :param polling_interval: Polling interval for status checks
         :param max_attempts: Maximum attempts for status checks
 
@@ -1161,16 +1192,22 @@ async def create_csv_table_from_s3(
     Raises:
         Exception: If any query fails
     """
-    # TODO check if s3_bucket is empty
-    # TODO validate table_schema
-    # TODO validate if table exists already
-    # TODO check is skip drop table is False and table exists
+    # Permission checks
+    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+        sts_client, iam_client, None, athena_client
+    )
+
+    # Get KMS keys if buckets are encrypted
+    s3_key_arn = _get_bucket_encryption_key_arn(s3_bucket)
+    output_key_arn = _get_bucket_encryption_key_arn(s3_output_bucket)
+
+    # Check Athena and S3/KMS permissions for both buckets
+    iam_client_wrapper.has_athena_permissions(s3_bucket, s3_key_arn)
+    iam_client_wrapper.has_athena_permissions(s3_output_bucket, output_key_arn)
 
     # Wait on all query execution IDs
-    s3_client = boto3.client(SERVICE_S3)
-    bucket_path = s3_bucket.replace("s3://", "").split("/")
-    bucket_name = bucket_path.pop(0)
-    bucket_prefix = "/".join(bucket_path)
+    s3_client = s3_client or boto3.client(SERVICE_S3)
+    bucket_name, bucket_prefix = split_s3_arn_to_bucket_and_path(s3_bucket)
 
     logger.debug(f"Inspecting files from {s3_bucket}")
 
@@ -1207,7 +1244,6 @@ async def create_csv_table_from_s3(
         f"{table_name}_vertices",
     )
 
-    athena_client = boto3.client(SERVICE_ATHENA)
     query_execution_ids = []
     for sql_statement in [edge_sql_statement, vertex_sql_statement]:
         logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
@@ -1317,6 +1353,9 @@ async def create_iceberg_table_from_table(
     catalog: str = None,  # type: ignore[assignment]
     database: str = None,  # type: ignore[assignment]
     table_columns: Optional[list[str]] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+    athena_client: Optional[BaseClient] = None,
     polling_interval=None,
     max_attempts=None,
 ) -> str:
@@ -1329,12 +1368,26 @@ async def create_iceberg_table_from_table(
         :param catalog: (str, optional) catalog namespace to run the sql_query
         :param database: (str, optional) the database to run the sql_query
         :param table_columns: (list, optional) table columns to include
+        :param sts_client: (optional) Pre-configured STS client
+        :param iam_client: (optional) Pre-configured IAM client
+        :param athena_client: (optional) Pre-configured Athena client
         :param polling_interval: Polling interval for status checks
         :param max_attempts: Maximum attempts for status checks
 
     Returns:
         str: Returns the query_execution_id if successful
     """
+    # Permission checks
+    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+        sts_client, iam_client, None, athena_client
+    )
+
+    # Get KMS key if output bucket is encrypted
+    output_key_arn = _get_bucket_encryption_key_arn(s3_output_bucket)
+
+    # Check Athena and S3/KMS permissions
+    iam_client_wrapper.has_athena_permissions(s3_output_bucket, output_key_arn)
+
     select_columns = "*"
     if table_columns:
         select_columns = '"' + '","'.join(table_columns) + '"'
@@ -1350,7 +1403,6 @@ AS SELECT {select_columns} FROM {csv_table_name};
 
     logger.info(f"SQL_CREATE_TABLE:\n{sql_statement}")
 
-    athena_client = boto3.client(SERVICE_ATHENA)
     query_execution_id = _execute_athena_query(
         athena_client,
         sql_statement,
@@ -1384,28 +1436,104 @@ async def create_table_schema_from_s3(
     database: str = None,  # type: ignore[assignment]
     polling_interval=None,
     max_attempts=None,
+    athena_client=None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
 ) -> str:
     """Create external table in Athena from S3 data.
 
     Args:
         :param table_schema: SQL CREATE EXTRNAL TABLE statement
-        :param s3_bucket: S3 bucket path containing data
+        :param s3_bucket: S3 bucket path for query results
         :param catalog: (str, optional) catalog namespace to run the sql_query
         :param database: (str, optional) the database to run the sql_query
         :param polling_interval: Polling interval for status checks
         :param max_attempts: Maximum attempts for status checks
+        :param athena_client: (optional) Pre-configured Athena client
+        :param sts_client: (optional) Pre-configured STS client
+        :param iam_client: (optional) Pre-configured IAM client
 
     Returns:
         str: Returns the query_execution_id if successful
     """
-    # TODO check if s3_bucket is empty
-    # TODO validate table_schema
-    # TODO validate if table exists already
-    # TODO check is skip drop table is False and table exists
+    # Permission checks
+    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+        sts_client, iam_client, None, athena_client
+    )
 
-    athena_client = boto3.client(SERVICE_ATHENA)
+    # Get KMS key if bucket is encrypted
+    key_arn = _get_bucket_encryption_key_arn(s3_bucket)
+
+    # Check Athena and S3/KMS permissions
+    iam_client_wrapper.has_athena_permissions(s3_bucket, key_arn)
+
     query_execution_id = _execute_athena_query(
         athena_client, table_schema, s3_bucket, catalog=catalog, database=database
+    )
+
+    # Wait for query to complete using TaskFuture
+    future = TaskFuture(
+        query_execution_id, TaskType.EXPORT_ATHENA_TABLE, polling_interval, max_attempts
+    )
+    await future.wait_until_complete(athena_client)
+
+    # Check the final status
+    final_status = future.current_status
+
+    if final_status != "SUCCEEDED":
+        raise Exception(
+            f"Query {query_execution_id} failed with status: {final_status}"
+        )
+
+    logger.info(f"Successfully completed execution of query [{query_execution_id}]")
+    return query_execution_id
+
+
+async def drop_athena_table(
+    table: str,
+    s3_bucket: str,
+    catalog: str = None,  # type: ignore[assignment]
+    database: str = None,  # type: ignore[assignment]
+    polling_interval=None,
+    max_attempts=None,
+    athena_client=None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+) -> str:
+    """Drop table in Athena.
+
+    Args:
+        :param table: table to drop
+        :param s3_bucket: S3 bucket path output location
+        :param catalog: (str, optional) catalog namespace to run the sql_query
+        :param database: (str, optional) the database to run the sql_query
+        :param polling_interval: Polling interval for status checks
+        :param max_attempts: Maximum attempts for status checks
+        :param athena_client: (optional) Pre-configured Athena client
+        :param sts_client: (optional) Pre-configured STS client
+        :param iam_client: (optional) Pre-configured IAM client
+
+    Returns:
+        str: Returns the query_execution_id if successful
+    """
+    # Permission checks
+    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+        sts_client, iam_client, None, athena_client
+    )
+
+    # Get KMS key if bucket is encrypted
+    key_arn = _get_bucket_encryption_key_arn(s3_bucket)
+
+    # Check Athena and S3/KMS permissions
+    iam_client_wrapper.has_athena_permissions(s3_bucket, key_arn)
+
+    drop_table_sql_statement = f"DROP TABLE {table}"
+    query_execution_id = _execute_athena_query(
+        athena_client,
+        drop_table_sql_statement,
+        s3_bucket,
+        catalog=catalog,
+        database=database,
     )
 
     # Wait for query to complete using TaskFuture
@@ -1430,8 +1558,8 @@ def _execute_athena_query(
     client,
     sql_statement: str,
     output_location: str,
-    catalog: str = None,  # type: ignore[assignment]
-    database: str = None,  # type: ignore[assignment]
+    catalog: Optional[str] = None,
+    database: Optional[str] = None,
 ) -> str:
     """
     :param client: boto3 Athena client to run a query
@@ -1467,9 +1595,75 @@ def _execute_athena_query(
     return query_execution_id
 
 
-def empty_s3_bucket(s3_bucket: str):
-    # TODO Empty bucket and delete folder?
-    pass
+def empty_s3_bucket(
+    s3_arn: str,
+    s3_client: Optional[BaseClient] = None,
+    sts_client: Optional[BaseClient] = None,
+    iam_client: Optional[BaseClient] = None,
+):
+    """Empty an S3 bucket at the specified location.
+
+    Deletes contents of an S3 folder (if path ends with '/' or is empty) or
+    a specific key (if path doesn't end with '/').
+
+    Args:
+        s3_arn (str): S3 ARN or path to the bucket location to empty.
+        s3_client (Optional[BaseClient]): Optional S3 client. If not provided, creates a new one.
+        sts_client (Optional[BaseClient]): Optional STS client for permission validation.
+        iam_client (Optional[BaseClient]): Optional IAM client for permission validation.
+
+    Raises:
+        ValueError: If s3_arn is not a valid S3 location.
+        Exception: If permission validation fails or S3 operations fail.
+    """
+    # Validate S3 ARN format
+    if not s3_arn or not isinstance(s3_arn, str):
+        raise ValueError("s3_arn must be a non-empty string")
+
+    # Create S3 client if not provided
+    if s3_client is None:
+        s3_client = boto3.client(SERVICE_S3)
+
+    # Create IamClient using _get_or_create_clients
+    (iam_client_wrapper, _, _) = _get_or_create_clients(sts_client, iam_client, None)
+
+    # raises an error validation fails
+    iam_client_wrapper.has_delete_s3_permissions(s3_arn)
+
+    bucket_name, bucket_path = split_s3_arn_to_bucket_and_path(s3_arn)
+
+    # Delete object(s) in s3 bucket/path
+    try:
+        # Check if path ends with '/' or is empty (folder) vs specific key
+        if bucket_path.endswith("/") or bucket_path == "":
+            # Delete all objects with this prefix (folder deletion)
+            paginator = s3_client.get_paginator("list_objects_v2")
+            pages = paginator.paginate(Bucket=bucket_name, Prefix=bucket_path)
+
+            for page in pages:
+                if "Contents" in page:
+                    objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
+                    if objects:
+                        s3_client.delete_objects(
+                            Bucket=bucket_name,
+                            Delete={"Objects": objects, "Quiet": False},
+                        )
+                        logger.debug(
+                            f"Deleted {len(objects)} objects from folder: {bucket_name}/{bucket_path}"
+                        )
+        else:
+            # Delete specific key
+            s3_client.delete_objects(
+                Bucket=bucket_name,
+                Delete={
+                    "Objects": [{"Key": bucket_path}],
+                    "Quiet": False,
+                },
+            )
+            logger.debug(f"Deleted specific key: {bucket_name}/{bucket_path}")
+
+    except ClientError as e:
+        raise Exception(f"Failed to empty S3 bucket {s3_arn}: {e}")
 
 
 def validate_permissions():
@@ -1639,6 +1833,7 @@ def _get_or_create_clients(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
+    athena_client: Optional[BaseClient] = None,
 ):
     """
     Create or reuse provided AWS clients.
@@ -1647,9 +1842,10 @@ def _get_or_create_clients(
         sts_client (Optional[BaseClient]): Optional STS boto3 client
         iam_client (Optional[BaseClient]): Optional IAM boto3 client
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client
+        athena_client (Optional[BaseClient]): Optional Athena boto3 client
 
     Returns:
-        Tuple[BaseClient, IamClient, BaseClient]: Tuple containing (sts_client, iam_client, na_client)
+        Tuple[IamClient, BaseClient, BaseClient]: Tuple containing (iam_client, na_client, athena_client)
     """
     if sts_client is None:
         sts_client = boto3.client(SERVICE_STS)
@@ -1666,4 +1862,8 @@ def _get_or_create_clients(
             service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
         )
 
-    return iam_client_wrapper, na_client
+    # Create Athena client if not provided
+    if athena_client is None:
+        athena_client = boto3.client(SERVICE_ATHENA)
+
+    return iam_client_wrapper, na_client, athena_client
