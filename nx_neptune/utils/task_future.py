@@ -100,6 +100,8 @@ def _import_status_check_wrapper(client: BaseClient, task_id: str):
 
     if "status" in response and response["status"] == "FAILED":
 
+        logger.debug(response)
+
         if (
             "importTaskDetails" in response
             and response["importTaskDetails"]["status"] == "IN_PROGRESS"
