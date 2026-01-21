@@ -1582,7 +1582,7 @@ def _execute_athena_query(
             query_execution_context["Database"] = database
         query_execution_params["QueryExecutionContext"] = query_execution_context
 
-    logger.info(f"Creating table using statement:{sql_statement}")
+    logger.info(f"Executing Athena statement:{sql_statement}")
 
     try:
         response = client.start_query_execution(**query_execution_params)
@@ -1600,6 +1600,7 @@ def empty_s3_bucket(
     s3_client: Optional[BaseClient] = None,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
+    file_extension = None
 ):
     """Empty an S3 bucket at the specified location.
 
@@ -1642,7 +1643,9 @@ def empty_s3_bucket(
 
             for page in pages:
                 if "Contents" in page:
-                    objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
+                    objects = [{"Key": obj["Key"]} for obj in page["Contents"]
+                               if (not file_extension or obj["Key"].endswith(file_extension))]
+
                     if objects:
                         s3_client.delete_objects(
                             Bucket=bucket_name,
