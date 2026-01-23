@@ -400,6 +400,7 @@ class SessionManager:
         graph: Union[str, dict[str, str]],
         s3_location,
         sql_queries,
+        sql_parameters=None,
         catalog=None,
         database=None,
         remove_buckets=True,
@@ -410,6 +411,7 @@ class SessionManager:
             graph (Union[str, dict[str, str]]): Graph ID string or graph metadata dict.
             s3_location (str): S3 location to store intermediate CSV data.
             sql_queries (list): List of SQL queries to execute against Athena tables.
+            sql_parameters (list[list], optional): 2D List of execution parameters to pass with each SQL query.
             catalog (str, optional): Athena catalog name. Defaults to None.
             database (str, optional): Athena database name. Defaults to None.
             remove_buckets (bool): After a successful import, delete the S3 bucket contents if True.
@@ -424,9 +426,13 @@ class SessionManager:
         reset_graph_ahead = False
         skip_snapshot = True
 
+        if sql_parameters is None:
+            sql_parameters = []
+
         # export the datalake table to S3 as CSV projection data
         query_execution_ids = await instance_management.export_athena_table_to_s3(
             sql_queries,
+            sql_parameters,
             s3_location,
             catalog,
             database,

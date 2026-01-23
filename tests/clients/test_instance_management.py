@@ -1318,7 +1318,8 @@ async def test_export_athena_table_to_s3_success(
     }
 
     result = await export_athena_table_to_s3(
-        ["SELECT * FROM table1", "SELECT * FROM table2"],
+        ["SELECT * FROM table1 WHERE id = ?", "SELECT * FROM table2 WHERE status = ?"],
+        [["123"], ["active"]],  # sql_parameters - one list per query
         "s3://test-bucket/results/",
         polling_interval=1,
     )
@@ -1503,6 +1504,7 @@ async def test_drop_athena_table_success(
     mock_execute_athena_query.assert_called_once_with(
         mock_athena_client,
         "DROP TABLE test_table",
+        None,
         "s3://test-bucket/results/",
         catalog=None,
         database=None,
@@ -1557,6 +1559,7 @@ async def test_drop_athena_table_with_catalog_database(
     mock_execute_athena_query.assert_called_once_with(
         mock_athena_client,
         "DROP TABLE test_table",
+        None,
         "s3://test-bucket/results/",
         catalog="test_catalog",
         database="test_database",
