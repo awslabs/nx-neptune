@@ -1125,7 +1125,7 @@ async def export_athena_table_to_s3(
     for i, query in enumerate(sql_queries):
         params = sql_parameters[i] if i < len(sql_parameters) else None
         query_execution_id = _execute_athena_query(
-            athena_client, query, params, s3_bucket, catalog=catalog, database=database
+            athena_client, query, s3_bucket, params, catalog=catalog, database=database
         )
         query_execution_ids.append(query_execution_id)
 
@@ -1253,7 +1253,6 @@ async def create_csv_table_from_s3(
         query_execution_id = _execute_athena_query(
             athena_client,
             sql_statement,
-            None,
             s3_output_bucket,
             catalog=catalog,
             database=database,
@@ -1410,7 +1409,6 @@ AS SELECT {select_columns} FROM {csv_table_name};
     query_execution_id = _execute_athena_query(
         athena_client,
         sql_statement,
-        None,
         s3_output_bucket,
         catalog=catalog,
         database=database,
@@ -1473,7 +1471,7 @@ async def create_table_schema_from_s3(
     iam_client_wrapper.has_athena_permissions(s3_bucket, key_arn)
 
     query_execution_id = _execute_athena_query(
-        athena_client, table_schema, None, s3_bucket, catalog=catalog, database=database
+        athena_client, table_schema, s3_bucket, catalog=catalog, database=database
     )
 
     # Wait for query to complete using TaskFuture
@@ -1536,7 +1534,6 @@ async def drop_athena_table(
     query_execution_id = _execute_athena_query(
         athena_client,
         drop_table_sql_statement,
-        None,
         s3_bucket,
         catalog=catalog,
         database=database,
@@ -1563,16 +1560,16 @@ async def drop_athena_table(
 def _execute_athena_query(
     client,
     sql_statement: str,
-    sql_parameters: Optional[list],
     output_location: str,
+    sql_parameters: Optional[list] = None,
     catalog: Optional[str] = None,
     database: Optional[str] = None,
 ) -> str:
     """
     :param client: boto3 Athena client to run a query
     :param sql_statement: SQL query to execute
-    :param sql_parameters: SQL query parameters (optional)
     :param output_location: S3 bucket path for query results
+    :param sql_parameters: (list[list], optional) SQL query parameters list for each query
     :param catalog: (str, optional) catalog namespace to run the sql_query
     :param database: (str, optional) the database to run the sql_query
     :return: string with the execution id

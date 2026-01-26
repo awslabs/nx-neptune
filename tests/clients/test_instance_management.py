@@ -1504,7 +1504,6 @@ async def test_drop_athena_table_success(
     mock_execute_athena_query.assert_called_once_with(
         mock_athena_client,
         "DROP TABLE test_table",
-        None,
         "s3://test-bucket/results/",
         catalog=None,
         database=None,
@@ -1559,7 +1558,6 @@ async def test_drop_athena_table_with_catalog_database(
     mock_execute_athena_query.assert_called_once_with(
         mock_athena_client,
         "DROP TABLE test_table",
-        None,
         "s3://test-bucket/results/",
         catalog="test_catalog",
         database="test_database",
