@@ -10,9 +10,9 @@ import networkx as nx
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from . import NeptuneGraph, instance_management
-from .clients import IamClient, NeptuneAnalyticsClient
-from .clients.neptune_constants import (
+from resources_management import instance_management
+from resources_management.clients import IamClient, NeptuneAnalyticsClient
+from resources_management.clients.neptune_constants import (
     APP_ID_NX,
     SERVICE_ATHENA,
     SERVICE_IAM,
@@ -20,6 +20,8 @@ from .clients.neptune_constants import (
     SERVICE_S3,
     SERVICE_STS,
 )
+
+from . import NeptuneGraph
 
 logger = logging.getLogger(__name__)
 

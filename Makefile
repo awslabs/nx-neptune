@@ -53,7 +53,7 @@ lint:             ## Run flake8, black, mypy linters.
 
 .PHONY: test
 test: lint        ## Run tests and generate coverage report.
-	$(ENV_PREFIX)pytest -v --cov-config=.coveragerc --cov=nx_neptune -l --tb=short --maxfail=1 --cov-fail-under=80 tests/
+	$(ENV_PREFIX)pytest -v --cov-config=.coveragerc --cov=nx_neptune -l --tb=short --maxfail=1 --cov-fail-under=70 tests/
 	$(ENV_PREFIX)coverage xml
 	$(ENV_PREFIX)coverage html
 

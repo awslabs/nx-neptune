@@ -17,7 +17,9 @@ from nx_neptune.algorithms.util.algorithm_utils import (
     execute_mutation_query,
     process_unsupported_param,
 )
-from nx_neptune.clients.neptune_constants import (
+from nx_neptune.na_graph import NeptuneGraph
+from nx_neptune.utils.decorators import configure_if_nx_active
+from resources_management.clients.neptune_constants import (
     MAX_INT,
     PARAM_CONCURRENCY,
     PARAM_DISTANCE,
@@ -28,13 +30,11 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_VERTEX_LABEL,
     PARAM_WRITE_PROPERTY,
 )
-from nx_neptune.clients.opencypher_builder import (
+from resources_management.clients.opencypher_builder import (
     _CLOSENESS_MUTATE_ALG,
     closeness_centrality_mutation_query,
     closeness_centrality_query,
 )
-from nx_neptune.na_graph import NeptuneGraph
-from nx_neptune.utils.decorators import configure_if_nx_active
 
 logger = logging.getLogger(__name__)
 

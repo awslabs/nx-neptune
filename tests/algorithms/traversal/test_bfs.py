@@ -16,7 +16,7 @@ import networkx
 import pytest
 from unittest.mock import MagicMock, patch
 
-from nx_neptune.clients import (
+from resources_management.clients import (
     bfs_query,
     PARAM_TRAVERSAL_DIRECTION,
     PARAM_TRAVERSAL_DIRECTION_BOTH,
@@ -30,12 +30,12 @@ from nx_neptune.algorithms.traversal.bfs import (
     descendants_at_distance,
     bfs_layers,
 )
-from nx_neptune.clients.neptune_constants import (
+from resources_management.clients.neptune_constants import (
     PARAM_VERTEX_LABEL,
     PARAM_EDGE_LABELS,
     PARAM_CONCURRENCY,
 )
-from nx_neptune.clients.opencypher_builder import (
+from resources_management.clients.opencypher_builder import (
     descendants_at_distance_query,
     bfs_layers_query,
 )

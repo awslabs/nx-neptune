@@ -21,7 +21,7 @@ from nx_neptune import (
     asyn_lpa_communities,
     fast_label_propagation_communities,
 )
-from nx_neptune.clients.neptune_constants import (
+from resources_management.clients.neptune_constants import (
     PARAM_CONCURRENCY,
     PARAM_EDGE_LABELS,
     PARAM_VERTEX_LABEL,
@@ -33,7 +33,7 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_TRAVERSAL_DIRECTION,
     PARAM_WRITE_PROPERTY,
 )
-from nx_neptune.clients.opencypher_builder import (
+from resources_management.clients.opencypher_builder import (
     label_propagation_query,
     label_propagation_mutation_query,
 )

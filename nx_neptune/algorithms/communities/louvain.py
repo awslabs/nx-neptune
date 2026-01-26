@@ -15,7 +15,9 @@ from typing import Any, List, Optional
 
 from nx_neptune.algorithms.util import process_unsupported_param
 from nx_neptune.algorithms.util.algorithm_utils import execute_mutation_query
-from nx_neptune.clients.neptune_constants import (
+from nx_neptune.na_graph import NeptuneGraph
+from nx_neptune.utils.decorators import configure_if_nx_active
+from resources_management.clients.neptune_constants import (
     PARAM_CONCURRENCY,
     PARAM_EDGE_LABELS,
     PARAM_EDGE_WEIGHT_PROPERTY,
@@ -28,13 +30,11 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_SEED,
     PARAM_WRITE_PROPERTY,
 )
-from nx_neptune.clients.opencypher_builder import (
+from resources_management.clients.opencypher_builder import (
     _LOUVAIN_MUTATE_ALG,
     louvain_mutation_query,
     louvain_query,
 )
-from nx_neptune.na_graph import NeptuneGraph
-from nx_neptune.utils.decorators import configure_if_nx_active
 
 logger = logging.getLogger(__name__)
 

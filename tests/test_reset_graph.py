@@ -13,7 +13,7 @@
 import pytest
 from unittest.mock import MagicMock
 
-import nx_neptune.instance_management as InstanceUtil
+import resources_management.instance_management as InstanceUtil
 from botocore.exceptions import EndpointConnectionError
 
 

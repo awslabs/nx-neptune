@@ -10,22 +10,8 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
-from .algorithms import louvain_communities
-from .algorithms.centrality.closeness import closeness_centrality
-from .algorithms.centrality.degree_centrality import (
-    degree_centrality,
-    in_degree_centrality,
-    out_degree_centrality,
-)
-from .algorithms.communities.label_propagation import (
-    asyn_lpa_communities,
-    fast_label_propagation_communities,
-    label_propagation_communities,
-)
-from .algorithms.link_analysis.pagerank import pagerank
-from .algorithms.traversal.bfs import bfs_edges, bfs_layers, descendants_at_distance
-from .clients import Edge, Node
-from .instance_management import (
+from resources_management.clients import Edge, Node
+from resources_management.instance_management import (
     create_csv_table_from_s3,
     create_graph_snapshot,
     create_iceberg_table_from_table,
@@ -45,6 +31,21 @@ from .instance_management import (
     validate_athena_query,
     validate_permissions,
 )
+
+from .algorithms import louvain_communities
+from .algorithms.centrality.closeness import closeness_centrality
+from .algorithms.centrality.degree_centrality import (
+    degree_centrality,
+    in_degree_centrality,
+    out_degree_centrality,
+)
+from .algorithms.communities.label_propagation import (
+    asyn_lpa_communities,
+    fast_label_propagation_communities,
+    label_propagation_communities,
+)
+from .algorithms.link_analysis.pagerank import pagerank
+from .algorithms.traversal.bfs import bfs_edges, bfs_layers, descendants_at_distance
 from .interface import BackendInterface
 from .na_graph import (
     NETWORKX_GRAPH_ID,

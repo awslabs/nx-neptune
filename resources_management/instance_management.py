@@ -15,7 +15,7 @@ import logging
 import os
 import uuid
 from enum import Enum
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Union
 
 import boto3
 import jmespath
@@ -24,11 +24,10 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from sqlglot import exp, parse_one
 
-from . import NeptuneGraph
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
 from .clients.iam_client import split_s3_arn_to_bucket_and_path
 from .clients.neptune_constants import APP_ID_NX, SERVICE_ATHENA, SERVICE_S3
-
+from .context import GraphContext
 
 __all__ = [
     "validate_permissions",
@@ -52,7 +51,7 @@ __all__ = [
 ]
 
 
-from .utils.task_future import (
+from .task_future import (
     TaskFuture,
     TaskType,
     wait_until_all_complete,
@@ -529,7 +528,7 @@ async def create_graph_snapshot(
 
 
 async def import_csv_from_s3(
-    na_graph: NeptuneGraph,
+    na_graph: GraphContext,
     s3_arn,
     reset_graph_ahead=True,
     skip_snapshot=True,
@@ -545,7 +544,7 @@ async def import_csv_from_s3(
     4. Waits for completion
 
     Args:
-        na_graph (NeptuneGraph): The Neptune Analytics graph instance
+        na_graph (GraphContext): The Neptune Analytics graph instance
         s3_arn (str): The S3 location containing CSV data (e.g., 's3://bucket-name/prefix/')
         reset_graph_ahead (bool, optional): Whether to reset the graph before import. Defaults to True.
         skip_snapshot (bool, optional): Whether to skip creating a snapshot when resetting. Defaults to True.
@@ -584,7 +583,7 @@ async def import_csv_from_s3(
 
 
 async def export_csv_to_s3(
-    na_graph: NeptuneGraph,
+    na_graph: Union[str, GraphContext],
     s3_arn: str,
     export_filter=None,
     polling_interval=None,
@@ -598,7 +597,7 @@ async def export_csv_to_s3(
     3. Waits for completion
 
     Args:
-        na_graph (NeptuneGraph): The Neptune Analytics graph instance
+        na_graph (GraphContext): The Neptune Analytics graph instance
         s3_arn (str): The S3 destination location (e.g., 's3://bucket-name/prefix/')
         export_filter (dict, optional): Filter criteria for the export. Defaults to None.
         polling_interval (int): Time interval in seconds to perform job status query
@@ -610,10 +609,18 @@ async def export_csv_to_s3(
     Raises:
         ValueError: If the role lacks required permissions
     """
-    graph_id = na_graph.na_client.graph_id
-    na_client = na_graph.na_client.client
-    iam_client = na_graph.iam_client
-    role_arn = iam_client.role_arn
+
+    if isinstance(na_graph, str):
+
+        graph_id = na_graph
+        (iam_client, na_client, _) = _get_or_create_clients()
+        role_arn = iam_client.role_arn
+
+    else:
+        graph_id = na_graph.na_client.graph_id
+        na_client = na_graph.na_client.client
+        iam_client = na_graph.iam_client
+        role_arn = iam_client.role_arn
 
     # Retrieve key_arn for the bucket and permission check if present
     key_arn = _get_bucket_encryption_key_arn(s3_arn)

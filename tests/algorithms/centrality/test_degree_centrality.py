@@ -17,8 +17,8 @@ import pytest
 from networkx.classes import Graph
 
 from nx_neptune import degree_centrality, in_degree_centrality, out_degree_centrality
-from nx_neptune.clients import PARAM_TRAVERSAL_DIRECTION
-from nx_neptune.clients.neptune_constants import (
+from resources_management.clients import PARAM_TRAVERSAL_DIRECTION
+from resources_management.clients.neptune_constants import (
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
     PARAM_CONCURRENCY,
@@ -26,7 +26,7 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_VERTEX_LABEL,
     PARAM_WRITE_PROPERTY,
 )
-from nx_neptune.clients.opencypher_builder import (
+from resources_management.clients.opencypher_builder import (
     degree_centrality_query,
     degree_centrality_mutation_query,
 )

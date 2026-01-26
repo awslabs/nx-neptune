@@ -12,7 +12,7 @@
 # language governing permissions and limitations under the License.
 import pytest
 from unittest.mock import MagicMock
-from nx_neptune.clients import IamClient
+from resources_management.clients import IamClient
 
 
 @pytest.mark.parametrize(

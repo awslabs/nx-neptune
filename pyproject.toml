@@ -80,7 +80,7 @@ packages = [
     'nx_neptune.algorithms.traversal',
     'nx_neptune.algorithms.link_analysis',
     'nx_neptune.algorithms.util',
-    'nx_neptune.clients',
+    'resources_management.clients',
     'nx_neptune.utils',
 ]
 

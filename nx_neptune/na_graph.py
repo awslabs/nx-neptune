@@ -21,8 +21,7 @@ from networkx import DiGraph, Graph
 
 from nx_plugin import NeptuneConfig
 from nx_plugin.config import NETWORKX_GRAPH_ID, NETWORKX_S3_IAM_ROLE_ARN
-
-from .clients import (
+from resources_management.clients import (
     PARAM_TRAVERSAL_DIRECTION_BOTH,
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
@@ -52,8 +51,8 @@ __all__ = [
     "set_config_graph_id",
 ]
 
-from .clients.neptune_constants import APP_ID_NX
-from .clients.opencypher_builder import insert_edges, insert_nodes
+from resources_management.clients.neptune_constants import APP_ID_NX
+from resources_management.clients.opencypher_builder import insert_edges, insert_nodes
 
 
 class NeptuneGraph:

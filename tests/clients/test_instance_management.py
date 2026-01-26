@@ -19,7 +19,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 from botocore.exceptions import ClientError
 
-from nx_neptune.instance_management import (
+from resources_management.instance_management import (
     _clean_s3_path,
     _get_bucket_encryption_key_arn,
     TaskFuture,
@@ -526,7 +526,7 @@ async def test_create_na_instance_graph_absent_create_fail(mock_boto3_client):
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
+@patch("resources_management.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
 async def test_create_na_instance_graph_absent_status_check_success(
     mock_boto3_client, mock_sleep
@@ -653,9 +653,9 @@ async def test_status_check_export(mock_boto3_client):
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.instance_management._start_import_task")
-@patch("nx_neptune.instance_management.reset_graph")
-@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("resources_management.instance_management._start_import_task")
+@patch("resources_management.instance_management.reset_graph")
+@patch("resources_management.instance_management._get_bucket_encryption_key_arn")
 async def test_import_csv_from_s3_success(
     mock_get_bucket_encryption_key_arn,
     mock_reset_graph,
@@ -706,9 +706,9 @@ async def test_import_csv_from_s3_success(
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.instance_management._start_import_task")
-@patch("nx_neptune.instance_management.reset_graph")
-@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("resources_management.instance_management._start_import_task")
+@patch("resources_management.instance_management.reset_graph")
+@patch("resources_management.instance_management._get_bucket_encryption_key_arn")
 async def test_import_csv_from_s3_without_reset(
     mock_get_bucket_encryption_key_arn,
     mock_reset_graph,
@@ -757,7 +757,7 @@ async def test_import_csv_from_s3_without_reset(
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("resources_management.instance_management._get_bucket_encryption_key_arn")
 async def test_import_csv_from_s3_permission_error(mock_get_bucket_encryption_key_arn):
     # Setup mocks
     mock_get_bucket_encryption_key_arn.return_value = None
@@ -781,8 +781,8 @@ async def test_import_csv_from_s3_permission_error(mock_get_bucket_encryption_ke
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.instance_management._start_export_task")
-@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("resources_management.instance_management._start_export_task")
+@patch("resources_management.instance_management._get_bucket_encryption_key_arn")
 async def test_export_csv_to_s3_success(
     mock_get_bucket_encryption_key_arn,
     mock_start_export_task,
@@ -826,8 +826,8 @@ async def test_export_csv_to_s3_success(
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.instance_management._start_export_task")
-@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("resources_management.instance_management._start_export_task")
+@patch("resources_management.instance_management._get_bucket_encryption_key_arn")
 async def test_export_csv_to_s3_with_kms_key(
     mock_get_bucket_encryption_key_arn,
     mock_start_export_task,
@@ -871,7 +871,7 @@ async def test_export_csv_to_s3_with_kms_key(
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("resources_management.instance_management._get_bucket_encryption_key_arn")
 async def test_export_csv_to_s3_permission_error(mock_get_bucket_encryption_key_arn):
     # Setup mocks
     mock_get_bucket_encryption_key_arn.return_value = None
@@ -1010,7 +1010,7 @@ async def test_create_graph_config_override_default_options():
 @pytest.mark.asyncio
 async def test_create_random_graph_name_default():
     """Test _create_random_graph_name with default prefix."""
-    from nx_neptune.instance_management import _create_random_graph_name
+    from resources_management.instance_management import _create_random_graph_name
 
     result = _create_random_graph_name()
     assert result.startswith("nx-neptune-")
@@ -1020,7 +1020,7 @@ async def test_create_random_graph_name_default():
 @pytest.mark.asyncio
 async def test_create_random_graph_name_custom_prefix():
     """Test _create_random_graph_name with custom prefix."""
-    from nx_neptune.instance_management import _create_random_graph_name
+    from resources_management.instance_management import _create_random_graph_name
 
     result = _create_random_graph_name("custom-prefix")
     assert result.startswith("custom-prefix-")
@@ -1028,11 +1028,11 @@ async def test_create_random_graph_name_custom_prefix():
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
+@patch("resources_management.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
 async def test_start_na_instance_success(mock_boto3_client, mock_sleep):
     """Test successful start of NA instance."""
-    from nx_neptune.instance_management import start_na_instance
+    from resources_management.instance_management import start_na_instance
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
@@ -1060,7 +1060,7 @@ async def test_start_na_instance_success(mock_boto3_client, mock_sleep):
 @patch("boto3.client")
 async def test_start_na_instance_wrong_status(mock_boto3_client):
     """Test start NA instance when graph is not in STOPPED state."""
-    from nx_neptune.instance_management import start_na_instance
+    from resources_management.instance_management import start_na_instance
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
@@ -1077,11 +1077,11 @@ async def test_start_na_instance_wrong_status(mock_boto3_client):
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
+@patch("resources_management.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
 async def test_stop_na_instance_success(mock_boto3_client, mock_sleep):
     """Test successful stop of NA instance."""
-    from nx_neptune.instance_management import stop_na_instance
+    from resources_management.instance_management import stop_na_instance
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
@@ -1106,11 +1106,11 @@ async def test_stop_na_instance_success(mock_boto3_client, mock_sleep):
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
+@patch("resources_management.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
 async def test_create_graph_snapshot_success(mock_boto3_client, mock_sleep):
     """Test successful creation of graph snapshot."""
-    from nx_neptune.instance_management import create_graph_snapshot
+    from resources_management.instance_management import create_graph_snapshot
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
@@ -1137,11 +1137,11 @@ async def test_create_graph_snapshot_success(mock_boto3_client, mock_sleep):
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
+@patch("resources_management.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
 async def test_delete_graph_snapshot_success(mock_boto3_client, mock_sleep):
     """Test successful deletion of graph snapshot."""
-    from nx_neptune.instance_management import delete_graph_snapshot
+    from resources_management.instance_management import delete_graph_snapshot
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
@@ -1169,11 +1169,13 @@ async def test_delete_graph_snapshot_success(mock_boto3_client, mock_sleep):
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
+@patch("resources_management.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
 async def test_create_na_instance_from_snapshot_success(mock_boto3_client, mock_sleep):
     """Test successful creation of NA instance from snapshot."""
-    from nx_neptune.instance_management import create_na_instance_from_snapshot
+    from resources_management.instance_management import (
+        create_na_instance_from_snapshot,
+    )
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
@@ -1200,16 +1202,18 @@ async def test_create_na_instance_from_snapshot_success(mock_boto3_client, mock_
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.instance_management._get_status_check_future")
-@patch("nx_neptune.instance_management._get_or_create_clients")
-@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("resources_management.instance_management._get_status_check_future")
+@patch("resources_management.instance_management._get_or_create_clients")
+@patch("resources_management.instance_management._get_bucket_encryption_key_arn")
 async def test_create_na_instance_with_s3_import_success(
     mock_get_bucket_encryption_key_arn,
     mock_get_or_create_clients,
     mock_get_status_check_future,
 ):
     """Test successful creation of NA instance with S3 import."""
-    from nx_neptune.instance_management import create_na_instance_with_s3_import
+    from resources_management.instance_management import (
+        create_na_instance_with_s3_import,
+    )
 
     mock_na_client = MagicMock()
     mock_iam_client = MagicMock()
@@ -1240,7 +1244,9 @@ async def test_create_na_instance_with_s3_import_success(
 
 def test_get_create_instance_with_import_config():
     """Test _get_create_instance_with_import_config function."""
-    from nx_neptune.instance_management import _get_create_instance_with_import_config
+    from resources_management.instance_management import (
+        _get_create_instance_with_import_config,
+    )
 
     result = _get_create_instance_with_import_config(
         "test-graph",
@@ -1258,7 +1264,9 @@ def test_get_create_instance_with_import_config():
 
 def test_get_create_instance_with_import_config_custom():
     """Test _get_create_instance_with_import_config with custom config."""
-    from nx_neptune.instance_management import _get_create_instance_with_import_config
+    from resources_management.instance_management import (
+        _get_create_instance_with_import_config,
+    )
 
     config = {
         "minProvisionedMemory": 32,
@@ -1279,9 +1287,9 @@ def test_get_create_instance_with_import_config_custom():
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.instance_management._execute_athena_query")
-@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("nx_neptune.instance_management._get_or_create_clients")
+@patch("resources_management.instance_management._execute_athena_query")
+@patch("resources_management.instance_management._get_bucket_encryption_key_arn")
+@patch("resources_management.instance_management._get_or_create_clients")
 @patch("boto3.client")
 async def test_export_athena_table_to_s3_success(
     mock_boto3_client,
@@ -1290,7 +1298,7 @@ async def test_export_athena_table_to_s3_success(
     mock_execute_athena_query,
 ):
     """Test successful export of Athena table to S3."""
-    from nx_neptune.instance_management import export_athena_table_to_s3
+    from resources_management.instance_management import export_athena_table_to_s3
 
     mock_athena_client = MagicMock()
     mock_s3_client = MagicMock()
@@ -1328,11 +1336,11 @@ async def test_export_athena_table_to_s3_success(
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("resources_management.instance_management._get_status_check_future")
 @patch("boto3.client")
 async def test_update_instance_size_success(mock_boto3_client, mock_get_future):
     """Test successful to upsize a NA instance."""
-    from nx_neptune.instance_management import update_na_instance_size
+    from resources_management.instance_management import update_na_instance_size
 
     mock_na_client = MagicMock()
     mock_boto3_client.return_value = mock_na_client
@@ -1354,8 +1362,8 @@ async def test_update_instance_size_success(mock_boto3_client, mock_get_future):
     assert graph_id == "test-graph-id"
 
 
-@patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management._get_or_create_clients")
+@patch("resources_management.instance_management.boto3.client")
+@patch("resources_management.instance_management._get_or_create_clients")
 def test_empty_s3_bucket_folder_success(mock_get_or_create_clients, mock_boto3_client):
     """Test empty_s3_bucket with folder path (ends with /)."""
     # Setup mocks
@@ -1385,8 +1393,8 @@ def test_empty_s3_bucket_folder_success(mock_get_or_create_clients, mock_boto3_c
     mock_s3_client.delete_objects.assert_called_once()
 
 
-@patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management._get_or_create_clients")
+@patch("resources_management.instance_management.boto3.client")
+@patch("resources_management.instance_management._get_or_create_clients")
 def test_empty_s3_bucket_specific_key_success(
     mock_get_or_create_clients, mock_boto3_client
 ):
@@ -1410,7 +1418,7 @@ def test_empty_s3_bucket_specific_key_success(
     )
 
 
-@patch("nx_neptune.instance_management.boto3.client")
+@patch("resources_management.instance_management.boto3.client")
 def test_empty_s3_bucket_invalid_arn(mock_boto3_client):
     """Test empty_s3_bucket with invalid S3 ARN."""
     with pytest.raises(ValueError, match="s3_arn must be a non-empty string"):
@@ -1420,8 +1428,8 @@ def test_empty_s3_bucket_invalid_arn(mock_boto3_client):
         empty_s3_bucket(None)
 
 
-@patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management._get_or_create_clients")
+@patch("resources_management.instance_management.boto3.client")
+@patch("resources_management.instance_management._get_or_create_clients")
 def test_empty_s3_bucket_permission_error(
     mock_get_or_create_clients, mock_boto3_client
 ):
@@ -1441,8 +1449,8 @@ def test_empty_s3_bucket_permission_error(
         empty_s3_bucket("s3://test-bucket/folder/")
 
 
-@patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management._get_or_create_clients")
+@patch("resources_management.instance_management.boto3.client")
+@patch("resources_management.instance_management._get_or_create_clients")
 def test_empty_s3_bucket_client_error(mock_get_or_create_clients, mock_boto3_client):
     """Test empty_s3_bucket with S3 client error."""
     # Setup mocks
@@ -1465,11 +1473,11 @@ def test_empty_s3_bucket_client_error(mock_get_or_create_clients, mock_boto3_cli
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management._execute_athena_query")
-@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("nx_neptune.instance_management._get_or_create_clients")
-@patch("nx_neptune.instance_management.TaskFuture")
+@patch("resources_management.instance_management.boto3.client")
+@patch("resources_management.instance_management._execute_athena_query")
+@patch("resources_management.instance_management._get_bucket_encryption_key_arn")
+@patch("resources_management.instance_management._get_or_create_clients")
+@patch("resources_management.instance_management.TaskFuture")
 async def test_drop_athena_table_success(
     mock_task_future,
     mock_get_or_create_clients,
@@ -1514,11 +1522,11 @@ async def test_drop_athena_table_success(
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management._execute_athena_query")
-@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("nx_neptune.instance_management._get_or_create_clients")
-@patch("nx_neptune.instance_management.TaskFuture")
+@patch("resources_management.instance_management.boto3.client")
+@patch("resources_management.instance_management._execute_athena_query")
+@patch("resources_management.instance_management._get_bucket_encryption_key_arn")
+@patch("resources_management.instance_management._get_or_create_clients")
+@patch("resources_management.instance_management.TaskFuture")
 async def test_drop_athena_table_with_catalog_database(
     mock_task_future,
     mock_get_or_create_clients,
@@ -1566,11 +1574,11 @@ async def test_drop_athena_table_with_catalog_database(
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management._execute_athena_query")
-@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("nx_neptune.instance_management._get_or_create_clients")
-@patch("nx_neptune.instance_management.TaskFuture")
+@patch("resources_management.instance_management.boto3.client")
+@patch("resources_management.instance_management._execute_athena_query")
+@patch("resources_management.instance_management._get_bucket_encryption_key_arn")
+@patch("resources_management.instance_management._get_or_create_clients")
+@patch("resources_management.instance_management.TaskFuture")
 async def test_drop_athena_table_with_polling_params(
     mock_task_future,
     mock_get_or_create_clients,

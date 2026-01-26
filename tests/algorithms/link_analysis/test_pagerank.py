@@ -15,8 +15,8 @@ import os
 import pytest
 from unittest.mock import MagicMock, patch
 
-from nx_neptune.clients import pagerank_query
-from nx_neptune.clients.neptune_constants import (
+from resources_management.clients import pagerank_query
+from resources_management.clients.neptune_constants import (
     PARAM_DAMPING_FACTOR,
     PARAM_NUM_OF_ITERATIONS,
     PARAM_TOLERANCE,
@@ -30,7 +30,7 @@ from nx_neptune.clients.neptune_constants import (
     PARAM_SOURCE_WEIGHTS,
     PARAM_WRITE_PROPERTY,
 )
-from nx_neptune.clients.opencypher_builder import pagerank_mutation_query
+from resources_management.clients.opencypher_builder import pagerank_mutation_query
 from nx_neptune.na_graph import NeptuneGraph
 from nx_neptune.algorithms.link_analysis.pagerank import pagerank
 

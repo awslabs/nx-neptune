@@ -17,7 +17,7 @@ import pytest
 from networkx.classes import Graph
 
 from nx_neptune.algorithms import louvain_communities
-from nx_neptune.clients.opencypher_builder import (
+from resources_management.clients.opencypher_builder import (
     louvain_query,
     louvain_mutation_query,
 )

@@ -25,14 +25,14 @@ from nx_plugin.config import (
     NETWORKX_GRAPH_ID,
     NETWORKX_S3_IAM_ROLE_ARN,
 )
-
-from .clients import Edge, Node
-from .instance_management import (
+from resources_management.clients import Edge, Node
+from resources_management.instance_management import (
     create_na_instance,
     delete_na_instance,
     export_csv_to_s3,
     import_csv_from_s3,
 )
+
 from .na_graph import NeptuneGraph, get_config, set_config_graph_id
 
 logger = logging.getLogger(__name__)

@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from nx_neptune import NeptuneGraph, set_config_graph_id, export_csv_to_s3, empty_s3_bucket, Node, Edge
-from nx_neptune.instance_management import create_na_instance, import_csv_from_s3, delete_na_instance
+from resources_management.instance_management import create_na_instance, import_csv_from_s3, delete_na_instance
 
 """ 
 This is a sample script to demonstrate how nx-neptune can be used to handle 

@@ -16,7 +16,7 @@ Tests for the na_models.py module.
 
 import pytest
 
-from nx_neptune.clients.na_models import (
+from resources_management.clients.na_models import (
     Node,
     Edge,
     DEFAULT_NODE_LABEL_TYPE,

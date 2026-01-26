@@ -19,7 +19,7 @@ import boto3
 import networkx as nx
 from nx_neptune import NeptuneGraph
 from nx_neptune.clients import NeptuneAnalyticsClient
-from nx_neptune.instance_management import create_na_instance, import_csv_from_s3, delete_na_instance, \
+from resources_management.instance_management import create_na_instance, import_csv_from_s3, delete_na_instance, \
     delete_status_check_wrapper
 
 """ 

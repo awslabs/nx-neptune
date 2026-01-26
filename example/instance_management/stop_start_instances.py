@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from nx_neptune import NeptuneGraph, set_config_graph_id
-from nx_neptune.instance_management import (
+from resources_management.instance_management import (
     create_na_instance, 
     create_graph_snapshot, 
     create_na_instance_from_snapshot,

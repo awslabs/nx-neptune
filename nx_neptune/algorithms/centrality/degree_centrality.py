@@ -14,7 +14,9 @@ import logging
 from typing import Any, List, Optional
 
 from nx_neptune.algorithms.util.algorithm_utils import execute_mutation_query
-from nx_neptune.clients.neptune_constants import (
+from nx_neptune.na_graph import NeptuneGraph, get_config
+from nx_neptune.utils.decorators import configure_if_nx_active
+from resources_management.clients.neptune_constants import (
     PARAM_CONCURRENCY,
     PARAM_EDGE_LABELS,
     PARAM_TRAVERSAL_DIRECTION,
@@ -25,13 +27,11 @@ from nx_neptune.clients.neptune_constants import (
     RESPONSE_DEGREE,
     RESPONSE_ID,
 )
-from nx_neptune.clients.opencypher_builder import (
+from resources_management.clients.opencypher_builder import (
     _DEGREE_MUTATE_ALG,
     degree_centrality_mutation_query,
     degree_centrality_query,
 )
-from nx_neptune.na_graph import NeptuneGraph, get_config
-from nx_neptune.utils.decorators import configure_if_nx_active
 
 logger = logging.getLogger(__name__)
 

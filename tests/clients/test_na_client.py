@@ -15,7 +15,7 @@ import json
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
-from nx_neptune.clients.na_client import NeptuneAnalyticsClient
+from resources_management.clients.na_client import NeptuneAnalyticsClient
 
 
 class TestNeptuneAnalyticsClient:
@@ -80,7 +80,9 @@ class TestNeptuneAnalyticsClient:
         )
 
         # Verify
-        mock_get_logger.assert_called_once_with("nx_neptune.clients.na_client")
+        mock_get_logger.assert_called_once_with(
+            "resources_management.clients.na_client"
+        )
         assert client.logger == mock_logger
 
     def test_create_na_instance(self, mock_na_client):

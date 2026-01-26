@@ -17,8 +17,8 @@ Utility functions for Neptune Analytics algorithms.
 import logging
 from typing import Any, Dict
 
-from nx_neptune.clients.neptune_constants import RESPONSE_SUCCESS
 from nx_neptune.na_graph import get_config
+from resources_management.clients.neptune_constants import RESPONSE_SUCCESS
 
 logger = logging.getLogger(__name__)
 

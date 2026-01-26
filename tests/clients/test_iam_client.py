@@ -12,7 +12,7 @@
 # language governing permissions and limitations under the License.
 import pytest
 
-from nx_neptune.clients.iam_client import (
+from resources_management.clients.iam_client import (
     IamClient,
     _get_s3_in_arn,
     _convert_sts_to_iam_arn,

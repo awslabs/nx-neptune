@@ -26,7 +26,7 @@ from nx_neptune.utils.decorators import (
     _execute_teardown_routines_on_graph,
 )
 from nx_neptune.na_graph import NeptuneGraph
-from nx_neptune.clients import Edge, Node
+from resources_management.clients import Edge, Node
 from nx_plugin import NeptuneConfig
 
 
