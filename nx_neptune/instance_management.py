@@ -24,6 +24,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from sqlglot import exp, parse_one
 
+from . import NeptuneGraph
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
 from .clients.iam_client import split_s3_arn_to_bucket_and_path
 from .clients.neptune_constants import APP_ID_NX, SERVICE_ATHENA, SERVICE_S3
@@ -50,7 +51,6 @@ __all__ = [
     "drop_athena_table",
 ]
 
-from .interface.graph_context import GraphContext
 
 from .utils.task_future import (
     TaskFuture,
@@ -529,7 +529,7 @@ async def create_graph_snapshot(
 
 
 async def import_csv_from_s3(
-    na_graph: GraphContext,
+    na_graph: NeptuneGraph,
     s3_arn,
     reset_graph_ahead=True,
     skip_snapshot=True,
@@ -545,7 +545,7 @@ async def import_csv_from_s3(
     4. Waits for completion
 
     Args:
-        na_graph (GraphContext): The Neptune Analytics graph instance
+        na_graph (NeptuneGraph): The Neptune Analytics graph instance
         s3_arn (str): The S3 location containing CSV data (e.g., 's3://bucket-name/prefix/')
         reset_graph_ahead (bool, optional): Whether to reset the graph before import. Defaults to True.
         skip_snapshot (bool, optional): Whether to skip creating a snapshot when resetting. Defaults to True.
@@ -584,7 +584,7 @@ async def import_csv_from_s3(
 
 
 async def export_csv_to_s3(
-    na_graph: GraphContext,
+    na_graph: NeptuneGraph,
     s3_arn: str,
     export_filter=None,
     polling_interval=None,
@@ -598,7 +598,7 @@ async def export_csv_to_s3(
     3. Waits for completion
 
     Args:
-        na_graph (GraphContext): The Neptune Analytics graph instance
+        na_graph (NeptuneGraph): The Neptune Analytics graph instance
         s3_arn (str): The S3 destination location (e.g., 's3://bucket-name/prefix/')
         export_filter (dict, optional): Filter criteria for the export. Defaults to None.
         polling_interval (int): Time interval in seconds to perform job status query
