@@ -40,6 +40,8 @@ dependencies = [
 [tool.setuptools]
 zip-safe = false
 include-package-data = false
+py-modules = ["instace_management"]
+
 
 platforms = [
     'Linux',
@@ -50,6 +52,7 @@ platforms = [
 
 [tool.setuptools.packages.find]
 where = ["."]
+exclude = ["build*", "dist*", "*.egg-info*"]
 
 
 [tool.isort]
