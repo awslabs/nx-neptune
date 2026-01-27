@@ -40,7 +40,7 @@ dependencies = [
 [tool.setuptools]
 zip-safe = false
 include-package-data = false
-py-modules = ["instace_management"]
+py-modules = ["instance_management"]
 
 
 platforms = [

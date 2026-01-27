@@ -1,4 +1,4 @@
-from .resource_mgmt.instance_management import (
+from instance_management import (
     create_csv_table_from_s3,
     create_graph_snapshot,
     create_iceberg_table_from_table,
@@ -19,7 +19,7 @@ from .resource_mgmt.instance_management import (
     validate_permissions,
 )
 
-from .resource_mgmt.clients import (
+from ..clients import (
     Edge, Node
 )
 
