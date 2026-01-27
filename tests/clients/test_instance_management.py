@@ -1318,7 +1318,8 @@ async def test_export_athena_table_to_s3_success(
     }
 
     result = await export_athena_table_to_s3(
-        ["SELECT * FROM table1", "SELECT * FROM table2"],
+        ["SELECT * FROM table1 WHERE id = ?", "SELECT * FROM table2 WHERE status = ?"],
+        [["123"], ["active"]],  # sql_parameters - one list per query
         "s3://test-bucket/results/",
         polling_interval=1,
     )

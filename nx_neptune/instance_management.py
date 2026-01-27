@@ -1079,6 +1079,7 @@ def _create_random_graph_name(graph_name_prefix: Optional[str] = None) -> str:
 # TODO: provide an alternative to sql_queries - instead take a JSON import to map types
 async def export_athena_table_to_s3(
     sql_queries: list,
+    sql_parameters: list[list],
     s3_bucket: str,
     catalog: Optional[str] = None,
     database: Optional[str] = None,
@@ -1093,6 +1094,7 @@ async def export_athena_table_to_s3(
 
     Args:
         :param sql_queries: List of SQL query strings to execute
+        :param sql_parameters: (list[list]) List of parameter lists, one for each SQL query
         :param s3_bucket: S3 bucket path for query results
         :param catalog: (str, optional) Catalog namespace to run the sql_query
         :param database: (str, optional) The database to run the sql_query
@@ -1120,9 +1122,10 @@ async def export_athena_table_to_s3(
     #  array_join(transform("test_arr", x -> cast(x as varchar)), ';')
 
     query_execution_ids = []
-    for query in sql_queries:
+    for i, query in enumerate(sql_queries):
+        params = sql_parameters[i] if i < len(sql_parameters) else None
         query_execution_id = _execute_athena_query(
-            athena_client, query, s3_bucket, catalog=catalog, database=database
+            athena_client, query, s3_bucket, params, catalog=catalog, database=database
         )
         query_execution_ids.append(query_execution_id)
 
@@ -1558,6 +1561,7 @@ def _execute_athena_query(
     client,
     sql_statement: str,
     output_location: str,
+    sql_parameters: Optional[list] = None,
     catalog: Optional[str] = None,
     database: Optional[str] = None,
 ) -> str:
@@ -1565,6 +1569,7 @@ def _execute_athena_query(
     :param client: boto3 Athena client to run a query
     :param sql_statement: SQL query to execute
     :param output_location: S3 bucket path for query results
+    :param sql_parameters: (list[list], optional) SQL query parameters list for each query
     :param catalog: (str, optional) catalog namespace to run the sql_query
     :param database: (str, optional) the database to run the sql_query
     :return: string with the execution id
@@ -1581,6 +1586,9 @@ def _execute_athena_query(
         if database:
             query_execution_context["Database"] = database
         query_execution_params["QueryExecutionContext"] = query_execution_context
+
+    if sql_parameters is not None:
+        query_execution_params["ExecutionParameters"] = sql_parameters
 
     logger.info(f"Creating table using statement:{sql_statement}")
 
