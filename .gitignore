@@ -180,3 +180,8 @@ nx-neptune/
 
 # PyPI configuration file
 .pypirc
+
+# Java
+.jqwik-database
+
+
