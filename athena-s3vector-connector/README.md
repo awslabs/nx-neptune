@@ -45,6 +45,25 @@ The connector can be deployed directly using the provided CloudFormation templat
    - **LambdaMemory**: Lambda memory in MB (default: 512)
    - **DisableSpillEncryption**: Set to 'true' to disable spill encryption (default: false)
 
+### Update Lambda Function
+
+For subsequent updates after initial deployment:
+
+1. **Upload JAR to S3:**
+   ```bash
+   aws s3 cp target/athena-s3vector-connector-0.1.0.jar s3://<your-bucket>/
+   ```
+
+2. **Update Lambda function code:**
+   ```bash
+   aws lambda update-function-code \
+     --function-name <your-function-name> \
+     --s3-bucket <your-bucket> \
+     --s3-key athena-s3vector-connector-0.1.0.jar
+   ```
+
+*Note: A temporary S3 bucket is required for this update process as the JAR file exceeds 50 MB, which is the direct upload limit for Lambda functions.*
+
 ### CloudFormation Parameters
 
 | Parameter | Description | Default |
