@@ -1,18 +1,16 @@
 Transform: 'AWS::Serverless-2016-10-31'
-
 Metadata:
   AWS::ServerlessRepo::Application:
-    Name: ExampleAthenaConnector
-    Description: ExampleAthenaConnector Description
-    Author: 'default author'
+    Name: S3VectorAthenaConnector
+    Description: S3 Vector Athena Connector for querying vector data stored in S3
+    Author: 'AWS Labs'
     SpdxLicenseId: Apache-2.0
     LicenseUrl: LICENSE.txt
     ReadmeUrl: README.md
     Labels: ['athena-federation']
-    HomePageUrl: https://github.com/awslabs/aws-athena-query-federation
-    SemanticVersion: 2022.47.1
-    SourceCodeUrl: https://github.com/awslabs/aws-athena-query-federation
-
+    HomePageUrl: https://github.com/awslabs/nx-neptune
+    SemanticVersion: 0.1.0
+    SourceCodeUrl: https://github.com/awslabs/nx-neptune
 # Parameters are CloudFormation features to pass input
 # to your template when you create a stack
 Parameters:
@@ -23,9 +21,6 @@ Parameters:
   SpillBucket:
     Description: 'The name of the bucket where this function can spill data.'
     Type: String
-  DataBucket:
-      Description: "The bucket where this tutorial's data lives."
-      Type: String
   SpillPrefix:
     Description: 'The prefix within SpillBucket where this function can spill data.'
     Type: String
@@ -36,7 +31,7 @@ Parameters:
     Type: Number
   LambdaMemory:
     Description: "Lambda memory in MB (min 128 - 3008 max)."
-    Default: 1024
+    Default: 512
     Type: Number
   DisableSpillEncryption:
     Description: "WARNING: If set to 'true' encryption for spilled data is disabled."
@@ -51,7 +46,6 @@ Resources:
           disable_spill_encryption: !Ref DisableSpillEncryption
           spill_bucket: !Ref SpillBucket
           spill_prefix: !Ref SpillPrefix
-          data_bucket: !Ref DataBucket
       FunctionName: !Sub "${AthenaCatalogName}"
       Handler: "com.amazonaws.athena.connectors.s3vector.S3VectorCompositeHandler"
       CodeUri: "./target/athena-s3vector-connector-0.1.0.jar"
@@ -66,10 +60,20 @@ Resources:
               Effect: Allow
               Resource: '*'
           Version: '2012-10-17'
+
+        # S3 Vector read access
+        - Statement:
+          - Sid: AllowApplicationVectorAccess
+            Effect: Allow
+            Action:
+              - s3vectors:GetIndex
+              - s3vectors:ListIndexes
+              - s3vectors:QueryVectors
+              - s3vectors:GetVectors
+              - s3vectors:ListVectors
+            Resource: '*'
+
         #S3CrudPolicy allows our connector to spill large responses to S3. You can optionally replace this pre-made policy
         #with one that is more restrictive and can only 'put' but not read,delete, or overwrite files.
-        # Do this for vector bucket also.
         - S3CrudPolicy:
             BucketName: !Ref SpillBucket
-        - S3CrudPolicy:
-            BucketName: !Ref DataBucket
