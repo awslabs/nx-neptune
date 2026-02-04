@@ -19,6 +19,7 @@
  */
 package com.amazonaws.athena.connectors.s3vector;
 
+import com.amazonaws.athena.connector.lambda.connection.EnvironmentProperties;
 import com.amazonaws.athena.connector.lambda.handlers.CompositeHandler;
 /**
  * Composite handler for the S3 Vector connector that allows us to use a single Lambda function for both
@@ -30,6 +31,7 @@ public class S3VectorCompositeHandler
 {
     public S3VectorCompositeHandler()
     {
-        super(new S3VectorMetadataHandler(System.getenv()), new S3VectorRecordHandler(System.getenv()));
+        super(new S3VectorMetadataHandler(new EnvironmentProperties().createEnvironment()),
+                new S3VectorRecordHandler(new EnvironmentProperties().createEnvironment()));
     }
 }

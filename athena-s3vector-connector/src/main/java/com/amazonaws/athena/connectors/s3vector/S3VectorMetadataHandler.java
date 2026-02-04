@@ -78,6 +78,11 @@ public class S3VectorMetadataHandler
      */
     private static final String SOURCE_TYPE = "S3 Vectors";
 
+    public static final String COL_VECTOR_ID = "vector_id";
+
+    public static final String COL_EMBEDDING_DATA = "vector";
+
+
     public S3VectorMetadataHandler(java.util.Map<String, String> configOptions)
     {
         super(SOURCE_TYPE, configOptions);
@@ -132,7 +137,7 @@ public class S3VectorMetadataHandler
 
         List<TableName> tables = new ArrayList<>();
 
-        // API call to S3 vector to list out all vectors within the bucket.
+        // todo API call to S3 vector to list out all vector indexes within the bucket.
          tables.add(new TableName(request.getSchemaName(), "table1"));
          tables.add(new TableName(request.getSchemaName(), "table2"));
          tables.add(new TableName(request.getSchemaName(), "table3"));
@@ -161,9 +166,9 @@ public class S3VectorMetadataHandler
         SchemaBuilder tableSchemaBuilder = SchemaBuilder.newBuilder();
 
          tableSchemaBuilder
-         .addStringField("vector")
-         .addStringField("vector_id")
-         .addMetadata("vector", "Array of Float32 for vector data..")
+         .addStringField(COL_EMBEDDING_DATA)
+         .addStringField(COL_VECTOR_ID)
+         .addMetadata("vector", "Array of Float32 for vector data.")
          .addMetadata("vector_id", "Vector's unique ID.");
 
         return new GetTableResponse(request.getCatalogName(),
@@ -226,8 +231,6 @@ public class S3VectorMetadataHandler
     public GetDataSourceCapabilitiesResponse doGetDataSourceCapabilities(BlockAllocator allocator, GetDataSourceCapabilitiesRequest request)
     {
         Map<String, List<OptimizationSubType>> capabilities = new HashMap<>();
-
-
         return new GetDataSourceCapabilitiesResponse(request.getCatalogName(), capabilities);
     }
 }
