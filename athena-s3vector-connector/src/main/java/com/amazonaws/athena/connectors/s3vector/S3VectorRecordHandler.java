@@ -73,7 +73,11 @@ public class S3VectorRecordHandler
      * used to aid in debugging. Athena will use this name in conjunction with your catalog id
      * to correlate relevant query errors.
      */
-    private static final String SOURCE_TYPE = "example";
+    private static final String SOURCE_TYPE = "S3 Vectors";
+
+    public static final String COL_VECTOR_ID = "vector_id";
+
+    public static final String COL_EMBEDDING_DATA = "vector";
 
     private final S3VectorsClient vectorsClient;
 
@@ -117,13 +121,13 @@ public class S3VectorRecordHandler
 
         // Configure Arrow format.
         GeneratedRowWriter.RowWriterBuilder builder = GeneratedRowWriter.newBuilder(recordsRequest.getConstraints());
-        builder.withExtractor("vector_id", (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
+        builder.withExtractor(COL_VECTOR_ID, (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
             value.isSet = 1;
-            value.value = ((Map<String, String>) context).get("vector_id");
+            value.value = ((Map<String, String>) context).get(COL_VECTOR_ID);
         });
-        builder.withExtractor("vector", (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
+        builder.withExtractor(COL_EMBEDDING_DATA, (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
             value.isSet = 1;
-            value.value = ((Map<String, String>) context).get("vector");
+            value.value = ((Map<String, String>) context).get(COL_EMBEDDING_DATA);
         });
 
 
@@ -131,14 +135,14 @@ public class S3VectorRecordHandler
         var items = new ArrayList<Map<String, String>>();
 
         // When user pass in conditional clause on column vector_id then avoid full tabel scan.
-        if (summary.containsKey("vector_id") && summary.get("vector_id") instanceof SortedRangeSet) {
+        if (summary.containsKey(COL_VECTOR_ID) && summary.get(COL_VECTOR_ID) instanceof SortedRangeSet) {
             List<String> ids = getIds(summary);
             items.addAll(getVectorsById(schema, table, ids).vectors().stream()
-                    .map(item -> Map.of("vector_id", item.key(), "vector", item.data().toString()))
+                    .map(item -> Map.of(COL_VECTOR_ID, item.key(), COL_EMBEDDING_DATA, item.data().toString()))
                     .collect(java.util.stream.Collectors.toList()));
         } else {
             items.addAll(getVectors(schema, table).vectors().stream()
-                    .map(item -> Map.of("vector_id", item.key(), "vector", item.data().toString()))
+                    .map(item -> Map.of(COL_VECTOR_ID, item.key(), COL_EMBEDDING_DATA, item.data().toString()))
                     .collect(java.util.stream.Collectors.toList()));
         }
 
@@ -153,11 +157,11 @@ public class S3VectorRecordHandler
 
     private static List<String> getIds(Map<String, ValueSet> summary) {
         List<String> ids = new ArrayList<>();
-        SortedRangeSet rangeSet = (SortedRangeSet) summary.get("vector_id");
+        SortedRangeSet rangeSet = (SortedRangeSet) summary.get(COL_VECTOR_ID);
         rangeSet.getOrderedRanges().forEach(range -> {
             if (range.getLow().getBound() == Marker.Bound.EXACTLY) {
                 ids.add(range.getLow().getValue().toString());
-                logger.info("Adding ID: {}", range.getLow().getValue().toString());
+                logger.debug("Adding ID: {}", range.getLow().getValue().toString());
             }
         });
         return ids;

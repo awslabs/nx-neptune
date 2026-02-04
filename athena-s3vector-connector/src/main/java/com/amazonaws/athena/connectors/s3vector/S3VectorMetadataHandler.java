@@ -76,7 +76,7 @@ public class S3VectorMetadataHandler
      * used to aid in debugging. Athena will use this name in conjunction with your catalog id
      * to correlate relevant query errors.
      */
-    private static final String SOURCE_TYPE = "example";
+    private static final String SOURCE_TYPE = "S3 Vectors";
 
     public S3VectorMetadataHandler(java.util.Map<String, String> configOptions)
     {
