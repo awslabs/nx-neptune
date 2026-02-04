@@ -113,7 +113,6 @@ public class S3VectorRecordHandler
     protected void readWithConstraint(BlockSpiller spiller, ReadRecordsRequest recordsRequest, QueryStatusChecker queryStatusChecker)
             throws IOException
     {
-        logger.warn(recordsRequest.getConstraints().getSummary().toString());
 
         TableName tableName = recordsRequest.getTableName();
         String table = tableName.getTableName();
@@ -146,11 +145,10 @@ public class S3VectorRecordHandler
                     .collect(java.util.stream.Collectors.toList()));
         }
 
-        logger.warn("No. of vector entries fetched: {}", items.size());
+        logger.info("No. of vector entries fetched: {}", items.size());
 
         GeneratedRowWriter rowWriter = builder.build();
         for(Map<String, String> item : items) {
-            logger.info("readWithConstraint: processing line " + item);
             spiller.writeRows((Block block, int rowNum) -> rowWriter.writeRow(block, rowNum, item) ? 1 : 0);
         }
     }
