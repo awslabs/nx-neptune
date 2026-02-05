@@ -186,10 +186,10 @@ def do_execute_dump_graph():
 
 if __name__ == "__main__":
     asyncio.run(do_import_from_table())
-    # asyncio.run(do_import_from_s3())
-    # asyncio.run(do_export_to_s3())
-    # asyncio.run(do_export_to_csv_table())
-    # asyncio.run(do_export_to_iceberg_table())
-    # asyncio.run(do_execute_opencypher())
-    # do_execute_dump_graph()
+    asyncio.run(do_import_from_s3())
+    asyncio.run(do_export_to_s3())
+    asyncio.run(do_export_to_csv_table())
+    asyncio.run(do_export_to_iceberg_table())
+    asyncio.run(do_execute_opencypher())
+    do_execute_dump_graph()
 
