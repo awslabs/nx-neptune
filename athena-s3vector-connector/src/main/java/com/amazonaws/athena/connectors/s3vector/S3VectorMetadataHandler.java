@@ -54,6 +54,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * This class is part of an S3 Vector connector that enables Athena to query vector data stored in S3.
@@ -82,6 +83,11 @@ public class S3VectorMetadataHandler
 
     public static final String COL_EMBEDDING_DATA = "vector";
 
+    private Set<String> schemas = Set.of("schema1");
+
+    private List<String> tables = List.of(
+            "table1", "table2", "table3"
+    );
 
     public S3VectorMetadataHandler(java.util.Map<String, String> configOptions)
     {
@@ -113,10 +119,6 @@ public class S3VectorMetadataHandler
     {
         logger.info("doListSchemaNames: enter - " + request);
 
-        // Replace with S3 vector call to list all available S3 vector bucket.
-        Set<String> schemas = new HashSet<>();
-         schemas.add("schema1");
-
         return new ListSchemasResponse(request.getCatalogName(), schemas);
     }
 
@@ -135,14 +137,12 @@ public class S3VectorMetadataHandler
     {
         logger.info("doListTables: enter - " + request);
 
-        List<TableName> tables = new ArrayList<>();
-
         // todo API call to S3 vector to list out all vector indexes within the bucket.
-         tables.add(new TableName(request.getSchemaName(), "table1"));
-         tables.add(new TableName(request.getSchemaName(), "table2"));
-         tables.add(new TableName(request.getSchemaName(), "table3"));
+        List<TableName> tableNameList = tables.stream()
+                .map(x -> new TableName(request.getSchemaName(), x))
+                .collect(Collectors.toList());
 
-        return new ListTablesResponse(request.getCatalogName(), tables, null);
+        return new ListTablesResponse(request.getCatalogName(), tableNameList, null);
     }
 
     /**
@@ -233,4 +233,14 @@ public class S3VectorMetadataHandler
         Map<String, List<OptimizationSubType>> capabilities = new HashMap<>();
         return new GetDataSourceCapabilitiesResponse(request.getCatalogName(), capabilities);
     }
+
+
+    public void setSchemas(Set<String> schemas) {
+        this.schemas = schemas;
+    }
+
+    public void setTables(List<String> tables) {
+        this.tables = tables;
+    }
+
 }
