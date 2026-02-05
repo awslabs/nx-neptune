@@ -52,14 +52,15 @@ https://www.kaggle.com/code/kartik2112/fraud-detection-on-paysim-dataset/input?s
 SOURCE_AND_DESTINATION_BANK_CUSTOMERS = """
 SELECT DISTINCT "~id", 'customer' AS "~label" 
 FROM (
-    SELECT "nameOrig" as "~id"
+    SELECT "nameOrig" as "~id", "type"
     FROM transactions
     WHERE "nameOrig" IS NOT NULL
     UNION ALL
-    SELECT "nameDest" as "~id"
+    SELECT "nameDest" as "~id", "type"
     FROM transactions
     WHERE "nameDest" IS NOT NULL
-);
+)
+WHERE ("type" = ? OR "type" = ? OR "type" = ? OR "type" = ?)
 """
 
 BANK_TRANSACTIONS = """
@@ -75,24 +76,8 @@ SELECT
     "newbalanceDest" AS "newbalanceDest:Float", 
     "isFraud" AS "isFraud:Int"
 FROM transactions
-WHERE "nameOrig" IS NOT NULL AND "nameDest" IS NOT NULL
-"""
-
-CREATE_NEW_BANK_TRANSACTIONS_TABLE = """
-CREATE EXTERNAL TABLE IF NOT EXISTS bank_fraud_full.transactions (
-    `~id` string,
-    `~from` string,
-    `~to` string,
-    `~label` string,
-    `step` int,
-    `isFraud` int
-)
-ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
-WITH SERDEPROPERTIES ('field.delim' = ',')
-STORED AS INPUTFORMAT 'org.apache.hadoop.mapred.TextInputFormat'
-OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
-LOCATION 's3://nx-fraud-detection/t-6v0b09ug64'
-TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
+WHERE "nameOrig" IS NOT NULL AND "nameDest" IS NOT NULL 
+  AND ("type" = ? OR "type" = ? OR "type" = ? OR "type" = ?)
 """
 
 ALL_NODES = "MATCH (n) RETURN n LIMIT 10"
@@ -116,6 +101,10 @@ async def do_import_from_table():
     print(f"running sql queries:{sql_queries_str}")
     export_projection_status = await export_athena_table_to_s3(
         sql_queries,
+        [
+            ["CASH_OUT", "TRANSACTION", "CASH_IN", "TRANSFER"],
+            ["CASH_OUT", "TRANSACTION", "CASH_IN", "TRANSFER"]
+        ],
         s3_location_import,
         catalog='s3tablescatalog/nx-fraud-detection-data',
         database='bank_fraud_full',
@@ -197,10 +186,10 @@ def do_execute_dump_graph():
 
 if __name__ == "__main__":
     asyncio.run(do_import_from_table())
-    asyncio.run(do_import_from_s3())
-    asyncio.run(do_export_to_s3())
-    asyncio.run(do_export_to_csv_table())
-    asyncio.run(do_export_to_iceberg_table())
-    asyncio.run(do_execute_opencypher())
-    do_execute_dump_graph()
+    # asyncio.run(do_import_from_s3())
+    # asyncio.run(do_export_to_s3())
+    # asyncio.run(do_export_to_csv_table())
+    # asyncio.run(do_export_to_iceberg_table())
+    # asyncio.run(do_execute_opencypher())
+    # do_execute_dump_graph()
 
