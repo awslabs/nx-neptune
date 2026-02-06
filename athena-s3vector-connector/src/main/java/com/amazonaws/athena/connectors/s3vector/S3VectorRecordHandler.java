@@ -129,27 +129,39 @@ public class S3VectorRecordHandler
             value.value = ((Map<String, String>) context).get(COL_EMBEDDING_DATA);
         });
 
+        builder.withExtractor("embedding", (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
+            value.isSet = 1;
+            value.value = ((Map<String, String>) context).get("embedding");
+        });
+
 
         var summary = recordsRequest.getConstraints().getSummary();
-        var items = new ArrayList<Map<String, String>>();
+        var items = new ArrayList<Map<String, Object>>();
 
         // When user pass in conditional clause on column vector_id then avoid full tabel scan.
         if (summary.containsKey(COL_VECTOR_ID) && summary.get(COL_VECTOR_ID) instanceof SortedRangeSet) {
             List<String> ids = getIds(summary);
             items.addAll(getVectorsById(schema, table, ids).vectors().stream()
-                    .map(item -> Map.of(COL_VECTOR_ID, item.key(), COL_EMBEDDING_DATA, item.data().toString()))
+                    .map(item -> Map.of(
+                            COL_VECTOR_ID, item.key(),
+                            COL_EMBEDDING_DATA, item.data().toString(),
+                            "embedding", item.data().float32()))
                     .collect(java.util.stream.Collectors.toList()));
         } else {
             items.addAll(getVectors(schema, table).vectors().stream()
-                    .map(item -> Map.of(COL_VECTOR_ID, item.key(), COL_EMBEDDING_DATA, item.data().toString()))
+                    .map(item -> Map.of(
+                            COL_VECTOR_ID, item.key(),
+                            COL_EMBEDDING_DATA, item.data().toString(),
+                            "embedding", item.data().float32()))
                     .collect(java.util.stream.Collectors.toList()));
         }
 
         logger.info("No. of vector entries fetched: {}", items.size());
 
         GeneratedRowWriter rowWriter = builder.build();
-        for(Map<String, String> item : items) {
-            spiller.writeRows((Block block, int rowNum) -> rowWriter.writeRow(block, rowNum, item) ? 1 : 0);
+        for(Map<String, Object> item : items) {
+            spiller.writeRows(
+                    (Block block, int rowNum) -> rowWriter.writeRow(block, rowNum, item) ? 1 : 0);
         }
     }
 

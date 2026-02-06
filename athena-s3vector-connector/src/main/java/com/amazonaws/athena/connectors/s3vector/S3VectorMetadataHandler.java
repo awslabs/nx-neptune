@@ -43,6 +43,8 @@ import com.amazonaws.athena.connector.lambda.security.EncryptionKeyFactory;
 import org.apache.arrow.util.VisibleForTesting;
 //DO NOT REMOVE - this will not be _unused_ when customers go through the tutorial and uncomment
 //the TODOs
+import org.apache.arrow.vector.types.FloatingPointPrecision;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.athena.AthenaClient;
@@ -168,6 +170,7 @@ public class S3VectorMetadataHandler
          tableSchemaBuilder
          .addStringField(COL_EMBEDDING_DATA)
          .addStringField(COL_VECTOR_ID)
+         .addListField("embedding", new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE))
          .addMetadata("vector", "Array of Float32 for vector data.")
          .addMetadata("vector_id", "Vector's unique ID.");
 
