@@ -48,6 +48,9 @@ import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.athena.AthenaClient;
+import software.amazon.awssdk.services.s3vectors.S3VectorsClient;
+import software.amazon.awssdk.services.s3vectors.model.ListVectorBucketsRequest;
+import software.amazon.awssdk.services.s3vectors.model.VectorBucketSummary;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 import java.util.ArrayList;
@@ -85,6 +88,8 @@ public class S3VectorMetadataHandler
      */
     private static final String SOURCE_TYPE = "S3 Vectors";
 
+    private final S3VectorsClient vectorsClient;
+
     private Set<String> schemas = Set.of("schema1");
 
     private List<String> tables = List.of(
@@ -94,18 +99,20 @@ public class S3VectorMetadataHandler
     public S3VectorMetadataHandler(java.util.Map<String, String> configOptions)
     {
         super(SOURCE_TYPE, configOptions);
+        this.vectorsClient = S3VectorsClient.create();
     }
 
     @VisibleForTesting
     protected S3VectorMetadataHandler(
-        EncryptionKeyFactory keyFactory,
-        SecretsManagerClient awsSecretsManager,
-        AthenaClient athena,
-        String spillBucket,
-        String spillPrefix,
-        java.util.Map<String, String> configOptions)
+            EncryptionKeyFactory keyFactory,
+            SecretsManagerClient awsSecretsManager,
+            AthenaClient athena,
+            String spillBucket,
+            String spillPrefix,
+            java.util.Map<String, String> configOptions, S3VectorsClient vectorsClient)
     {
         super(keyFactory, awsSecretsManager, athena, SOURCE_TYPE, spillBucket, spillPrefix, configOptions);
+        this.vectorsClient = vectorsClient;
     }
 
     /**
@@ -120,8 +127,13 @@ public class S3VectorMetadataHandler
     public ListSchemasResponse doListSchemaNames(BlockAllocator allocator, ListSchemasRequest request)
     {
         logger.info("doListSchemaNames: enter - " + request);
+        ListVectorBucketsRequest vectorListRequest = ListVectorBucketsRequest.builder().build();
+        var response = vectorsClient.listVectorBuckets(vectorListRequest);
+        var bucketsList = response.vectorBuckets().stream()
+                .map(VectorBucketSummary::vectorBucketName)
+                .collect(Collectors.toList());
 
-        return new ListSchemasResponse(request.getCatalogName(), schemas);
+        return new ListSchemasResponse(request.getCatalogName(), bucketsList);
     }
 
     /**
