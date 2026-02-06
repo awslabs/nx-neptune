@@ -38,44 +38,82 @@ class CleanupTask(Enum):
     STOP = "stop"
 
 
-def _format_output_graph(graph_details: dict[str, str], with_details=False):
-    """Format graph details for output.
+class SessionGraph:
+    """Represents a Neptune Analytics graph database instance.
 
-    Args:
-        graph_details: Dictionary containing graph information
-        with_details: If True, return full details; if False, return only name, id, and status
+    This class wraps a Neptune Analytics graph instance, providing access to its
+    metadata and methods for executing queries against the graph database.
 
-    Returns:
-        Dictionary with formatted graph information
+    Attributes:
+        id (str): The unique identifier of the Neptune Analytics graph instance.
+        name (str): The human-readable name of the graph instance.
+        status (str): The current status of the graph (e.g., 'AVAILABLE', 'CREATING', 'DELETING').
+        details (dict): Complete response dictionary from Neptune Analytics API containing
+                       all graph metadata (endpoint, memory, replicas, etc.).
     """
-    if with_details:
-        return graph_details
-    return {
-        "name": graph_details["name"],
-        "id": graph_details["id"],
-        "status": graph_details["status"],
-    }
 
+    def __init__(
+        self,
+        id: str,
+        name: str,
+        status: str,
+        details: dict,
+        neptune_client=None,
+    ):
+        """Initialize a SessionGraph instance.
 
-def _get_graph_id(graph: Union[str, dict[str, str]]) -> str:
-    """Extract graph ID from string or dictionary.
+        Args:
+            id (str): The unique identifier of the Neptune Analytics graph.
+            name (str): The name of the graph instance.
+            status (str): The current status of the graph.
+            details (dict): Complete metadata dictionary for the graph.
+            neptune_client (optional): Boto3 Neptune Analytics client. If not provided,
+                                      a new client will be created.
+        """
+        self.id = id
+        self.name = name
+        self.status = status
+        self.details = details
+        self._neptune_client = neptune_client or boto3.client(
+            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+        )
 
-    Args:
-        graph: Either a graph ID string or a dictionary containing an 'id' field
+    @classmethod
+    def from_response(cls, response: dict, neptune_client=None):
+        """Create a SessionGraph instance from a Neptune Analytics API response.
 
-    Returns:
-        str: The graph ID
+        Args:
+            response (dict): Response dictionary from Neptune Analytics list_graphs or
+                           get_graph API calls. Must contain 'id', 'name', and 'status' fields.
+            neptune_client (optional): Boto3 Neptune Analytics client to use for this instance.
 
-    Raises:
-        Exception: If graph is not a string and doesn't contain an 'id' field
-    """
-    if isinstance(graph, str):
-        return graph
-    if isinstance(graph, dict) and graph["id"]:
-        return graph["id"]
-    raise Exception(
-        "No graph id provided - 'graph' must a graph id string, or contain an `id` field"
-    )
+        Returns:
+            SessionGraph: A new SessionGraph instance populated with data from the response.
+
+        Example:
+            >>> response = {"id": "g-123", "name": "my-graph", "status": "AVAILABLE"}
+            >>> graph = SessionGraph.from_response(response)
+        """
+        name = response["name"]
+        id = response["id"]
+        status = response["status"]
+        return cls(id, name, status, response, neptune_client)
+
+    def execute_query(self, opencypher: str):
+        """Execute an openCypher query against this Neptune Analytics graph instance.
+
+        Args:
+            opencypher (str): openCypher query string to execute against the graph.
+
+        Returns:
+            dict: Query results from Neptune Analytics containing the result set.
+
+        Example:
+            >>> graph = SessionGraph(id="g-123", name="my-graph", status="AVAILABLE", details={})
+            >>> result = graph.execute_query("MATCH (n) RETURN n LIMIT 10")
+        """
+        na_client = NeptuneAnalyticsClient(self.id, self._neptune_client)
+        return na_client.execute_generic_query(opencypher)
 
 
 class SessionManager:
@@ -137,9 +175,7 @@ class SessionManager:
         Returns:
             dict: Query results from Neptune Analytics.
         """
-
-        na_client = NeptuneAnalyticsClient(graph_id, self._neptune_client)
-        return na_client.execute_generic_query(opencypher)
+        return self.get_graph(graph_id).execute_query(opencypher)
 
     def validate_permissions(self):
         """Validate AWS permissions for Neptune Analytics operations.
@@ -149,27 +185,27 @@ class SessionManager:
         """
         return instance_management.validate_permissions()
 
-    def list_graphs(self, with_details=False):
+    def list_graphs(self) -> list[SessionGraph]:
         """List available Neptune Analytics graphs.
 
         If session_name is set, filters graphs to those starting with the session_name prefix.
 
         Returns:
-            list: List of graph dictionaries containing graph metadata.
+            list: List of SessionGraph objects containing graph metadata.
         """
         response = self._neptune_client.list_graphs()
         graphs = response.get("graphs", [])
 
         if self.session_name:
-            graphs = [
-                _format_output_graph(g, with_details)
-                for g in graphs
-                if g.get("name", "").startswith(self.session_name)
-            ]
+            graphs = filter(
+                lambda g: g.get("name", "").startswith(self.session_name), graphs
+            )
 
-        return graphs
+        return [SessionGraph.from_response(g, self._neptune_client) for g in graphs]
 
-    def _get_existing_graph(self, filter_status: Optional[list[str]] = None):
+    def _get_existing_graph(
+        self, filter_status: Optional[list[str]] = None
+    ) -> Optional[SessionGraph]:
         """Get the first existing graph, optionally filtered by status.
 
         Args:
@@ -177,7 +213,7 @@ class SessionManager:
                           If None, returns the first graph regardless of status.
 
         Returns:
-            dict or None: Graph details if found, None otherwise.
+            SessionGraph or None: Graph details if found, None otherwise.
         """
         graphs = self.list_graphs()
         if not graphs:
@@ -188,18 +224,18 @@ class SessionManager:
 
         filter_status_lower = [s.lower() for s in filter_status]
         for graph in graphs:
-            if graph.get("status", "").lower() in filter_status_lower:
+            if graph.status.lower() in filter_status_lower:
                 return graph
         return None
 
-    def get_graph(self, graph_id: str):
+    def get_graph(self, graph_id: str) -> SessionGraph:
         """Get details for a specific graph by ID.
 
         Args:
             graph_id (str): ID of the graph to retrieve
 
         Returns:
-            dict: Graph details if found
+            SessionGraph: Graph, with details, if found
 
         Raises:
             Exception: If no graph is found with the given ID
@@ -207,21 +243,21 @@ class SessionManager:
         graphs = self.list_graphs()
 
         for graph in graphs:
-            if graph["id"] == graph_id:
+            if graph.id == graph_id:
                 return graph
 
         # Package that as nx object
         raise Exception(f"No graph instance with id {graph_id} found")
 
-    async def get_or_create_graph(self, config: Optional[dict] = None) -> dict:
+    async def get_or_create_graph(self, config: Optional[dict] = None) -> SessionGraph:
         """Get the first available graph or create a new one if none exist.
 
         Returns:
-            dict with the graph status
+            SessionGraph: graph object for an available instance
         """
         graph = self._get_existing_graph(filter_status=["AVAILABLE"])
         if graph:
-            return _format_output_graph(graph)
+            return graph
         # create a new graph and return
         logger.info(f"Creating new graph named with prefix: {self.session_name}")
         graph_id = await instance_management.create_na_instance(
@@ -237,7 +273,7 @@ class SessionManager:
         self,
         snapshot_id: str,
         config: Optional[dict] = None,
-    ) -> dict:
+    ) -> SessionGraph:
         """Create a new Neptune Analytics instance from a snapshot.
 
         Args:
@@ -245,7 +281,7 @@ class SessionManager:
             config (Optional[dict]): Optional configuration to pass to each instance creation.
 
         Returns:
-            dict with the graph status
+            SessionGraph: graph with details
         """
         logger.info(
             f"Creating new graph from snapshot {snapshot_id} named with prefix: {self.session_name}"
@@ -264,7 +300,7 @@ class SessionManager:
         self,
         s3_arn: str,
         config: Optional[dict] = None,
-    ) -> dict:
+    ) -> SessionGraph:
         """Create a new Neptune Analytics instance from a s3 bucket location with CSV data.
 
         Args:
@@ -272,7 +308,7 @@ class SessionManager:
             config (Optional[dict]): Optional configuration to pass to each instance creation.
 
         Returns:
-            dict with the graph status
+            SessionGraph: graph with details
         """
         logger.info(
             f"Creating new graph from csv {s3_arn} named with prefix: {self.session_name}"
@@ -314,14 +350,14 @@ class SessionManager:
 
     async def export_to_csv(
         self,
-        graph: Union[str, dict[str, str]],
+        graph: Union[str, SessionGraph],
         s3_location,
         export_filter=None,
     ) -> str:
         """Export Neptune Analytics graph data to CSV files in S3.
 
         Args:
-            graph (Union[str, dict[str, str]]): Graph ID string or graph metadata dict.
+            graph (Union[str, SessionGraph]): Graph ID string or SessionGraph.
             s3_location (str): S3 location to store exported CSV files.
             export_filter (dict, optional): Filter criteria for the export. Defaults to None.
 
@@ -342,7 +378,7 @@ class SessionManager:
 
     async def import_from_csv(
         self,
-        graph: Union[str, dict[str, str]],
+        graph: Union[str, SessionGraph],
         s3_location,
         reset_graph_ahead=False,
         max_size: Optional[int] = None,
@@ -350,7 +386,7 @@ class SessionManager:
         """Import CSV data from S3 into a Neptune Analytics graph.
 
         Args:
-            graph (Union[str, dict[str, str]]): Graph ID string or graph metadata dict.
+            graph (Union[str, SessionGraph]): Graph ID string or SessionGraph.
             s3_location (str): S3 location containing CSV data to import.
             reset_graph_ahead (bool, optional): Whether to reset the graph before import. Defaults to False.
             max_size (int, optional): If defined, maximum memory size in GB to scale up to. Defaults to None.
@@ -377,11 +413,11 @@ class SessionManager:
                     skip_snapshot,
                 )
             except ClientError as e:
+                current_size = self.get_graph(graph_id).details["provisionedMemory"]
                 if (
                     max_size is not None
                     and e.response["Error"]["Code"] == "InsufficientMemory"
-                    and max_size
-                    > (current_size := self.get_graph(graph_id)["provisionedMemory"])
+                    and max_size > current_size
                 ):
                     prospect_size = current_size * 2
 
@@ -397,7 +433,7 @@ class SessionManager:
 
     async def import_from_table(
         self,
-        graph: Union[str, dict[str, str]],
+        graph: Union[str, SessionGraph],
         s3_location,
         sql_queries,
         sql_parameters=None,
@@ -408,7 +444,7 @@ class SessionManager:
         """Import data from Athena table query results into a Neptune Analytics graph.
 
         Args:
-            graph (Union[str, dict[str, str]]): Graph ID string or graph metadata dict.
+            graph (Union[str, SessionGraph]): Graph ID string or SessionGraph.
             s3_location (str): S3 location to store intermediate CSV data.
             sql_queries (list): List of SQL queries to execute against Athena tables.
             sql_parameters (list[list], optional): 2D List of execution parameters to pass with each SQL query.
@@ -474,7 +510,7 @@ class SessionManager:
 
     async def export_to_table(
         self,
-        graph: Union[str, dict[str, str]],
+        graph: Union[str, SessionGraph],
         s3_location: str,
         csv_table_name: str,
         csv_catalog: str,
@@ -488,7 +524,7 @@ class SessionManager:
         """Export Neptune Analytics graph data to Athena tables via S3.
 
         Args:
-            graph (Union[str, dict[str, str]]): Graph ID string or graph metadata dict.
+            graph (Union[str, SessionGraph]): Graph ID string or SessionGraph.
             s3_location (str): S3 location to store exported CSV data.
             csv_table_name (str): Name for the intermediate CSV table in Athena.
             csv_catalog (str): Athena catalog for CSV table.
@@ -599,12 +635,12 @@ class SessionManager:
         return query_id
 
     async def create_snapshot(
-        self, graph: Union[str, dict[str, str]], snapshot_name: str
+        self, graph: Union[str, SessionGraph], snapshot_name: str
     ):
         """Create a Neptune Analytics graph snapshot.
 
         Args:
-            graph: Either a graph ID string or a dictionary containing an 'id' field
+            graph: Either a graph ID string or a SessionGraph
             snapshot_name (str): Name of the snapshot to create instances from.
             config (Optional[dict]): Optional configuration to pass to each instance creation.
 
@@ -774,7 +810,7 @@ class SessionManager:
         graphs = [
             graph
             for graph in self.list_graphs()
-            if len(graph_names) == 0 or graph["name"] in graph_names
+            if len(graph_names) == 0 or graph.name in graph_names
         ]
         if graph_names and len(graphs) == 0:
             logger.warning(
@@ -784,14 +820,35 @@ class SessionManager:
         # Filter for graphs in correct status, log warning for others
         graph_ids = []
         for graph in graphs:
-            if graph["status"] == status_to_check:
-                graph_ids.append(graph["id"])
+            if graph.status == status_to_check:
+                graph_ids.append(graph.id)
             else:
                 logger.warning(
-                    f"Skipping graph {graph['id']} - status is {graph['status']}, expected {status_to_check}"
+                    f"Skipping graph {graph.id} - status is {graph.status}, expected {status_to_check}"
                 )
 
         future_list = []
         for graph_id in graph_ids:
             future_list.append(operation(graph_id))
         return asyncio.gather(*future_list)
+
+
+def _get_graph_id(graph: Union[str, SessionGraph]) -> str:
+    """Extract graph ID from string or dictionary.
+
+    Args:
+        graph: Either a graph ID string or a dictionary containing an 'id' field
+
+    Returns:
+        str: The graph ID
+
+    Raises:
+        Exception: If graph is not a string and doesn't contain an 'id' field
+    """
+    if isinstance(graph, str):
+        return graph
+    if isinstance(graph, SessionGraph):
+        return graph.id
+    raise Exception(
+        "No graph id provided - 'graph' must a graph id string, or contain an `id` field"
+    )
