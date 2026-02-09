@@ -83,7 +83,7 @@ public class S3VectorMetadataHandler
 
     public static final String COL_VECTOR_ID = "vector_id";
 
-    public static final String COL_EMBEDDING_DATA = "vector";
+    public static final String COL_EMBEDDING_DATA = "embedding";
 
     private Set<String> schemas = Set.of("schema1");
 
@@ -169,8 +169,7 @@ public class S3VectorMetadataHandler
 
          tableSchemaBuilder
          .addStringField(COL_EMBEDDING_DATA)
-         .addStringField(COL_VECTOR_ID)
-         .addListField("embedding", new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE))
+         .addListField(COL_VECTOR_ID, new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE))
          .addMetadata("vector", "Array of Float32 for vector data.")
          .addMetadata("vector_id", "Vector's unique ID.");
 

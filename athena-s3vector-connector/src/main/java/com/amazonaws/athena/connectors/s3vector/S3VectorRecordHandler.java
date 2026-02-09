@@ -22,10 +22,14 @@ package com.amazonaws.athena.connectors.s3vector;
 import com.amazonaws.athena.connector.lambda.QueryStatusChecker;
 import com.amazonaws.athena.connector.lambda.data.Block;
 import com.amazonaws.athena.connector.lambda.data.BlockSpiller;
+import com.amazonaws.athena.connector.lambda.data.BlockUtils;
+import com.amazonaws.athena.connector.lambda.data.FieldResolver;
 import com.amazonaws.athena.connector.lambda.data.writers.GeneratedRowWriter;
+import com.amazonaws.athena.connector.lambda.data.writers.extractors.Extractor;
 import com.amazonaws.athena.connector.lambda.data.writers.extractors.VarCharExtractor;
 import com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarCharHolder;
 import com.amazonaws.athena.connector.lambda.domain.TableName;
+import com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintProjector;
 import com.amazonaws.athena.connector.lambda.domain.predicate.Marker;
 import com.amazonaws.athena.connector.lambda.domain.predicate.Range;
 import com.amazonaws.athena.connector.lambda.domain.predicate.SortedRangeSet;
@@ -33,6 +37,7 @@ import com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet;
 import com.amazonaws.athena.connector.lambda.handlers.RecordHandler;
 import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
 import org.apache.arrow.util.VisibleForTesting;
+import org.apache.arrow.vector.FieldVector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.athena.AthenaClient;
@@ -77,7 +82,7 @@ public class S3VectorRecordHandler
 
     public static final String COL_VECTOR_ID = "vector_id";
 
-    public static final String COL_EMBEDDING_DATA = "vector";
+    public static final String COL_EMBEDDING_DATA = "embedding";
 
     private final S3VectorsClient vectorsClient;
 
@@ -122,18 +127,15 @@ public class S3VectorRecordHandler
         GeneratedRowWriter.RowWriterBuilder builder = GeneratedRowWriter.newBuilder(recordsRequest.getConstraints());
         builder.withExtractor(COL_VECTOR_ID, (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
             value.isSet = 1;
-            value.value = ((Map<String, String>) context).get(COL_VECTOR_ID);
+            value.value = (String) ((Map<String, Object>) context).get(COL_VECTOR_ID);
         });
-        builder.withExtractor(COL_EMBEDDING_DATA, (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
-            value.isSet = 1;
-            value.value = ((Map<String, String>) context).get(COL_EMBEDDING_DATA);
-        });
-
-        builder.withExtractor("embedding", (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
-            value.isSet = 1;
-            value.value = ((Map<String, String>) context).get("embedding");
-        });
-
+        builder.withFieldWriterFactory(COL_EMBEDDING_DATA,
+        (FieldVector vector, Extractor extractor, ConstraintProjector constraint) ->
+                (Object context, int rowNum) -> {
+                    List<Float> embedding = (List<Float>) ((Map<String, Object>) context).get("embedding");
+                    BlockUtils.setComplexValue(vector, rowNum, FieldResolver.DEFAULT, embedding);
+                    return true;
+                });
 
         var summary = recordsRequest.getConstraints().getSummary();
         var items = new ArrayList<Map<String, Object>>();
@@ -144,15 +146,13 @@ public class S3VectorRecordHandler
             items.addAll(getVectorsById(schema, table, ids).vectors().stream()
                     .map(item -> Map.of(
                             COL_VECTOR_ID, item.key(),
-                            COL_EMBEDDING_DATA, item.data().toString(),
-                            "embedding", item.data().float32()))
+                            COL_EMBEDDING_DATA, item.data().float32()))
                     .collect(java.util.stream.Collectors.toList()));
         } else {
             items.addAll(getVectors(schema, table).vectors().stream()
                     .map(item -> Map.of(
                             COL_VECTOR_ID, item.key(),
-                            COL_EMBEDDING_DATA, item.data().toString(),
-                            "embedding", item.data().float32()))
+                            COL_EMBEDDING_DATA, item.data().float32()))
                     .collect(java.util.stream.Collectors.toList()));
         }
 
