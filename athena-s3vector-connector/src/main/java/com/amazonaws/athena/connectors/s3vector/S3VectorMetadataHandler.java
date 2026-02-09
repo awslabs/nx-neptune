@@ -1,8 +1,8 @@
 /*-
  * #%L
- * athena-example
+ * athena-s3vector-connector
  * %%
- * Copyright (C) 2019 Amazon Web Services
+ * Copyright (C) 2026 Amazon Web Services
  * %%
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,6 +58,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_EMBEDDING_DATA;
+import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_VECTOR_ID;
+
 /**
  * This class is part of an S3 Vector connector that enables Athena to query vector data stored in S3.
  * The README for this module (athena-example) will guide you through preparing
@@ -80,10 +83,6 @@ public class S3VectorMetadataHandler
      * to correlate relevant query errors.
      */
     private static final String SOURCE_TYPE = "S3 Vectors";
-
-    public static final String COL_VECTOR_ID = "vector_id";
-
-    public static final String COL_EMBEDDING_DATA = "embedding";
 
     private Set<String> schemas = Set.of("schema1");
 

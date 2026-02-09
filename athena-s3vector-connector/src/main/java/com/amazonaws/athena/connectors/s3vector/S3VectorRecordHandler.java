@@ -1,8 +1,8 @@
 /*-
  * #%L
- * athena-example
+ * athena-s3vector-connector
  * %%
- * Copyright (C) 2019 Amazon Web Services
+ * Copyright (C) 2026 Amazon Web Services
  * %%
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,6 @@ import com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarCha
 import com.amazonaws.athena.connector.lambda.domain.TableName;
 import com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintProjector;
 import com.amazonaws.athena.connector.lambda.domain.predicate.Marker;
-import com.amazonaws.athena.connector.lambda.domain.predicate.Range;
 import com.amazonaws.athena.connector.lambda.domain.predicate.SortedRangeSet;
 import com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet;
 import com.amazonaws.athena.connector.lambda.handlers.RecordHandler;
@@ -43,10 +42,8 @@ import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.athena.AthenaClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3vectors.S3VectorsClient;
-import software.amazon.awssdk.services.s3vectors.model.GetOutputVector;
 import software.amazon.awssdk.services.s3vectors.model.GetVectorsRequest;
 import software.amazon.awssdk.services.s3vectors.model.GetVectorsResponse;
-import software.amazon.awssdk.services.s3vectors.model.ListOutputVector;
 import software.amazon.awssdk.services.s3vectors.model.ListVectorsRequest;
 import software.amazon.awssdk.services.s3vectors.model.ListVectorsResponse;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
@@ -56,7 +53,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static java.lang.String.format;
+import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_EMBEDDING_DATA;
+import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_VECTOR_ID;
 
 /**
  * This class is part of an tutorial that will walk you through how to build a connector for your
@@ -79,10 +77,6 @@ public class S3VectorRecordHandler
      * to correlate relevant query errors.
      */
     private static final String SOURCE_TYPE = "S3 Vectors";
-
-    public static final String COL_VECTOR_ID = "vector_id";
-
-    public static final String COL_EMBEDDING_DATA = "embedding";
 
     private final S3VectorsClient vectorsClient;
 
@@ -123,12 +117,13 @@ public class S3VectorRecordHandler
         String table = tableName.getTableName();
         String schema = tableName.getSchemaName();
 
-        // Configure Arrow format.
+        // Field: ID
         GeneratedRowWriter.RowWriterBuilder builder = GeneratedRowWriter.newBuilder(recordsRequest.getConstraints());
         builder.withExtractor(COL_VECTOR_ID, (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
             value.isSet = 1;
             value.value = (String) ((Map<String, Object>) context).get(COL_VECTOR_ID);
         });
+        // Field: Embedding
         builder.withFieldWriterFactory(COL_EMBEDDING_DATA,
         (FieldVector vector, Extractor extractor, ConstraintProjector constraint) ->
                 (Object context, int rowNum) -> {
