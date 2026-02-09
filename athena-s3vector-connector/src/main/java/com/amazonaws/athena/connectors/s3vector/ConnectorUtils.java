@@ -25,4 +25,6 @@ public class ConnectorUtils {
 
     public static final String COL_EMBEDDING_DATA = "embedding";
 
+    public static final String COL_METADATA = "metadata";
+
 }

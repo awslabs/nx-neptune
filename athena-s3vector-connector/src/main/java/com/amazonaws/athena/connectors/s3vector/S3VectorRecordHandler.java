@@ -54,6 +54,7 @@ import java.util.List;
 import java.util.Map;
 
 import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_EMBEDDING_DATA;
+import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_METADATA;
 import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_VECTOR_ID;
 
 /**
@@ -128,12 +129,15 @@ public class S3VectorRecordHandler
             (FieldVector vector, Extractor extractor, ConstraintProjector constraint) ->
                 (Object context, int rowNum) -> {
                     List<Float> embedding = (List<Float>) ((Map<String, Object>) context).get("embedding");
-                    if (embedding != null) {
-                        BlockUtils.setComplexValue(vector, rowNum, FieldResolver.DEFAULT, embedding);
-                        return true;
-                    }
-                    return false;
+                    BlockUtils.setComplexValue(vector, rowNum, FieldResolver.DEFAULT, embedding);
+                    return true;
+                });
+        // Field: Metadata
+        builder.withExtractor(COL_METADATA, (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
+            value.isSet = 1;
+            value.value = (String) ((Map<String, Object>) context).get(COL_METADATA);
         });
+
 
         var summary = recordsRequest.getConstraints().getSummary();
         var items = new ArrayList<Map<String, Object>>();
@@ -144,13 +148,15 @@ public class S3VectorRecordHandler
             items.addAll(getVectorsById(schema, table, ids).vectors().stream()
                     .map(item -> Map.of(
                             COL_VECTOR_ID, item.key(),
-                            COL_EMBEDDING_DATA, item.data().float32()))
+                            COL_EMBEDDING_DATA, item.data().float32(),
+                            COL_METADATA, item.metadata().asString()))
                     .collect(java.util.stream.Collectors.toList()));
         } else {
             items.addAll(getVectors(schema, table).vectors().stream()
                     .map(item -> Map.of(
                             COL_VECTOR_ID, item.key(),
-                            COL_EMBEDDING_DATA, item.data().float32()))
+                            COL_EMBEDDING_DATA, item.data().float32(),
+                            COL_METADATA, item.metadata().asString()))
                     .collect(java.util.stream.Collectors.toList()));
         }
 
@@ -182,6 +188,7 @@ public class S3VectorRecordHandler
                 .vectorBucketName(bucketName)
                 .indexName(indexName)
                 .returnData(true)
+                .returnMetadata(true)
                 .build();
 
         ListVectorsResponse response = vectorsClient.listVectors(request);
@@ -199,6 +206,7 @@ public class S3VectorRecordHandler
                 .indexName(indexName)
                 .keys(ids)
                 .returnData(true)
+                .returnMetadata(true)
                 .build();
 
         GetVectorsResponse response = vectorsClient.getVectors(request);
