@@ -168,10 +168,10 @@ public class S3VectorMetadataHandler
         SchemaBuilder tableSchemaBuilder = SchemaBuilder.newBuilder();
 
          tableSchemaBuilder
-         .addStringField(COL_EMBEDDING_DATA)
-         .addListField(COL_VECTOR_ID, new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE))
-         .addMetadata("vector", "Array of Float32 for vector data.")
-         .addMetadata("vector_id", "Vector's unique ID.");
+         .addStringField(COL_VECTOR_ID)
+         .addListField(COL_EMBEDDING_DATA, new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE))
+         .addMetadata(COL_VECTOR_ID, "Vector's unique ID.")
+         .addMetadata(COL_EMBEDDING_DATA, "Array of Float32 for vector data.");
 
         return new GetTableResponse(request.getCatalogName(),
                 request.getTableName(),
