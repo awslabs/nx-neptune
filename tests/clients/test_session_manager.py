@@ -14,72 +14,44 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from nx_neptune.session_manager import (
-    _format_output_graph,
-    _get_graph_id,
+    NeptuneAnalyticsClient,
     SessionManager,
 )
 
 
-class TestFormatOutputGraph:
-    """Tests for _format_output_graph function."""
+class TestNeptuneAnalyticsClient:
+    """Tests for NeptuneAnalyticsClient class."""
 
-    def test_format_output_graph_with_details(self):
-        """Test formatting with full details."""
-        graph_details = {
-            "name": "test-graph",
+    def test_session_graph_init(self):
+        """Test NeptuneAnalyticsClient initialization."""
+        mock_client = MagicMock()
+        graph = NeptuneAnalyticsClient(
+            graph_id="g-123",
+            client=mock_client,
+            name="test-graph",
+            status="AVAILABLE",
+            details={"provisionedMemory": 128},
+        )
+        assert graph.graph_id == "g-123"
+        assert graph.graph_id == "g-123"
+        assert graph.name == "test-graph"
+        assert graph.status == "AVAILABLE"
+
+    def test_session_graph_from_response(self):
+        """Test NeptuneAnalyticsClient.from_response class method."""
+        mock_client = MagicMock()
+        response = {
             "id": "g-123",
+            "name": "test-graph",
             "status": "AVAILABLE",
             "endpoint": "test-endpoint",
-            "provisionedMemory": 16,
         }
-        result = _format_output_graph(graph_details, with_details=True)
-        assert result == graph_details
-
-    def test_format_output_graph_without_details(self):
-        """Test formatting with minimal details."""
-        graph_details = {
-            "name": "test-graph",
-            "id": "g-123",
-            "status": "AVAILABLE",
-            "endpoint": "test-endpoint",
-            "provisionedMemory": 16,
-        }
-        result = _format_output_graph(graph_details, with_details=False)
-        assert result == {
-            "name": "test-graph",
-            "id": "g-123",
-            "status": "AVAILABLE",
-        }
-
-
-class TestGetGraphId:
-    """Tests for _get_graph_id function."""
-
-    def test_get_graph_id_from_string(self):
-        """Test extracting graph ID from string."""
-        result = _get_graph_id("g-123")
-        assert result == "g-123"
-
-    def test_get_graph_id_from_dict(self):
-        """Test extracting graph ID from dictionary."""
-        graph_dict = {"id": "g-456", "name": "test-graph"}
-        result = _get_graph_id(graph_dict)
-        assert result == "g-456"
-
-    def test_get_graph_id_invalid_input(self):
-        """Test exception when graph ID cannot be extracted."""
-        with pytest.raises(KeyError):
-            _get_graph_id({"name": "test"})
-
-    def test_get_graph_id_empty_dict(self):
-        """Test exception when graph is empty dict."""
-        with pytest.raises(KeyError):
-            _get_graph_id({})
-
-    def test_get_graph_id_empty_id_value(self):
-        """Test exception when graph has empty id value."""
-        with pytest.raises(Exception, match="No graph id provided"):
-            _get_graph_id({"id": ""})
+        graph = NeptuneAnalyticsClient.from_response(response, mock_client)
+        assert graph.name == "test-graph"
+        assert graph.graph_id == "g-123"
+        assert graph.graph_id == "g-123"
+        assert graph.status == "AVAILABLE"
+        assert graph.details == response
 
 
 class TestSessionManager:
@@ -140,7 +112,7 @@ class TestSessionManager:
         sm = SessionManager(session_name="test-graph")
         graphs = sm.list_graphs()
         assert len(graphs) == 2
-        assert all(g["name"].startswith("test-graph") for g in graphs)
+        assert all(g.name.startswith("test-graph") for g in graphs)
 
     @patch("boto3.client")
     def test_get_existing_graph_no_filter(self, mock_boto3_client):
@@ -158,7 +130,7 @@ class TestSessionManager:
         sm = SessionManager()
         graph = sm._get_existing_graph()
         assert graph is not None
-        assert graph["id"] == "g-1"
+        assert graph.graph_id == "g-1"
 
     @patch("boto3.client")
     def test_get_existing_graph_with_status_filter(self, mock_boto3_client):
@@ -176,8 +148,8 @@ class TestSessionManager:
         sm = SessionManager()
         graph = sm._get_existing_graph(filter_status=["AVAILABLE"])
         assert graph is not None
-        assert graph["id"] == "g-2"
-        assert graph["status"] == "AVAILABLE"
+        assert graph.graph_id == "g-2"
+        assert graph.status == "AVAILABLE"
 
     @patch("boto3.client")
     def test_get_existing_graph_case_insensitive(self, mock_boto3_client):
@@ -194,7 +166,7 @@ class TestSessionManager:
         sm = SessionManager()
         graph = sm._get_existing_graph(filter_status=["available"])
         assert graph is not None
-        assert graph["status"] == "AVAILABLE"
+        assert graph.status == "AVAILABLE"
 
     @patch("boto3.client")
     def test_get_existing_graph_no_match(self, mock_boto3_client):
@@ -258,8 +230,8 @@ class TestSessionManager:
             {
                 "graphs": [
                     {
-                        "id": "test-graph-id",
                         "name": "test-session-graph",
+                        "id": "test-session-graph-id",
                         "status": "AVAILABLE",
                     }
                 ]
@@ -267,15 +239,16 @@ class TestSessionManager:
         ]
 
         # Mock the async function to return a string
-        mock_create.return_value = "test-graph-id"
+        mock_create.return_value = "test-session-graph-id"
 
         sm = SessionManager(session_name="test-session")
         result = await sm.get_or_create_graph()
 
         # Should call create_na_instance
         mock_create.assert_called_once()
-        # Should return the graph details
-        assert result["id"] == "test-graph-id"
+        # Should return NeptuneAnalyticsClient object
+        assert isinstance(result, NeptuneAnalyticsClient)
+        assert result.graph_id == "test-session-graph-id"
 
     @patch("boto3.client")
     def test_list_graphs_with_details(self, mock_boto3_client):
@@ -296,22 +269,24 @@ class TestSessionManager:
         }
 
         sm = SessionManager()
-        graphs = sm.list_graphs(with_details=True)
+        graphs = sm.list_graphs()
         assert len(graphs) == 1
-        assert "endpoint" in graphs[0]
-        assert "provisionedMemory" in graphs[0]
+        assert isinstance(graphs[0], NeptuneAnalyticsClient)
+        assert graphs[0].details is not None
+        assert "endpoint" in graphs[0].details
+        assert "provisionedMemory" in graphs[0].details
 
     @patch("boto3.client")
     def test_get_graph_success(self, mock_boto3_client):
-        """Test listing graphs with full details."""
+        """Test getting a graph by ID successfully."""
         mock_client = MagicMock()
         mock_boto3_client.return_value = mock_client
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
         mock_client.list_graphs.return_value = {
             "graphs": [
                 {
-                    "name": "graph-1",
-                    "id": "g-1",
+                    "name": "g-1",
+                    "id": "graph-1",
                     "status": "AVAILABLE",
                     "endpoint": "test-endpoint",
                     "provisionedMemory": 16,
@@ -320,10 +295,10 @@ class TestSessionManager:
         }
 
         sm = SessionManager()
-        graph = sm.get_graph("g-1")
+        graph = sm.get_graph("graph-1")
 
-        assert isinstance(graph, dict)
-        assert graph["name"] == "graph-1"
+        assert isinstance(graph, NeptuneAnalyticsClient)
+        assert graph.graph_id == "graph-1"
 
     @patch("boto3.client")
     def test_get_graph_failed(self, mock_boto3_client):
@@ -364,7 +339,7 @@ class TestSessionManager:
         sm = SessionManager()
         graph = sm._get_existing_graph(filter_status=["AVAILABLE", "STOPPED"])
         assert graph is not None
-        assert graph["id"] == "g-2"  # Should return first match
+        assert graph.graph_id == "g-2"  # Should return first match
 
     @pytest.mark.asyncio
     @patch("boto3.client")
@@ -381,6 +356,7 @@ class TestSessionManager:
         result = await sm.get_or_create_graph()
 
         # Should return existing graph without creating new one
-        assert result["id"] == "g-123"
-        assert result["status"] == "AVAILABLE"
-        assert result["name"] == "test-graph"
+        assert isinstance(result, NeptuneAnalyticsClient)
+        assert result.graph_id == "g-123"
+        assert result.status == "AVAILABLE"
+        assert result.name == "test-graph"

@@ -15,13 +15,16 @@ from .iam_client import IamClient
 from .na_client import NeptuneAnalyticsClient
 from .na_models import Edge, Node
 from .neptune_constants import (
+    APP_ID_NX,
     PARAM_MAX_DEPTH,
     PARAM_TRAVERSAL_DIRECTION,
     PARAM_TRAVERSAL_DIRECTION_BOTH,
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
+    SERVICE_ATHENA,
     SERVICE_IAM,
     SERVICE_NA,
+    SERVICE_S3,
     SERVICE_STS,
 )
 from .opencypher_builder import (
