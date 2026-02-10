@@ -168,8 +168,9 @@ public class S3VectorRecordHandler
                     List<Float> embedding = ((VectorData) context).getEmbedding();
                     if (embedding != null) {
                         BlockUtils.setComplexValue(vector, rowNum, FieldResolver.DEFAULT, embedding);
+                        return true;
                     }
-                    return true;
+                    return false;
                 });
         // Field: Metadata
         builder.withExtractor(COL_METADATA, (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
