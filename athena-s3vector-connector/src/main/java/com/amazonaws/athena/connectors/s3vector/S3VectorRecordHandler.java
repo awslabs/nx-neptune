@@ -125,7 +125,7 @@ public class S3VectorRecordHandler
         });
         // Field: Embedding
         builder.withFieldWriterFactory(COL_EMBEDDING_DATA,
-        (FieldVector vector, Extractor extractor, ConstraintProjector constraint) ->
+            (FieldVector vector, Extractor extractor, ConstraintProjector constraint) ->
                 (Object context, int rowNum) -> {
                     List<Float> embedding = (List<Float>) ((Map<String, Object>) context).get("embedding");
                     BlockUtils.setComplexValue(vector, rowNum, FieldResolver.DEFAULT, embedding);
