@@ -102,12 +102,7 @@ class NeptuneGraph:
 
         na_client = NeptuneAnalyticsClient(
             config.graph_id,
-            "",  # undefined name
-            "",  # undefined status
-            boto3.client(
-                service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-            ),
-            logger,
+            logger=logger,
         )
         iam_client = IamClient(s3_iam_role, boto3.client(SERVICE_IAM), logger)
         return cls(

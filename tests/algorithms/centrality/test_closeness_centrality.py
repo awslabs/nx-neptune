@@ -17,8 +17,8 @@ import pytest
 from networkx.classes import Graph
 
 from nx_neptune import closeness_centrality
-from nx_neptune.clients import PARAM_TRAVERSAL_DIRECTION
 from nx_neptune.clients.neptune_constants import (
+    PARAM_TRAVERSAL_DIRECTION,
     PARAM_CONCURRENCY,
     PARAM_EDGE_LABELS,
     PARAM_VERTEX_LABEL,
