@@ -60,7 +60,7 @@ FROM (
     FROM transactions
     WHERE "nameDest" IS NOT NULL
 )
-WHERE ("type" = ? OR "type" = ? OR "type" = ? OR "type" = ?)
+WHERE "type" IN (?, ?, ?, ?)
 """
 
 BANK_TRANSACTIONS = """
@@ -77,7 +77,7 @@ SELECT
     "isFraud" AS "isFraud:Int"
 FROM transactions
 WHERE "nameOrig" IS NOT NULL AND "nameDest" IS NOT NULL 
-  AND ("type" = ? OR "type" = ? OR "type" = ? OR "type" = ?)
+  AND "type" IN (?, ?, ?, ?)
 """
 
 ALL_NODES = "MATCH (n) RETURN n LIMIT 10"
