@@ -71,7 +71,7 @@ class NeptuneGraph:
         na_client: NeptuneAnalyticsClient,
         iam_client: IamClient,
         graph: Graph,
-        logger: logging.Logger | None = None,
+        logger: Optional[logging.Logger] = None,
     ):
         """
         Constructs a NeptuneGraph object for AWS service interaction,
@@ -102,6 +102,8 @@ class NeptuneGraph:
 
         na_client = NeptuneAnalyticsClient(
             config.graph_id,
+            "",  # undefined name
+            "",  # undefined status
             boto3.client(
                 service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
             ),

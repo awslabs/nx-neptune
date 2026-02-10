@@ -39,18 +39,27 @@ class TestNeptuneAnalyticsClient:
         boto3_client = MagicMock()
         graph_id = "test-graph-id"
         logger = MagicMock()
+        name = "test-name"
+        status = "test-status"
+        details = {"test": "test-details"}
 
         # Exercise
         na_client = NeptuneAnalyticsClient(
             graph_id=graph_id,
             logger=logger,
             client=boto3_client,
+            name=name,
+            status=status,
+            details=details,
         )
 
         # Verify
         assert na_client.graph_id == graph_id
         assert na_client.logger == logger
         assert na_client.client == boto3_client
+        assert na_client.name == name
+        assert na_client.status == status
+        assert na_client.details == details
 
     @patch("botocore.client.BaseClient")
     def test_init_with_default_boto_client(self, mock_boto3_client):
