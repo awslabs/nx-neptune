@@ -128,9 +128,12 @@ public class S3VectorRecordHandler
             (FieldVector vector, Extractor extractor, ConstraintProjector constraint) ->
                 (Object context, int rowNum) -> {
                     List<Float> embedding = (List<Float>) ((Map<String, Object>) context).get("embedding");
-                    BlockUtils.setComplexValue(vector, rowNum, FieldResolver.DEFAULT, embedding);
-                    return true;
-                });
+                    if (embedding != null) {
+                        BlockUtils.setComplexValue(vector, rowNum, FieldResolver.DEFAULT, embedding);
+                        return true;
+                    }
+                    return false;
+        });
 
         var summary = recordsRequest.getConstraints().getSummary();
         var items = new ArrayList<Map<String, Object>>();
