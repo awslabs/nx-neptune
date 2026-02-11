@@ -145,13 +145,11 @@ public class S3VectorMetadataHandler
         String bucketName = request.getSchemaName();
         List<String> bucketsList = fetchVectorBuckets();
 
-        List<TableName> tableNameList;
-        if (bucketsList.contains(bucketName)) {
-            tableNameList = fetchIndexesForBucket(bucketName);
-        } else {
-            tableNameList = Collections.emptyList();
+        if (!bucketsList.contains(bucketName)) {
+            return new ListTablesResponse(request.getCatalogName(), Collections.emptyList(), null);
         }
 
+        List<TableName> tableNameList = fetchIndexesForBucket(bucketName);
         return new ListTablesResponse(request.getCatalogName(), tableNameList, null);
     }
 
