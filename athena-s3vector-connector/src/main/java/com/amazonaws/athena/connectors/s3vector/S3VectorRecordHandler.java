@@ -210,6 +210,7 @@ public class S3VectorRecordHandler
                 .returnMetadata(fetchMetadata)
                 .build();
 
+        // todo: Paginated this.
         ListVectorsResponse response = vectorsClient.listVectors(request);
 
         logger.debug("Response from S3 vector: {}", response);
