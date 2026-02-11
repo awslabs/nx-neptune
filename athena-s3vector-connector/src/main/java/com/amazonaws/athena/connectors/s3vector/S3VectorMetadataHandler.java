@@ -1,8 +1,8 @@
 /*-
  * #%L
- * athena-example
+ * athena-s3vector-connector
  * %%
- * Copyright (C) 2019 Amazon Web Services
+ * Copyright (C) 2026 Amazon Web Services
  * %%
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,8 @@ import com.amazonaws.athena.connector.lambda.security.EncryptionKeyFactory;
 import org.apache.arrow.util.VisibleForTesting;
 //DO NOT REMOVE - this will not be _unused_ when customers go through the tutorial and uncomment
 //the TODOs
+import org.apache.arrow.vector.types.FloatingPointPrecision;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.athena.AthenaClient;
@@ -55,6 +57,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_EMBEDDING_DATA;
+import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_METADATA;
+import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_VECTOR_ID;
 
 /**
  * This class is part of an S3 Vector connector that enables Athena to query vector data stored in S3.
@@ -78,10 +84,6 @@ public class S3VectorMetadataHandler
      * to correlate relevant query errors.
      */
     private static final String SOURCE_TYPE = "S3 Vectors";
-
-    public static final String COL_VECTOR_ID = "vector_id";
-
-    public static final String COL_EMBEDDING_DATA = "vector";
 
     private Set<String> schemas = Set.of("schema1");
 
@@ -166,10 +168,12 @@ public class S3VectorMetadataHandler
         SchemaBuilder tableSchemaBuilder = SchemaBuilder.newBuilder();
 
          tableSchemaBuilder
-         .addStringField(COL_EMBEDDING_DATA)
          .addStringField(COL_VECTOR_ID)
-         .addMetadata("vector", "Array of Float32 for vector data.")
-         .addMetadata("vector_id", "Vector's unique ID.");
+         .addListField(COL_EMBEDDING_DATA, new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE))
+         .addStringField(COL_METADATA)
+         .addMetadata(COL_VECTOR_ID, "Vector's unique ID.")
+         .addMetadata(COL_EMBEDDING_DATA, "Array of Float32 for vector data.")
+         .addMetadata(COL_METADATA, "Metadata about the vector.");
 
         return new GetTableResponse(request.getCatalogName(),
                 request.getTableName(),
