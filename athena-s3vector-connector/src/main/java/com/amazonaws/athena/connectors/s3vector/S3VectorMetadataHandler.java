@@ -124,12 +124,7 @@ public class S3VectorMetadataHandler
     public ListSchemasResponse doListSchemaNames(BlockAllocator allocator, ListSchemasRequest request)
     {
         logger.info("doListSchemaNames: enter - " + request);
-        ListVectorBucketsRequest vectorListRequest = ListVectorBucketsRequest.builder().build();
-        var response = vectorsClient.listVectorBuckets(vectorListRequest);
-        var bucketsList = response.vectorBuckets().stream()
-                .map(VectorBucketSummary::vectorBucketName)
-                .collect(Collectors.toList());
-
+        List<String> bucketsList = fetchVectorBuckets();
         return new ListSchemasResponse(request.getCatalogName(), bucketsList);
     }
 
@@ -147,33 +142,48 @@ public class S3VectorMetadataHandler
     public ListTablesResponse doListTables(BlockAllocator allocator, ListTablesRequest request)
     {
         logger.info("doListTables: enter - " + request);
+        String bucketName = request.getSchemaName();
+        List<String> bucketsList = fetchVectorBuckets();
 
-        // Fetch schema
-        ListVectorBucketsRequest vectorListRequest = ListVectorBucketsRequest.builder().build();
-        var response = vectorsClient.listVectorBuckets(vectorListRequest);
-        var bucketsList = response.vectorBuckets().stream()
-                .map(VectorBucketSummary::vectorBucketName)
-                .collect(Collectors.toList());
-
-        // Only fetch indexes if schema match
-        var bucketName = request.getSchemaName();
+        List<TableName> tableNameList;
         if (bucketsList.contains(bucketName)) {
-            var indexesListRequest = ListIndexesRequest.builder()
-                    .vectorBucketName(bucketName)
-                    .build();
-            var listIndexesResponse = vectorsClient.listIndexes(indexesListRequest);
-            var tableNameList = listIndexesResponse.indexes().stream()
-                    .map(i -> new TableName(bucketName, i.indexName()))
-                    .collect(Collectors.toList());
-
-            return new ListTablesResponse(
-                    request.getCatalogName(), tableNameList, null);
+            tableNameList = fetchIndexesForBucket(bucketName);
         } else {
-            return new ListTablesResponse(
-                    request.getCatalogName(), Collections.emptyList(), null);
+            tableNameList = Collections.emptyList();
         }
 
+        return new ListTablesResponse(request.getCatalogName(), tableNameList, null);
+    }
 
+    /**
+     * Fetches the list of S3 vector bucket names.
+     *
+     * @return List of vector bucket names
+     */
+    private List<String> fetchVectorBuckets()
+    {
+        ListVectorBucketsRequest vectorListRequest = ListVectorBucketsRequest.builder().build();
+        var response = vectorsClient.listVectorBuckets(vectorListRequest);
+        return response.vectorBuckets().stream()
+                .map(VectorBucketSummary::vectorBucketName)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Fetches the list of indexes (tables) for a given vector bucket.
+     *
+     * @param bucketName The name of the vector bucket
+     * @return List of TableName objects representing indexes in the bucket
+     */
+    private List<TableName> fetchIndexesForBucket(String bucketName)
+    {
+        var indexesListRequest = ListIndexesRequest.builder()
+                .vectorBucketName(bucketName)
+                .build();
+        var listIndexesResponse = vectorsClient.listIndexes(indexesListRequest);
+        return listIndexesResponse.indexes().stream()
+                .map(i -> new TableName(bucketName, i.indexName()))
+                .collect(Collectors.toList());
     }
 
     /**
