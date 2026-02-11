@@ -114,12 +114,13 @@ public class S3VectorMetadataHandler
 
     @VisibleForTesting
     protected S3VectorMetadataHandler(
-            EncryptionKeyFactory keyFactory,
-            SecretsManagerClient awsSecretsManager,
-            AthenaClient athena,
-            String spillBucket,
-            String spillPrefix,
-            java.util.Map<String, String> configOptions, S3VectorsClient vectorsClient)
+        EncryptionKeyFactory keyFactory,
+        SecretsManagerClient awsSecretsManager,
+        AthenaClient athena,
+        String spillBucket,
+        String spillPrefix,
+        java.util.Map<String, String> configOptions,
+        S3VectorsClient vectorsClient)
     {
         super(keyFactory, awsSecretsManager, athena, SOURCE_TYPE, spillBucket, spillPrefix, configOptions);
         this.vectorsClient = vectorsClient;
