@@ -92,11 +92,6 @@ public class S3VectorMetadataHandler
 
     private final S3VectorsClient vectorsClient;
 
-    private Set<String> schemas = Set.of("schema1");
-
-    private List<String> tables = List.of(
-            "table1", "table2", "table3"
-    );
 
     public S3VectorMetadataHandler(java.util.Map<String, String> configOptions)
     {
@@ -272,13 +267,5 @@ public class S3VectorMetadataHandler
         return new GetDataSourceCapabilitiesResponse(request.getCatalogName(), capabilities);
     }
 
-
-    public void setSchemas(Set<String> schemas) {
-        this.schemas = schemas;
-    }
-
-    public void setTables(List<String> tables) {
-        this.tables = tables;
-    }
 
 }
