@@ -141,10 +141,10 @@ public class S3VectorRecordHandler
 
         var items = selectByIds
             ? getVectorsById(schemaName, table, getIds(summary), fetchEmbedding, fetchMetadata)
-            : getVectors(schemaName, table, fetchEmbedding, fetchMetadata);
+            : getAllVectors(schemaName, table, fetchEmbedding, fetchMetadata);
 
         logger.info("Num of vector entries fetched: {}", items.size());
-        GeneratedRowWriter rowWriter = getRowWriterBuilder(recordsRequest).build();
+        GeneratedRowWriter rowWriter = getRowWriter(recordsRequest);
         for(VectorData item : items) {
             spiller.writeRows(
                     (Block block, int rowNum) -> rowWriter.writeRow(block, rowNum, item) ? 1 : 0);
@@ -152,7 +152,7 @@ public class S3VectorRecordHandler
 
     }
 
-    private static GeneratedRowWriter.RowWriterBuilder getRowWriterBuilder(ReadRecordsRequest recordsRequest) {
+    private static GeneratedRowWriter getRowWriter(ReadRecordsRequest recordsRequest) {
 
         GeneratedRowWriter.RowWriterBuilder builder = GeneratedRowWriter.newBuilder(recordsRequest.getConstraints());
         // Field: ID
@@ -164,22 +164,19 @@ public class S3VectorRecordHandler
         builder.withFieldWriterFactory(COL_EMBEDDING_DATA,
             (FieldVector vector, Extractor extractor, ConstraintProjector constraint) ->
                 (Object context, int rowNum) -> {
-                    List<Float> embedding = ((VectorData) context).getEmbedding();
-                    if (embedding != null) {
-                        BlockUtils.setComplexValue(vector, rowNum, FieldResolver.DEFAULT, embedding);
-                        return true;
-                    }
-                    return false;
+                    ((VectorData) context).getEmbedding().ifPresent(
+                            embedding -> BlockUtils.setComplexValue(vector, rowNum, FieldResolver.DEFAULT, embedding));
+                    return true;
                 });
         // Field: Metadata
-        builder.withExtractor(COL_METADATA, (VarCharExtractor) (Object context, NullableVarCharHolder value) -> {
-            String metadata = ((VectorData) context).getMetadata();
-            value.isSet = metadata != null ? 1 : 0;
-            if (value.isSet == 1) {
+        builder.withExtractor(COL_METADATA, (VarCharExtractor) (Object context, NullableVarCharHolder value) ->
+                ((VectorData) context).getMetadata().ifPresent(
+            metadata -> {
+                value.isSet = 1;
                 value.value = metadata;
             }
-        });
-        return builder;
+        ));
+        return builder.build();
     }
 
     private static List<String> getIds(Map<String, ValueSet> summary) {
@@ -194,13 +191,22 @@ public class S3VectorRecordHandler
         return ids;
     }
 
-    public List<VectorData> getVectors(String bucketName, String indexName, boolean fetch_embedding, boolean fetch_metadata) {
+    /**
+     * Retrieves all vectors from the specified S3 vector bucket and index.
+     *
+     * @param bucketName The name of the S3 vector bucket
+     * @param indexName The name of the vector index
+     * @param fetchEmbedding Whether to fetch embedding data
+     * @param fetchMetadata Whether to fetch metadata
+     * @return List of VectorData containing the requested vector information
+     */
+    public List<VectorData> getAllVectors(String bucketName, String indexName, boolean fetchEmbedding, boolean fetchMetadata) {
 
         var request = ListVectorsRequest.builder()
                 .vectorBucketName(bucketName)
                 .indexName(indexName)
-                .returnData(fetch_embedding)
-                .returnMetadata(fetch_metadata)
+                .returnData(fetchEmbedding)
+                .returnMetadata(fetchMetadata)
                 .build();
 
         ListVectorsResponse response = vectorsClient.listVectors(request);
@@ -210,12 +216,22 @@ public class S3VectorRecordHandler
         return response.vectors().stream()
                 .map(item -> new VectorData(
                     item.key(),
-                    fetch_embedding ? item.data().float32() : null,
-                    fetch_metadata ? item.metadata().toString() : null
+                    fetchEmbedding ? item.data().float32() : null,
+                    fetchMetadata ? item.metadata().toString() : null
                 ))
                 .collect(Collectors.toList());
 
     }
+    /**
+     * Retrieves specific vectors by their IDs from the specified S3 vector bucket and index.
+     *
+     * @param bucketName The name of the S3 vector bucket
+     * @param indexName The name of the vector index
+     * @param ids List of vector IDs to retrieve
+     * @param fetch_embedding Whether to fetch embedding data
+     * @param fetch_metadata Whether to fetch metadata
+     * @return List of VectorData containing the requested vector information
+     */
     public List<VectorData> getVectorsById(String bucketName, String indexName, List<String> ids, boolean fetch_embedding, boolean fetch_metadata) {
 
         var request = GetVectorsRequest.builder()

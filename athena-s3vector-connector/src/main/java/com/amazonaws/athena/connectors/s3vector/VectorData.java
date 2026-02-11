@@ -20,6 +20,7 @@
 package com.amazonaws.athena.connectors.s3vector;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Data class representing a vector entry with its id, embedding data, and metadata.
@@ -42,13 +43,14 @@ public class VectorData
         return id;
     }
 
-    public List<Float> getEmbedding()
+
+    public Optional<List<Float>> getEmbedding()
     {
-        return embedding;
+        return Optional.ofNullable(embedding);
     }
 
-    public String getMetadata()
+    public Optional<String> getMetadata()
     {
-        return metadata;
+        return Optional.ofNullable(metadata);
     }
 }
