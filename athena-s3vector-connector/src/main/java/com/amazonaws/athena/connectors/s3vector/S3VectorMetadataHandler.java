@@ -55,6 +55,8 @@ import software.amazon.awssdk.services.s3vectors.model.VectorBucketSummary;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -95,6 +97,7 @@ public class S3VectorMetadataHandler
 
     private final S3VectorsClient vectorsClient;
     private final Supplier<List<String>> bucketsCache;
+    private final Cache<String, List<TableName>> indexesCache;
 
 
     public S3VectorMetadataHandler(java.util.Map<String, String> configOptions)
@@ -102,6 +105,9 @@ public class S3VectorMetadataHandler
         super(SOURCE_TYPE, configOptions);
         this.vectorsClient = S3VectorsClient.create();
         this.bucketsCache = Suppliers.memoizeWithExpiration(this::loadVectorBuckets, 30, TimeUnit.SECONDS);
+        this.indexesCache = CacheBuilder.newBuilder()
+                .expireAfterWrite(30, TimeUnit.SECONDS)
+                .build();
     }
 
     @VisibleForTesting
@@ -116,6 +122,9 @@ public class S3VectorMetadataHandler
         super(keyFactory, awsSecretsManager, athena, SOURCE_TYPE, spillBucket, spillPrefix, configOptions);
         this.vectorsClient = vectorsClient;
         this.bucketsCache = Suppliers.memoizeWithExpiration(this::loadVectorBuckets, 30, TimeUnit.SECONDS);
+        this.indexesCache = CacheBuilder.newBuilder()
+                .expireAfterWrite(30, TimeUnit.SECONDS)
+                .build();
     }
 
     /**
@@ -185,13 +194,30 @@ public class S3VectorMetadataHandler
     }
 
     /**
-     * Fetches the list of indexes (tables) for a given vector bucket.
+     * Fetches the list of indexes (tables) for a given vector bucket with 30-second caching.
      *
      * @param bucketName The name of the vector bucket
      * @return List of TableName objects representing indexes in the bucket
      */
     private List<TableName> fetchIndexesForBucket(String bucketName)
     {
+        try {
+            return indexesCache.get(bucketName, () -> loadIndexesForBucket(bucketName));
+        } catch (Exception e) {
+            logger.error("Error fetching indexes for bucket: {}", bucketName, e);
+            throw new RuntimeException("Failed to fetch indexes for bucket: " + bucketName, e);
+        }
+    }
+
+    /**
+     * Loads the list of indexes (tables) for a given vector bucket from the API.
+     *
+     * @param bucketName The name of the vector bucket
+     * @return List of TableName objects representing indexes in the bucket
+     */
+    private List<TableName> loadIndexesForBucket(String bucketName)
+    {
+        logger.debug("Fetching fresh index list for bucket: {}", bucketName);
         var indexesListRequest = ListIndexesRequest.builder()
                 .vectorBucketName(bucketName)
                 .build();
