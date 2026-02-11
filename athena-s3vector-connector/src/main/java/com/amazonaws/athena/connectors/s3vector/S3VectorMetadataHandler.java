@@ -59,6 +59,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_EMBEDDING_DATA;
+import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_METADATA;
 import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_VECTOR_ID;
 
 /**
@@ -169,8 +170,10 @@ public class S3VectorMetadataHandler
          tableSchemaBuilder
          .addStringField(COL_VECTOR_ID)
          .addListField(COL_EMBEDDING_DATA, new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE))
+         .addStringField(COL_METADATA)
          .addMetadata(COL_VECTOR_ID, "Vector's unique ID.")
-         .addMetadata(COL_EMBEDDING_DATA, "Array of Float32 for vector data.");
+         .addMetadata(COL_EMBEDDING_DATA, "Array of Float32 for vector data.")
+         .addMetadata(COL_METADATA, "Metadata about the vector.");
 
         return new GetTableResponse(request.getCatalogName(),
                 request.getTableName(),
