@@ -132,20 +132,19 @@ public class S3VectorRecordHandler
                 .filter(c -> !split.getProperties().containsKey(c))
                 .collect(Collectors.toSet());
 
-        boolean fetch_embedding = columnNamesSst.contains(COL_EMBEDDING_DATA);
-        boolean fetch_metadata = columnNamesSst.contains(COL_METADATA);
-        boolean select_by_ids = summary.containsKey(COL_VECTOR_ID) && summary.get(COL_VECTOR_ID) instanceof SortedRangeSet;
+        boolean fetchEmbedding = columnNamesSst.contains(COL_EMBEDDING_DATA);
+        boolean fetchMetadata = columnNamesSst.contains(COL_METADATA);
+        boolean selectByIds = summary.containsKey(COL_VECTOR_ID) && summary.get(COL_VECTOR_ID) instanceof SortedRangeSet;
 
-        logger.info("Execute fetch request with config: [fetch_embedding: {}, fetch_metadata: {}, select_by_ids: {}]",
-                fetch_embedding, fetch_metadata, select_by_ids);
+        logger.info("Execute fetch request with config: [fetchEmbedding: {}, fetchMetadata: {}, selectByIds: {}]",
+                fetchEmbedding, fetchMetadata, selectByIds);
 
-        var items = select_by_ids
-            ? getVectorsById(schemaName, table, getIds(summary), fetch_embedding, fetch_metadata)
-            : getVectors(schemaName, table, fetch_embedding, fetch_metadata);
+        var items = selectByIds
+            ? getVectorsById(schemaName, table, getIds(summary), fetchEmbedding, fetchMetadata)
+            : getVectors(schemaName, table, fetchEmbedding, fetchMetadata);
 
-        logger.info("No. of vector entries fetched: {}", items.size());
-        GeneratedRowWriter.RowWriterBuilder builder = getRowWriterBuilder(recordsRequest);
-        GeneratedRowWriter rowWriter = builder.build();
+        logger.info("Num of vector entries fetched: {}", items.size());
+        GeneratedRowWriter rowWriter = getRowWriterBuilder(recordsRequest).build();
         for(VectorData item : items) {
             spiller.writeRows(
                     (Block block, int rowNum) -> rowWriter.writeRow(block, rowNum, item) ? 1 : 0);
