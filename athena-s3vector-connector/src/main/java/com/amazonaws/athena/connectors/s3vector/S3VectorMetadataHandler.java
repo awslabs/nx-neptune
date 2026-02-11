@@ -49,11 +49,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.athena.AthenaClient;
 import software.amazon.awssdk.services.s3vectors.S3VectorsClient;
+import software.amazon.awssdk.services.s3vectors.model.ListIndexesRequest;
 import software.amazon.awssdk.services.s3vectors.model.ListVectorBucketsRequest;
 import software.amazon.awssdk.services.s3vectors.model.VectorBucketSummary;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -151,12 +153,32 @@ public class S3VectorMetadataHandler
     {
         logger.info("doListTables: enter - " + request);
 
-        // todo API call to S3 vector to list out all vector indexes within the bucket.
-        List<TableName> tableNameList = tables.stream()
-                .map(x -> new TableName(request.getSchemaName(), x))
+        // Fetch schema
+        ListVectorBucketsRequest vectorListRequest = ListVectorBucketsRequest.builder().build();
+        var response = vectorsClient.listVectorBuckets(vectorListRequest);
+        var bucketsList = response.vectorBuckets().stream()
+                .map(VectorBucketSummary::vectorBucketName)
                 .collect(Collectors.toList());
 
-        return new ListTablesResponse(request.getCatalogName(), tableNameList, null);
+        // Only fetch indexes if schema match
+        var bucketName = request.getSchemaName();
+        if (bucketsList.contains(bucketName)) {
+            var indexesListRequest = ListIndexesRequest.builder()
+                    .vectorBucketName(bucketName)
+                    .build();
+            var listIndexesResponse = vectorsClient.listIndexes(indexesListRequest);
+            var tableNameList = listIndexesResponse.indexes().stream()
+                    .map(i -> new TableName(bucketName, i.indexName()))
+                    .collect(Collectors.toList());
+
+            return new ListTablesResponse(
+                    request.getCatalogName(), tableNameList, null);
+        } else {
+            return new ListTablesResponse(
+                    request.getCatalogName(), Collections.emptyList(), null);
+        }
+
+
     }
 
     /**
