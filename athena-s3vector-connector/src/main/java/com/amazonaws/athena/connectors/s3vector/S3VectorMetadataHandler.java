@@ -53,6 +53,8 @@ import software.amazon.awssdk.services.s3vectors.model.ListIndexesRequest;
 import software.amazon.awssdk.services.s3vectors.model.ListVectorBucketsRequest;
 import software.amazon.awssdk.services.s3vectors.model.VectorBucketSummary;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
+import com.google.common.base.Supplier;
+import com.google.common.base.Suppliers;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -61,6 +63,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_EMBEDDING_DATA;
@@ -91,12 +94,14 @@ public class S3VectorMetadataHandler
     private static final String SOURCE_TYPE = "S3 Vectors";
 
     private final S3VectorsClient vectorsClient;
+    private final Supplier<List<String>> bucketsCache;
 
 
     public S3VectorMetadataHandler(java.util.Map<String, String> configOptions)
     {
         super(SOURCE_TYPE, configOptions);
         this.vectorsClient = S3VectorsClient.create();
+        this.bucketsCache = Suppliers.memoizeWithExpiration(this::loadVectorBuckets, 30, TimeUnit.SECONDS);
     }
 
     @VisibleForTesting
@@ -110,6 +115,7 @@ public class S3VectorMetadataHandler
     {
         super(keyFactory, awsSecretsManager, athena, SOURCE_TYPE, spillBucket, spillPrefix, configOptions);
         this.vectorsClient = vectorsClient;
+        this.bucketsCache = Suppliers.memoizeWithExpiration(this::loadVectorBuckets, 30, TimeUnit.SECONDS);
     }
 
     /**
@@ -154,12 +160,23 @@ public class S3VectorMetadataHandler
     }
 
     /**
-     * Fetches the list of S3 vector bucket names.
+     * Fetches the list of S3 vector bucket names with 30-second caching.
      *
      * @return List of vector bucket names
      */
     private List<String> fetchVectorBuckets()
     {
+        return bucketsCache.get();
+    }
+
+    /**
+     * Loads the list of S3 vector bucket names from the API.
+     *
+     * @return List of vector bucket names
+     */
+    private List<String> loadVectorBuckets()
+    {
+        logger.debug("Fetching fresh bucket list from S3 Vectors API");
         ListVectorBucketsRequest vectorListRequest = ListVectorBucketsRequest.builder().build();
         var response = vectorsClient.listVectorBuckets(vectorListRequest);
         return response.vectorBuckets().stream()
