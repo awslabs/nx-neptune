@@ -43,7 +43,6 @@ public class VectorData
         return id;
     }
 
-
     public Optional<List<Float>> getEmbedding()
     {
         return Optional.ofNullable(embedding);

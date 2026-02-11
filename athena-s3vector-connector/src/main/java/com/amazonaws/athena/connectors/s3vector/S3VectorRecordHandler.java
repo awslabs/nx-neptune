@@ -193,6 +193,7 @@ public class S3VectorRecordHandler
 
     /**
      * Retrieves all vectors from the specified S3 vector bucket and index.
+     * todo: Consolidate the common logic with getVectorsById().
      *
      * @param bucketName The name of the S3 vector bucket
      * @param indexName The name of the vector index
