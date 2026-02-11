@@ -94,8 +94,10 @@ public class S3VectorMetadataHandler
      * to correlate relevant query errors.
      */
     private static final String SOURCE_TYPE = "S3 Vectors";
+    private static final long CACHE_TTL_SECONDS = 30;
 
     private final S3VectorsClient vectorsClient;
+
     private final Supplier<List<String>> bucketsCache;
     private final Cache<String, List<TableName>> indexesCache;
 
@@ -104,9 +106,9 @@ public class S3VectorMetadataHandler
     {
         super(SOURCE_TYPE, configOptions);
         this.vectorsClient = S3VectorsClient.create();
-        this.bucketsCache = Suppliers.memoizeWithExpiration(this::loadVectorBuckets, 30, TimeUnit.SECONDS);
+        this.bucketsCache = Suppliers.memoizeWithExpiration(this::loadVectorBuckets, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
         this.indexesCache = CacheBuilder.newBuilder()
-                .expireAfterWrite(30, TimeUnit.SECONDS)
+                .expireAfterWrite(CACHE_TTL_SECONDS, TimeUnit.SECONDS)
                 .build();
     }
 
@@ -121,9 +123,9 @@ public class S3VectorMetadataHandler
     {
         super(keyFactory, awsSecretsManager, athena, SOURCE_TYPE, spillBucket, spillPrefix, configOptions);
         this.vectorsClient = vectorsClient;
-        this.bucketsCache = Suppliers.memoizeWithExpiration(this::loadVectorBuckets, 30, TimeUnit.SECONDS);
+        this.bucketsCache = Suppliers.memoizeWithExpiration(this::loadVectorBuckets, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
         this.indexesCache = CacheBuilder.newBuilder()
-                .expireAfterWrite(30, TimeUnit.SECONDS)
+                .expireAfterWrite(CACHE_TTL_SECONDS, TimeUnit.SECONDS)
                 .build();
     }
 
