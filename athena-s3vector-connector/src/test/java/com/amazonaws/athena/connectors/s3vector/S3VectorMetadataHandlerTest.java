@@ -48,6 +48,7 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.athena.AthenaClient;
+import software.amazon.awssdk.services.s3vectors.S3VectorsClient;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 import java.util.ArrayList;
@@ -72,7 +73,8 @@ public class S3VectorMetadataHandlerTest
             mock(AthenaClient.class),
             "spill-bucket",
             "spill-prefix",
-            com.google.common.collect.ImmutableMap.of());
+            com.google.common.collect.ImmutableMap.of(),
+            mock(S3VectorsClient.class));
 
     private boolean enableTests = System.getenv("publishing") != null &&
             System.getenv("publishing").equalsIgnoreCase("true");
