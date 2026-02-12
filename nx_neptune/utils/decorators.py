@@ -206,14 +206,19 @@ def _sync_data_to_neptune(
     """
     Push all Nodes from NetworkX into Neptune Analytics
     """
-    nodes = [Node.convert_from_nx((n, d)) for n, d in graph.nodes(data=True)]
-    for i in range(0, len(nodes), batch_size_node):
-        last_node_pos = (
-            len(nodes) if (i + batch_size_node) > len(nodes) else i + batch_size_node
-        )
-        logger.debug(f"Adding nodes[{i} - {last_node_pos}]")
-        batch = nodes[i:last_node_pos]
-        neptune_graph.add_nodes(batch)
+    skip_node_sync = True
+    if not skip_node_sync:
+        nodes = [Node.convert_from_nx((n, d)) for n, d in graph.nodes(data=True)]
+        for i in range(0, len(nodes), batch_size_node):
+            last_node_pos = (
+                len(nodes) if (i + batch_size_node) > len(nodes) else i + batch_size_node
+            )
+            logger.debug(f"Adding nodes[{i} - {last_node_pos}]")
+            batch = nodes[i:last_node_pos]
+            neptune_graph.add_nodes(batch)
+        logger.debug(f"Completed: Adding nodes")
+    else:
+        logger.debug(f"Skip: Adding nodes")
 
     """
     Push all Edges from NetworkX into Neptune Analytics
@@ -222,13 +227,15 @@ def _sync_data_to_neptune(
         Edge.convert_from_nx(edge=edge, is_directed=graph.is_directed())
         for edge in graph.edges(data=True)
     ]
-    for i in range(0, len(edges), batch_size_edge):
+    for i in range(14290000, len(edges), batch_size_edge):
         last_edge_pos = (
             len(edges) if (i + batch_size_edge) > len(edges) else i + batch_size_edge
         )
         logger.debug(f"Adding edges[{i} - {last_edge_pos}]")
         batch = edges[i:last_edge_pos]
         neptune_graph.add_edges(batch)
+
+    logger.debug(f"Completed: Adding edges")
 
     return neptune_graph
 
