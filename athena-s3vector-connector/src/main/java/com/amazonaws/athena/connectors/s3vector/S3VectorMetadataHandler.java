@@ -48,14 +48,24 @@ import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.athena.AthenaClient;
+import software.amazon.awssdk.services.s3vectors.S3VectorsClient;
+import software.amazon.awssdk.services.s3vectors.model.ListIndexesRequest;
+import software.amazon.awssdk.services.s3vectors.model.ListVectorBucketsRequest;
+import software.amazon.awssdk.services.s3vectors.model.VectorBucketSummary;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
+import com.google.common.base.Supplier;
+import com.google.common.base.Suppliers;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_EMBEDDING_DATA;
@@ -84,16 +94,22 @@ public class S3VectorMetadataHandler
      * to correlate relevant query errors.
      */
     private static final String SOURCE_TYPE = "S3 Vectors";
+    private static final long CACHE_TTL_SECONDS = 30;
 
-    private Set<String> schemas = Set.of("schema1");
+    private final S3VectorsClient vectorsClient;
 
-    private List<String> tables = List.of(
-            "table1", "table2", "table3"
-    );
+    private final Supplier<List<String>> bucketsCache;
+    private final Cache<String, List<TableName>> indexesCache;
+
 
     public S3VectorMetadataHandler(java.util.Map<String, String> configOptions)
     {
         super(SOURCE_TYPE, configOptions);
+        this.vectorsClient = S3VectorsClient.create();
+        this.bucketsCache = Suppliers.memoizeWithExpiration(this::loadVectorBuckets, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
+        this.indexesCache = CacheBuilder.newBuilder()
+                .expireAfterWrite(CACHE_TTL_SECONDS, TimeUnit.SECONDS)
+                .build();
     }
 
     @VisibleForTesting
@@ -103,9 +119,15 @@ public class S3VectorMetadataHandler
         AthenaClient athena,
         String spillBucket,
         String spillPrefix,
-        java.util.Map<String, String> configOptions)
+        java.util.Map<String, String> configOptions,
+        S3VectorsClient vectorsClient)
     {
         super(keyFactory, awsSecretsManager, athena, SOURCE_TYPE, spillBucket, spillPrefix, configOptions);
+        this.vectorsClient = vectorsClient;
+        this.bucketsCache = Suppliers.memoizeWithExpiration(this::loadVectorBuckets, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
+        this.indexesCache = CacheBuilder.newBuilder()
+                .expireAfterWrite(CACHE_TTL_SECONDS, TimeUnit.SECONDS)
+                .build();
     }
 
     /**
@@ -120,8 +142,8 @@ public class S3VectorMetadataHandler
     public ListSchemasResponse doListSchemaNames(BlockAllocator allocator, ListSchemasRequest request)
     {
         logger.info("doListSchemaNames: enter - " + request);
-
-        return new ListSchemasResponse(request.getCatalogName(), schemas);
+        List<String> bucketsList = fetchVectorBuckets();
+        return new ListSchemasResponse(request.getCatalogName(), bucketsList);
     }
 
     /**
@@ -138,13 +160,74 @@ public class S3VectorMetadataHandler
     public ListTablesResponse doListTables(BlockAllocator allocator, ListTablesRequest request)
     {
         logger.info("doListTables: enter - " + request);
+        String bucketName = request.getSchemaName();
+        List<String> bucketsList = fetchVectorBuckets();
 
-        // todo API call to S3 vector to list out all vector indexes within the bucket.
-        List<TableName> tableNameList = tables.stream()
-                .map(x -> new TableName(request.getSchemaName(), x))
-                .collect(Collectors.toList());
+        if (!bucketsList.contains(bucketName)) {
+            return new ListTablesResponse(request.getCatalogName(), Collections.emptyList(), null);
+        }
 
+        List<TableName> tableNameList = fetchIndexesForBucket(bucketName);
         return new ListTablesResponse(request.getCatalogName(), tableNameList, null);
+    }
+
+    /**
+     * Fetches the list of S3 vector bucket names with 30-second caching.
+     *
+     * @return List of vector bucket names
+     */
+    private List<String> fetchVectorBuckets()
+    {
+        return bucketsCache.get();
+    }
+
+    /**
+     * Loads the list of S3 vector bucket names from the API.
+     *
+     * @return List of vector bucket names
+     */
+    private List<String> loadVectorBuckets()
+    {
+        logger.debug("Fetching fresh bucket list from S3 Vectors API");
+        ListVectorBucketsRequest vectorListRequest = ListVectorBucketsRequest.builder().build();
+        var response = vectorsClient.listVectorBuckets(vectorListRequest);
+        return response.vectorBuckets().stream()
+                .map(VectorBucketSummary::vectorBucketName)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Fetches the list of indexes (tables) for a given vector bucket with 30-second caching.
+     *
+     * @param bucketName The name of the vector bucket
+     * @return List of TableName objects representing indexes in the bucket
+     */
+    private List<TableName> fetchIndexesForBucket(String bucketName)
+    {
+        try {
+            return indexesCache.get(bucketName, () -> loadIndexesForBucket(bucketName));
+        } catch (Exception e) {
+            logger.error("Error fetching indexes for bucket: {}", bucketName, e);
+            throw new RuntimeException("Failed to fetch indexes for bucket: " + bucketName, e);
+        }
+    }
+
+    /**
+     * Loads the list of indexes (tables) for a given vector bucket from the API.
+     *
+     * @param bucketName The name of the vector bucket
+     * @return List of TableName objects representing indexes in the bucket
+     */
+    private List<TableName> loadIndexesForBucket(String bucketName)
+    {
+        logger.debug("Fetching fresh index list for bucket: {}", bucketName);
+        var indexesListRequest = ListIndexesRequest.builder()
+                .vectorBucketName(bucketName)
+                .build();
+        var listIndexesResponse = vectorsClient.listIndexes(indexesListRequest);
+        return listIndexesResponse.indexes().stream()
+                .map(i -> new TableName(bucketName, i.indexName()))
+                .collect(Collectors.toList());
     }
 
     /**
@@ -238,13 +321,5 @@ public class S3VectorMetadataHandler
         return new GetDataSourceCapabilitiesResponse(request.getCatalogName(), capabilities);
     }
 
-
-    public void setSchemas(Set<String> schemas) {
-        this.schemas = schemas;
-    }
-
-    public void setTables(List<String> tables) {
-        this.tables = tables;
-    }
 
 }
