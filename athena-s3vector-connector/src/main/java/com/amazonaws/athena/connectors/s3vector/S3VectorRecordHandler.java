@@ -45,10 +45,6 @@ import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.athena.AthenaClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3vectors.S3VectorsClient;
-import software.amazon.awssdk.services.s3vectors.model.GetVectorsRequest;
-import software.amazon.awssdk.services.s3vectors.model.GetVectorsResponse;
-import software.amazon.awssdk.services.s3vectors.model.ListVectorsRequest;
-import software.amazon.awssdk.services.s3vectors.model.ListVectorsResponse;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 import java.io.IOException;
@@ -83,7 +79,6 @@ public class S3VectorRecordHandler
      * to correlate relevant query errors.
      */
     private static final String SOURCE_TYPE = "S3 Vectors";
-    private static final int BATCH_SIZE = 300;
 
     private final S3VectorsClient vectorsClient;
 
@@ -138,46 +133,24 @@ public class S3VectorRecordHandler
         logger.info("Execute fetch request with config: [fetchEmbedding: {}, fetchMetadata: {}, selectByIds: {}]",
                 fetchEmbedding, fetchMetadata, selectByIds);
 
+        VectorFetcher fetcher = selectByIds
+                ? new IdScanVectorFetcher(vectorsClient, schemaName, table, getIds(summary), fetchEmbedding, fetchMetadata)
+                : new TableScanVectorFetcher(vectorsClient, schemaName, table, fetchEmbedding, fetchMetadata);
+
         GeneratedRowWriter rowWriter = getRowWriter(recordsRequest);
         int totalFetched = 0;
 
-        if (selectByIds) {
-            List<String> allIds = getIds(summary);
-            // Process IDs in batches of 300
-            for (int i = 0; i < allIds.size(); i += BATCH_SIZE) {
-                if (!queryStatusChecker.isQueryRunning()) {
-                    logger.info("Query cancelled, stopping fetch");
-                    break;
-                }
-                
-                List<String> batchIds = allIds.subList(i, Math.min(i + BATCH_SIZE, allIds.size()));
-                List<VectorData> items = getVectorsById(schemaName, table, batchIds, fetchEmbedding, fetchMetadata);
-                
-                for (VectorData item : items) {
-                    spiller.writeRows((Block block, int rowNum) -> rowWriter.writeRow(block, rowNum, item) ? 1 : 0);
-                }
-                totalFetched += items.size();
+        while (fetcher.hasNext() && queryStatusChecker.isQueryRunning()) {
+            List<VectorData> batch = fetcher.next();
+            for (VectorData item : batch) {
+                spiller.writeRows((Block block, int rowNum) -> rowWriter.writeRow(block, rowNum, item) ? 1 : 0);
             }
-        } else {
-            // Paginate through all vectors
-            String nextToken = null;
-            do {
-                if (!queryStatusChecker.isQueryRunning()) {
-                    logger.info("Query cancelled, stopping fetch");
-                    break;
-                }
-                
-                VectorPage page = getVectorsPage(schemaName, table, nextToken, fetchEmbedding, fetchMetadata);
-                
-                for (VectorData item : page.getVectors()) {
-                    spiller.writeRows((Block block, int rowNum) -> rowWriter.writeRow(block, rowNum, item) ? 1 : 0);
-                }
-                
-                totalFetched += page.getVectors().size();
-                nextToken = page.getNextToken();
-            } while (nextToken != null);
+            totalFetched += batch.size();
         }
 
+        if (!queryStatusChecker.isQueryRunning()) {
+            logger.info("Query cancelled, stopping fetch");
+        }
         logger.info("Total vector entries fetched: {}", totalFetched);
     }
 
@@ -220,91 +193,6 @@ public class S3VectorRecordHandler
         return ids;
     }
 
-    /**
-     * Retrieves a single page of vectors from the specified S3 vector bucket and index.
-     *
-     * @param bucketName The name of the S3 vector bucket
-     * @param indexName The name of the vector index
-     * @param nextToken Pagination token, null for first page
-     * @param fetchEmbedding Whether to fetch embedding data
-     * @param fetchMetadata Whether to fetch metadata
-     * @return VectorPage containing vectors and next token
-     */
-    private VectorPage getVectorsPage(String bucketName, String indexName, String nextToken, boolean fetchEmbedding, boolean fetchMetadata) {
-        var requestBuilder = ListVectorsRequest.builder()
-                .vectorBucketName(bucketName)
-                .indexName(indexName)
-                .returnData(fetchEmbedding)
-                .returnMetadata(fetchMetadata);
-        
-        if (nextToken != null) {
-            requestBuilder.nextToken(nextToken);
-        }
 
-        ListVectorsResponse response = vectorsClient.listVectors(requestBuilder.build());
-        logger.debug("Fetched page with {} vectors, hasNextToken: {}", 
-                response.vectors().size(), response.nextToken() != null);
-
-        List<VectorData> vectors = response.vectors().stream()
-                .map(item -> new VectorData(
-                    item.key(),
-                    fetchEmbedding ? item.data().float32() : null,
-                    fetchMetadata ? item.metadata().toString() : null
-                ))
-                .collect(Collectors.toList());
-
-        return new VectorPage(vectors, response.nextToken());
-    }
-    /**
-     * Retrieves specific vectors by their IDs from the specified S3 vector bucket and index.
-     *
-     * @param bucketName The name of the S3 vector bucket
-     * @param indexName The name of the vector index
-     * @param ids List of vector IDs to retrieve (max 300)
-     * @param fetchEmbedding Whether to fetch embedding data
-     * @param fetchMetadata Whether to fetch metadata
-     * @return List of VectorData containing the requested vector information
-     */
-    private List<VectorData> getVectorsById(String bucketName, String indexName, List<String> ids, boolean fetchEmbedding, boolean fetchMetadata) {
-        var request = GetVectorsRequest.builder()
-                .vectorBucketName(bucketName)
-                .indexName(indexName)
-                .keys(ids)
-                .returnData(fetchEmbedding)
-                .returnMetadata(fetchMetadata)
-                .build();
-
-        GetVectorsResponse response = vectorsClient.getVectors(request);
-        logger.debug("Fetched {} vectors by ID", response.vectors().size());
-
-        return response.vectors().stream()
-                .map(item -> new VectorData(
-                    item.key(),
-                    fetchEmbedding ? item.data().float32() : null,
-                    fetchMetadata ? item.metadata().toString() : null
-                ))
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * Helper class to hold a page of vectors with pagination token.
-     */
-    private static class VectorPage {
-        private final List<VectorData> vectors;
-        private final String nextToken;
-
-        public VectorPage(List<VectorData> vectors, String nextToken) {
-            this.vectors = vectors;
-            this.nextToken = nextToken;
-        }
-
-        public List<VectorData> getVectors() {
-            return vectors;
-        }
-
-        public String getNextToken() {
-            return nextToken;
-        }
-    }
 
 }
