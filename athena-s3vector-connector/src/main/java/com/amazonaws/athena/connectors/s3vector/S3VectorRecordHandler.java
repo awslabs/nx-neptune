@@ -36,6 +36,9 @@ import com.amazonaws.athena.connector.lambda.domain.predicate.SortedRangeSet;
 import com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet;
 import com.amazonaws.athena.connector.lambda.handlers.RecordHandler;
 import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
+import com.amazonaws.athena.connectors.s3vector.fetcher.AbstractVectorFetcher;
+import com.amazonaws.athena.connectors.s3vector.fetcher.IdScanVectorFetcher;
+import com.amazonaws.athena.connectors.s3vector.fetcher.TableScanVectorFetcher;
 import org.apache.arrow.util.VisibleForTesting;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.types.pojo.Field;
@@ -133,7 +136,7 @@ public class S3VectorRecordHandler
         logger.info("Execute fetch request with config: [fetchEmbedding: {}, fetchMetadata: {}, selectByIds: {}]",
                 fetchEmbedding, fetchMetadata, selectByIds);
 
-        VectorFetcher fetcher = selectByIds
+        var fetcher = selectByIds
                 ? new IdScanVectorFetcher(vectorsClient, schemaName, table, getIds(summary), fetchEmbedding, fetchMetadata)
                 : new TableScanVectorFetcher(vectorsClient, schemaName, table, fetchEmbedding, fetchMetadata);
 

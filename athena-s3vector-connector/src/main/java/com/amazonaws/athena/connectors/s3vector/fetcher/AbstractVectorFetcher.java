@@ -17,14 +17,17 @@
  * limitations under the License.
  * #L%
  */
-package com.amazonaws.athena.connectors.s3vector;
+package com.amazonaws.athena.connectors.s3vector.fetcher;
 
+import com.amazonaws.athena.connectors.s3vector.VectorData;
 import software.amazon.awssdk.services.s3vectors.S3VectorsClient;
+
+import java.util.List;
 
 /**
  * Abstract base class for vector fetchers with common attributes.
  */
-public abstract class AbstractVectorFetcher implements VectorFetcher
+public abstract class AbstractVectorFetcher
 {
     protected final S3VectorsClient vectorsClient;
     protected final String bucketName;
@@ -42,4 +45,17 @@ public abstract class AbstractVectorFetcher implements VectorFetcher
         this.fetchMetadata = fetchMetadata;
     }
 
+    /**
+     * Checks if there are more vectors to fetch.
+     *
+     * @return true if more vectors are available
+     */
+    public abstract boolean hasNext();
+
+    /**
+     * Fetches the next batch of vectors.
+     *
+     * @return List of VectorData for the next batch
+     */
+    public abstract List<VectorData> next();
 }

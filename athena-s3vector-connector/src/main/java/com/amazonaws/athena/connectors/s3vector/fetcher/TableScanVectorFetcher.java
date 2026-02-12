@@ -17,8 +17,9 @@
  * limitations under the License.
  * #L%
  */
-package com.amazonaws.athena.connectors.s3vector;
+package com.amazonaws.athena.connectors.s3vector.fetcher;
 
+import com.amazonaws.athena.connectors.s3vector.VectorData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.s3vectors.S3VectorsClient;
