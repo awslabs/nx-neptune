@@ -190,7 +190,6 @@ public class S3VectorRecordHandler
         rangeSet.getOrderedRanges().forEach(range -> {
             if (range.getLow().getBound() == Marker.Bound.EXACTLY) {
                 ids.add(range.getLow().getValue().toString());
-                logger.debug("Adding ID: {}", range.getLow().getValue().toString());
             }
         });
         return ids;
