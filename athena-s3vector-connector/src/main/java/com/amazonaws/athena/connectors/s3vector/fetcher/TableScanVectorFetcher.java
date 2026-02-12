@@ -38,6 +38,7 @@ public class TableScanVectorFetcher extends AbstractVectorFetcher
 
     private String nextToken;
     private boolean hasMore;
+    private int currentPage;
 
     public TableScanVectorFetcher(S3VectorsClient vectorsClient, String bucketName, String indexName,
                                    boolean fetchEmbedding, boolean fetchMetadata)
@@ -45,6 +46,7 @@ public class TableScanVectorFetcher extends AbstractVectorFetcher
         super(vectorsClient, bucketName, indexName, fetchEmbedding, fetchMetadata);
         this.nextToken = null;
         this.hasMore = true;
+        this.currentPage = 0;
     }
 
     @Override
@@ -67,7 +69,8 @@ public class TableScanVectorFetcher extends AbstractVectorFetcher
         }
 
         ListVectorsResponse response = vectorsClient.listVectors(requestBuilder.build());
-        logger.debug("Fetched page with {} vectors", response.vectors().size());
+        currentPage++;
+        logger.debug("Fetched page {} with {} vectors", currentPage, response.vectors().size());
 
         nextToken = response.nextToken();
         hasMore = nextToken != null;
