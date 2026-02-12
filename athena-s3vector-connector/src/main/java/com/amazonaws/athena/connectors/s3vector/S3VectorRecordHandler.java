@@ -192,8 +192,7 @@ public class S3VectorRecordHandler
     }
 
     /**
-     * Retrieves all vectors from the specified S3 vector bucket and index.
-     * todo: Consolidate the common logic with getVectorsById().
+     * Retrieves all vectors from the specified S3 vector bucket and index with pagination support.
      *
      * @param bucketName The name of the S3 vector bucket
      * @param indexName The name of the vector index
@@ -202,27 +201,37 @@ public class S3VectorRecordHandler
      * @return List of VectorData containing the requested vector information
      */
     public List<VectorData> getAllVectors(String bucketName, String indexName, boolean fetchEmbedding, boolean fetchMetadata) {
+        List<VectorData> allVectors = new ArrayList<>();
+        String nextToken = null;
 
-        var request = ListVectorsRequest.builder()
-                .vectorBucketName(bucketName)
-                .indexName(indexName)
-                .returnData(fetchEmbedding)
-                .returnMetadata(fetchMetadata)
-                .build();
+        do {
+            var requestBuilder = ListVectorsRequest.builder()
+                    .vectorBucketName(bucketName)
+                    .indexName(indexName)
+                    .returnData(fetchEmbedding)
+                    .returnMetadata(fetchMetadata);
+            
+            if (nextToken != null) {
+                requestBuilder.nextToken(nextToken);
+            }
 
-        // todo: Paginated this.
-        ListVectorsResponse response = vectorsClient.listVectors(request);
+            ListVectorsResponse response = vectorsClient.listVectors(requestBuilder.build());
+            logger.debug("Response from S3 vector: {} vectors, hasNextToken: {}", 
+                    response.vectors().size(), response.nextToken() != null);
 
-        logger.debug("Response from S3 vector: {}", response);
+            allVectors.addAll(response.vectors().stream()
+                    .map(item -> new VectorData(
+                        item.key(),
+                        fetchEmbedding ? item.data().float32() : null,
+                        fetchMetadata ? item.metadata().toString() : null
+                    ))
+                    .collect(Collectors.toList()));
 
-        return response.vectors().stream()
-                .map(item -> new VectorData(
-                    item.key(),
-                    fetchEmbedding ? item.data().float32() : null,
-                    fetchMetadata ? item.metadata().toString() : null
-                ))
-                .collect(Collectors.toList());
+            nextToken = response.nextToken();
+        } while (nextToken != null);
 
+        logger.info("Total vectors fetched: {}", allVectors.size());
+        return allVectors;
     }
     /**
      * Retrieves specific vectors by their IDs from the specified S3 vector bucket and index.
