@@ -133,6 +133,8 @@ public class S3VectorRecordHandler
         boolean fetchMetadata = columnNamesSst.contains(COL_METADATA);
         boolean selectByIds = summary.containsKey(COL_VECTOR_ID) && summary.get(COL_VECTOR_ID) instanceof SortedRangeSet;
 
+
+        logger.debug("Request: {}", recordsRequest);
         logger.debug("Summary: {}", summary);
 
         logger.info("Execute fetch request with config: [fetchEmbedding: {}, fetchMetadata: {}, selectByIds: {}]",
