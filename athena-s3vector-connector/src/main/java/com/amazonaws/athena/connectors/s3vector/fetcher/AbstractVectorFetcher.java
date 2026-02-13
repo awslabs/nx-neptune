@@ -53,21 +53,20 @@ public abstract class AbstractVectorFetcher
     protected AbstractVectorFetcher(S3VectorsClient vectorsClient,
                                     ReadRecordsRequest recordsRequest)
     {
-        this.vectorsClient = vectorsClient;
-        TableName tableName = recordsRequest.getTableName();
-        this.bucketName = tableName.getSchemaName();
-        this.indexName = tableName.getTableName();
-
-
         Split split = recordsRequest.getSplit();
+        TableName tableName = recordsRequest.getTableName();
         Set<String> columnNamesSst = recordsRequest.getSchema().getFields().stream()
                 .map(Field::getName)
                 .filter(c -> !split.getProperties().containsKey(c))
                 .collect(Collectors.toSet());
+        Constraints constraints = recordsRequest.getConstraints();
 
+        this.vectorsClient = vectorsClient;
+        this.bucketName = tableName.getSchemaName();
+        this.indexName = tableName.getTableName();
         this.fetchEmbedding = columnNamesSst.contains(COL_EMBEDDING_DATA);
         this.fetchMetadata = columnNamesSst.contains(COL_METADATA);
-        Constraints constraints = recordsRequest.getConstraints();
+
         this.limit = constraints.getLimit();
 
         logger.debug("Request: {}", recordsRequest);
@@ -76,8 +75,6 @@ public abstract class AbstractVectorFetcher
         logger.info("Execute fetch request with config: [fetchEmbedding: {}, fetchMetadata: {}, limit: {}]",
                 columnNamesSst.contains(COL_EMBEDDING_DATA),
                 columnNamesSst.contains(COL_METADATA), limit);
-
-
     }
 
     /**
