@@ -19,6 +19,12 @@
  */
 package com.amazonaws.athena.connectors.s3vector.fetcher;
 
+import com.amazonaws.athena.connector.lambda.domain.TableName;
+import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
+import com.amazonaws.athena.connector.lambda.domain.predicate.Marker;
+import com.amazonaws.athena.connector.lambda.domain.predicate.SortedRangeSet;
+import com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet;
+import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
 import com.amazonaws.athena.connectors.s3vector.VectorData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,8 +32,13 @@ import software.amazon.awssdk.services.s3vectors.S3VectorsClient;
 import software.amazon.awssdk.services.s3vectors.model.GetVectorsRequest;
 import software.amazon.awssdk.services.s3vectors.model.GetVectorsResponse;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+
+import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_VECTOR_ID;
 
 /**
  * Fetches vectors by specific IDs in batches.
@@ -41,11 +52,10 @@ public class IdScanVectorFetcher extends AbstractVectorFetcher
     private int currentIndex;
     private int totalFetched;
 
-    public IdScanVectorFetcher(S3VectorsClient vectorsClient, String bucketName, String indexName,
-                                List<String> ids, boolean fetchEmbedding, boolean fetchMetadata, long limit)
+    public IdScanVectorFetcher(S3VectorsClient vectorsClient, ReadRecordsRequest recordsRequest)
     {
-        super(vectorsClient, bucketName, indexName, fetchEmbedding, fetchMetadata, limit);
-        this.allIds = ids;
+        super(vectorsClient, recordsRequest);
+        this.allIds = getIds(recordsRequest.getConstraints().getSummary());
         this.currentIndex = 0;
         this.totalFetched = 0;
     }
@@ -89,4 +99,16 @@ public class IdScanVectorFetcher extends AbstractVectorFetcher
 
         return results;
     }
+
+    private static List<String> getIds(Map<String, ValueSet> summary) {
+        List<String> ids = new ArrayList<>();
+        SortedRangeSet rangeSet = (SortedRangeSet) summary.get(COL_VECTOR_ID);
+        rangeSet.getOrderedRanges().forEach(range -> {
+            if (range.getLow().getBound() == Marker.Bound.EXACTLY) {
+                ids.add(range.getLow().getValue().toString());
+            }
+        });
+        return ids;
+    }
+
 }

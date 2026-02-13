@@ -31,6 +31,7 @@ import com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarCha
 import com.amazonaws.athena.connector.lambda.domain.Split;
 import com.amazonaws.athena.connector.lambda.domain.TableName;
 import com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintProjector;
+import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
 import com.amazonaws.athena.connector.lambda.domain.predicate.Marker;
 import com.amazonaws.athena.connector.lambda.domain.predicate.SortedRangeSet;
 import com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet;
@@ -117,33 +118,12 @@ public class S3VectorRecordHandler
     protected void readWithConstraint(BlockSpiller spiller, ReadRecordsRequest recordsRequest, QueryStatusChecker queryStatusChecker)
             throws IOException
     {
-        TableName tableName = recordsRequest.getTableName();
-        String table = tableName.getTableName();
-        String schemaName = tableName.getSchemaName();
-        Schema tableSchema = recordsRequest.getSchema();
-        Split split = recordsRequest.getSplit();
         Map<String, ValueSet> summary = recordsRequest.getConstraints().getSummary();
-
-        Set<String> columnNamesSst = tableSchema.getFields().stream()
-                .map(Field::getName)
-                .filter(c -> !split.getProperties().containsKey(c))
-                .collect(Collectors.toSet());
-
-        boolean fetchEmbedding = columnNamesSst.contains(COL_EMBEDDING_DATA);
-        boolean fetchMetadata = columnNamesSst.contains(COL_METADATA);
         boolean selectByIds = summary.containsKey(COL_VECTOR_ID) && summary.get(COL_VECTOR_ID) instanceof SortedRangeSet;
-        long limit = recordsRequest.getConstraints().getLimit();
-
-        logger.debug("Request: {}", recordsRequest);
-        logger.debug("Summary: {}", summary);
-
-
-        logger.info("Execute fetch request with config: [fetchEmbedding: {}, fetchMetadata: {}, selectByIds: {}, limit: {}]",
-                fetchEmbedding, fetchMetadata, selectByIds, limit);
 
         var fetcher = selectByIds
-                ? new IdScanVectorFetcher(vectorsClient, schemaName, table, getIds(summary), fetchEmbedding, fetchMetadata, limit)
-                : new TableScanVectorFetcher(vectorsClient, schemaName, table, fetchEmbedding, fetchMetadata, limit);
+                ? new IdScanVectorFetcher(vectorsClient, recordsRequest)
+                : new TableScanVectorFetcher(vectorsClient, recordsRequest);
 
         GeneratedRowWriter rowWriter = getRowWriter(recordsRequest);
         int totalFetched = 0;
@@ -188,18 +168,6 @@ public class S3VectorRecordHandler
         ));
         return builder.build();
     }
-
-    private static List<String> getIds(Map<String, ValueSet> summary) {
-        List<String> ids = new ArrayList<>();
-        SortedRangeSet rangeSet = (SortedRangeSet) summary.get(COL_VECTOR_ID);
-        rangeSet.getOrderedRanges().forEach(range -> {
-            if (range.getLow().getBound() == Marker.Bound.EXACTLY) {
-                ids.add(range.getLow().getValue().toString());
-            }
-        });
-        return ids;
-    }
-
 
 
 }

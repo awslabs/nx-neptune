@@ -19,6 +19,9 @@
  */
 package com.amazonaws.athena.connectors.s3vector.fetcher;
 
+import com.amazonaws.athena.connector.lambda.domain.TableName;
+import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
+import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
 import com.amazonaws.athena.connectors.s3vector.VectorData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +30,7 @@ import software.amazon.awssdk.services.s3vectors.model.ListVectorsRequest;
 import software.amazon.awssdk.services.s3vectors.model.ListVectorsResponse;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -41,10 +45,9 @@ public class TableScanVectorFetcher extends AbstractVectorFetcher
     private int currentPage;
     private int totalFetched;
 
-    public TableScanVectorFetcher(S3VectorsClient vectorsClient, String bucketName, String indexName,
-                                   boolean fetchEmbedding, boolean fetchMetadata, long limit)
+    public TableScanVectorFetcher(S3VectorsClient vectorsClient, ReadRecordsRequest recordsRequest)
     {
-        super(vectorsClient, bucketName, indexName, fetchEmbedding, fetchMetadata, limit);
+        super(vectorsClient, recordsRequest);
         this.nextToken = null;
         this.hasMore = true;
         this.currentPage = 0;
