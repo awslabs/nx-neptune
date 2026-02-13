@@ -39,20 +39,22 @@ public class TableScanVectorFetcher extends AbstractVectorFetcher
     private String nextToken;
     private boolean hasMore;
     private int currentPage;
+    private int totalFetched;
 
     public TableScanVectorFetcher(S3VectorsClient vectorsClient, String bucketName, String indexName,
-                                   boolean fetchEmbedding, boolean fetchMetadata)
+                                   boolean fetchEmbedding, boolean fetchMetadata, long limit)
     {
-        super(vectorsClient, bucketName, indexName, fetchEmbedding, fetchMetadata);
+        super(vectorsClient, bucketName, indexName, fetchEmbedding, fetchMetadata, limit);
         this.nextToken = null;
         this.hasMore = true;
         this.currentPage = 0;
+        this.totalFetched = 0;
     }
 
     @Override
     public boolean hasNext()
     {
-        return hasMore;
+        return hasMore && (limit <= 0 || totalFetched < limit);
     }
 
     @Override
@@ -70,17 +72,28 @@ public class TableScanVectorFetcher extends AbstractVectorFetcher
 
         ListVectorsResponse response = vectorsClient.listVectors(requestBuilder.build());
         currentPage++;
-        logger.debug("Fetched page {} with {} vectors", currentPage, response.vectors().size());
-
-        nextToken = response.nextToken();
-        hasMore = nextToken != null;
-
-        return response.vectors().stream()
+        
+        List<VectorData> results = response.vectors().stream()
                 .map(item ->
                         new VectorData(item.key(),
                                 fetchEmbedding ? item.data().float32() : null,
                                 fetchMetadata ? item.metadata().toString() : null
                 ))
                 .collect(Collectors.toList());
+        
+        if (limit > 0 && totalFetched + results.size() > limit) {
+            results = results.subList(0, (int) (limit - totalFetched));
+            hasMore = false;
+        }
+        
+        totalFetched += results.size();
+        logger.debug("Fetched page {} with {} vectors (total: {}, limit: {})", currentPage, results.size(), totalFetched, limit);
+
+        nextToken = response.nextToken();
+        if (nextToken == null) {
+            hasMore = false;
+        }
+
+        return results;
     }
 }

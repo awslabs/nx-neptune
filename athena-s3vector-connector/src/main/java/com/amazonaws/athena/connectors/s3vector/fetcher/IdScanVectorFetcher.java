@@ -39,25 +39,30 @@ public class IdScanVectorFetcher extends AbstractVectorFetcher
 
     private final List<String> allIds;
     private int currentIndex;
+    private int totalFetched;
 
     public IdScanVectorFetcher(S3VectorsClient vectorsClient, String bucketName, String indexName,
-                                List<String> ids, boolean fetchEmbedding, boolean fetchMetadata)
+                                List<String> ids, boolean fetchEmbedding, boolean fetchMetadata, long limit)
     {
-        super(vectorsClient, bucketName, indexName, fetchEmbedding, fetchMetadata);
+        super(vectorsClient, bucketName, indexName, fetchEmbedding, fetchMetadata, limit);
         this.allIds = ids;
         this.currentIndex = 0;
+        this.totalFetched = 0;
     }
 
     @Override
     public boolean hasNext()
     {
-        return currentIndex < allIds.size();
+        return currentIndex < allIds.size() && (limit <= 0 || totalFetched < limit);
     }
 
     @Override
     public List<VectorData> next()
     {
         int endIndex = Math.min(currentIndex + BATCH_SIZE, allIds.size());
+        if (limit > 0) {
+            endIndex = Math.min(endIndex, currentIndex + (int) (limit - totalFetched));
+        }
         List<String> batchIds = allIds.subList(currentIndex, endIndex);
 
         var request = GetVectorsRequest.builder()
@@ -69,16 +74,19 @@ public class IdScanVectorFetcher extends AbstractVectorFetcher
                 .build();
 
         GetVectorsResponse response = vectorsClient.getVectors(request);
-        logger.debug("Fetched {} vectors by ID (batch {}-{})", response.vectors().size(), currentIndex, endIndex);
-
-        currentIndex = endIndex;
-
-        return response.vectors().stream()
+        
+        List<VectorData> results = response.vectors().stream()
                 .map(item ->
                     new VectorData(item.key(),
                             fetchEmbedding ? item.data().float32() : null,
                             fetchMetadata ? item.metadata().toString() : null
                 ))
                 .collect(Collectors.toList());
+
+        currentIndex = endIndex;
+        totalFetched += results.size();
+        logger.debug("Fetched {} vectors by ID (batch {}-{}, total: {}, limit: {})", results.size(), currentIndex - results.size(), currentIndex, totalFetched, limit);
+
+        return results;
     }
 }

@@ -34,15 +34,17 @@ public abstract class AbstractVectorFetcher
     protected final String indexName;
     protected final boolean fetchEmbedding;
     protected final boolean fetchMetadata;
+    protected final long limit;
 
     protected AbstractVectorFetcher(S3VectorsClient vectorsClient, String bucketName, String indexName,
-                                     boolean fetchEmbedding, boolean fetchMetadata)
+                                     boolean fetchEmbedding, boolean fetchMetadata, long limit)
     {
         this.vectorsClient = vectorsClient;
         this.bucketName = bucketName;
         this.indexName = indexName;
         this.fetchEmbedding = fetchEmbedding;
         this.fetchMetadata = fetchMetadata;
+        this.limit = limit;
     }
 
     /**

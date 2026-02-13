@@ -132,17 +132,18 @@ public class S3VectorRecordHandler
         boolean fetchEmbedding = columnNamesSst.contains(COL_EMBEDDING_DATA);
         boolean fetchMetadata = columnNamesSst.contains(COL_METADATA);
         boolean selectByIds = summary.containsKey(COL_VECTOR_ID) && summary.get(COL_VECTOR_ID) instanceof SortedRangeSet;
-
+        long limit = recordsRequest.getConstraints().getLimit();
 
         logger.debug("Request: {}", recordsRequest);
         logger.debug("Summary: {}", summary);
 
-        logger.info("Execute fetch request with config: [fetchEmbedding: {}, fetchMetadata: {}, selectByIds: {}]",
-                fetchEmbedding, fetchMetadata, selectByIds);
+
+        logger.info("Execute fetch request with config: [fetchEmbedding: {}, fetchMetadata: {}, selectByIds: {}, limit: {}]",
+                fetchEmbedding, fetchMetadata, selectByIds, limit);
 
         var fetcher = selectByIds
-                ? new IdScanVectorFetcher(vectorsClient, schemaName, table, getIds(summary), fetchEmbedding, fetchMetadata)
-                : new TableScanVectorFetcher(vectorsClient, schemaName, table, fetchEmbedding, fetchMetadata);
+                ? new IdScanVectorFetcher(vectorsClient, schemaName, table, getIds(summary), fetchEmbedding, fetchMetadata, limit)
+                : new TableScanVectorFetcher(vectorsClient, schemaName, table, fetchEmbedding, fetchMetadata, limit);
 
         GeneratedRowWriter rowWriter = getRowWriter(recordsRequest);
         int totalFetched = 0;
