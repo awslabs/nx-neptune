@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 
 import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_VECTOR_ID;
 
@@ -46,7 +47,8 @@ import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_VECTOR
 public class IdScanVectorFetcher extends AbstractVectorFetcher
 {
     private static final Logger logger = LoggerFactory.getLogger(IdScanVectorFetcher.class);
-    private static final int BATCH_SIZE = 300;
+    // Default server limit is 100.
+    private static final int BATCH_SIZE = 80;
 
     private final List<String> allIds;
     private int currentIndex;
@@ -58,6 +60,7 @@ public class IdScanVectorFetcher extends AbstractVectorFetcher
         this.allIds = getIds(recordsRequest.getConstraints().getSummary());
         this.currentIndex = 0;
         this.totalFetched = 0;
+        logger.info("Executing ID scan operations with size: {}", allIds.size());
     }
 
     @Override
@@ -101,11 +104,23 @@ public class IdScanVectorFetcher extends AbstractVectorFetcher
     }
 
     private static List<String> getIds(Map<String, ValueSet> summary) {
+
+        // todo: Handle both single value and multiple values
         List<String> ids = new ArrayList<>();
         SortedRangeSet rangeSet = (SortedRangeSet) summary.get(COL_VECTOR_ID);
+        logger.debug("Filters: {}", rangeSet);
         rangeSet.getOrderedRanges().forEach(range -> {
-            if (range.getLow().getBound() == Marker.Bound.EXACTLY) {
+            if (range.isSingleValue()) {
                 ids.add(range.getLow().getValue().toString());
+            } else {
+                // Handle multi value (Numeric)
+                long lower = Long.parseLong(range.getLow().getValue().toString());
+                long upper = Long.parseLong(range.getHigh().getValue().toString());
+//                List<String> idList = LongStream.range(lower, upper)
+//                        .mapToObj(String::valueOf)
+//                        .collect(Collectors.toList());
+//                ids.addAll(idList);
+                logger.debug("Expanding range for [ {} - {}]", lower, upper);
             }
         });
         return ids;

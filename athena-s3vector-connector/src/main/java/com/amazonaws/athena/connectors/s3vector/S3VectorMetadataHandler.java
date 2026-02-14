@@ -327,8 +327,7 @@ public class S3VectorMetadataHandler
     {
         ImmutableMap.Builder<String, List<OptimizationSubType>> capabilities = ImmutableMap.builder();
         capabilities.put(DataSourceOptimizations.SUPPORTS_FILTER_PUSHDOWN.withSupportedSubTypes(
-                FilterPushdownSubType.SORTED_RANGE_SET, FilterPushdownSubType.NULLABLE_COMPARISON,
-                FilterPushdownSubType.EQUATABLE_VALUE_SET, FilterPushdownSubType.ALL_OR_NONE_VALUE_SET
+                FilterPushdownSubType.EQUATABLE_VALUE_SET
         ));
         capabilities.put(DataSourceOptimizations.SUPPORTS_LIMIT_PUSHDOWN.withSupportedSubTypes(
                 LimitPushdownSubType.INTEGER_CONSTANT
