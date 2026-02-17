@@ -105,7 +105,7 @@ public class IdScanVectorFetcher extends AbstractVectorFetcher
 
     private static List<String> getIds(Map<String, ValueSet> summary) {
 
-        // todo: Handle both single value and multiple values
+        // todo: Support multi value only when SDK provide accurate hints.
         List<String> ids = new ArrayList<>();
         SortedRangeSet rangeSet = (SortedRangeSet) summary.get(COL_VECTOR_ID);
         logger.debug("Filters: {}", rangeSet);
