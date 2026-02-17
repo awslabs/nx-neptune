@@ -182,6 +182,7 @@ public class S3VectorRecordHandler
     private static List<String> getIds(Map<String, ValueSet> summary) {
 
         // todo: Support multi value only when SDK provide accurate hints.
+        // https://github.com/awslabs/aws-athena-query-federation/issues/3288
         List<String> ids = new ArrayList<>();
         SortedRangeSet rangeSet = (SortedRangeSet) summary.get(COL_VECTOR_ID);
         logger.debug("Filters: {}", rangeSet);
