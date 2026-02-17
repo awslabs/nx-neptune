@@ -104,24 +104,4 @@ public class IdScanVectorFetcher extends AbstractVectorFetcher
         return results;
     }
 
-    private static List<String> getIds(Map<String, ValueSet> summary) {
-
-        // todo: Support multi value only when SDK provide accurate hints.
-        List<String> ids = new ArrayList<>();
-        SortedRangeSet rangeSet = (SortedRangeSet) summary.get(COL_VECTOR_ID);
-        logger.debug("Filters: {}", rangeSet);
-
-        if (rangeSet != null) {
-            for (var range : rangeSet.getOrderedRanges()) {
-                if (range.isSingleValue()) {
-                    ids.add(range.getLow().getValue().toString());
-                } else {
-                    logger.warn("Encounter multi value set, not eligible for Select By ID");
-                    return Collections.emptyList();
-                }
-            }
-        }
-        return ids;
-    }
-
 }
