@@ -53,6 +53,7 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -121,9 +122,18 @@ public class S3VectorRecordHandler
         Map<String, ValueSet> summary = recordsRequest.getConstraints().getSummary();
         boolean selectByIds = summary.containsKey(COL_VECTOR_ID) && summary.get(COL_VECTOR_ID) instanceof SortedRangeSet;
 
-        var fetcher = selectByIds
-                ? new IdScanVectorFetcher(vectorsClient, recordsRequest)
-                : new TableScanVectorFetcher(vectorsClient, recordsRequest);
+        AbstractVectorFetcher fetcher;
+        if (selectByIds) {
+            List<String> ids = getIds(summary);
+            if (!ids.isEmpty()) {
+                fetcher = new IdScanVectorFetcher(vectorsClient, recordsRequest, ids);
+            } else {
+                logger.warn("Unsupported range value, fallback to full table scan. ");
+                fetcher = new TableScanVectorFetcher(vectorsClient, recordsRequest);
+            }
+        } else {
+            fetcher = new TableScanVectorFetcher(vectorsClient, recordsRequest);
+        }
 
         GeneratedRowWriter rowWriter = getRowWriter(recordsRequest);
         int totalFetched = 0;
@@ -167,6 +177,25 @@ public class S3VectorRecordHandler
             }
         ));
         return builder.build();
+    }
+
+    private static List<String> getIds(Map<String, ValueSet> summary) {
+
+        // todo: Support multi value only when SDK provide accurate hints.
+        List<String> ids = new ArrayList<>();
+        SortedRangeSet rangeSet = (SortedRangeSet) summary.get(COL_VECTOR_ID);
+        logger.debug("Filters: {}", rangeSet);
+        if (rangeSet != null) {
+            for (var range : rangeSet.getOrderedRanges()) {
+                if (range.isSingleValue()) {
+                    ids.add(range.getLow().getValue().toString());
+                } else {
+                    logger.warn("Encounter multi value set, not eligible for Select By ID");
+                    return Collections.emptyList();
+                }
+            }
+        }
+        return ids;
     }
 
 

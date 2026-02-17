@@ -33,6 +33,7 @@ import software.amazon.awssdk.services.s3vectors.model.GetVectorsRequest;
 import software.amazon.awssdk.services.s3vectors.model.GetVectorsResponse;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -54,10 +55,10 @@ public class IdScanVectorFetcher extends AbstractVectorFetcher
     private int currentIndex;
     private int totalFetched;
 
-    public IdScanVectorFetcher(S3VectorsClient vectorsClient, ReadRecordsRequest recordsRequest)
+    public IdScanVectorFetcher(S3VectorsClient vectorsClient, ReadRecordsRequest recordsRequest, List<String> ids)
     {
         super(vectorsClient, recordsRequest);
-        this.allIds = getIds(recordsRequest.getConstraints().getSummary());
+        this.allIds = ids;
         this.currentIndex = 0;
         this.totalFetched = 0;
         logger.info("Executing ID scan operations with size: {}", allIds.size());
@@ -109,20 +110,17 @@ public class IdScanVectorFetcher extends AbstractVectorFetcher
         List<String> ids = new ArrayList<>();
         SortedRangeSet rangeSet = (SortedRangeSet) summary.get(COL_VECTOR_ID);
         logger.debug("Filters: {}", rangeSet);
-        rangeSet.getOrderedRanges().forEach(range -> {
-            if (range.isSingleValue()) {
-                ids.add(range.getLow().getValue().toString());
-            } else {
-                // Handle multi value (Numeric)
-                long lower = Long.parseLong(range.getLow().getValue().toString());
-                long upper = Long.parseLong(range.getHigh().getValue().toString());
-//                List<String> idList = LongStream.range(lower, upper)
-//                        .mapToObj(String::valueOf)
-//                        .collect(Collectors.toList());
-//                ids.addAll(idList);
-                logger.debug("Expanding range for [ {} - {}]", lower, upper);
+
+        if (rangeSet != null) {
+            for (var range : rangeSet.getOrderedRanges()) {
+                if (range.isSingleValue()) {
+                    ids.add(range.getLow().getValue().toString());
+                } else {
+                    logger.warn("Encounter multi value set, not eligible for Select By ID");
+                    return Collections.emptyList();
+                }
             }
-        });
+        }
         return ids;
     }
 
