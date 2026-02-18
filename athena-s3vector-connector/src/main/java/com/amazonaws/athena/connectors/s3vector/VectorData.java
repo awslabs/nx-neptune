@@ -17,39 +17,37 @@
  * limitations under the License.
  * #L%
  */
+
 package com.amazonaws.athena.connectors.s3vector;
 
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Data class representing a vector entry with its id, embedding data, and metadata.
+ * Data class representing a vector entry with its id, embedding data, and
+ * metadata.
  */
-public class VectorData
-{
-    private final String id;
-    private final List<Float> embedding;
-    private final String metadata;
+public class VectorData {
+  private final String id;
+  private final List<Float> embedding;
+  private final String metadata;
 
-    public VectorData(String id, List<Float> embedding, String metadata)
-    {
-        this.id = id;
-        this.embedding = embedding;
-        this.metadata = metadata;
-    }
+  /** Constructor for VectorData. */
+  public VectorData(String id, List<Float> embedding, String metadata) {
+    this.id = id;
+    this.embedding = embedding;
+    this.metadata = metadata;
+  }
 
-    public String getId()
-    {
-        return id;
-    }
+  public String getId() {
+    return id;
+  }
 
-    public Optional<List<Float>> getEmbedding()
-    {
-        return Optional.ofNullable(embedding);
-    }
+  public Optional<List<Float>> getEmbedding() {
+    return Optional.ofNullable(embedding);
+  }
 
-    public Optional<String> getMetadata()
-    {
-        return Optional.ofNullable(metadata);
-    }
+  public Optional<String> getMetadata() {
+    return Optional.ofNullable(metadata);
+  }
 }

@@ -17,21 +17,24 @@
  * limitations under the License.
  * #L%
  */
+
 package com.amazonaws.athena.connectors.s3vector;
 
 import com.amazonaws.athena.connector.lambda.connection.EnvironmentProperties;
 import com.amazonaws.athena.connector.lambda.handlers.CompositeHandler;
+
 /**
- * Composite handler for the S3 Vector connector that allows us to use a single Lambda function for both
- * Metadata and Data operations. This handler composes S3VectorMetadataHandler, S3VectorRecordHandler,
- * and S3VectorUserDefinedFuncHandler to provide complete S3 vector data access functionality.
+ * Composite handler for the S3 Vector connector that allows us to use a single
+ * Lambda function for both Metadata and Data operations. This handler composes
+ * S3VectorMetadataHandler, S3VectorRecordHandler, and
+ * S3VectorUserDefinedFuncHandler to provide complete S3 vector data access
+ * functionality.
  */
-public class S3VectorCompositeHandler
-        extends CompositeHandler
-{
-    public S3VectorCompositeHandler()
-    {
-        super(new S3VectorMetadataHandler(new EnvironmentProperties().createEnvironment()),
-                new S3VectorRecordHandler(new EnvironmentProperties().createEnvironment()));
-    }
+public class S3VectorCompositeHandler extends CompositeHandler {
+  /** Constructor for S3VectorCompositeHandler. */
+  public S3VectorCompositeHandler() {
+    super(
+        new S3VectorMetadataHandler(new EnvironmentProperties().createEnvironment()),
+        new S3VectorRecordHandler(new EnvironmentProperties().createEnvironment()));
+  }
 }
