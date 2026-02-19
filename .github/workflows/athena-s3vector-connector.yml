@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: aws-athena-query-federation_ubuntu-latest_16-core
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         java-version: [ '11', '17' ]
