@@ -1600,6 +1600,7 @@ def empty_s3_bucket(
     s3_client: Optional[BaseClient] = None,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
+    file_extension = None
 ):
     """Empty an S3 bucket at the specified location.
 
@@ -1642,7 +1643,9 @@ def empty_s3_bucket(
 
             for page in pages:
                 if "Contents" in page:
-                    objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
+                    objects = [{"Key": obj["Key"]} for obj in page["Contents"]
+                        if (not file_extension or obj["Key"].endswith(file_extension))]
+
                     if objects:
                         s3_client.delete_objects(
                             Bucket=bucket_name,

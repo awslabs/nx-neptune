@@ -10,9 +10,16 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
+import csv
+import json
 import logging
+import os
 import sys
+from itertools import islice
+from time import sleep
 from typing import List, Optional
+
+import boto3
 
 
 def get_stdout_logger(
@@ -76,3 +83,116 @@ def get_stdout_logger(
         for logger_name in debug_modules:
             logging.getLogger(logger_name).setLevel(logging.DEBUG)
     return logging.getLogger(project_identifier)
+
+
+def check_env_vars(var_names):
+    values = {}
+    for var_name in var_names:
+        value = os.getenv(var_name)
+        if not value:
+            print(f"Warning: Environment Variable {var_name} is not defined")
+            print(f"You can set it using: %env {var_name}=your-value")
+        else:
+            print(f"Using {var_name}: {value}")
+        values[var_name] = value
+    return values
+
+
+def read_csv(path, limit=None):
+    """Reads CSV file and returns header and rows.
+
+    Parameters
+    ----------
+    path : str
+        Path to the CSV file to read
+    limit : int, optional
+        Maximum number of rows to read. If None, reads entire file.
+
+    Returns
+    -------
+    tuple
+        A tuple containing:
+            - header (list): List of column names from the CSV
+            - rows (list): List of dictionaries, where each dictionary represents a row
+              with column names as keys and cell values as values
+
+    Examples
+    --------
+    >>> header, rows = read_csv("data.csv")
+    >>> print(header)
+    ['col1', 'col2', 'col3']
+    >>> print(rows[0])
+    {'col1': 'val1', 'col2': 'val2', 'col3': 'val3'}
+
+    >>> # Read only first 10 rows
+    >>> header, rows = read_csv("data.csv", limit=10)
+    """
+    with open(path, newline="", encoding="utf-8") as fin:
+        reader = csv.DictReader(fin)
+        rows = list(islice(reader, limit)) if limit else list(reader)
+        header = list(reader.fieldnames)
+    return header, rows
+
+
+def _get_bedrock_embedding(client, text, dimensions=256, model_id="amazon.titan-embed-text-v2:0"):
+    """
+    Generate vector embeddings using Amazon Bedrock.
+
+    Args:
+        client: Bedrock runtime client instance
+        text (str): Input text to generate embeddings for
+        dimensions (int, optional): Size of embedding vector. Defaults to 256.
+        model_id (str, optional): Bedrock model ID. Defaults to "amazon.titan-embed-text-v2:0".
+
+    Returns:
+        list: List containing the embedding vector
+    """
+    # Generate vector embeddings.
+    embeddings = []
+
+    response = client.invoke_model(
+        modelId=model_id,
+        body=json.dumps({"dimensions": dimensions, "inputText": text})
+    )
+
+    # Extract embedding from response.
+    response_body = json.loads(response["body"].read())
+    embeddings.append(response_body["embedding"])
+    return embeddings
+
+def write_csv(path, headers, rows):
+    """Writes data to a CSV file.
+
+    Parameters
+    ----------
+    path : str
+        Path to the CSV file to write
+    headers : list
+        List of column names to use as CSV headers
+    rows : list
+        List of dictionaries, where each dictionary represents a row with
+        column names as keys and cell values as values
+
+    Examples
+    --------
+    >>> headers = ['col1', 'col2']
+    >>> rows = [{'col1': 'val1', 'col2': 'val2'},
+    ...         {'col1': 'val3', 'col2': 'val4'}]
+    >>> write_csv('output.csv', headers, rows)
+    """
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+
+def push_to_s3(path, s3_bucket, key):
+
+    s3 = boto3.client("s3")
+
+    s3.upload_file(
+        Filename=path,
+        Bucket=s3_bucket,
+        Key=key
+    )
