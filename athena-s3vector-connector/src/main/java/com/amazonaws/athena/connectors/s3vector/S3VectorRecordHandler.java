@@ -31,11 +31,15 @@ import com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarCha
 import com.amazonaws.athena.connector.lambda.domain.Split;
 import com.amazonaws.athena.connector.lambda.domain.TableName;
 import com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintProjector;
+import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
 import com.amazonaws.athena.connector.lambda.domain.predicate.Marker;
 import com.amazonaws.athena.connector.lambda.domain.predicate.SortedRangeSet;
 import com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet;
 import com.amazonaws.athena.connector.lambda.handlers.RecordHandler;
 import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
+import com.amazonaws.athena.connectors.s3vector.fetcher.AbstractVectorFetcher;
+import com.amazonaws.athena.connectors.s3vector.fetcher.IdScanVectorFetcher;
+import com.amazonaws.athena.connectors.s3vector.fetcher.TableScanVectorFetcher;
 import org.apache.arrow.util.VisibleForTesting;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.types.pojo.Field;
@@ -45,14 +49,11 @@ import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.athena.AthenaClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3vectors.S3VectorsClient;
-import software.amazon.awssdk.services.s3vectors.model.GetVectorsRequest;
-import software.amazon.awssdk.services.s3vectors.model.GetVectorsResponse;
-import software.amazon.awssdk.services.s3vectors.model.ListVectorsRequest;
-import software.amazon.awssdk.services.s3vectors.model.ListVectorsResponse;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -118,38 +119,37 @@ public class S3VectorRecordHandler
     protected void readWithConstraint(BlockSpiller spiller, ReadRecordsRequest recordsRequest, QueryStatusChecker queryStatusChecker)
             throws IOException
     {
-
-        TableName tableName = recordsRequest.getTableName();
-        String table = tableName.getTableName();
-        String schemaName = tableName.getSchemaName();
-        Schema tableSchema = recordsRequest.getSchema();
-        Split split = recordsRequest.getSplit();
         Map<String, ValueSet> summary = recordsRequest.getConstraints().getSummary();
-
-        // Fetch columns to project
-        Set<String> columnNamesSst = tableSchema.getFields().stream()
-                .map(Field::getName)
-                .filter(c -> !split.getProperties().containsKey(c))
-                .collect(Collectors.toSet());
-
-        boolean fetchEmbedding = columnNamesSst.contains(COL_EMBEDDING_DATA);
-        boolean fetchMetadata = columnNamesSst.contains(COL_METADATA);
         boolean selectByIds = summary.containsKey(COL_VECTOR_ID) && summary.get(COL_VECTOR_ID) instanceof SortedRangeSet;
 
-        logger.info("Execute fetch request with config: [fetchEmbedding: {}, fetchMetadata: {}, selectByIds: {}]",
-                fetchEmbedding, fetchMetadata, selectByIds);
-
-        var items = selectByIds
-            ? getVectorsById(schemaName, table, getIds(summary), fetchEmbedding, fetchMetadata)
-            : getAllVectors(schemaName, table, fetchEmbedding, fetchMetadata);
-
-        logger.info("Num of vector entries fetched: {}", items.size());
-        GeneratedRowWriter rowWriter = getRowWriter(recordsRequest);
-        for(VectorData item : items) {
-            spiller.writeRows(
-                    (Block block, int rowNum) -> rowWriter.writeRow(block, rowNum, item) ? 1 : 0);
+        AbstractVectorFetcher fetcher;
+        if (selectByIds) {
+            List<String> ids = getIds(summary);
+            if (!ids.isEmpty()) {
+                fetcher = new IdScanVectorFetcher(vectorsClient, recordsRequest, ids);
+            } else {
+                logger.warn("Unsupported range value, fallback to full table scan. ");
+                fetcher = new TableScanVectorFetcher(vectorsClient, recordsRequest);
+            }
+        } else {
+            fetcher = new TableScanVectorFetcher(vectorsClient, recordsRequest);
         }
 
+        GeneratedRowWriter rowWriter = getRowWriter(recordsRequest);
+        int totalFetched = 0;
+
+        while (fetcher.hasNext() && queryStatusChecker.isQueryRunning()) {
+            List<VectorData> batch = fetcher.next();
+            for (VectorData item : batch) {
+                spiller.writeRows((Block block, int rowNum) -> rowWriter.writeRow(block, rowNum, item) ? 1 : 0);
+            }
+            totalFetched += batch.size();
+        }
+
+        if (!queryStatusChecker.isQueryRunning()) {
+            logger.info("Query cancelled, stopping fetch");
+        }
+        logger.info("Total vector entries fetched: {}", totalFetched);
     }
 
     private static GeneratedRowWriter getRowWriter(ReadRecordsRequest recordsRequest) {
@@ -180,82 +180,24 @@ public class S3VectorRecordHandler
     }
 
     private static List<String> getIds(Map<String, ValueSet> summary) {
+
+        // todo: Support multi value only when SDK provide accurate hints.
+        // https://github.com/awslabs/aws-athena-query-federation/issues/3288
         List<String> ids = new ArrayList<>();
         SortedRangeSet rangeSet = (SortedRangeSet) summary.get(COL_VECTOR_ID);
-        rangeSet.getOrderedRanges().forEach(range -> {
-            if (range.getLow().getBound() == Marker.Bound.EXACTLY) {
-                ids.add(range.getLow().getValue().toString());
-                logger.debug("Adding ID: {}", range.getLow().getValue().toString());
+        logger.debug("Filters: {}", rangeSet);
+        if (rangeSet != null) {
+            for (var range : rangeSet.getOrderedRanges()) {
+                if (range.isSingleValue()) {
+                    ids.add(range.getLow().getValue().toString());
+                } else {
+                    logger.warn("Encounter multi value set, not eligible for Select By ID");
+                    return Collections.emptyList();
+                }
             }
-        });
+        }
         return ids;
     }
 
-    /**
-     * Retrieves all vectors from the specified S3 vector bucket and index.
-     * todo: Consolidate the common logic with getVectorsById().
-     *
-     * @param bucketName The name of the S3 vector bucket
-     * @param indexName The name of the vector index
-     * @param fetchEmbedding Whether to fetch embedding data
-     * @param fetchMetadata Whether to fetch metadata
-     * @return List of VectorData containing the requested vector information
-     */
-    public List<VectorData> getAllVectors(String bucketName, String indexName, boolean fetchEmbedding, boolean fetchMetadata) {
-
-        var request = ListVectorsRequest.builder()
-                .vectorBucketName(bucketName)
-                .indexName(indexName)
-                .returnData(fetchEmbedding)
-                .returnMetadata(fetchMetadata)
-                .build();
-
-        // todo: Paginated this.
-        ListVectorsResponse response = vectorsClient.listVectors(request);
-
-        logger.debug("Response from S3 vector: {}", response);
-
-        return response.vectors().stream()
-                .map(item -> new VectorData(
-                    item.key(),
-                    fetchEmbedding ? item.data().float32() : null,
-                    fetchMetadata ? item.metadata().toString() : null
-                ))
-                .collect(Collectors.toList());
-
-    }
-    /**
-     * Retrieves specific vectors by their IDs from the specified S3 vector bucket and index.
-     *
-     * @param bucketName The name of the S3 vector bucket
-     * @param indexName The name of the vector index
-     * @param ids List of vector IDs to retrieve
-     * @param fetch_embedding Whether to fetch embedding data
-     * @param fetch_metadata Whether to fetch metadata
-     * @return List of VectorData containing the requested vector information
-     */
-    public List<VectorData> getVectorsById(String bucketName, String indexName, List<String> ids, boolean fetch_embedding, boolean fetch_metadata) {
-
-        var request = GetVectorsRequest.builder()
-                .vectorBucketName(bucketName)
-                .indexName(indexName)
-                .keys(ids)
-                .returnData(fetch_embedding)
-                .returnMetadata(fetch_metadata)
-                .build();
-
-        GetVectorsResponse response = vectorsClient.getVectors(request);
-
-        logger.debug("Response from Filtered S3 vector: {}", response);
-
-        return response.vectors().stream()
-                .map(item -> new VectorData(
-                    item.key(),
-                    fetch_embedding ? item.data().float32() : null,
-                    fetch_metadata ? item.metadata().toString() : null
-                ))
-                .collect(Collectors.toList());
-
-    }
 
 }
