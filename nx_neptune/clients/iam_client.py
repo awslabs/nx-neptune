@@ -708,6 +708,11 @@ def _convert_sts_to_iam_arn(sts_arn):
     arn:aws:sts::ACCOUNT:assumed-role/ROLE/SESSION
     to
     arn:aws:iam::ACCOUNT:role/ROLE
+
+    Also handles roles with paths:
+    arn:aws:sts::ACCOUNT:assumed-role/PATH/ROLE/SESSION
+    to
+    arn:aws:iam::ACCOUNT:role/PATH/ROLE
     """
     sts_prefix = "arn:aws:sts::"
     if not sts_arn.startswith(sts_prefix):
@@ -715,9 +720,17 @@ def _convert_sts_to_iam_arn(sts_arn):
 
     account_part = sts_arn[len(sts_prefix) :]
     account_id = account_part.split(":")[0]
-    role_name = sts_arn.split(":")[5].split("/")[1]
+
+    # Get the resource part after the account:assumed-role/
+    resource_part = sts_arn.split(":")[5]  # e.g., "assumed-role/path/role-name/session"
+
+    # Split by "/" and remove "assumed-role" prefix and session suffix
+    parts = resource_part.split("/")
+    # parts[0] = "assumed-role", parts[-1] = session name
+    # Everything in between is the role path and name
+    role_with_path = "/".join(parts[1:-1])
 
     # Compose the IAM ARN
-    iam_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+    iam_arn = f"arn:aws:iam::{account_id}:role/{role_with_path}"
 
     return iam_arn
