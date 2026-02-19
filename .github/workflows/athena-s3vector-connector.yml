@@ -15,7 +15,6 @@ permissions:
 
 jobs:
   build:
-    needs: pre_job
     runs-on: aws-athena-query-federation_ubuntu-latest_16-core
     strategy:
       matrix:
