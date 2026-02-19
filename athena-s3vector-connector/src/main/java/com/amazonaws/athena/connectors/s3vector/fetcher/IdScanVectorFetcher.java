@@ -20,22 +20,12 @@
 
 package com.amazonaws.athena.connectors.s3vector.fetcher;
 
-import static com.amazonaws.athena.connectors.s3vector.ConnectorUtils.COL_VECTOR_ID;
-
-import com.amazonaws.athena.connector.lambda.domain.TableName;
-import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
-import com.amazonaws.athena.connector.lambda.domain.predicate.Marker;
-import com.amazonaws.athena.connector.lambda.domain.predicate.SortedRangeSet;
-import com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet;
 import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
 import com.amazonaws.athena.connectors.s3vector.VectorData;
-import java.util.ArrayList;
-import java.util.Collections;
+
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.LongStream;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.s3vectors.S3VectorsClient;

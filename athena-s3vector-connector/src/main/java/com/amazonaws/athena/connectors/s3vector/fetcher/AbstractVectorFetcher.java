@@ -27,7 +27,6 @@ import com.amazonaws.athena.connector.lambda.domain.Split;
 import com.amazonaws.athena.connector.lambda.domain.TableName;
 import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
 import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
-import com.amazonaws.athena.connectors.s3vector.S3VectorRecordHandler;
 import com.amazonaws.athena.connectors.s3vector.VectorData;
 import java.util.List;
 import java.util.Set;
