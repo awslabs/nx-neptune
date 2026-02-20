@@ -1,0 +1,229 @@
+/*-
+ * #%L
+ * athena-example
+ * %%
+ * Copyright (C) 2019 Amazon Web Services
+ * %%
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * #L%
+ */
+package com.amazonaws.athena.connectors.s3vector;
+
+import com.amazonaws.athena.connector.lambda.data.BlockAllocatorImpl;
+import com.amazonaws.athena.connector.lambda.data.S3BlockSpillReader;
+import com.amazonaws.athena.connector.lambda.data.SchemaBuilder;
+import com.amazonaws.athena.connector.lambda.domain.Split;
+import com.amazonaws.athena.connector.lambda.domain.TableName;
+import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
+import com.amazonaws.athena.connector.lambda.domain.predicate.Range;
+import com.amazonaws.athena.connector.lambda.domain.predicate.SortedRangeSet;
+import com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet;
+import com.amazonaws.athena.connector.lambda.domain.spill.S3SpillLocation;
+import com.amazonaws.athena.connector.lambda.domain.spill.SpillLocation;
+import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
+import com.amazonaws.athena.connector.lambda.records.ReadRecordsResponse;
+import com.amazonaws.athena.connector.lambda.records.RecordResponse;
+import com.amazonaws.athena.connector.lambda.security.FederatedIdentity;
+import com.google.common.collect.ImmutableList;
+import org.apache.arrow.vector.types.Types;
+import org.apache.arrow.vector.types.pojo.Schema;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.rules.TestName;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.services.athena.AthenaClient;
+import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3vectors.S3VectorsClient;
+import software.amazon.awssdk.services.s3vectors.model.GetVectorsRequest;
+import software.amazon.awssdk.services.s3vectors.model.GetVectorsResponse;
+import software.amazon.awssdk.services.s3vectors.model.ListVectorsRequest;
+import software.amazon.awssdk.services.s3vectors.model.ListVectorsResponse;
+import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
+
+import java.io.ByteArrayInputStream;
+import java.io.UnsupportedEncodingException;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
+import static com.amazonaws.athena.connector.lambda.domain.predicate.Constraints.DEFAULT_NO_LIMIT;
+import static org.junit.Assert.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+public class S3VectorRecordHandlerTest
+{
+    private static final Logger logger = LoggerFactory.getLogger(S3VectorRecordHandlerTest.class);
+
+    private S3VectorRecordHandler handler;
+    private boolean enableTests = System.getenv("publishing") != null &&
+            System.getenv("publishing").equalsIgnoreCase("true");
+    private BlockAllocatorImpl allocator;
+    private Schema schemaForRead;
+    private S3Client amazonS3;
+    private S3VectorsClient amazonS3Vector;
+    private SecretsManagerClient awsSecretsManager;
+    private AthenaClient athena;
+    private S3BlockSpillReader spillReader;
+
+    @Rule
+    public TestName testName = new TestName();
+
+    @After
+    public void after()
+    {
+        allocator.close();
+        logger.info("{}: exit ", testName.getMethodName());
+    }
+
+    @Before
+    public void setUp()
+    {
+        logger.info("{}: enter", testName.getMethodName());
+        schemaForRead = SchemaBuilder.newBuilder()
+                .addStringField("vector_id")
+                .addStringField("vector")
+                .build();
+
+        allocator = new BlockAllocatorImpl();
+
+        amazonS3 = mock(S3Client.class);
+        awsSecretsManager = mock(SecretsManagerClient.class);
+        athena = mock(AthenaClient.class);
+
+        when(amazonS3.getObject(any(GetObjectRequest.class)))
+                .thenAnswer(new Answer<Object>()
+                {
+                    @Override
+                    public Object answer(InvocationOnMock invocationOnMock)
+                            throws Throwable
+                    {
+                        return new ResponseInputStream<>(GetObjectResponse.builder().build(), new ByteArrayInputStream(getFakeObject()));
+                    }
+                });
+
+        amazonS3Vector = mock(S3VectorsClient.class);
+        when(amazonS3Vector.listVectors(any(ListVectorsRequest.class)))
+                .thenAnswer(new Answer<Object>()
+                {
+                    @Override
+                    public Object answer(InvocationOnMock invocationOnMock)
+                            throws Throwable
+                    {
+                        return new ResponseInputStream<>(ListVectorsResponse.builder().build(), new ByteArrayInputStream(getFakeObject()));
+                    }
+                });
+
+
+        when(amazonS3Vector.getVectors(any(GetVectorsRequest.class)))
+                .thenAnswer(new Answer<Object>()
+                {
+                    @Override
+                    public Object answer(InvocationOnMock invocationOnMock)
+                            throws Throwable
+                    {
+                        return GetVectorsResponse.builder().build();
+                    }
+                });
+
+        handler = new S3VectorRecordHandler(amazonS3, amazonS3Vector, awsSecretsManager, athena, com.google.common.collect.ImmutableMap.of());
+        spillReader = new S3BlockSpillReader(amazonS3, allocator);
+    }
+
+    @Test
+    public void doReadRecordsNoSpill()
+            throws Exception
+    {
+        if (!enableTests) {
+            //We do this because until you complete the tutorial these tests will fail.
+            //This is how we avoid breaking the build but still have a useful tutorial. We are also duplicateing this block
+            //on purpose since this is a somewhat odd pattern.
+            logger.info("doReadRecordsNoSpill: Tests are disabled, to enable them set the 'publishing' environment variable " +
+                    "using maven clean install -Dpublishing=true");
+            return;
+        }
+
+        for (int i = 0; i < 2; i++) {
+            Map<String, ValueSet> constraintsMap = new HashMap<>();
+
+            constraintsMap.put("vector_id", SortedRangeSet.copyOf(Types.MinorType.VARCHAR.getType(),
+                    ImmutableList.of(Range.equal(allocator, Types.MinorType.VARCHAR.getType(), "test_vector_id_1")), false));
+
+            ReadRecordsRequest request = new ReadRecordsRequest(fakeIdentity(),
+                    "catalog",
+                    "queryId-" + System.currentTimeMillis(),
+                    new TableName("schema", "table"),
+                    schemaForRead,
+                    Split.newBuilder(makeSpillLocation(), null)
+                            .build(),
+                    new Constraints(constraintsMap, Collections.emptyList(), Collections.emptyList(), DEFAULT_NO_LIMIT, Collections.emptyMap(), null),
+                    100_000_000_000L, //100GB don't expect this to spill
+                    100_000_000_000L
+            );
+
+            RecordResponse rawResponse = handler.doReadRecords(allocator, request);
+            assertTrue(rawResponse instanceof ReadRecordsResponse);
+
+            ReadRecordsResponse response = (ReadRecordsResponse) rawResponse;
+            logger.info("doReadRecordsNoSpill: rows[{}]", response.getRecordCount());
+
+        }
+    }
+
+
+
+    private byte[] getFakeObject()
+            throws UnsupportedEncodingException
+    {
+        StringBuilder sb = new StringBuilder();
+        sb.append("2017,11,1,2122792308,1755604178,false,0UTIXoWnKqtQe8y+BSHNmdEXmWfQalRQH60pobsgwws=\n");
+        sb.append("2017,11,1,2030248245,747575690,false,i9AoMmLI6JidPjw/SFXduBB6HUmE8aXQLMhekhIfE1U=\n");
+        sb.append("2017,11,1,23301515,1720603622,false,HWsLCXAnGFXnnjD8Nc1RbO0+5JzrhnCB/feJ/EzSxto=\n");
+        sb.append("2017,11,1,1342018392,1167647466,false,lqL0mxeOeEesRY7EU95Fi6QEW92nj2mh8xyex69j+8A=\n");
+        sb.append("2017,11,1,945994127,1854103174,true,C57VAyZ6Y0C+xKA2Lv6fOcIP0x6Px8BlEVBGSc74C4I=\n");
+        sb.append("2017,11,1,1102797454,2117019257,true,oO0S69X+N2RSyEhlzHguZSLugO8F2cDVDpcAslg0hhQ=\n");
+        sb.append("2017,11,1,862601609,392155621,true,L/Wpz4gHiRR7Sab1RCBrp4i1k+0IjUuJAV/Yn/7kZnc=\n");
+        sb.append("2017,11,1,1858905353,1131234096,false,w4R3N+vN/EcwrWP7q/h2DwyhyraM1AwLbCbe26a+mQ0=\n");
+        sb.append("2017,11,1,1300070253,247762646,false,cjbs6isGO0K7ib1D65VbN4lZEwQv2Y6Q/PoFZhyyacA=\n");
+        sb.append("2017,11,1,843851309,1886346292,true,sb/xc+uoe/ZXRXTYIv9OTY33Rj+zSS96Mj/3LVPXvRM=\n");
+        sb.append("2017,11,1,2013370128,1783091056,false,9MW9X3OUr40r4B/qeLz55yJIrvw7Gdk8RWUulNadIyw=\n");
+        return sb.toString().getBytes("UTF-8");
+    }
+
+    private static FederatedIdentity fakeIdentity()
+    {
+        return new FederatedIdentity("arn", "account", Collections.emptyMap(), Collections.emptyList(), Collections.emptyMap());
+    }
+
+    private SpillLocation makeSpillLocation()
+    {
+        return S3SpillLocation.newBuilder()
+                .withBucket("athena-virtuoso-test")
+                .withPrefix("lambda-spill")
+                .withQueryId(UUID.randomUUID().toString())
+                .withSplitId(UUID.randomUUID().toString())
+                .withIsDirectory(true)
+                .build();
+    }
+}
