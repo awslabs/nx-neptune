@@ -17,14 +17,19 @@
  * limitations under the License.
  * #L%
  */
+
 package com.amazonaws.athena.connectors.s3vector;
 
+/** Utility class containing constant column names for S3 Vector connector. */
 public class ConnectorUtils {
 
-    public static final String COL_VECTOR_ID = "vector_id";
+  public static final String COL_VECTOR_ID = "vector_id";
 
-    public static final String COL_EMBEDDING_DATA = "embedding";
+  public static final String COL_EMBEDDING_DATA = "embedding";
 
-    public static final String COL_METADATA = "metadata";
+  public static final String COL_METADATA = "metadata";
 
+  private ConnectorUtils() {
+    // Utility class
+  }
 }

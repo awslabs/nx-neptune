@@ -41,6 +41,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.rules.TestName;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
@@ -100,7 +101,6 @@ public class S3VectorRecordHandlerTest
     public void setUp()
     {
         logger.info("{}: enter", testName.getMethodName());
-
         schemaForRead = SchemaBuilder.newBuilder()
                 .addStringField("vector_id")
                 .addStringField("vector")
