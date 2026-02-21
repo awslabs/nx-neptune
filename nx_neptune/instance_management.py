@@ -1600,6 +1600,7 @@ def empty_s3_bucket(
     s3_client: Optional[BaseClient] = None,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
+    file_extension = None
 ):
     """Empty an S3 bucket at the specified location.
 
@@ -1642,7 +1643,9 @@ def empty_s3_bucket(
 
             for page in pages:
                 if "Contents" in page:
-                    objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
+                    objects = [{"Key": obj["Key"]} for obj in page["Contents"]
+                        if (not file_extension or obj["Key"].endswith(file_extension))]
+
                     if objects:
                         s3_client.delete_objects(
                             Bucket=bucket_name,
@@ -1867,3 +1870,21 @@ def _get_or_create_clients(
         athena_client = boto3.client(SERVICE_ATHENA)
 
     return iam_client_wrapper, na_client, athena_client
+
+
+def execute_athena_query(
+
+    sql_statement: str,
+    output_location: str,
+    catalog: Optional[str] = None,
+    database: Optional[str] = None,
+    client: Optional[BaseClient] = None,
+    polling_interval: Optional[int] = None,
+):
+    if client is None:
+        client = boto3.client('athena')
+    execution_id = _execute_athena_query(client, sql_statement, output_location, catalog, database)
+    return wait_until_all_complete([execution_id], TaskType.EXPORT_ATHENA_TABLE, client,
+                                  polling_interval=polling_interval)
+
+
