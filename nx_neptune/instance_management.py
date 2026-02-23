@@ -1873,7 +1873,6 @@ def _get_or_create_clients(
 
 
 def execute_athena_query(
-
     sql_statement: str,
     output_location: str,
     catalog: Optional[str] = None,
@@ -1881,10 +1880,33 @@ def execute_athena_query(
     client: Optional[BaseClient] = None,
     polling_interval: Optional[int] = None,
 ):
+    """Execute an Athena SQL query and wait for completion.
+
+    Executes the specified SQL statement using Amazon Athena and monitors
+    the query execution status until completion. This function provides
+    a synchronous interface for Athena query execution with automatic
+    status polling.
+
+    Args:
+        sql_statement (str): The SQL query to execute
+        output_location (str): S3 location for storing query results
+        catalog (Optional[str]): Athena data catalog name. Defaults to None.
+        database (Optional[str]): Athena database name. Defaults to None.
+        client (Optional[BaseClient]): Pre-configured Athena client.
+            If None, creates a new client instance.
+        polling_interval (Optional[int]): Time interval in seconds between
+            status checks. Defaults to None.
+
+    Returns:
+        The result of the query execution monitoring process
+
+    Raises:
+        ClientError: If there's an issue with the AWS API call
+        Exception: If the query execution fails or times out
+    """
     if client is None:
         client = boto3.client('athena')
     execution_id = _execute_athena_query(client, sql_statement, output_location, catalog, database)
     return wait_until_all_complete([execution_id], TaskType.EXPORT_ATHENA_TABLE, client,
                                   polling_interval=polling_interval)
-
 

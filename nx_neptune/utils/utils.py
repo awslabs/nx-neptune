@@ -86,6 +86,45 @@ def get_stdout_logger(
 
 
 def check_env_vars(var_names, required=False):
+    """Check environment variables and return their values.
+
+    This function checks for the existence of specified environment variables,
+    prints warnings for missing variables, and optionally raises an error if
+    required variables are missing.
+
+    Parameters
+    ----------
+    var_names : list
+        List of environment variable names to check.
+    required : bool, default=False
+        If True, raises ValueError when any variables are missing.
+        If False, missing variables are only warned about.
+
+    Returns
+    -------
+    dict
+        Dictionary mapping variable names to their values (or None if missing).
+
+    Raises
+    ------
+    ValueError
+        If required=True and any environment variables are missing.
+
+    Examples
+    --------
+    >>> # Check optional environment variables
+    >>> values = check_env_vars(['HOME', 'USER'])
+    Using HOME: /home/user
+    Using USER: user
+    >>> print(values)
+    {'HOME': '/home/user', 'USER': 'user'}
+
+    >>> # Check required environment variables
+    >>> values = check_env_vars(['AWS_REGION'], required=True)
+    Warning: Environment Variable AWS_REGION is not defined
+    You can set it using: %env AWS_REGION=your-value
+    ValueError: Required environment variables missing: AWS_REGION
+    """
     values = {}
     missing = []
     for var_name in var_names:
@@ -97,10 +136,10 @@ def check_env_vars(var_names, required=False):
         else:
             print(f"Using {var_name}: {value}")
         values[var_name] = value
-    
+
     if required and missing:
         raise ValueError(f"Required environment variables missing: {', '.join(missing)}")
-    
+
     return values
 
 
@@ -194,16 +233,31 @@ def write_csv(path, headers, rows):
 
 
 def push_to_s3(path, s3_bucket, key):
+    """Uploads a file to Amazon S3.
+
+    This function uploads a local file to an S3 bucket using the specified key.
+
+    Parameters
+    ----------
+    path : str
+        Local file path to upload
+    s3_bucket : str
+        Name of the S3 bucket to upload to
+    key : str
+        S3 object key (path) where the file will be stored
+
+    Examples
+    --------
+    >>> push_to_s3("local_file.csv", "my-bucket", "data/file.csv")
+    # Uploads local_file.csv to s3://my-bucket/data/file.csv
+    """
 
     s3 = boto3.client("s3")
-
     s3.upload_file(
         Filename=path,
         Bucket=s3_bucket,
         Key=key
     )
-
-
 
 def to_embedding_entries(rows, text_fields, key_field="id"):
     """
@@ -293,30 +347,81 @@ def generate_create_table_ddl(table_name, s3_location, columns):
     TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
     """
 
-
 def generate_projection_stmt(col_id, base_table, columns=None, col_label=None, col_embedding=None, joins=None):
+    """
+    Generate a SQL SELECT statement for projecting data with Neptune-compatible column names.
+
+    This function creates a SQL projection statement that formats columns for Neptune graph
+    database ingestion, including special handling for ID, label, and embedding columns.
+
+    Parameters
+    ----------
+    col_id : str
+        Column name to use as the vertex/edge ID, will be aliased as "~id"
+    base_table : str
+        Name of the base table to select from
+    columns : list of str, optional
+        List of additional column names to include in the projection.
+        Column names will be extracted from qualified names (e.g., "table.column" -> "column")
+    col_label : str, optional
+        Column name to use as the vertex/edge label, will be aliased as "~label"
+    col_embedding : str, optional
+        Column name containing embedding array data, will be formatted as semicolon-separated
+        string and aliased as "embedding:vector"
+    joins : list of tuple, optional
+        List of (table_name, join_condition) tuples for joining additional tables
+
+    Returns
+    -------
+    str
+        A formatted SQL SELECT statement with appropriate column aliases and joins
+
+    Examples
+    --------
+    >>> stmt = generate_projection_stmt("id", "users", columns=["name", "age"])
+    >>> print(stmt)
+    SELECT
+        id AS "~id",
+        name AS "name",
+        age AS "age"
+    FROM users;
+
+    >>> stmt = generate_projection_stmt(
+    ...     "u.id", "users u",
+    ...     columns=["u.name", "p.title"],
+    ...     col_label="u.type",
+    ...     joins=[("posts p", "u.id = p.user_id")]
+    ... )
+    >>> print(stmt)
+    SELECT
+        u.id AS "~id",
+        u.type AS "~label",
+        u.name AS "name",
+        p.title AS "title"
+    FROM users u join
+        posts p
+        on u.id = p.user_id;
+    """
     selects = [f'{col_id} AS "~id"']
-    
+
     if col_label:
         selects.append(f'{col_label} AS "~label"')
-    
+
     if columns:
         for col in columns:
             col_name = col.split('.')[-1].strip('"')
             selects.append(f'{col} AS "{col_name}"')
-    
+
     if col_embedding:
         selects.append(f'array_join(transform({col_embedding}, x -> cast(x AS varchar)), \';\') AS "embedding:vector"')
-    
+
     select_clause = ",\n        ".join(selects)
-    
+
     from_clause = f"{base_table}"
     if joins:
         for table, condition in joins:
             from_clause += f" join\n    {table} \n    on {condition}"
-    
+
     return f"""SELECT
         {select_clause}
     FROM {from_clause};"""
-
-
