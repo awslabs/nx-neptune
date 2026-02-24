@@ -85,20 +85,17 @@ def get_stdout_logger(
     return logging.getLogger(project_identifier)
 
 
-def check_env_vars(var_names, required=False):
+def validate_and_get_env(var_names):
     """Check environment variables and return their values.
 
     This function checks for the existence of specified environment variables,
-    prints warnings for missing variables, and optionally raises an error if
-    required variables are missing.
+    prints warnings for missing variables, and raises an error if any variables
+    are missing.
 
     Parameters
     ----------
     var_names : list
         List of environment variable names to check.
-    required : bool, default=False
-        If True, raises ValueError when any variables are missing.
-        If False, missing variables are only warned about.
 
     Returns
     -------
@@ -108,19 +105,19 @@ def check_env_vars(var_names, required=False):
     Raises
     ------
     ValueError
-        If required=True and any environment variables are missing.
+        If any environment variables are missing.
 
     Examples
     --------
-    >>> # Check optional environment variables
-    >>> values = check_env_vars(['HOME', 'USER'])
+    >>> # Check environment variables
+    >>> values = validate_and_get_env(['HOME', 'USER'])
     Using HOME: /home/user
     Using USER: user
     >>> print(values)
     {'HOME': '/home/user', 'USER': 'user'}
 
-    >>> # Check required environment variables
-    >>> values = check_env_vars(['AWS_REGION'], required=True)
+    >>> # Missing environment variables will raise an error
+    >>> values = validate_and_get_env(['AWS_REGION'])
     Warning: Environment Variable AWS_REGION is not defined
     You can set it using: %env AWS_REGION=your-value
     ValueError: Required environment variables missing: AWS_REGION
@@ -137,10 +134,11 @@ def check_env_vars(var_names, required=False):
             print(f"Using {var_name}: {value}")
         values[var_name] = value
 
-    if required and missing:
+    if missing:
         raise ValueError(f"Required environment variables missing: {', '.join(missing)}")
 
     return values
+
 
 
 def read_csv(path, limit=None):
@@ -204,32 +202,6 @@ def _get_bedrock_embedding(client, text, dimensions=256, model_id="amazon.titan-
     response_body = json.loads(response["body"].read())
     embeddings.append(response_body["embedding"])
     return embeddings
-
-def write_csv(path, headers, rows):
-    """Writes data to a CSV file.
-
-    Parameters
-    ----------
-    path : str
-        Path to the CSV file to write
-    headers : list
-        List of column names to use as CSV headers
-    rows : list
-        List of dictionaries, where each dictionary represents a row with
-        column names as keys and cell values as values
-
-    Examples
-    --------
-    >>> headers = ['col1', 'col2']
-    >>> rows = [{'col1': 'val1', 'col2': 'val2'},
-    ...         {'col1': 'val3', 'col2': 'val4'}]
-    >>> write_csv('output.csv', headers, rows)
-    """
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=headers)
-        writer.writeheader()
-        writer.writerows(rows)
-
 
 
 def push_to_s3(path, s3_bucket, key):

@@ -1878,7 +1878,7 @@ def execute_athena_query(
     catalog: Optional[str] = None,
     database: Optional[str] = None,
     client: Optional[BaseClient] = None,
-    polling_interval: Optional[int] = None,
+    polling_interval: Optional[int] = 5,
 ):
     """Execute an Athena SQL query and wait for completion.
 
