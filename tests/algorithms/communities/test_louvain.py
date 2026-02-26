@@ -80,7 +80,7 @@ class TestLouvain:
             # Verify the correct query was built and executed
             parameters = {"iterationTolerance": 0.0000001}
 
-            (expected_query, param_values) = louvain_query(parameters)
+            expected_query, param_values = louvain_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -124,7 +124,7 @@ class TestLouvain:
                 "edgeWeightType": "float",
             }
 
-            (expected_query, param_values) = louvain_query(parameters)
+            expected_query, param_values = louvain_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -166,7 +166,7 @@ class TestLouvain:
                 "levelTolerance": 90,
             }
 
-            (expected_query, param_values) = louvain_query(parameters)
+            expected_query, param_values = louvain_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -197,7 +197,7 @@ class TestLouvain:
                 "writeProperty": "communities",
             }
 
-            (expected_query, param_values) = louvain_mutation_query(parameters)
+            expected_query, param_values = louvain_mutation_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(

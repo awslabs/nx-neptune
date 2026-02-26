@@ -76,7 +76,7 @@ class TestPageRank:
 
             # Verify the correct query was built and executed
             parameters = {}
-            (expected_query, param_values) = pagerank_query(parameters)
+            expected_query, param_values = pagerank_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -104,7 +104,7 @@ class TestPageRank:
 
             # Verify the correct query was built and executed
             parameters = {PARAM_DAMPING_FACTOR: damping_factor}
-            (expected_query, param_values) = pagerank_query(parameters)
+            expected_query, param_values = pagerank_query(parameters)
 
             # Verify the function called execute_call with correct parameters
             mock_graph.execute_call.assert_called_once_with(
@@ -133,7 +133,7 @@ class TestPageRank:
 
             # Verify the correct query was built and executed
             parameters = {PARAM_NUM_OF_ITERATIONS: num_of_iterations}
-            (expected_query, param_values) = pagerank_query(parameters)
+            expected_query, param_values = pagerank_query(parameters)
 
             # Verify the function called execute_call with correct parameters
             mock_graph.execute_call.assert_called_once_with(
@@ -162,7 +162,7 @@ class TestPageRank:
 
             # Verify the correct query was built and executed
             parameters = {PARAM_TOLERANCE: tolerance}
-            (expected_query, param_values) = pagerank_query(parameters)
+            expected_query, param_values = pagerank_query(parameters)
 
             # Verify the function called execute_call with correct parameters
             mock_graph.execute_call.assert_called_once_with(
@@ -193,7 +193,7 @@ class TestPageRank:
                 PARAM_SOURCE_NODES: ["A", "B"],
                 PARAM_SOURCE_WEIGHTS: [1, 2.4],
             }
-            (expected_query, param_values) = pagerank_query(parameters)
+            expected_query, param_values = pagerank_query(parameters)
 
             # Verify the function called execute_call with correct parameters
             mock_graph.execute_call.assert_called_once_with(
@@ -238,7 +238,7 @@ class TestPageRank:
                 PARAM_SOURCE_NODES: ["A", "B"],
                 PARAM_SOURCE_WEIGHTS: [1, 1.5],
             }
-            (expected_query, param_values) = pagerank_query(parameters)
+            expected_query, param_values = pagerank_query(parameters)
 
             # Verify the function called execute_call with correct parameters
             mock_graph.execute_call.assert_called_once_with(
@@ -329,7 +329,7 @@ class TestPageRank:
                 PARAM_SOURCE_NODES: ["C", "D"],
                 PARAM_SOURCE_WEIGHTS: [3, 4],
             }
-            (expected_query, param_values) = pagerank_query(parameters)
+            expected_query, param_values = pagerank_query(parameters)
 
             # Verify the function called execute_call with correct parameters
             mock_graph.execute_call.assert_called_once_with(
@@ -370,7 +370,7 @@ class TestPageRank:
             parameters = {
                 PARAM_TOLERANCE: tolerance,
             }
-            (expected_query, param_values) = pagerank_query(parameters)
+            expected_query, param_values = pagerank_query(parameters)
 
             # Verify the function called execute_call with correct parameters
             mock_graph.execute_call.assert_called_once_with(
@@ -402,7 +402,7 @@ class TestPageRank:
 
             # Verify the correct query was built and executed
             parameters = {PARAM_WRITE_PROPERTY: "pageRank"}
-            (expected_query, param_values) = pagerank_mutation_query(parameters)
+            expected_query, param_values = pagerank_mutation_query(parameters)
 
             # Verify the function called execute_call with correct parameters
             mock_graph.execute_call.assert_called_once_with(

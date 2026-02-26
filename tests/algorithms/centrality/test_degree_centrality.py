@@ -63,7 +63,7 @@ class TestDegreeCentrality:
 
             # Verify the correct query was built and executed
             parameters = {}
-            (expected_query, param_values) = degree_centrality_query(parameters)
+            expected_query, param_values = degree_centrality_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -82,7 +82,7 @@ class TestDegreeCentrality:
 
             # Verify the correct query was built and executed
             parameters = {PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_INBOUND}
-            (expected_query, param_values) = degree_centrality_query(parameters)
+            expected_query, param_values = degree_centrality_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -101,7 +101,7 @@ class TestDegreeCentrality:
 
             # Verify the correct query was built and executed
             parameters = {PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_OUTBOUND}
-            (expected_query, param_values) = degree_centrality_query(parameters)
+            expected_query, param_values = degree_centrality_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -130,7 +130,7 @@ class TestDegreeCentrality:
                 PARAM_CONCURRENCY: 0,
             }
 
-            (expected_query, param_values) = degree_centrality_query(parameters)
+            expected_query, param_values = degree_centrality_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -150,9 +150,7 @@ class TestDegreeCentrality:
             # Verify the correct query was built and executed
             parameters = {PARAM_WRITE_PROPERTY: "degree"}
 
-            (expected_query, param_values) = degree_centrality_mutation_query(
-                parameters
-            )
+            expected_query, param_values = degree_centrality_mutation_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
