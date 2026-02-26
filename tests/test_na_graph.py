@@ -119,7 +119,7 @@ class TestNeptuneGraph:
         result = neptune_graph.add_node(node)
 
         # Verify the correct query was built and executed
-        (expected_query, param_values) = insert_node(node)
+        expected_query, param_values = insert_node(node)
         mock_client.execute_generic_query.assert_called_once_with(
             expected_query, param_values
         )
@@ -138,7 +138,7 @@ class TestNeptuneGraph:
         )
 
         # Verify the correct query was built and executed
-        (expected_query, param_values) = update_node(
+        expected_query, param_values = update_node(
             match_labels, ref_name, ["John"], properties_set
         )
         mock_client.execute_generic_query.assert_called_once_with(
@@ -154,7 +154,7 @@ class TestNeptuneGraph:
         result = neptune_graph.delete_nodes(node)
 
         # Verify the correct query was built and executed
-        (expected_query, param_values) = delete_node(node)
+        expected_query, param_values = delete_node(node)
         mock_client.execute_generic_query.assert_called_once_with(
             expected_query, param_values
         )
@@ -178,7 +178,7 @@ class TestNeptuneGraph:
         result = neptune_graph.add_edge(edge)
 
         # Verify the correct query was built and executed
-        (expected_query, param_values) = insert_edge(edge)
+        expected_query, param_values = insert_edge(edge)
         mock_client.execute_generic_query.assert_called_once_with(
             expected_query, param_values
         )
@@ -206,7 +206,7 @@ class TestNeptuneGraph:
         )
 
         # Verify the correct query was built and executed
-        (expected_query, param_values) = update_edge(
+        expected_query, param_values = update_edge(
             ref_name_src,
             ref_name_edge,
             edge,
@@ -229,7 +229,7 @@ class TestNeptuneGraph:
         result = neptune_graph.delete_edges(edge)
 
         # Verify the correct query was built and executed
-        (expected_query, param_values) = delete_edge(edge)
+        expected_query, param_values = delete_edge(edge)
         mock_client.execute_generic_query.assert_called_once_with(
             expected_query, param_values
         )

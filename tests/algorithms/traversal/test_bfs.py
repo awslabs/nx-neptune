@@ -150,7 +150,7 @@ class TestBfsEdges:
             source_node = "n"
             where_filters = {"id(n)": source}
             parameters = {PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_BOTH}
-            (expected_query, param_values) = bfs_query(
+            expected_query, param_values = bfs_query(
                 source_node, where_filters, parameters
             )
 
@@ -179,7 +179,7 @@ class TestBfsEdges:
             source_node = "n"
             where_filters = {"id(n)": source}
             parameters = {PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_INBOUND}
-            (expected_query, param_values) = bfs_query(
+            expected_query, param_values = bfs_query(
                 source_node, where_filters, parameters
             )
 
@@ -212,7 +212,7 @@ class TestBfsEdges:
                 PARAM_MAX_DEPTH: depth_limit,
                 PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
             }
-            (expected_query, param_values) = bfs_query(
+            expected_query, param_values = bfs_query(
                 source_node, where_filters, parameters
             )
 
@@ -246,7 +246,7 @@ class TestBfsEdges:
                 # Note: sort_neighbours is not used in the query
                 PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTION_BOTH,
             }
-            (expected_query, param_values) = bfs_query(
+            expected_query, param_values = bfs_query(
                 source_node, where_filters, parameters
             )
 
@@ -320,7 +320,7 @@ class TestBfsEdges:
                 PARAM_EDGE_LABELS: ["RELATES_TO"],
                 PARAM_CONCURRENCY: 0,
             }
-            (expected_query, param_values) = bfs_query(
+            expected_query, param_values = bfs_query(
                 source_node, where_filters, parameters
             )
 
@@ -345,7 +345,7 @@ class TestBfsEdges:
             source_node = "n"
             where_filters = {f"id({source_node})": source}
             parameters = {"maxDepth": distance}
-            (expected_query, param_values) = descendants_at_distance_query(
+            expected_query, param_values = descendants_at_distance_query(
                 source_node, where_filters, parameters
             )
 
@@ -383,7 +383,7 @@ class TestBfsEdges:
                 PARAM_EDGE_LABELS: ["RELATES_TO"],
                 PARAM_CONCURRENCY: 0,
             }
-            (expected_query, param_values) = descendants_at_distance_query(
+            expected_query, param_values = descendants_at_distance_query(
                 source_node, where_filters, parameters
             )
 
@@ -408,7 +408,7 @@ class TestBfsEdges:
             source_node = "n"
             where_in_filters = {f"id({source_node})": source}
             parameters = {}
-            (expected_query, param_values) = bfs_layers_query(
+            expected_query, param_values = bfs_layers_query(
                 source_node, where_in_filters, parameters
             )
 
@@ -433,7 +433,7 @@ class TestBfsEdges:
             source_node = "n"
             where_in_filters = {f"id({source_node})": source}
             parameters = {}
-            (expected_query, param_values) = bfs_layers_query(
+            expected_query, param_values = bfs_layers_query(
                 source_node, where_in_filters, parameters
             )
 
@@ -470,7 +470,7 @@ class TestBfsEdges:
                 PARAM_EDGE_LABELS: ["RELATES_TO"],
                 PARAM_CONCURRENCY: 0,
             }
-            (expected_query, param_values) = bfs_layers_query(
+            expected_query, param_values = bfs_layers_query(
                 source_node, where_in_filters, parameters
             )
 

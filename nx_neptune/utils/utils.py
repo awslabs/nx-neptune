@@ -135,10 +135,11 @@ def validate_and_get_env(var_names):
         values[var_name] = value
 
     if missing:
-        raise ValueError(f"Required environment variables missing: {', '.join(missing)}")
+        raise ValueError(
+            f"Required environment variables missing: {', '.join(missing)}"
+        )
 
     return values
-
 
 
 def read_csv(path, limit=None):
@@ -177,7 +178,9 @@ def read_csv(path, limit=None):
     return header, rows
 
 
-def _get_bedrock_embedding(client, text, dimensions=256, model_id="amazon.titan-embed-text-v2:0"):
+def _get_bedrock_embedding(
+    client, text, dimensions=256, model_id="amazon.titan-embed-text-v2:0"
+):
     """
     Generate vector embeddings using Amazon Bedrock.
 
@@ -194,8 +197,7 @@ def _get_bedrock_embedding(client, text, dimensions=256, model_id="amazon.titan-
     embeddings = []
 
     response = client.invoke_model(
-        modelId=model_id,
-        body=json.dumps({"dimensions": dimensions, "inputText": text})
+        modelId=model_id, body=json.dumps({"dimensions": dimensions, "inputText": text})
     )
 
     # Extract embedding from response.
@@ -225,11 +227,8 @@ def push_to_s3(path, s3_bucket, key):
     """
 
     s3 = boto3.client("s3")
-    s3.upload_file(
-        Filename=path,
-        Bucket=s3_bucket,
-        Key=key
-    )
+    s3.upload_file(Filename=path, Bucket=s3_bucket, Key=key)
+
 
 def to_embedding_entries(rows, text_fields, key_field="id"):
     """
@@ -250,11 +249,9 @@ def to_embedding_entries(rows, text_fields, key_field="id"):
         text = "".join(str(row.get(field, "")) for field in text_fields)
         embedding = _get_bedrock_embedding(bedrock, text)[0]
 
-        items.append({
-            "key": row.get(key_field),
-            "embedding": embedding,
-            "metadata": row
-        })
+        items.append(
+            {"key": row.get(key_field), "embedding": embedding, "metadata": row}
+        )
 
     return items
 
@@ -272,20 +269,15 @@ def push_to_s3_vector(items, bucket_name, index_name, batch_size=300):
     s3vectors = boto3.client("s3vectors")
     vectors = []
     for item in items:
-        vector = {
-            "key": item["key"],
-            "data": {"float32": item["embedding"]}
-        }
+        vector = {"key": item["key"], "data": {"float32": item["embedding"]}}
         if "metadata" in item:
             vector["metadata"] = item["metadata"]
         vectors.append(vector)
 
     for i in range(0, len(vectors), batch_size):
-        batch = vectors[i:i + batch_size]
+        batch = vectors[i : i + batch_size]
         s3vectors.put_vectors(
-            vectorBucketName=bucket_name,
-            indexName=index_name,
-            vectors=batch
+            vectorBucketName=bucket_name, indexName=index_name, vectors=batch
         )
         print(f"Inserted batch {i // batch_size + 1}: {len(batch)} vectors")
 
@@ -319,7 +311,10 @@ def generate_create_table_ddl(table_name, s3_location, columns):
     TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
     """
 
-def generate_projection_stmt(col_id, base_table, columns=None, col_label=None, col_embedding=None, joins=None):
+
+def generate_projection_stmt(
+    col_id, base_table, columns=None, col_label=None, col_embedding=None, joins=None
+):
     """
     Generate a SQL SELECT statement for projecting data with Neptune-compatible column names.
 
@@ -381,11 +376,13 @@ def generate_projection_stmt(col_id, base_table, columns=None, col_label=None, c
 
     if columns:
         for col in columns:
-            col_name = col.split('.')[-1].strip('"')
+            col_name = col.split(".")[-1].strip('"')
             selects.append(f'{col} AS "{col_name}"')
 
     if col_embedding:
-        selects.append(f'array_join(transform({col_embedding}, x -> cast(x AS varchar)), \';\') AS "embedding:vector"')
+        selects.append(
+            f"array_join(transform({col_embedding}, x -> cast(x AS varchar)), ';') AS \"embedding:vector\""
+        )
 
     select_clause = ",\n        ".join(selects)
 
