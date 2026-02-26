@@ -36,7 +36,7 @@ import software.amazon.awssdk.services.s3vectors.model.GetVectorsResponse;
 public class IdScanVectorFetcher extends AbstractVectorFetcher {
   private static final Logger logger =
       LoggerFactory.getLogger(IdScanVectorFetcher.class);
-  // Default server limit is 100.
+  // Default server limit is 80.
   private static final int BATCH_SIZE = 80;
 
   private final List<String> allIds;

@@ -66,9 +66,6 @@ public abstract class AbstractVectorFetcher {
 
     this.limit = constraints.getLimit();
 
-    logger.debug("Request: {}", recordsRequest);
-    logger.debug("Summary: {}", recordsRequest.getConstraints().getSummary());
-
     logger.info(
         "Execute fetch request with config: [fetchEmbedding: {}, fetchMetadata: {}, limit: {}]",
         columnNamesSst.contains(COL_EMBEDDING_DATA),
