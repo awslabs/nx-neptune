@@ -1,0 +1,34 @@
+name: Java CI Push
+
+on:
+  pull_request:
+    paths:
+      - 'athena-s3vector-connector/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'athena-s3vector-connector/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java-version: [ '11', '17' ]
+    env:
+      AWS_REGION: us-west-2
+      AWS_DEFAULT_REGION: us-west-2
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up JDK ${{ matrix.java-version }}
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'corretto'
+          java-version: ${{ matrix.java-version }}
+      - name: Build with Maven
+        run: mvn install
+        working-directory: athena-s3vector-connector
