@@ -103,6 +103,10 @@ class NeptuneGraph:
         na_client = NeptuneAnalyticsClient(
             config.graph_id,
             logger=logger,
+            read_timeout=config.read_timeout,
+            connect_timeout=config.connect_timeout,
+            max_retries=config.max_retries,
+            retry_mode=config.retry_mode,
         )
         iam_client = IamClient(s3_iam_role, boto3.client(SERVICE_IAM), logger)
         return cls(

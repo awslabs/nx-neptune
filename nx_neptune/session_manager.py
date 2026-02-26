@@ -41,7 +41,7 @@ class CleanupTask(Enum):
 class SessionManager:
     """Manages Neptune Analytics sessions and graph operations."""
 
-    def __init__(self, session_name=None, cleanup_task=None):
+    def __init__(self, session_name=None, cleanup_task=None, read_timeout=None, connect_timeout=60, max_retries=1, retry_mode="standard"):
         """Initialize a SessionManager instance.
 
         Args:
@@ -50,11 +50,21 @@ class SessionManager:
               When set to DESTROY, will destroy all instances in the session on exit.
               When set to RESET, will reset all instances in the session on exit.
               When set to STOP, will stop all instances in the session on exit.
+            read_timeout (int, optional): Read timeout in seconds for Neptune Analytics client. Defaults to None (no timeout).
+            connect_timeout (int, optional): Connection timeout in seconds. Defaults to 60.
+            max_retries (int, optional): Maximum retry attempts. Defaults to 1 (no retries).
+            retry_mode (str, optional): Retry mode ('legacy', 'standard', 'adaptive'). Defaults to 'standard'.
         """
         self.session_name = session_name
         self.cleanup_task = cleanup_task or CleanupTask.NONE
         self._neptune_client = boto3.client(
-            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+            service_name=SERVICE_NA,
+            config=Config(
+                user_agent_appid=APP_ID_NX,
+                read_timeout=read_timeout,
+                connect_timeout=connect_timeout,
+                retries={"total_max_attempts": max_retries, "mode": retry_mode},
+            ),
         )
         self._sts_client = boto3.client(SERVICE_STS)
         self._s3_iam_role = self._sts_client.get_caller_identity()["Arn"]
