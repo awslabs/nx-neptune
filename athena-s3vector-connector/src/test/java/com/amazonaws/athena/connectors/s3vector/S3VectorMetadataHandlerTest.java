@@ -1,6 +1,6 @@
 /*-
  * #%L
- * athena-example
+ * athena-s3vector-connector
  * %%
  * Copyright (C) 2019 Amazon Web Services
  * %%
@@ -100,9 +100,6 @@ public class S3VectorMetadataHandlerTest
     public void doListSchemaNames()
     {
         if (!enableTests) {
-            //We do this because until you complete the tutorial these tests will fail.
-            //This is how we avoid breaking the build but still have a useful tutorial. We are also duplicateing this block
-            //on purpose since this is a somewhat odd pattern.
             logger.info("doListSchemaNames: Tests are disabled, to enable them set the 'publishing' environment variable " +
                     "using maven clean install -Dpublishing=true");
             return;
@@ -120,9 +117,6 @@ public class S3VectorMetadataHandlerTest
     public void doListTables()
     {
         if (!enableTests) {
-            //We do this because until you complete the tutorial these tests will fail.
-            //This is how we avoid breaking the build but still have a useful tutorial. We are also duplicateing this block
-            //on purpose since this is a somewhat odd pattern.
             logger.info("doListTables: Tests are disabled, to enable them set the 'publishing' environment variable " +
                     "using maven clean install -Dpublishing=true");
             return;
@@ -176,9 +170,6 @@ public class S3VectorMetadataHandlerTest
     public void doGetTable()
     {
         if (!enableTests) {
-            //We do this because until you complete the tutorial these tests will fail.
-            //This is how we avoid breaking the build but still have a useful tutorial. We are also duplicateing this block
-            //on purpose since this is a somewhat odd pattern.
             logger.info("doGetTable: Tests are disabled, to enable them set the 'publishing' environment variable " +
                     "using maven clean install -Dpublishing=true");
             return;
@@ -199,9 +190,6 @@ public class S3VectorMetadataHandlerTest
             throws Exception
     {
         if (!enableTests) {
-            //We do this because until you complete the tutorial these tests will fail.
-            //This is how we avoid breaking the build but still have a useful tutorial. We are also duplicateing this block
-            //on purpose since this is a somewhat odd pattern.
             logger.info("getPartitions: Tests are disabled, to enable them set the 'publishing' environment variable " +
                     "using maven clean install -Dpublishing=true");
             return;
@@ -254,9 +242,6 @@ public class S3VectorMetadataHandlerTest
     public void doGetSplits()
     {
         if (!enableTests) {
-            //We do this because until you complete the tutorial these tests will fail.
-            //This is how we avoid breaking the build but still have a useful tutorial. We are also duplicateing this block
-            //on purpose since this is a somewhat odd pattern.
             logger.info("doGetSplits: Tests are disabled, to enable them set the 'publishing' environment variable " +
                     "using maven clean install -Dpublishing=true");
             return;

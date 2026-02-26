@@ -61,8 +61,6 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.arrow.util.VisibleForTesting;
-//DO NOT REMOVE - this will not be _unused_ when customers go through the tutorial and uncomment
-//the TODOs
 import org.apache.arrow.vector.types.FloatingPointPrecision;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.slf4j.Logger;
