@@ -129,6 +129,7 @@ public class S3VectorRecordHandler extends RecordHandler {
       QueryStatusChecker queryStatusChecker)
       throws IOException {
     Map<String, ValueSet> summary = recordsRequest.getConstraints().getSummary();
+    logger.warn("Request: {}", recordsRequest);
     boolean selectByIds =
         summary.containsKey(COL_VECTOR_ID)
             && summary.get(COL_VECTOR_ID) instanceof SortedRangeSet;

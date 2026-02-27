@@ -35,6 +35,7 @@ public class S3VectorCompositeHandler extends CompositeHandler {
   public S3VectorCompositeHandler() {
     super(
         new S3VectorMetadataHandler(new EnvironmentProperties().createEnvironment()),
-        new S3VectorRecordHandler(new EnvironmentProperties().createEnvironment()));
+        new S3VectorRecordHandler(new EnvironmentProperties().createEnvironment()),
+        new S3VectorUserDefinedFuncHandler());
   }
 }
