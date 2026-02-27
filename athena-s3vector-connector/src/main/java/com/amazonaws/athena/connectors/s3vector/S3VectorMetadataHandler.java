@@ -308,6 +308,7 @@ public class S3VectorMetadataHandler extends MetadataHandler {
       GetTableLayoutRequest request,
       QueryStatusChecker queryStatusChecker)
       throws Exception {
+      logger.warn("Request - getPartition: {}", request);
     //NoOp since we don't support partitioning at this time.
   }
 
@@ -331,6 +332,8 @@ public class S3VectorMetadataHandler extends MetadataHandler {
   @Override
   public GetSplitsResponse doGetSplits(
       BlockAllocator allocator, GetSplitsRequest request) {
+
+    logger.warn("Request - Split: {}", request);
     //Every split must have a unique location if we wish to spill to avoid failures
     SpillLocation spillLocation = makeSpillLocation(request);
 
