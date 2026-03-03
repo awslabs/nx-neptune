@@ -19,8 +19,10 @@
  */
 package com.amazonaws.athena.connectors.s3vector;
 
+import com.amazonaws.athena.connector.lambda.data.AthenaFederationIpcOption;
 import com.amazonaws.athena.connector.lambda.data.Block;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocator;
+import com.amazonaws.athena.connector.lambda.exceptions.FederationThrottleException;
 import com.amazonaws.athena.connector.lambda.handlers.UserDefinedFunctionHandler;
 import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.types.pojo.Schema;
@@ -52,6 +54,11 @@ import java.util.stream.Collectors;
  * Note: Since UDF invocations is programmed to run on sequentially on SDK, this handler uses
  * processRows to pre-fetch all embeddings in batches and stores them in a lookup map that the UDF
  * method accesses during execution.
+ * <p>
+ * <b>Important Limitation:</b> Athena runtime batches UDF requests until the return data approaches
+ * the 6MB limit per Lambda invocation. Queries returning large embeddings or high row counts may hit
+ * this limit and fail. Consider limiting result set size or vector dimensions to avoid exceeding this threshold.
+ * See: <a href="https://github.com/awslabs/aws-athena-query-federation/issues/1884">GitHub Issue #1884</a>
  */
 public class S3VectorUserDefinedFuncHandler
         extends UserDefinedFunctionHandler
@@ -118,11 +125,11 @@ public class S3VectorUserDefinedFuncHandler
         // Clear previous batch to release memory immediately
         batchLookupMap = null;
 
-        logger.info("Intercepting UDF request with size: {}",
+        logger.trace("Intercepting UDF request with size: {}",
                 inputRecords.getRowCount());
+
         // Resolve IDs to resolve,
         var partitions = getVectorIdsMap(inputRecords);
-        int totalVectors = partitions.values().stream().mapToInt(List::size).sum();
         Map<String, List<Float>> results = new HashMap<>();
         // Resolve embedding as per partition / batch
         for (var entry : partitions.entrySet()) {
@@ -130,7 +137,7 @@ public class S3VectorUserDefinedFuncHandler
             results.putAll(partitionResult);
         }
 
-        logger.info("Complete vector look up with size: {}", results.size());
+        logger.debug("Complete vector look up with size: {}", results.size());
         batchLookupMap = results;
 
         return super.processRows(allocator, udfMethod, inputRecords, outputSchema);
@@ -148,7 +155,7 @@ public class S3VectorUserDefinedFuncHandler
         VarCharVector vector_id = (VarCharVector) inputRecords.getFieldVector(ARG_ORDER_VECTOR_ID);
 
         Map<BatchPartition, List<String>> partitions = new HashMap<>();
-        for (int i = 0; i < inputRecords.getSize(); i++) {
+        for (int i = 0; i < inputRecords.getRowCount(); i++) {
             String bucket = vector_bucket.getObject(i).toString();
             String index = vector_index.getObject(i).toString();
             String id = vector_id.getObject(i).toString();
