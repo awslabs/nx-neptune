@@ -2,6 +2,22 @@
 
 This connector enables Amazon Athena to query vector data stored in Amazon S3 using the S3 Vector API. The connector allows you to perform federated queries on vector embeddings and related data directly from Athena.
 
+## Connector Status: Preview
+
+The S3 Vector Athena connector is currently in **preview** and available only as source code for building locally. This is not a production-ready release.
+
+We're releasing this connector as an open-source preview to:
+- Gather community feedback on functionality and use cases
+- Collaborate on the project roadmap
+- Identify issues and improvements before general availability
+
+**What this means:**
+- Build and deploy from source using the instructions below
+- Recommended for testing and evaluation purposes only
+- Not yet released to public artifact repositories (Maven Central, etc.)
+
+We welcome questions, suggestions, and contributions from the community.
+
 ## What is the S3 Vector Connector?
 
 The S3 Vector Connector is a specialized Athena connector that enables querying vector data stored in S3 Vector Bucket. It implements both metadata and record handling capabilities to:
