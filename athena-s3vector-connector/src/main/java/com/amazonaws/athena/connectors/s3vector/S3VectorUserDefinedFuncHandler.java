@@ -122,7 +122,7 @@ public class S3VectorUserDefinedFuncHandler
         // Clear previous batch to release memory immediately
         batchLookupMap = null;
 
-        logger.trace("Intercepting UDF request with size: {}",
+        logger.trace("Processing S3 Vector UDF request with size: {}",
                 inputRecords.getRowCount());
 
         // Place IDs into appropriate partition
