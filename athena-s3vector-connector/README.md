@@ -80,7 +80,7 @@ For subsequent updates after initial deployment:
 
 Once deployed and validated, you can query your vector data using Athena:
 
-### Using Federated Query (Data Connector)
+### Schema Information
 
 The connector provides a default schema with two columns:
 - **vector_id** (VARCHAR): The unique identifier for each vector
