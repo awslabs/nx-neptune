@@ -1,8 +1,8 @@
 /*-
  * #%L
- * athena-example
+ * athena-s3vector-connector
  * %%
- * Copyright (C) 2019 Amazon Web Services
+ * Copyright (C) 2026 Amazon Web Services
  * %%
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,8 @@
  */
 package com.amazonaws.athena.connectors.s3vector;
 
-import com.amazonaws.athena.connector.lambda.data.AthenaFederationIpcOption;
 import com.amazonaws.athena.connector.lambda.data.Block;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocator;
-import com.amazonaws.athena.connector.lambda.exceptions.FederationThrottleException;
 import com.amazonaws.athena.connector.lambda.handlers.UserDefinedFunctionHandler;
 import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.types.pojo.Schema;
@@ -38,7 +36,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -65,7 +62,7 @@ public class S3VectorUserDefinedFuncHandler
 {
     private static final Logger logger = LoggerFactory.getLogger(S3VectorUserDefinedFuncHandler.class);
 
-    private static final String SOURCE_TYPE = "custom";
+    private static final String SOURCE_TYPE = "S3 Vector";
 
     private static final int BATCH_SIZE = 60;
 
@@ -128,7 +125,7 @@ public class S3VectorUserDefinedFuncHandler
         logger.trace("Intercepting UDF request with size: {}",
                 inputRecords.getRowCount());
 
-        // Resolve IDs to resolve,
+        // Place IDs into appropriate partition
         var partitions = getVectorIdsMap(inputRecords);
         Map<String, List<Float>> results = new HashMap<>();
         // Resolve embedding as per partition / batch
