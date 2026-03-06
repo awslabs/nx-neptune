@@ -165,7 +165,7 @@ LAMBDA 's3-vector'
 SELECT 
     vector_id,
     row_number() OVER () AS bucket,
-    get_embedding('andy-test-vector-bucket', 'movies-100k', vector_id) as embedding
+    get_embedding('test-vector-bucket', 'movies', vector_id) as embedding
 FROM gen;
 ```
 
