@@ -128,7 +128,7 @@ EXTERNAL FUNCTION get_embedding(bucket_name VARCHAR, index_name VARCHAR, vector_
 LAMBDA 's3-vector'
 SELECT 
     vector_id, 
-    get_embedding('andy-test-vector-bucket', 'movies-100k', vector_id) as embedding
+    get_embedding('test-vector-bucket', 'movies', vector_id) as embedding
 FROM gen;
 ```
 
