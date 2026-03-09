@@ -46,6 +46,10 @@ class NeptuneAnalyticsClient:
         status: Optional[str] = None,
         logger: Optional[logging.Logger] = None,
         details: Optional[dict] = None,
+        read_timeout: Optional[int] = None,
+        connect_timeout: int = 60,
+        max_retries: int = 1,
+        retry_mode: str = "standard",
     ):
         """
         Constructs a NeptuneAnalyticsClient object for AWS service interaction,
@@ -53,7 +57,13 @@ class NeptuneAnalyticsClient:
         """
         self.graph_id = graph_id
         self.client = client or boto3.client(
-            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
+            service_name=SERVICE_NA,
+            config=Config(
+                user_agent_appid=APP_ID_NX,
+                read_timeout=read_timeout,
+                connect_timeout=connect_timeout,
+                retries={"total_max_attempts": max_retries, "mode": retry_mode},
+            ),
         )
         self.logger = logger or logging.getLogger(__name__)
         self.name = name or ""

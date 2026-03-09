@@ -47,6 +47,28 @@ class NeptuneConfig(Config):
         IAM role for Neptune Analytics to use to import/export from S3. Overridden by NETWORKX_S3_IAM_ROLE_ARN.
         Otherwise, defaults to None.
 
+    Client Configuration Parameters
+    -------------------------------
+    These settings control the boto3 client behavior for Neptune Analytics API calls.
+    Defaults follow AWS Neptune Analytics best practices for long-running algorithm operations.
+    See: https://docs.aws.amazon.com/neptune-analytics/latest/userguide/gettingStarted-connecting-best-practices.html
+
+    read_timeout: Optional[int]
+        Read timeout in seconds for the boto3 client. Set to None to disable timeout (recommended for
+        long-running algorithm calls). Defaults to None.
+
+    connect_timeout: int
+        Connection timeout in seconds for the boto3 client. Defaults to 60.
+
+    max_retries: int
+        Maximum number of retry attempts (maps to botocore total_max_attempts). Set to 1 to disable
+        retries (recommended for execute_query operations to avoid duplicate long-running operations).
+        Defaults to 1.
+
+    retry_mode: str
+        Retry mode for the boto3 client. One of 'legacy', 'standard', or 'adaptive'.
+        Defaults to 'standard'.
+
     Neptune Analytics Setup Parameters
     ----------------------------------
     These settings are used for instance creation and data restoration.
@@ -106,6 +128,13 @@ class NeptuneConfig(Config):
     verbose: int = 0
     prefer: bool = False
     require: bool = False
+
+    ############################################
+    # Client configuration for Neptune Analytics:
+    read_timeout: Optional[int] = None
+    connect_timeout: int = 60
+    max_retries: int = 1
+    retry_mode: str = "standard"
 
     ############################################
     # General settings for Neptune Analytics:
