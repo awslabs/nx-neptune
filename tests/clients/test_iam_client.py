@@ -68,7 +68,17 @@ def test_validate_arns(arn):
         (
             "arn:aws:sts::ACCOUNT_ID:assumed-role/ROLE_NAME/SESSION_NAME",
             "arn:aws:iam::ACCOUNT_ID:role/ROLE_NAME",
-        )
+        ),
+        # Test role with path (fixes issue #83)
+        (
+            "arn:aws:sts::123456789012:assumed-role/sub-role/MyRole-RoleType/session-name",
+            "arn:aws:iam::123456789012:role/sub-role/MyRole-RoleType",
+        ),
+        # Test role with deeper path
+        (
+            "arn:aws:sts::123456789012:assumed-role/path/to/MyRole/session-name",
+            "arn:aws:iam::123456789012:role/path/to/MyRole",
+        ),
     ],
 )
 def test_sts_to_iam_arn(arn, expected):
