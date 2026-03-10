@@ -285,7 +285,7 @@ def push_to_s3_vector(items, bucket_name, index_name, batch_size=300):
 def push_to_opensearch(items, index_name, client=None, batch_size=500, recreate=False):
     """
     Insert vectors into OpenSearch in batches using bulk API.
-    
+
     Note: This function is for demo purposes only and not intended for production use.
 
     Args:
@@ -295,16 +295,14 @@ def push_to_opensearch(items, index_name, client=None, batch_size=500, recreate=
         batch_size: Number of vectors per batch (default 500)
         recreate: If True, recreate index before inserting (default False)
     """
-    from opensearchpy import helpers, OpenSearch
+    from opensearchpy import OpenSearch, helpers
 
     # Create client if not provided
     if client is None:
         host = os.getenv("OPEN_SEARCH_ENDPOINT")
         user_name = os.getenv("OPEN_SEARCH_USER")
         password = os.getenv("OPEN_SEARCH_PASSWORD")
-        client = OpenSearch(
-            hosts=[host], http_auth=(user_name, password), use_ssl=True
-        )
+        client = OpenSearch(hosts=[host], http_auth=(user_name, password), use_ssl=True)
 
     # Create or recreate index
     mapping = {
@@ -434,9 +432,7 @@ def generate_projection_stmt(
             selects.append(f'{col} AS "{col_name}"')
 
     if col_embedding:
-        selects.append(
-            f"array_join({col_embedding}, ';') AS \"embedding:vector\""
-        )
+        selects.append(f"array_join({col_embedding}, ';') AS \"embedding:vector\"")
 
     select_clause = ",\n        ".join(selects)
 
