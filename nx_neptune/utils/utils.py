@@ -282,11 +282,11 @@ def push_to_s3_vector(items, bucket_name, index_name, batch_size=300):
         print(f"Inserted batch {i // batch_size + 1}: {len(batch)} vectors")
 
 
-def push_to_opensearch(items, client, index_name, batch_size=500, recreate=False):
+def push_to_opensearch(items, index_name, client=None, batch_size=500, recreate=False):
     """
     Insert vectors into OpenSearch in batches using bulk API.
     
-    Note: This function is for demo/testing purposes only and not intended for production use.
+    Note: This function is for demo purposes only and not intended for production use.
 
     Args:
         items: List of dicts with 'key' and 'embedding' fields, optional 'metadata'
@@ -299,7 +299,7 @@ def push_to_opensearch(items, client, index_name, batch_size=500, recreate=False
 
     # Create client if not provided
     if client is None:
-        host = os.getenv("OPENSEARCH_HOST")
+        host = os.getenv("OPEN_SEARCH_ENDPOINT")
         user_name = os.getenv("OPEN_SEARCH_USER")
         password = os.getenv("OPEN_SEARCH_PASSWORD")
         client = OpenSearch(
@@ -328,8 +328,6 @@ def push_to_opensearch(items, client, index_name, batch_size=500, recreate=False
             "_id": item["key"],
             "_source": {"id": item["key"], "embedding": item["embedding"]},
         }
-        if "metadata" in item:
-            action["_source"].update(item["metadata"])
         actions.append(action)
 
     for i in range(0, len(actions), batch_size):
@@ -459,7 +457,7 @@ def generate_projection_stmt(
 
     if col_embedding:
         selects.append(
-            f"array_join(transform({col_embedding}, x -> cast(x AS varchar)), ';') AS \"embedding:vector\""
+            f"array_join({col_embedding}, ';') AS \"embedding:vector\""
         )
 
     select_clause = ",\n        ".join(selects)
