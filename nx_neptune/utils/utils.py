@@ -336,28 +336,6 @@ def push_to_opensearch(items, index_name, client=None, batch_size=500, recreate=
         print(f"Inserted batch {i // batch_size + 1}: {len(batch)} vectors")
 
 
-def create_opensearch_index(client, index_name, mapping, recreate=False):
-    """
-    Create or recreate an OpenSearch index with the specified mapping.
-
-    Args:
-        client: OpenSearch client instance
-        index_name: Index name
-        mapping: Index mapping configuration dict
-        recreate: If True, delete existing index before creating (default False)
-    """
-    if client.indices.exists(index=index_name):
-        if recreate:
-            client.indices.delete(index=index_name)
-            print(f"Deleted existing index: {index_name}")
-        else:
-            print(f"Index {index_name} already exists")
-            return
-
-    client.indices.create(index=index_name, body=mapping)
-    print(f"Created index: {index_name}")
-
-
 def generate_create_table_ddl(table_name, s3_location, columns):
     """
     Generate CREATE EXTERNAL TABLE DDL statement for Athena.
