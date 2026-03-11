@@ -144,6 +144,7 @@ EXTERNAL FUNCTION get_embedding(bucket_name VARCHAR, index_name VARCHAR, vector_
 LAMBDA 's3-vector'
 SELECT 
     vector_id, 
+    row_number() OVER () AS bucket,
     get_embedding('test-vector-bucket', 'movies', vector_id) as embedding
 FROM gen;
 ```
@@ -155,21 +156,6 @@ FROM gen;
 - **Workaround for batch size control**: Add `row_number() OVER () AS bucket` to your query to cap batch size at <= 128 rows, which helps prevent Lambda payload limit issues
 - See [GitHub Issue #1884](https://github.com/awslabs/aws-athena-query-federation/issues/1884) for more details on UDF limitations
 
-#### Example UDF Query with Batch Size Control
-
-```sql
-USING 
-EXTERNAL FUNCTION get_embedding(bucket_name VARCHAR, index_name VARCHAR, vector_id VARCHAR) 
-    RETURNS ARRAY<REAL>
-LAMBDA 's3-vector'
-SELECT 
-    vector_id,
-    row_number() OVER () AS bucket,
-    get_embedding('test-vector-bucket', 'movies', vector_id) as embedding
-FROM gen;
-```
-
-*Note: The `row_number() OVER () AS bucket` column limits batch size to 128 rows per UDF invocation, preventing Lambda payload size issues with large result sets.*
 
 ## Architecture
 
