@@ -171,7 +171,7 @@ public class S3VectorUserDefinedFuncHandler
      * @return Map of composite keys (bucket:index:id) to embedding vectors
      */
     private Map<String, List<Float>> fetchEmbeddings(BatchPartition partition, List<String> vectorIds) {
-        Map<String, List<Float>> results = new HashMap<>((int) (vectorIds.size() / 0.75) + 1);
+        Map<String, List<Float>> results = new HashMap<>();
         
         for (int i = 0; i < vectorIds.size(); i += BATCH_SIZE) {
             int endIndex = Math.min(i + BATCH_SIZE, vectorIds.size());
