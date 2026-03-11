@@ -102,7 +102,7 @@ The connector provides a default schema with two columns:
 - **vector_id** (VARCHAR): The unique identifier for each vector
 - **vector** (VARCHAR): The embedding data in string representation
 
-### Example Data Query
+#### Example Federated Query
 
 ```sql
 -- Query vector data
@@ -117,6 +117,42 @@ WHERE vector_id = 'your-vector-id';
 ```
 
 *Note: Replace `<function_name>` with the name of your Lambda function.*
+
+### Using User-Defined Function (UDF)
+
+The connector also provides a UDF for retrieving vector embeddings that can be used with any Athena table or query.
+
+#### UDF Signature
+
+```sql
+get_embedding(bucket_name VARCHAR, index_name VARCHAR, vector_id VARCHAR) RETURNS ARRAY<REAL>
+```
+
+**Parameters:**
+- `bucket_name`: The S3 vector bucket name
+- `index_name`: The index name within the bucket
+- `vector_id`: The unique identifier for the vector
+
+**Returns:** Array of REAL values representing the embedding vector
+
+#### Example UDF Query
+
+```sql
+USING 
+EXTERNAL FUNCTION get_embedding(bucket_name VARCHAR, index_name VARCHAR, vector_id VARCHAR) 
+    RETURNS ARRAY<REAL>
+LAMBDA 's3-vector'
+SELECT 
+    vector_id, 
+    get_embedding('test-vector-bucket', 'movies', vector_id) as embedding
+FROM gen;
+```
+
+**Important Notes:**
+- Replace `'s3-vector'` with your Lambda function name
+- The UDF batches requests automatically for efficiency
+- Athena batches UDF invocations until return data approaches the 6MB Lambda limit. Large result sets may fail. Consider limiting rows or vector dimensions.
+- See [GitHub Issue #1884](https://github.com/awslabs/aws-athena-query-federation/issues/1884) for more details on UDF limitations
 
 ## Architecture
 
