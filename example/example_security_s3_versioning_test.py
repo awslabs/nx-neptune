@@ -234,9 +234,9 @@ def test_versioning_enabled_returns_true():
     print()
 
 
-def test_versioning_disabled_returns_false():
-    """check_s3_versioning returns False and logs warning when versioning is not enabled."""
-    print("=== Test: check_s3_versioning returns False when disabled ===")
+def test_versioning_disabled_raises():
+    """check_s3_versioning raises ValueError when versioning is not enabled."""
+    print("=== Test: check_s3_versioning raises when disabled ===")
 
     client = _create_iam_client()
     mock_s3 = MagicMock()
@@ -244,16 +244,19 @@ def test_versioning_disabled_returns_false():
 
     with patch("nx_neptune.clients.iam_client.boto3") as mock_boto3:
         mock_boto3.client.return_value = mock_s3
-        result = client.check_s3_versioning(BUCKET_ARN)
+        try:
+            client.check_s3_versioning(BUCKET_ARN)
+            assert False, "Expected ValueError"
+        except ValueError as e:
+            assert "does not have versioning enabled" in str(e)
 
-    assert result is False, f"Expected False, got {result}"
-    print("  PASS: returns False when versioning is not enabled")
+    print("  PASS: raises ValueError when versioning is not enabled")
     print()
 
 
-def test_versioning_suspended_returns_false():
-    """check_s3_versioning returns False when versioning is suspended."""
-    print("=== Test: check_s3_versioning returns False when suspended ===")
+def test_versioning_suspended_raises():
+    """check_s3_versioning raises ValueError when versioning is suspended."""
+    print("=== Test: check_s3_versioning raises when suspended ===")
 
     client = _create_iam_client()
     mock_s3 = MagicMock()
@@ -261,10 +264,13 @@ def test_versioning_suspended_returns_false():
 
     with patch("nx_neptune.clients.iam_client.boto3") as mock_boto3:
         mock_boto3.client.return_value = mock_s3
-        result = client.check_s3_versioning(BUCKET_ARN)
+        try:
+            client.check_s3_versioning(BUCKET_ARN)
+            assert False, "Expected ValueError"
+        except ValueError as e:
+            assert "does not have versioning enabled" in str(e)
 
-    assert result is False, f"Expected False, got {result}"
-    print("  PASS: returns False when versioning is Suspended")
+    print("  PASS: raises ValueError when versioning is Suspended")
     print()
 
 
@@ -278,8 +284,8 @@ def main():
     test_empty_s3_bucket_triggers_versioning_check()
     test_export_athena_table_triggers_versioning_check()
     test_versioning_enabled_returns_true()
-    test_versioning_disabled_returns_false()
-    test_versioning_suspended_returns_false()
+    test_versioning_disabled_raises()
+    test_versioning_suspended_raises()
     print("=" * 50)
     print("All S3 versioning security tests passed.")
 

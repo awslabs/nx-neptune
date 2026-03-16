@@ -341,11 +341,8 @@ class TestIamClient:
         # Should not raise exception
         iam_client.has_import_from_s3_permissions("arn:aws:s3:::test-bucket")
 
-    @pytest.mark.parametrize("versioning_status", ["Enabled", "Suspended"])
-    def test_has_export_to_s3_permissions_success(
-        self, mock_iam_client, versioning_status
-    ):
-        """Test has_export_to_s3_permissions with valid permissions."""
+    def test_has_export_to_s3_permissions_success(self, mock_iam_client):
+        """Test has_export_to_s3_permissions with valid permissions and versioning enabled."""
         from unittest.mock import patch, MagicMock
 
         iam_client, mock_client = mock_iam_client
@@ -372,9 +369,42 @@ class TestIamClient:
         }
 
         mock_s3 = MagicMock()
-        mock_s3.get_bucket_versioning.return_value = {"Status": versioning_status}
+        mock_s3.get_bucket_versioning.return_value = {"Status": "Enabled"}
         with patch("nx_neptune.clients.iam_client.boto3.client", return_value=mock_s3):
             iam_client.has_export_to_s3_permissions("arn:aws:s3:::test-bucket")
+
+    def test_has_export_to_s3_permissions_versioning_disabled(self, mock_iam_client):
+        """Test has_export_to_s3_permissions raises when versioning is not enabled."""
+        from unittest.mock import patch, MagicMock
+
+        iam_client, mock_client = mock_iam_client
+
+        mock_client.get_role.return_value = {
+            "Role": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {"Service": "neptune-graph.amazonaws.com"},
+                            "Action": "sts:AssumeRole",
+                        }
+                    ]
+                }
+            }
+        }
+
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "s3:PutObject", "EvalDecision": "allowed"},
+                {"EvalActionName": "s3:ListBucket", "EvalDecision": "allowed"},
+            ]
+        }
+
+        mock_s3 = MagicMock()
+        mock_s3.get_bucket_versioning.return_value = {"Status": "Suspended"}
+        with patch("nx_neptune.clients.iam_client.boto3.client", return_value=mock_s3):
+            with pytest.raises(ValueError, match="does not have versioning enabled"):
+                iam_client.has_export_to_s3_permissions("arn:aws:s3:::test-bucket")
 
     def test_check_aws_permission_success(self, mock_iam_client):
         """Test check_aws_permission with allowed permissions."""
@@ -581,6 +611,8 @@ class TestIamClient:
 
     def test_has_athena_permissions_success(self, mock_iam_client):
         """Test has_athena_permissions with valid permissions."""
+        from unittest.mock import patch, MagicMock
+
         iam_client, mock_client = mock_iam_client
 
         mock_client.simulate_principal_policy.return_value = {
@@ -602,8 +634,10 @@ class TestIamClient:
             ]
         }
 
-        # Should not raise exception
-        result = iam_client.has_athena_permissions(
-            "s3://test-bucket/", "arn:aws:kms:us-east-1:123456789012:key/test-key"
-        )
-        assert result is True
+        mock_s3 = MagicMock()
+        mock_s3.get_bucket_versioning.return_value = {"Status": "Enabled"}
+        with patch("nx_neptune.clients.iam_client.boto3.client", return_value=mock_s3):
+            result = iam_client.has_athena_permissions(
+                "s3://test-bucket/", "arn:aws:kms:us-east-1:123456789012:key/test-key"
+            )
+            assert result is True

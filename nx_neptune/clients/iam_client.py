@@ -187,31 +187,32 @@ class IamClient:
     def check_s3_versioning(self, bucket_arn: str) -> bool:
         """Check whether S3 bucket versioning is enabled.
 
-        This is a security best practice check that warns when versioning is not
-        enabled on buckets used for write or delete operations.
+        Raises ValueError when versioning is not enabled on buckets used for
+        write or delete operations.
 
         Args:
             bucket_arn (str): The S3 bucket path or ARN
 
         Returns:
-            bool: True if versioning is enabled, False otherwise
+            bool: True if versioning is enabled
+
+        Raises:
+            ValueError: If versioning is not enabled or status cannot be determined
         """
         bucket_name, _ = split_s3_arn_to_bucket_and_path(bucket_arn)
         try:
             s3_client = boto3.client("s3")
             response = s3_client.get_bucket_versioning(Bucket=bucket_name)
-            enabled = response.get("Status") == "Enabled"
-            if not enabled:
-                self.logger.warning(
+            if response.get("Status") != "Enabled":
+                raise ValueError(
                     f"S3 bucket '{bucket_name}' does not have versioning enabled. "
-                    f"Enabling versioning is recommended for data protection."
+                    f"Enable versioning before performing write or delete operations."
                 )
-            return enabled
+            return True
         except ClientError as e:
-            self.logger.warning(
+            raise ValueError(
                 f"Unable to check versioning for bucket '{bucket_name}': {e}"
-            )
-            return False
+            ) from e
 
     def _s3_kms_permission_check(
         self, operation_name, bucket_arn, key_arn, s3_permissions, kms_permissions
