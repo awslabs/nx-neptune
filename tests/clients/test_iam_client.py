@@ -341,8 +341,13 @@ class TestIamClient:
         # Should not raise exception
         iam_client.has_import_from_s3_permissions("arn:aws:s3:::test-bucket")
 
-    def test_has_export_to_s3_permissions_success(self, mock_iam_client):
+    @pytest.mark.parametrize("versioning_status", ["Enabled", "Suspended"])
+    def test_has_export_to_s3_permissions_success(
+        self, mock_iam_client, versioning_status
+    ):
         """Test has_export_to_s3_permissions with valid permissions."""
+        from unittest.mock import patch, MagicMock
+
         iam_client, mock_client = mock_iam_client
 
         mock_client.get_role.return_value = {
@@ -366,8 +371,10 @@ class TestIamClient:
             ]
         }
 
-        # Should not raise exception
-        iam_client.has_export_to_s3_permissions("arn:aws:s3:::test-bucket")
+        mock_s3 = MagicMock()
+        mock_s3.get_bucket_versioning.return_value = {"Status": versioning_status}
+        with patch("nx_neptune.clients.iam_client.boto3.client", return_value=mock_s3):
+            iam_client.has_export_to_s3_permissions("arn:aws:s3:::test-bucket")
 
     def test_check_aws_permission_success(self, mock_iam_client):
         """Test check_aws_permission with allowed permissions."""
