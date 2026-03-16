@@ -13,6 +13,7 @@
 import logging
 from typing import Optional, Union
 
+import boto3
 import jmespath
 from botocore.client import BaseClient
 from botocore.exceptions import ClientError
@@ -183,6 +184,35 @@ class IamClient:
             else:
                 raise e
 
+    def check_s3_versioning(self, bucket_arn: str) -> bool:
+        """Check whether S3 bucket versioning is enabled.
+
+        This is a security best practice check that warns when versioning is not
+        enabled on buckets used for write or delete operations.
+
+        Args:
+            bucket_arn (str): The S3 bucket path or ARN
+
+        Returns:
+            bool: True if versioning is enabled, False otherwise
+        """
+        bucket_name, _ = split_s3_arn_to_bucket_and_path(bucket_arn)
+        try:
+            s3_client = boto3.client("s3")
+            response = s3_client.get_bucket_versioning(Bucket=bucket_name)
+            enabled = response.get("Status") == "Enabled"
+            if not enabled:
+                self.logger.warning(
+                    f"S3 bucket '{bucket_name}' does not have versioning enabled. "
+                    f"Enabling versioning is recommended for data protection."
+                )
+            return enabled
+        except ClientError as e:
+            self.logger.warning(
+                f"Unable to check versioning for bucket '{bucket_name}': {e}"
+            )
+            return False
+
     def _s3_kms_permission_check(
         self, operation_name, bucket_arn, key_arn, s3_permissions, kms_permissions
     ):
@@ -238,6 +268,7 @@ class IamClient:
         self._s3_kms_permission_check(
             operation_name, bucket_arn, key_arn, s3_permissions, kms_permissions
         )
+        self.check_s3_versioning(bucket_arn)
 
     def has_delete_s3_permissions(self, bucket_arn):
         """Check if the configured IAM role has permissions to delete data from S3.
@@ -256,6 +287,7 @@ class IamClient:
         self._s3_kms_permission_check(
             operation_name, bucket_arn, None, s3_permissions, []
         )
+        self.check_s3_versioning(bucket_arn)
 
     def has_create_na_permissions(self):
         """Check if the configured IAM role has permissions to create a Neptune Analytics instance.
@@ -492,6 +524,9 @@ class IamClient:
             s3_arn = _get_s3_in_arn(s3_bucket)
             s3_permissions = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
             self.check_aws_permission(operation_name, s3_permissions, s3_arn)
+
+        if s3_bucket:
+            self.check_s3_versioning(s3_bucket)
 
         if kms_key_arn:
             kms_permissions = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
