@@ -370,7 +370,7 @@ class TestIamClient:
 
         mock_s3 = MagicMock()
         mock_s3.get_bucket_versioning.return_value = {"Status": "Enabled"}
-        with patch("nx_neptune.clients.iam_client.boto3.client", return_value=mock_s3):
+        with patch.object(iam_client, "check_s3_versioning_enabled"):
             iam_client.has_export_to_s3_permissions("arn:aws:s3:::test-bucket")
 
     def test_has_export_to_s3_permissions_versioning_disabled(self, mock_iam_client):
@@ -402,9 +402,35 @@ class TestIamClient:
 
         mock_s3 = MagicMock()
         mock_s3.get_bucket_versioning.return_value = {"Status": "Suspended"}
-        with patch("nx_neptune.clients.iam_client.boto3.client", return_value=mock_s3):
+        with patch.object(
+            iam_client,
+            "check_s3_versioning_enabled",
+            side_effect=ValueError("does not have versioning enabled"),
+        ):
             with pytest.raises(ValueError, match="does not have versioning enabled"):
                 iam_client.has_export_to_s3_permissions("arn:aws:s3:::test-bucket")
+
+    def test_check_s3_versioning_enabled_with_mock_client(self, mock_iam_client):
+        """Test check_s3_versioning_enabled with injected mock S3 client."""
+        from unittest.mock import MagicMock
+
+        iam_client, _ = mock_iam_client
+        mock_s3 = MagicMock()
+
+        mock_s3.get_bucket_versioning.return_value = {"Status": "Enabled"}
+        iam_client.check_s3_versioning_enabled("s3://test-bucket/", s3_client=mock_s3)
+
+        mock_s3.get_bucket_versioning.return_value = {"Status": "Suspended"}
+        with pytest.raises(ValueError, match="does not have versioning enabled"):
+            iam_client.check_s3_versioning_enabled(
+                "s3://test-bucket/", s3_client=mock_s3
+            )
+
+        mock_s3.get_bucket_versioning.return_value = {}
+        with pytest.raises(ValueError, match="does not have versioning enabled"):
+            iam_client.check_s3_versioning_enabled(
+                "s3://test-bucket/", s3_client=mock_s3
+            )
 
     def test_check_aws_permission_success(self, mock_iam_client):
         """Test check_aws_permission with allowed permissions."""
@@ -636,7 +662,7 @@ class TestIamClient:
 
         mock_s3 = MagicMock()
         mock_s3.get_bucket_versioning.return_value = {"Status": "Enabled"}
-        with patch("nx_neptune.clients.iam_client.boto3.client", return_value=mock_s3):
+        with patch.object(iam_client, "check_s3_versioning_enabled"):
             result = iam_client.has_athena_permissions(
                 "s3://test-bucket/", "arn:aws:kms:us-east-1:123456789012:key/test-key"
             )

@@ -73,7 +73,7 @@ class TestS3VersioningCheck:
     def test_raises_when_versioning_disabled(self, iam_client, temp_bucket):
         """New buckets have versioning disabled — must raise."""
         with pytest.raises(ValueError, match="does not have versioning enabled"):
-            iam_client.check_s3_versioning(f"s3://{temp_bucket}/")
+            iam_client.check_s3_versioning_enabled(f"s3://{temp_bucket}/")
 
     def test_passes_when_versioning_enabled(self, iam_client, temp_bucket, s3_client):
         """After enabling versioning — must return True."""
@@ -81,7 +81,7 @@ class TestS3VersioningCheck:
             Bucket=temp_bucket,
             VersioningConfiguration={"Status": "Enabled"},
         )
-        assert iam_client.check_s3_versioning(f"s3://{temp_bucket}/") is True
+        assert iam_client.check_s3_versioning_enabled(f"s3://{temp_bucket}/") is True
 
     def test_raises_when_versioning_suspended(self, iam_client, temp_bucket, s3_client):
         """After suspending versioning — must raise."""
@@ -90,4 +90,4 @@ class TestS3VersioningCheck:
             VersioningConfiguration={"Status": "Suspended"},
         )
         with pytest.raises(ValueError, match="does not have versioning enabled"):
-            iam_client.check_s3_versioning(f"s3://{temp_bucket}/")
+            iam_client.check_s3_versioning_enabled(f"s3://{temp_bucket}/")
