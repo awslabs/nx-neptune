@@ -2,6 +2,22 @@
 
 This connector enables Amazon Athena to query vector data stored in Amazon S3 using the S3 Vector API. The connector allows you to perform federated queries on vector embeddings and related data directly from Athena.
 
+## Connector Status: Preview
+
+The S3 Vector Athena connector is currently in **preview** and available only as source code for building locally. This is not a production-ready release.
+
+We're releasing this connector as an open-source preview to:
+- Gather community feedback on functionality and use cases
+- Collaborate on the project roadmap
+- Identify issues and improvements before general availability
+
+**What this means:**
+- Build and deploy from source using the instructions below
+- Recommended for testing and evaluation purposes only
+- Not yet released to public artifact repositories (Maven Central, etc.)
+
+We welcome questions, suggestions, and contributions from the community.
+
 ## What is the S3 Vector Connector?
 
 The S3 Vector Connector is a specialized Athena connector that enables querying vector data stored in S3 Vector Bucket. It implements both metadata and record handling capabilities to:
@@ -86,7 +102,7 @@ The connector provides a default schema with two columns:
 - **vector_id** (VARCHAR): The unique identifier for each vector
 - **vector** (VARCHAR): The embedding data in string representation
 
-### Example Data Query
+#### Example Federated Query
 
 ```sql
 -- Query vector data
@@ -101,6 +117,45 @@ WHERE vector_id = 'your-vector-id';
 ```
 
 *Note: Replace `<function_name>` with the name of your Lambda function.*
+
+### Using User-Defined Function (UDF)
+
+The connector also provides a UDF for retrieving vector embeddings that can be used with any Athena table or query.
+
+#### UDF Signature
+
+```sql
+get_embedding(bucket_name VARCHAR, index_name VARCHAR, vector_id VARCHAR) RETURNS ARRAY<REAL>
+```
+
+**Parameters:**
+- `bucket_name`: The S3 vector bucket name
+- `index_name`: The index name within the bucket
+- `vector_id`: The unique identifier for the vector
+
+**Returns:** Array of REAL values representing the embedding vector
+
+#### Example UDF Query
+
+```sql
+USING 
+EXTERNAL FUNCTION get_embedding(bucket_name VARCHAR, index_name VARCHAR, vector_id VARCHAR) 
+    RETURNS ARRAY<REAL>
+LAMBDA 's3-vector'
+SELECT 
+    vector_id, 
+    row_number() OVER () AS bucket,
+    get_embedding('test-vector-bucket', 'movies', vector_id) as embedding
+FROM gen;
+```
+
+**Important Notes:**
+- Replace `'s3-vector'` with your Lambda function name
+- The UDF batches requests automatically for efficiency
+- Athena batches UDF invocations until return data approaches the 6MB Lambda limit. Large result sets may fail. Consider limiting rows or vector dimensions.
+- **Workaround for batch size control**: Add `row_number() OVER () AS bucket` to your query to cap batch size at <= 128 rows, which helps prevent Lambda payload limit issues
+- See [GitHub Issue #1884](https://github.com/awslabs/aws-athena-query-federation/issues/1884) for more details on UDF limitations
+
 
 ## Architecture
 

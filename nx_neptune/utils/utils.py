@@ -313,7 +313,8 @@ def generate_create_table_ddl(table_name, s3_location, columns):
 
 
 def generate_projection_stmt(
-    col_id, base_table, columns=None, col_label=None, col_embedding=None, joins=None
+    col_id, base_table, columns=None, col_label=None, col_embedding=None, joins=None,
+    connector_name=None, vector_bucket=None, vector_index=None, col_vector_id=None
 ):
     """
     Generate a SQL SELECT statement for projecting data with Neptune-compatible column names.
@@ -384,6 +385,11 @@ def generate_projection_stmt(
             f"array_join(transform({col_embedding}, x -> cast(x AS varchar)), ';') AS \"embedding:vector\""
         )
 
+    if col_vector_id:
+        selects.append(
+            f"array_join(transform(get_embedding('{vector_bucket}', '{vector_index}', {col_vector_id}), x -> cast(x AS varchar)), ';') AS \"embedding:vector\""
+        )
+
     select_clause = ",\n        ".join(selects)
 
     from_clause = f"{base_table}"
@@ -391,6 +397,18 @@ def generate_projection_stmt(
         for table, condition in joins:
             from_clause += f" join\n    {table} \n    on {condition}"
 
-    return f"""SELECT
-        {select_clause}
-    FROM {from_clause};"""
+    if connector_name:
+        return f"""
+            USING 
+            EXTERNAL FUNCTION get_embedding(schema_name VARCHAR, index_name VARCHAR, id VARCHAR ) 
+                RETURNS ARRAY<REAL>
+            LAMBDA '{connector_name}'
+            SELECT
+                {select_clause},
+                row_number() OVER () AS bucket
+            FROM {from_clause};"""
+    else:
+        return f"""
+          SELECT
+              {select_clause}
+          FROM {from_clause};"""
