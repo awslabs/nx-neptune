@@ -36,6 +36,7 @@ class NeptuneAnalyticsClient:
             name (str, optional): The human-readable name of the graph instance.
             status (str, optional): The current status of the graph (e.g., 'AVAILABLE', 'CREATING').
             details (dict, optional): Complete response dictionary from Neptune Analytics API.
+            timeout_seconds (int, optional): Custom query timeout in seconds. Applied to all queries.
     """
 
     def __init__(
@@ -46,6 +47,7 @@ class NeptuneAnalyticsClient:
         status: Optional[str] = None,
         logger: Optional[logging.Logger] = None,
         details: Optional[dict] = None,
+        timeout_seconds: Optional[int] = None,
     ):
         """
         Constructs a NeptuneAnalyticsClient object for AWS service interaction,
@@ -59,6 +61,7 @@ class NeptuneAnalyticsClient:
         self.name = name or ""
         self.status = status or ""
         self.details = details or {}
+        self.timeout_seconds = timeout_seconds
 
     @classmethod
     def from_response(
@@ -150,6 +153,12 @@ class NeptuneAnalyticsClient:
             "language": "OPEN_CYPHER",
             "parameters": {},
         }
+
+        # Add query timeout if configured, converting seconds to milliseconds
+        if self.timeout_seconds is not None:
+            query_params["queryTimeoutMilliseconds"] = int(
+                self.timeout_seconds * 1000
+            )
 
         # Add parameters if provided
         if parameter_map:
