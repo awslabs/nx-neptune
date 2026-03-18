@@ -161,3 +161,41 @@ class TestNeptuneAnalyticsClient:
             language="OPEN_CYPHER",
             parameters=params,
         )
+
+    def test_execute_generic_query_with_timeout(self):
+        """Test that timeout_seconds is converted to milliseconds in the query."""
+        boto3_client = MagicMock()
+        mock_response = {
+            "payload": BytesIO(json.dumps({"results": [{"data": "test"}]}).encode())
+        }
+        boto3_client.execute_query.return_value = mock_response
+
+        na_client = NeptuneAnalyticsClient(
+            graph_id="test-graph-id",
+            client=boto3_client,
+            timeout_seconds=30,
+        )
+
+        query = "MATCH (n) RETURN n"
+        na_client.execute_generic_query(query)
+
+        boto3_client.execute_query.assert_called_once_with(
+            graphIdentifier="test-graph-id",
+            queryString=query,
+            language="OPEN_CYPHER",
+            parameters={},
+            queryTimeoutMilliseconds=30000,
+        )
+
+    def test_execute_generic_query_without_timeout(self, mock_na_client):
+        """Test that queryTimeoutMilliseconds is not sent when timeout is None."""
+        mock_response = {
+            "payload": BytesIO(json.dumps({"results": [{"data": "test"}]}).encode())
+        }
+        mock_na_client.client.execute_query.return_value = mock_response
+
+        query = "MATCH (n) RETURN n"
+        mock_na_client.execute_generic_query(query)
+
+        call_kwargs = mock_na_client.client.execute_query.call_args[1]
+        assert "queryTimeoutMilliseconds" not in call_kwargs

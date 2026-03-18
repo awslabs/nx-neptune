@@ -147,7 +147,7 @@ class NeptuneAnalyticsClient:
         Returns:
             dict: Result from the Boto client.
         """
-        query_params = {
+        query_params: dict = {
             "graphIdentifier": self.graph_id,
             "queryString": query_string,
             "language": "OPEN_CYPHER",
