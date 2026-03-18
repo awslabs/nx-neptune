@@ -156,9 +156,7 @@ class NeptuneAnalyticsClient:
 
         # Add query timeout if configured, converting seconds to milliseconds
         if self.timeout_seconds is not None:
-            query_params["queryTimeoutMilliseconds"] = int(
-                self.timeout_seconds * 1000
-            )
+            query_params["queryTimeoutMilliseconds"] = int(self.timeout_seconds * 1000)
 
         # Add parameters if provided
         if parameter_map:

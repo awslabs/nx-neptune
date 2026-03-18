@@ -313,8 +313,16 @@ def generate_create_table_ddl(table_name, s3_location, columns):
 
 
 def generate_projection_stmt(
-    col_id, base_table, columns=None, col_label=None, col_embedding=None, joins=None,
-    connector_name=None, vector_bucket=None, vector_index=None, col_vector_id=None
+    col_id,
+    base_table,
+    columns=None,
+    col_label=None,
+    col_embedding=None,
+    joins=None,
+    connector_name=None,
+    vector_bucket=None,
+    vector_index=None,
+    col_vector_id=None,
 ):
     """
     Generate a SQL SELECT statement for projecting data with Neptune-compatible column names.
