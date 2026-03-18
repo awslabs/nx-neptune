@@ -82,7 +82,7 @@ class TestLabelPropagation:
             # Verify the correct query was built and executed
             parameters = {}
 
-            (expected_query, param_values) = label_propagation_query(parameters)
+            expected_query, param_values = label_propagation_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -121,7 +121,7 @@ class TestLabelPropagation:
                 PARAM_TRAVERSAL_DIRECTION: "both",
                 PARAM_CONCURRENCY: 0,
             }
-            (expected_query, param_values) = label_propagation_query(parameters)
+            expected_query, param_values = label_propagation_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -140,7 +140,7 @@ class TestLabelPropagation:
             # Verify the correct query was built and executed
             parameters = {}
 
-            (expected_query, param_values) = label_propagation_query(parameters)
+            expected_query, param_values = label_propagation_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -162,7 +162,7 @@ class TestLabelPropagation:
                 PARAM_EDGE_WEIGHT_TYPE: "float",
             }
 
-            (expected_query, param_values) = label_propagation_query(parameters)
+            expected_query, param_values = label_propagation_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -202,7 +202,7 @@ class TestLabelPropagation:
                 PARAM_CONCURRENCY: 0,
             }
 
-            (expected_query, param_values) = label_propagation_query(parameters)
+            expected_query, param_values = label_propagation_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -243,7 +243,7 @@ class TestLabelPropagation:
             # Verify the correct query was built and executed
             parameters = {}
 
-            (expected_query, param_values) = label_propagation_query(parameters)
+            expected_query, param_values = label_propagation_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -267,7 +267,7 @@ class TestLabelPropagation:
                 PARAM_EDGE_WEIGHT_TYPE: "float",
             }
 
-            (expected_query, param_values) = label_propagation_query(parameters)
+            expected_query, param_values = label_propagation_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -307,7 +307,7 @@ class TestLabelPropagation:
                 PARAM_CONCURRENCY: 0,
             }
 
-            (expected_query, param_values) = label_propagation_query(parameters)
+            expected_query, param_values = label_propagation_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -373,9 +373,7 @@ class TestLabelPropagation:
                 PARAM_WRITE_PROPERTY: "communities",
             }
 
-            (expected_query, param_values) = label_propagation_mutation_query(
-                parameters
-            )
+            expected_query, param_values = label_propagation_mutation_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(

@@ -94,9 +94,7 @@ async def create_na_instance(
     Raises:
         Exception: If the Neptune Analytics instance creation fails
     """
-    (iam_client, na_client, _) = _get_or_create_clients(
-        sts_client, iam_client, na_client
-    )
+    iam_client, na_client, _ = _get_or_create_clients(sts_client, iam_client, na_client)
     iam_client.has_create_na_permissions()
 
     response = _create_na_instance_task(na_client, config, graph_name_prefix)
@@ -164,7 +162,7 @@ async def create_na_instance_with_s3_import(
         ValueError: If the role lacks required permissions
     """
 
-    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
+    iam_client_wrapper, na_client, _ = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
     # Retrieve key_arn for the bucket and permission check if present
@@ -239,7 +237,7 @@ async def create_na_instance_from_snapshot(
         Exception: If the Neptune Analytics instance creation fails
         ValueError: If the role lacks required permissions
     """
-    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
+    iam_client_wrapper, na_client, _ = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
 
@@ -295,7 +293,7 @@ async def delete_graph_snapshot(
         Exception: If the snapshot deletion fails
         ValueError: If the role lacks required permissions
     """
-    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
+    iam_client_wrapper, na_client, _ = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
 
@@ -348,7 +346,7 @@ async def start_na_instance(
         Exception: If the start operation fails with an invalid status code
         ValueError: If the role lacks required permissions or if graph is not in STOPPED state
     """
-    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
+    iam_client_wrapper, na_client, _ = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
     iam_client_wrapper.has_start_na_permissions()
@@ -396,7 +394,7 @@ async def stop_na_instance(
         Exception: If the stop operation fails with an invalid status code
         ValueError: If the role lacks required permissions or if graph is not in AVAILABLE state
     """
-    (iam_client_wrapper, na_client, _) = _get_or_create_clients(
+    iam_client_wrapper, na_client, _ = _get_or_create_clients(
         sts_client, iam_client, na_client
     )
     iam_client_wrapper.has_stop_na_permissions()
@@ -446,9 +444,7 @@ async def delete_na_instance(
         ValueError: If the role lacks required permissions
     """
 
-    (iam_client, na_client, _) = _get_or_create_clients(
-        sts_client, iam_client, na_client
-    )
+    iam_client, na_client, _ = _get_or_create_clients(sts_client, iam_client, na_client)
     # Permission check
     iam_client.has_delete_na_permissions()
 
@@ -497,9 +493,7 @@ async def create_graph_snapshot(
         ValueError: If the role lacks required permissions
     """
     # Permission check
-    (iam_client, na_client, _) = _get_or_create_clients(
-        sts_client, iam_client, na_client
-    )
+    iam_client, na_client, _ = _get_or_create_clients(sts_client, iam_client, na_client)
     iam_client.has_create_na_snapshot_permissions()
 
     kwargs: dict[str, Any] = {
@@ -703,9 +697,7 @@ async def update_na_instance_size(
         Exception: If the resize operation fails
         ValueError: If the role lacks required permissions
     """
-    (iam_client, na_client, _) = _get_or_create_clients(
-        sts_client, iam_client, na_client
-    )
+    iam_client, na_client, _ = _get_or_create_clients(sts_client, iam_client, na_client)
 
     # Permission check
     iam_client.has_update_na_permissions()
@@ -1108,7 +1100,7 @@ async def export_athena_table_to_s3(
     Returns:
         list: List of successfully processed query execute ids.
     """
-    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+    iam_client_wrapper, _, athena_client = _get_or_create_clients(
         sts_client, iam_client, None, athena_client
     )
 
@@ -1196,7 +1188,7 @@ async def create_csv_table_from_s3(
         Exception: If any query fails
     """
     # Permission checks
-    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+    iam_client_wrapper, _, athena_client = _get_or_create_clients(
         sts_client, iam_client, None, athena_client
     )
 
@@ -1322,7 +1314,7 @@ def _build_sql_statement(
             if ":" not in field:
                 table_columns[field] = "string"
                 continue
-            (field, datatype) = field.split(":")
+            field, datatype = field.split(":")
             if datatype == "Vector":
                 # skip vectors:
                 continue
@@ -1381,7 +1373,7 @@ async def create_iceberg_table_from_table(
         str: Returns the query_execution_id if successful
     """
     # Permission checks
-    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+    iam_client_wrapper, _, athena_client = _get_or_create_clients(
         sts_client, iam_client, None, athena_client
     )
 
@@ -1460,7 +1452,7 @@ async def create_table_schema_from_s3(
         str: Returns the query_execution_id if successful
     """
     # Permission checks
-    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+    iam_client_wrapper, _, athena_client = _get_or_create_clients(
         sts_client, iam_client, None, athena_client
     )
 
@@ -1520,7 +1512,7 @@ async def drop_athena_table(
         str: Returns the query_execution_id if successful
     """
     # Permission checks
-    (iam_client_wrapper, _, athena_client) = _get_or_create_clients(
+    iam_client_wrapper, _, athena_client = _get_or_create_clients(
         sts_client, iam_client, None, athena_client
     )
 
@@ -1608,6 +1600,7 @@ def empty_s3_bucket(
     s3_client: Optional[BaseClient] = None,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
+    file_extension=None,
 ):
     """Empty an S3 bucket at the specified location.
 
@@ -1633,7 +1626,7 @@ def empty_s3_bucket(
         s3_client = boto3.client(SERVICE_S3)
 
     # Create IamClient using _get_or_create_clients
-    (iam_client_wrapper, _, _) = _get_or_create_clients(sts_client, iam_client, None)
+    iam_client_wrapper, _, _ = _get_or_create_clients(sts_client, iam_client, None)
 
     # raises an error validation fails
     iam_client_wrapper.has_delete_s3_permissions(s3_arn)
@@ -1650,7 +1643,12 @@ def empty_s3_bucket(
 
             for page in pages:
                 if "Contents" in page:
-                    objects = [{"Key": obj["Key"]} for obj in page["Contents"]]
+                    objects = [
+                        {"Key": obj["Key"]}
+                        for obj in page["Contents"]
+                        if (not file_extension or obj["Key"].endswith(file_extension))
+                    ]
+
                     if objects:
                         s3_client.delete_objects(
                             Bucket=bucket_name,
@@ -1875,3 +1873,50 @@ def _get_or_create_clients(
         athena_client = boto3.client(SERVICE_ATHENA)
 
     return iam_client_wrapper, na_client, athena_client
+
+
+def execute_athena_query(
+    sql_statement: str,
+    output_location: str,
+    sql_parameters: Optional[list] = None,
+    catalog: Optional[str] = None,
+    database: Optional[str] = None,
+    client: Optional[BaseClient] = None,
+    polling_interval: Optional[int] = 5,
+):
+    """Execute an Athena SQL query and wait for completion.
+
+    Executes the specified SQL statement using Amazon Athena and monitors
+    the query execution status until completion. This function provides
+    a synchronous interface for Athena query execution with automatic
+    status polling.
+
+    Args:
+        sql_statement (str): The SQL query to execute
+        output_location (str): S3 location for storing query results
+        sql_parameters (Optional[list]): SQL query parameters list. Defaults to None.
+        catalog (Optional[str]): Athena data catalog name. Defaults to None.
+        database (Optional[str]): Athena database name. Defaults to None.
+        client (Optional[BaseClient]): Pre-configured Athena client.
+            If None, creates a new client instance.
+        polling_interval (Optional[int]): Time interval in seconds between
+            status checks. Defaults to 5.
+
+    Returns:
+        The result of the query execution monitoring process
+
+    Raises:
+        ClientError: If there's an issue with the AWS API call
+        Exception: If the query execution fails or times out
+    """
+    if client is None:
+        client = boto3.client("athena")
+    execution_id = _execute_athena_query(
+        client, sql_statement, output_location, sql_parameters, catalog, database
+    )
+    return wait_until_all_complete(
+        [execution_id],
+        TaskType.EXPORT_ATHENA_TABLE,
+        client,
+        polling_interval=polling_interval,
+    )

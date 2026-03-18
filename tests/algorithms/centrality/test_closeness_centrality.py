@@ -62,7 +62,7 @@ class TestClosenessCentrality:
 
             # Verify the correct query was built and executed
             parameters = {PARAM_NUM_SOURCES: MAX_INT, PARAM_NORMALIZE: True}
-            (expected_query, param_values) = closeness_centrality_query(parameters)
+            expected_query, param_values = closeness_centrality_query(parameters)
 
             # No conversion should happen if method receiving networkX default.
             mock_graph.execute_call.assert_called_once_with(
@@ -89,7 +89,7 @@ class TestClosenessCentrality:
                 PARAM_NUM_SOURCES: 9223372036854775807,
                 PARAM_NORMALIZE: False,
             }
-            (expected_query, param_values) = closeness_centrality_query(
+            expected_query, param_values = closeness_centrality_query(
                 parameters, ["YVR"]
             )
 
@@ -123,7 +123,7 @@ class TestClosenessCentrality:
                 PARAM_NUM_SOURCES: 100,
                 PARAM_NORMALIZE: True,
             }
-            (expected_query, param_values) = closeness_centrality_query(parameters)
+            expected_query, param_values = closeness_centrality_query(parameters)
 
             mock_graph.execute_call.assert_called_once_with(
                 expected_query, param_values
@@ -155,7 +155,7 @@ class TestClosenessCentrality:
                 PARAM_NUM_SOURCES: 100,
                 PARAM_NORMALIZE: True,
             }
-            (expected_query, param_values) = closeness_centrality_query(parameters)
+            expected_query, param_values = closeness_centrality_query(parameters)
 
             mock_graph.execute_call.assert_called_once_with(
                 expected_query, param_values
@@ -183,10 +183,10 @@ class TestClosenessCentrality:
                 PARAM_NORMALIZE: False,
                 PARAM_WRITE_PROPERTY: "score",
             }
-            (expected_query, param_values) = closeness_centrality_query(
+            expected_query, param_values = closeness_centrality_query(
                 parameters, ["YVR"]
             )
-            (expected_query, param_values) = closeness_centrality_mutation_query(
+            expected_query, param_values = closeness_centrality_mutation_query(
                 parameters
             )
 
