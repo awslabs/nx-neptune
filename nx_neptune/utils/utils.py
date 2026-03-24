@@ -178,6 +178,32 @@ def read_csv(path, limit=None):
     return header, rows
 
 
+def write_csv(path, headers, rows):
+    """Writes data to a CSV file.
+
+    Parameters
+    ----------
+    path : str
+        Path to the CSV file to write
+    headers : list
+        List of column names to use as CSV headers
+    rows : list
+        List of dictionaries, where each dictionary represents a row with
+        column names as keys and cell values as values
+
+    Examples
+    --------
+    >>> headers = ['col1', 'col2']
+    >>> rows = [{'col1': 'val1', 'col2': 'val2'},
+    ...         {'col1': 'val3', 'col2': 'val4'}]
+    >>> write_csv('output.csv', headers, rows)
+    """
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def _get_bedrock_embedding(
     client, text, dimensions=256, model_id="amazon.titan-embed-text-v2:0"
 ):
