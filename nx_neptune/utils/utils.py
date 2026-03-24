@@ -282,6 +282,58 @@ def push_to_s3_vector(items, bucket_name, index_name, batch_size=300):
         print(f"Inserted batch {i // batch_size + 1}: {len(batch)} vectors")
 
 
+def push_to_opensearch(items, index_name, client=None, batch_size=500, recreate=False):
+    """
+    Insert vectors into OpenSearch in batches using bulk API.
+
+    Note: This function is for demo purposes only and not intended for production use.
+
+    Args:
+        items: List of dicts with 'key' and 'embedding' fields, optional 'metadata'
+        client: OpenSearch client instance or None to create from env vars
+        index_name: Index name
+        batch_size: Number of vectors per batch (default 500)
+        recreate: If True, recreate index before inserting (default False)
+    """
+    from opensearchpy import OpenSearch, helpers
+
+    # Create client if not provided
+    if client is None:
+        host = os.getenv("OPEN_SEARCH_ENDPOINT")
+        user_name = os.getenv("OPEN_SEARCH_USER")
+        password = os.getenv("OPEN_SEARCH_PASSWORD")
+        client = OpenSearch(hosts=[host], http_auth=(user_name, password), use_ssl=True)
+
+    # Create or recreate index
+    mapping = {
+        "mappings": {
+            "_meta": {"embedding": "list"},
+            "properties": {"id": {"type": "keyword"}, "embedding": {"type": "float"}},
+        }
+    }
+
+    if client.indices.exists(index=index_name):
+        if recreate:
+            client.indices.delete(index=index_name)
+            client.indices.create(index=index_name, body=mapping)
+    else:
+        client.indices.create(index=index_name, body=mapping)
+
+    actions = []
+    for item in items:
+        action = {
+            "_index": index_name,
+            "_id": item["key"],
+            "_source": {"id": item["key"], "embedding": item["embedding"]},
+        }
+        actions.append(action)
+
+    for i in range(0, len(actions), batch_size):
+        batch = actions[i : i + batch_size]
+        helpers.bulk(client, batch)
+        print(f"Inserted batch {i // batch_size + 1}: {len(batch)} vectors")
+
+
 def generate_create_table_ddl(table_name, s3_location, columns):
     """
     Generate CREATE EXTERNAL TABLE DDL statement for Athena.
@@ -389,9 +441,7 @@ def generate_projection_stmt(
             selects.append(f'{col} AS "{col_name}"')
 
     if col_embedding:
-        selects.append(
-            f"array_join(transform({col_embedding}, x -> cast(x AS varchar)), ';') AS \"embedding:vector\""
-        )
+        selects.append(f"array_join({col_embedding}, ';') AS \"embedding:vector\"")
 
     if col_vector_id:
         selects.append(
