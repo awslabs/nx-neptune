@@ -74,8 +74,6 @@ aws lambda update-function-code \
   --region <region>
 ```
 
-**Note:** The image must be built for `linux/amd64` platform. On Apple Silicon Macs, Finch defaults to `arm64` which will cause `Runtime.InvalidEntrypoint` errors on Lambda.
-
 ## Secrets Manager Configuration
 
 The connector retrieves Databricks connection credentials from AWS Secrets Manager. Create a secret with the prefix specified in `SecretNameOrPrefix` containing your Databricks connection details (host, token, port). The Lambda execution role is granted read-only access (`secretsmanager:GetSecretValue`) to secrets matching the specified prefix.
