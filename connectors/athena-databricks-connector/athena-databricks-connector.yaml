@@ -48,7 +48,11 @@ Parameters:
 Resources:
   ConnectorConfig:
     Type: 'AWS::Serverless::Function'
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: .
     Properties:
+      ImageUri: connectorconfig:v1
       Environment:
         Variables:
           disable_spill_encryption: !Ref DisableSpillEncryption
@@ -57,10 +61,10 @@ Resources:
           secret_manager_databricks_token_name: !Ref SecretNameOrPrefix
           databricks_default_database: !Ref DatabricksDefaultDatabase
       FunctionName: !Sub "${AthenaCatalogName}"
-      Handler: "com.amazonaws.athena.connectors.databricks.DatabricksCompositeHandler"
-      CodeUri: "./target/athena-databricks-connector-0.1.0.jar"
+      PackageType: Image
+      ImageConfig:
+        Command: ["com.amazonaws.athena.connectors.databricks.DatabricksCompositeHandler"]
       Description: "Federated connector to read data from Databricks Unity Catalog."
-      Runtime: java11
       Timeout: !Ref LambdaTimeout
       MemorySize: !Ref LambdaMemory
       Policies:
