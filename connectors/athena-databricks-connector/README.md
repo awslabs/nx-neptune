@@ -36,14 +36,21 @@ Before deploying this connector, ensure you have:
 
 ### Build the Connector
 
+From the repository root, initialize the submodule and build:
+
 ```bash
+git submodule update --init
+cd connectors
 mvn clean package -DskipTests
 ```
+
+The parent POM builds the `athena-jdbc` dependency from the submodule first, then the Databricks connector.
 
 ### Deploy Using SAM CLI
 
 ```bash
-sam build -t athena-databricks-connector.yaml && sam deploy --guided -t athena-databricks-connector.yaml
+sam build -t connectors/athena-databricks-connector/athena-databricks-connector.yaml && \
+sam deploy --guided -t connectors/athena-databricks-connector/athena-databricks-connector.yaml
 ```
 
 ### CloudFormation Parameters
@@ -64,7 +71,8 @@ sam build -t athena-databricks-connector.yaml && sam deploy --guided -t athena-d
 For subsequent code updates after initial deployment, build and push the Docker image manually:
 
 ```bash
-mvn clean package -DskipTests && \
+cd connectors && mvn clean package -DskipTests && \
+cd athena-databricks-connector && \
 finch build -t databricks-connector . && \
 finch tag databricks-connector:latest <account-id>.dkr.ecr.<region>.amazonaws.com/<repo-name>:latest && \
 finch push <account-id>.dkr.ecr.<region>.amazonaws.com/<repo-name>:latest && \
