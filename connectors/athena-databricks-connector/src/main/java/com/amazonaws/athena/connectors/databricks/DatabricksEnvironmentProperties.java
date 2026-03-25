@@ -23,8 +23,15 @@ import com.amazonaws.athena.connectors.jdbc.JdbcEnvironmentProperties;
 
 import java.util.Map;
 
+/**
+ * Provides Databricks-specific JDBC environment properties.
+ * Configures the JDBC connection string prefix for Databricks.
+ */
 public class DatabricksEnvironmentProperties extends JdbcEnvironmentProperties
 {
+    /**
+     * {@inheritDoc}
+     */
     @Override
     protected String getConnectionStringPrefix(Map<String, String> connectionProperties)
     {

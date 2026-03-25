@@ -29,8 +29,8 @@ import org.apache.arrow.vector.types.pojo.Schema;
 import java.util.*;
 
 /**
- * Handles metadata for PostGreSql. User must have access to `schemata`, `tables`, `columns`, `partitions` tables in
- * information_schema.
+ * Handles metadata operations for Databricks Unity Catalog via JDBC.
+ * Retrieves schema, table, column, and partition information from Databricks.
  */
 public class DatabricksMetadataHandler
         extends JdbcMetadataHandler
@@ -40,16 +40,25 @@ public class DatabricksMetadataHandler
         super(sourceType, configOptions);
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public Schema getPartitionSchema(String catalogName) {
         return null;
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public void getPartitions(BlockWriter blockWriter, GetTableLayoutRequest request, QueryStatusChecker queryStatusChecker) throws Exception {
 
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public GetSplitsResponse doGetSplits(BlockAllocator blockAllocator, GetSplitsRequest getSplitsRequest) {
         return null;

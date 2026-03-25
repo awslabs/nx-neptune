@@ -30,6 +30,10 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.Map;
 
+/**
+ * Handles record reading from Databricks Unity Catalog via JDBC.
+ * Builds SQL statements for split-based data retrieval.
+ */
 public class DatabricksRecordHandler
         extends JdbcRecordHandler
 {
@@ -37,6 +41,9 @@ public class DatabricksRecordHandler
         super(sourceType, configOptions);
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public PreparedStatement buildSplitSql(Connection jdbcConnection, String catalogName, TableName tableName, Schema schema, Constraints constraints, Split split) throws SQLException {
         return null;
