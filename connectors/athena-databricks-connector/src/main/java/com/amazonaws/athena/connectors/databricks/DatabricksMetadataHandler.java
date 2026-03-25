@@ -23,7 +23,13 @@ import com.amazonaws.athena.connector.lambda.QueryStatusChecker;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocator;
 import com.amazonaws.athena.connector.lambda.data.BlockWriter;
 import com.amazonaws.athena.connector.lambda.metadata.*;
+import com.amazonaws.athena.connectors.databricks.resolver.DataBricksJDBCCaseResolver;
+import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfig;
+import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionInfo;
+import com.amazonaws.athena.connectors.jdbc.connection.GenericJdbcConnectionFactory;
+import com.amazonaws.athena.connectors.jdbc.manager.JDBCUtil;
 import com.amazonaws.athena.connectors.jdbc.manager.JdbcMetadataHandler;
+import com.google.common.collect.ImmutableMap;
 import org.apache.arrow.vector.types.pojo.Schema;
 
 import java.util.*;
@@ -36,8 +42,31 @@ public class DatabricksMetadataHandler
         extends JdbcMetadataHandler
 {
 
+    public static final String DATABRICKS_NAME = "postgres";
+    public static final String POSTGRESQL_DRIVER_CLASS = "org.postgresql.Driver";
+    public static final int POSTGRESQL_DEFAULT_PORT = 5432;
+    public static final String POSTGRES_QUOTE_CHARACTER = "\"";
+    public static final Map<String, String> JDBC_PROPERTIES = ImmutableMap.of("databaseTerm", "SCHEMA");
+
     protected DatabricksMetadataHandler(String sourceType, Map<String, String> configOptions) {
         super(sourceType, configOptions);
+    }
+
+    /**
+     * Instantiates handler to be used by Lambda function directly.
+     *
+     */
+    public DatabricksMetadataHandler(java.util.Map<String, String> configOptions)
+    {
+        this(JDBCUtil.getSingleDatabaseConfigFromEnv(DATABRICKS_NAME, configOptions), configOptions);
+    }
+
+    public DatabricksMetadataHandler(DatabaseConnectionConfig databaseConnectionConfig, java.util.Map<String, String> configOptions)
+    {
+        super(databaseConnectionConfig,
+                new GenericJdbcConnectionFactory(databaseConnectionConfig, JDBC_PROPERTIES, new DatabaseConnectionInfo(POSTGRESQL_DRIVER_CLASS, POSTGRESQL_DEFAULT_PORT)),
+                configOptions,
+                new DataBricksJDBCCaseResolver(DATABRICKS_NAME));
     }
 
     /**
