@@ -36,6 +36,12 @@
     <dependencies>
         <dependency>
             <groupId>com.amazonaws</groupId>
+            <artifactId>athena-jdbc</artifactId>
+            <version>${athena-sdk.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.amazonaws</groupId>
             <artifactId>aws-athena-federation-sdk</artifactId>
             <version>${athena-sdk.version}</version>
             <classifier>withdep</classifier>
@@ -47,6 +53,7 @@
                 </exclusion>
             </exclusions>
         </dependency>
+
         <!-- Source: https://mvnrepository.com/artifact/com.databricks/databricks-jdbc -->
         <dependency>
             <groupId>com.databricks</groupId>
