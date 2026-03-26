@@ -1,6 +1,6 @@
 /*-
  * #%L
- * athena-snowflake
+ * athena-databricks
  * %%
  * Copyright (C) 2019 - 2025 Amazon Web Services
  * %%
@@ -31,13 +31,12 @@ public class DataBricksJDBCCaseResolver
     private static final Logger LOGGER = LoggerFactory.getLogger(DataBricksJDBCCaseResolver.class);
     private static final String SCHEMA_NAME_QUERY_TEMPLATE = "SELECT schema_name FROM information_schema.schemata WHERE lower(schema_name) = ?";
     private static final String TABLE_NAME_QUERY_TEMPLATE = "SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND lower(table_name) = ?";
-    private static final String TABLE_NAME_QUERY_MATERIALIZED_VIEW = "select matviewname as \"table_name\" from pg_catalog.pg_matviews mv where schemaname = ? and lower(matviewname) = ?";
     private static final String SCHEMA_NAME_COLUMN_KEY = "schema_name";
     private static final String TABLE_NAME_COLUMN_KEY = "table_name";
 
     public DataBricksJDBCCaseResolver(String sourceType)
     {
-        super(sourceType, FederationSDKCasingMode.CASE_INSENSITIVE_SEARCH, FederationSDKCasingMode.NONE);
+        super(sourceType, FederationSDKCasingMode.NONE, FederationSDKCasingMode.NONE);
     }
 
     @Override
@@ -55,7 +54,7 @@ public class DataBricksJDBCCaseResolver
     @Override
     protected List<String> getCaseInsensitivelyTableNameQueryTemplate()
     {
-        return List.of(TABLE_NAME_QUERY_TEMPLATE, TABLE_NAME_QUERY_MATERIALIZED_VIEW);
+        return List.of(TABLE_NAME_QUERY_TEMPLATE);
     }
 
     @Override

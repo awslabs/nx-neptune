@@ -31,8 +31,7 @@ public class DatabricksCompositeHandler
 {
     public DatabricksCompositeHandler()
     {
-
-        super(new DatabricksMetadataHandler("Databricks", new DatabricksEnvironmentProperties().createEnvironment()),
+        super(new DatabricksMetadataHandler(new DatabricksEnvironmentProperties().createEnvironment()),
                 new DatabricksRecordHandler("Databricks", new DatabricksEnvironmentProperties().createEnvironment()));
     }
 }
