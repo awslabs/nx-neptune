@@ -78,6 +78,9 @@ Resources:
             - Action:
                 - secretsmanager:GetSecretValue
               Effect: Allow
+              # The -* suffix is required because Secrets Manager appends a random 6-character
+              # suffix to every secret ARN (e.g., my-secret-AbCdEf). Without it, the policy
+              # won't match the actual secret ARN and access will be denied.
               Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretName}-*'
           Version: '2012-10-17'
 

@@ -135,17 +135,17 @@ Once deployed, query Databricks data through Athena:
 
 ```sql
 -- List databases
-SELECT * FROM "databricks"."information_schema"."schemata";
+SELECT * FROM `lambda:databricks`."information_schema"."schemata";
 
 -- Query a table
-SELECT * FROM "databricks"."default"."your_table" LIMIT 10;
+SELECT * FROM `lambda:databricks`."default"."your_table" LIMIT 10;
 ```
 
 You can run queries from the Athena console or the AWS CLI:
 
 ```bash
 aws athena start-query-execution \
-  --query-string 'SELECT * FROM "databricks"."default"."your_table" LIMIT 10' \
+  --query-string 'SELECT * FROM `lambda:databricks`."default"."your_table" LIMIT 10' \
   --work-group primary \
   --region <region>
 ```
