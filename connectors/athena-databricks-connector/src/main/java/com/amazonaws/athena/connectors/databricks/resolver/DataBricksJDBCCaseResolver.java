@@ -25,10 +25,21 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
+/**
+ * Resolves case-sensitive schema and table names for Databricks Unity Catalog.
+ *
+ * <p>Athena lowercases all identifiers, but Databricks may store names in mixed case.
+ * This resolver queries {@code information_schema} to find the exact-case match for
+ * a given schema or table name.</p>
+ *
+ * <p>Casing mode is set to {@code NONE} since Databricks handles case sensitivity
+ * at the catalog level and no automatic case conversion is needed.</p>
+ */
 public class DataBricksJDBCCaseResolver
         extends DefaultJDBCCaseResolver
 {
     private static final Logger LOGGER = LoggerFactory.getLogger(DataBricksJDBCCaseResolver.class);
+
     private static final String SCHEMA_NAME_QUERY_TEMPLATE = "SELECT schema_name FROM information_schema.schemata WHERE lower(schema_name) = ?";
     private static final String TABLE_NAME_QUERY_TEMPLATE = "SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND lower(table_name) = ?";
     private static final String SCHEMA_NAME_COLUMN_KEY = "schema_name";
@@ -39,24 +50,28 @@ public class DataBricksJDBCCaseResolver
         super(sourceType, FederationSDKCasingMode.NONE, FederationSDKCasingMode.NONE);
     }
 
+    /** {@inheritDoc} */
     @Override
     protected String getCaseInsensitivelySchemaNameQueryTemplate()
     {
         return SCHEMA_NAME_QUERY_TEMPLATE;
     }
 
+    /** {@inheritDoc} */
     @Override
     protected String getCaseInsensitivelySchemaNameColumnKey()
     {
         return SCHEMA_NAME_COLUMN_KEY;
     }
 
+    /** {@inheritDoc} */
     @Override
     protected List<String> getCaseInsensitivelyTableNameQueryTemplate()
     {
         return List.of(TABLE_NAME_QUERY_TEMPLATE);
     }
 
+    /** {@inheritDoc} */
     @Override
     protected String getCaseInsensitivelyTableNameColumnKey()
     {

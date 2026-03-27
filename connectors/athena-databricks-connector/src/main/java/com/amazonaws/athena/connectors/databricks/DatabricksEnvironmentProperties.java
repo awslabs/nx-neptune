@@ -1,6 +1,6 @@
 /*-
  * #%L
- * Amazon Athena Query Federation SDK
+ * athena-databricks
  * %%
  * Copyright (C) 2019 - 2026 Amazon Web Services
  * %%
