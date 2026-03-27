@@ -43,6 +43,10 @@ Parameters:
   DatabricksConnCatalog:
     Description: "The Databricks Unity Catalog name to connect to."
     Type: String
+  DatabricksFetchSize:
+    Description: "Number of rows fetched per JDBC round trip. Higher values improve throughput but use more memory."
+    Default: 10000
+    Type: Number
   DatabricksDefaultDatabase:
     Description: "The default Databricks Unity Catalog database (catalog.schema) to use when not specified in the query."
     Default: default
@@ -68,6 +72,7 @@ Resources:
           databricks_default_database: !Ref DatabricksDefaultDatabase
           databricks_http_path: !Ref DatabricksHttpPath
           databricks_conn_catalog: !Ref DatabricksConnCatalog
+          databricks_fetch_size: !Ref DatabricksFetchSize
       FunctionName: !Sub "${AthenaCatalogName}"
       PackageType: Image
       ImageConfig:

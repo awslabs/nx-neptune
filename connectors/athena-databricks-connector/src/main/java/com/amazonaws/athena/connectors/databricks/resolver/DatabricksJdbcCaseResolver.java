@@ -35,17 +35,17 @@ import java.util.List;
  * <p>Casing mode is set to {@code NONE} since Databricks handles case sensitivity
  * at the catalog level and no automatic case conversion is needed.</p>
  */
-public class DataBricksJDBCCaseResolver
+public class DatabricksJdbcCaseResolver
         extends DefaultJDBCCaseResolver
 {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DataBricksJDBCCaseResolver.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(DatabricksJdbcCaseResolver.class);
 
     private static final String SCHEMA_NAME_QUERY_TEMPLATE = "SELECT schema_name FROM information_schema.schemata WHERE lower(schema_name) = ?";
     private static final String TABLE_NAME_QUERY_TEMPLATE = "SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND lower(table_name) = ?";
     private static final String SCHEMA_NAME_COLUMN_KEY = "schema_name";
     private static final String TABLE_NAME_COLUMN_KEY = "table_name";
 
-    public DataBricksJDBCCaseResolver(String sourceType)
+    public DatabricksJdbcCaseResolver(String sourceType)
     {
         super(sourceType, FederationSDKCasingMode.NONE, FederationSDKCasingMode.NONE);
     }
