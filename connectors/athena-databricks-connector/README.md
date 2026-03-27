@@ -62,7 +62,7 @@ sam deploy --guided -t connectors/athena-databricks-connector/athena-databricks-
 | SpillPrefix | Prefix within SpillBucket | athena-spill |
 | LambdaTimeout | Maximum Lambda invocation runtime (1-900 seconds) | 900 |
 | LambdaMemory | Lambda memory in MB (128-3008) | 1024 |
-| SecretNameOrPrefix | Name or prefix of the Secrets Manager secret containing the Databricks personal access token | Required |
+| SecretName | Name of the Secrets Manager secret containing the Databricks personal access token | Required |
 | DatabricksDefaultDatabase | Default Databricks Unity Catalog database (catalog.schema) | default |
 | DisableSpillEncryption | Disable encryption for spilled data | false |
 
@@ -84,7 +84,50 @@ aws lambda update-function-code \
 
 ## Secrets Manager Configuration
 
-The connector retrieves Databricks connection credentials from AWS Secrets Manager. Create a secret with the prefix specified in `SecretNameOrPrefix` containing your Databricks connection details (host, token, port). The Lambda execution role is granted read-only access (`secretsmanager:GetSecretValue`) to secrets matching the specified prefix.
+The connector authenticates with Databricks using a personal access token (PAT) stored in AWS Secrets Manager. The token is retrieved at runtime by the Federation SDK — it is never embedded in code or environment variables.
+
+### How it works
+
+The connector's JDBC connection string contains a `${secret-name}` placeholder. At runtime, the SDK:
+
+1. Extracts the secret name from the placeholder
+2. Calls Secrets Manager to retrieve the secret value
+3. Injects the `username` and `password` into the JDBC connection properties
+4. Strips the placeholder from the URL before connecting
+
+### Create the secret
+
+The secret must be a JSON object with `username` and `password` fields. For Databricks PAT auth, the username is always `token`:
+
+```bash
+aws secretsmanager create-secret \
+  --name my-databricks-secret \
+  --secret-string '{"username": "token", "password": "<your-databricks-personal-access-token>"}' \
+  --region <region>
+```
+
+### Reference the secret in the connection string
+
+The Lambda environment variable for the connection string should include the secret name in `${...}` syntax:
+
+```
+databricks://jdbc:databricks://<workspace-host>:443/default${my-databricks-secret}
+```
+
+The `SecretName` parameter in the SAM template must match the secret name (e.g., `my-databricks-secret`). This grants the Lambda role `secretsmanager:GetSecretValue` permission on that specific secret.
+
+### Update the secret
+
+To rotate or update the token:
+
+```bash
+aws secretsmanager put-secret-value \
+  --secret-id my-databricks-secret \
+  --secret-string '{"username": "token", "password": "<new-token>"}' \
+  --region <region>
+```
+
+No redeployment needed — the connector reads the secret on each invocation.
 
 ## Run Queries
 

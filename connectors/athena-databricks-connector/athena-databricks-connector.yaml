@@ -34,8 +34,8 @@ Parameters:
     Description: "Lambda memory in MB (min 128 - 3008 max)."
     Default: 1024
     Type: Number
-  SecretNameOrPrefix:
-    Description: "The name or prefix of the secret in AWS Secrets Manager that contains the Databricks personal access token."
+  SecretName:
+    Description: "The name of the secret in AWS Secrets Manager that contains the Databricks personal access token."
     Type: String
   DatabricksDefaultDatabase:
     Description: "The default Databricks Unity Catalog database (catalog.schema) to use when not specified in the query."
@@ -58,7 +58,7 @@ Resources:
           disable_spill_encryption: !Ref DisableSpillEncryption
           spill_bucket: !Ref SpillBucket
           spill_prefix: !Ref SpillPrefix
-          secret_manager_databricks_token_name: !Ref SecretNameOrPrefix
+          secret_manager_databricks_token_name: !Ref SecretName
           databricks_default_database: !Ref DatabricksDefaultDatabase
       FunctionName: !Sub "${AthenaCatalogName}"
       PackageType: Image
@@ -78,10 +78,10 @@ Resources:
             - Action:
                 - secretsmanager:GetSecretValue
               Effect: Allow
-              Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretNameOrPrefix}*'
+              Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretName}-*'
           Version: '2012-10-17'
 
-        #S3CrudPolicy allows our connector to spill large responses to S3. You can optionally replace this pre-made policy
-        #with one that is more restrictive and can only 'put' but not read,delete, or overwrite files.
+        # S3CrudPolicy allows our connector to spill large responses to S3. You can optionally replace this pre-made policy
+        # with one that is more restrictive and can only 'put' but not read,delete, or overwrite files.
         - S3CrudPolicy:
             BucketName: !Ref SpillBucket
