@@ -43,14 +43,14 @@ Before deploying this connector, ensure you have:
 
 The connector can be deployed directly using the provided CloudFormation template:
 
-1. **Build the connector:**
+1. **Build the connector** (from the repository root):
    ```bash
-   mvn clean install
+   mvn -f connectors/pom.xml package -DskipTests -pl :athena-s3vector-connector
    ```
 
 2. **Deploy using SAM CLI:**
    ```bash
-   sam deploy --template-file athena-s3vector-connector.yaml --guided
+   sam deploy --template-file connectors/athena-s3vector-connector/athena-s3vector-connector.yaml --guided
    ```
 
 3. **Follow the guided prompts and provide:**
@@ -67,7 +67,7 @@ For subsequent updates after initial deployment:
 
 1. **Upload JAR to S3:**
    ```bash
-   aws s3 cp target/athena-s3vector-connector-0.1.0.jar s3://<your-bucket>/
+   aws s3 cp connectors/athena-s3vector-connector/target/athena-s3vector-connector-0.1.0.jar s3://<your-bucket>/
    ```
 
 2. **Update Lambda function code:**

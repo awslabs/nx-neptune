@@ -9,7 +9,8 @@ connectors/
 ├── pom.xml                              # Parent POM (multi-module build)
 ├── aws-athena-query-federation/         # Git submodule (pinned to specific version)
 │   └── athena-jdbc/                     # JDBC base module used by Databricks connector
-└── athena-databricks-connector/         # Databricks Unity Catalog connector
+├── athena-databricks-connector/         # Databricks Unity Catalog connector
+└── athena-s3vector-connector/           # S3 Vector connector
 ```
 
 ## Why the Submodule?
@@ -34,6 +35,9 @@ mvn -f connectors/pom.xml package -DskipTests -pl :athena-databricks-connector
 
 # Build Databricks connector + its dependencies
 mvn -f connectors/pom.xml package -DskipTests -pl :athena-databricks-connector -am
+
+# Build only the S3 Vector connector (no submodule dependency)
+mvn -f connectors/pom.xml package -DskipTests -pl :athena-s3vector-connector
 ```
 
 ## Updating the Federation SDK Version
