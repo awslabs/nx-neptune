@@ -88,7 +88,7 @@ For subsequent updates after initial deployment:
 | AthenaCatalogName | Lambda function name (must match pattern: ^[a-z0-9-_]{1,64}$) | Required |
 | SpillBucket | S3 bucket for spilling data | Required |
 | SpillPrefix | Prefix within SpillBucket | athena-spill |
-| S3VectorBucketName | Name of the S3 vector bucket to query | Required |
+| S3VectorBucketName | Name of the S3 Vector bucket to query | Required |
 | LambdaTimeout | Maximum Lambda invocation runtime (1-900 seconds) | 900 |
 | LambdaMemory | Lambda memory in MB (128-3008) | 1024 |
 | DisableSpillEncryption | Disable encryption for spilled data | false |
