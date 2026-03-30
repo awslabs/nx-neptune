@@ -57,7 +57,7 @@ The connector can be deployed directly using the provided CloudFormation templat
    - **AthenaCatalogName**: Name for your Lambda function (lowercase, alphanumeric, hyphens, and underscores only, 1-64 characters)
    - **SpillBucket**: S3 bucket name for query result spilling
    - **SpillPrefix**: Prefix within SpillBucket (default: athena-spill)
-   - **S3VectorBucketName**: Name of the S3 vector bucket to query
+   - **S3VectorBucketName**: Name of the S3 Vector bucket to query
    - **LambdaTimeout**: Maximum Lambda runtime in seconds (default: 900)
    - **LambdaMemory**: Lambda memory in MB (default: 512)
    - **DisableSpillEncryption**: Set to 'true' to disable spill encryption (default: false)
