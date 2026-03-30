@@ -52,11 +52,13 @@ Resources:
       FunctionName: !Sub "${AthenaCatalogName}"
       Handler: "com.amazonaws.athena.connectors.s3vector.S3VectorCompositeHandler"
       CodeUri: "./target/athena-s3vector-connector-0.1.0.jar"
-      Description: "A guided example for writing and deploying your own federated Amazon Athena connector for a custom source."
+      Description: "Federated connector to query vector data stored in S3 Vector buckets."
       Runtime: java11
       Timeout: !Ref LambdaTimeout
       MemorySize: !Ref LambdaMemory
       Policies:
+        # It's common and expected for a single Athena connector to serve queries from multiple workgroups.
+        # However, if the lambda is restricted to a specific workgroup update the permission to "arn:aws:athena:<region>:<account-id>:workgroup/<workgroup-name>"
         - Statement:
             - Action:
                 - athena:GetQueryExecution
@@ -70,7 +72,6 @@ Resources:
             Effect: Allow
             Action:
               - s3vectors:ListIndexes
-              - s3vectors:ListVectors
             Resource: !Sub 'arn:${AWS::Partition}:s3vectors:${AWS::Region}:${AWS::AccountId}:*'
 
         # S3 Vector data access (scoped to specific bucket and its indexes)
@@ -81,6 +82,7 @@ Resources:
               - s3vectors:GetIndex
               - s3vectors:QueryVectors
               - s3vectors:GetVectors
+              - s3vectors:ListVectors
             Resource:
               - !Sub 'arn:${AWS::Partition}:s3vectors:${AWS::Region}:${AWS::AccountId}:vector-bucket/${S3VectorBucketName}'
               - !Sub 'arn:${AWS::Partition}:s3vectors:${AWS::Region}:${AWS::AccountId}:vector-bucket/${S3VectorBucketName}/*'
