@@ -33,6 +33,9 @@ Parameters:
     Description: "Lambda memory in MB (min 128 - 3008 max)."
     Default: 512
     Type: Number
+  S3VectorBucketName:
+    Description: "The name of the S3 Vector bucket to query."
+    Type: String
   DisableSpillEncryption:
     Description: "WARNING: If set to 'true' encryption for spilled data is disabled."
     Default: "false"
@@ -49,29 +52,40 @@ Resources:
       FunctionName: !Sub "${AthenaCatalogName}"
       Handler: "com.amazonaws.athena.connectors.s3vector.S3VectorCompositeHandler"
       CodeUri: "./target/athena-s3vector-connector-0.1.0.jar"
-      Description: "A guided example for writing and deploying your own federated Amazon Athena connector for a custom source."
+      Description: "Federated connector to query vector data stored in S3 Vector buckets."
       Runtime: java11
       Timeout: !Ref LambdaTimeout
       MemorySize: !Ref LambdaMemory
       Policies:
+        # It's common and expected for a single Athena connector to serve queries from multiple workgroups.
+        # However, if the lambda is restricted to a specific workgroup update the permission to "arn:aws:athena:<region>:<account-id>:workgroup/<workgroup-name>"
         - Statement:
             - Action:
                 - athena:GetQueryExecution
               Effect: Allow
-              Resource: '*'
+              Resource: !Sub 'arn:${AWS::Partition}:athena:${AWS::Region}:${AWS::AccountId}:workgroup/*'
           Version: '2012-10-17'
 
-        # S3 Vector read access
+        # S3 Vector list access (account-wide)
         - Statement:
-          - Sid: AllowApplicationVectorAccess
+          - Sid: AllowVectorListAccess
+            Effect: Allow
+            Action:
+              - s3vectors:ListIndexes
+            Resource: !Sub 'arn:${AWS::Partition}:s3vectors:${AWS::Region}:${AWS::AccountId}:*'
+
+        # S3 Vector data access (scoped to specific bucket and its indexes)
+        - Statement:
+          - Sid: AllowVectorDataAccess
             Effect: Allow
             Action:
               - s3vectors:GetIndex
-              - s3vectors:ListIndexes
               - s3vectors:QueryVectors
               - s3vectors:GetVectors
               - s3vectors:ListVectors
-            Resource: '*'
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:s3vectors:${AWS::Region}:${AWS::AccountId}:vector-bucket/${S3VectorBucketName}'
+              - !Sub 'arn:${AWS::Partition}:s3vectors:${AWS::Region}:${AWS::AccountId}:vector-bucket/${S3VectorBucketName}/*'
 
         #S3CrudPolicy allows our connector to spill large responses to S3. You can optionally replace this pre-made policy
         #with one that is more restrictive and can only 'put' but not read,delete, or overwrite files.
