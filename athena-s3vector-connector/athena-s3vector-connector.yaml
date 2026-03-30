@@ -58,7 +58,7 @@ Resources:
             - Action:
                 - athena:GetQueryExecution
               Effect: Allow
-              Resource: '*'
+              Resource: !Sub 'arn:${AWS::Partition}:athena:${AWS::Region}:${AWS::AccountId}:workgroup/*'
           Version: '2012-10-17'
 
         # S3 Vector read access
@@ -71,7 +71,7 @@ Resources:
               - s3vectors:QueryVectors
               - s3vectors:GetVectors
               - s3vectors:ListVectors
-            Resource: '*'
+            Resource: !Sub 'arn:${AWS::Partition}:s3vectors:${AWS::Region}:${AWS::AccountId}:*'
 
         #S3CrudPolicy allows our connector to spill large responses to S3. You can optionally replace this pre-made policy
         #with one that is more restrictive and can only 'put' but not read,delete, or overwrite files.
