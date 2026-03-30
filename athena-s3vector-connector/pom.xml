@@ -22,7 +22,7 @@
         <log4j2-transformer.version>2.15</log4j2-transformer.version>
         <maven-surefire-plugin.version>3.5.4</maven-surefire-plugin.version>
         <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
-        <maven-shade-plugin.version>3.6.1</maven-shade-plugin.version>
+        <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
         <junit-jupiter.version>5.9.0</junit-jupiter.version>
     </properties>
     <dependencies>
