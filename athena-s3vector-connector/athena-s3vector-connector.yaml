@@ -34,7 +34,7 @@ Parameters:
     Default: 512
     Type: Number
   S3VectorBucketName:
-    Description: "The name of the S3 vector bucket to query."
+    Description: "The name of the S3 Vector bucket to query."
     Type: String
   DisableSpillEncryption:
     Description: "WARNING: If set to 'true' encryption for spilled data is disabled."
