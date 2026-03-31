@@ -55,7 +55,7 @@ from .na_graph import (
 from .session_manager import CleanupTask, SessionManager
 from .utils.decorators import configure_if_nx_active
 
-__version__ = "0.4.4"
+__version__ = "0.5.0"
 
 __all__ = [
     # environment variables
