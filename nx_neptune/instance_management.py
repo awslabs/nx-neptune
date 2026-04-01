@@ -1920,3 +1920,29 @@ def execute_athena_query(
         client,
         polling_interval=polling_interval,
     )
+
+
+def get_athena_query_results(
+    query_execution_id: str,
+    client: Optional[BaseClient] = None,
+):
+    """Fetch results for a completed Athena query.
+
+    Args:
+        query_execution_id (str): The Athena query execution ID.
+        client (Optional[BaseClient]): Pre-configured Athena client.
+            If None, creates a new client instance.
+
+    Returns:
+        list[list[str]]: Raw rows including header as first row.
+    """
+    if client is None:
+        client = boto3.client("athena")
+
+    rows = []
+    paginator = client.get_paginator("get_query_results")
+    for page in paginator.paginate(QueryExecutionId=query_execution_id):
+        for row in page["ResultSet"]["Rows"]:
+            rows.append([col.get("VarCharValue") for col in row["Data"]])
+
+    return rows
