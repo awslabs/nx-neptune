@@ -38,6 +38,12 @@ public final class DatabricksConstants
     /** Databricks SQL quote character for identifiers. */
     public static final String QUOTE_CHARACTER = "`";
 
+    /** Environment variable key for the Databricks workspace hostname. */
+    public static final String HOST_CONFIG_KEY = "databricks_host";
+    /** Environment variable key for the Secrets Manager secret name containing the Databricks PAT. */
+    public static final String SECRET_NAME_CONFIG_KEY = "secret_manager_databricks_token_name";
+    /** Environment variable key for the default Databricks database. */
+    public static final String DEFAULT_DATABASE_CONFIG_KEY = "databricks_default_database";
     /** Environment variable key for the Databricks SQL warehouse HTTP path. */
     public static final String HTTP_PATH_CONFIG_KEY = "databricks_http_path";
     /** Environment variable key for the Databricks Unity Catalog name. */

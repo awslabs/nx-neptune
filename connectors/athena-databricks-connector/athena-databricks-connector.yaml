@@ -19,9 +19,22 @@ Parameters:
     Type: String
     AllowedPattern: ^[a-z0-9-_]{1,64}$
     Default: databricks
-  SpillBucket:
-    Description: 'The name of the bucket where this function can spill data.'
+  DatabricksHost:
+    Description: "The Databricks workspace hostname (e.g. dbc-59ed3753-5cf0.cloud.databricks.com). Do not include https:// or port."
     Type: String
+    AllowedPattern: ^[a-zA-Z0-9][a-zA-Z0-9.\-]+[a-zA-Z0-9]$
+    ConstraintDescription: "Enter only the hostname (e.g. dbc-59ed3753-5cf0.cloud.databricks.com), not a full URL."
+  DatabricksHttpPath:
+    Description: "The HTTP path for the Databricks SQL warehouse API (e.g., /sql/1.0/warehouses/abc123)."
+    Type: String
+  SecretName:
+    Description: "The name of the secret in AWS Secrets Manager that contains the Databricks personal access token."
+    Type: String
+  SpillBucket:
+    Description: 'The name of the bucket where this function can spill data. Use only the bucket name (e.g. my-athena-spill), not the full S3 URI or ARN.'
+    Type: String
+    AllowedPattern: ^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$
+    ConstraintDescription: 'Enter only the bucket name (e.g. my-athena-spill), not an S3 URI (s3://...) or ARN.'
   SpillPrefix:
     Description: 'The prefix within SpillBucket where this function can spill data.'
     Type: String
@@ -34,15 +47,10 @@ Parameters:
     Description: "Lambda memory in MB (min 128 - 3008 max)."
     Default: 1024
     Type: Number
-  SecretName:
-    Description: "The name of the secret in AWS Secrets Manager that contains the Databricks personal access token."
-    Type: String
-  DatabricksHttpPath:
-    Description: "The HTTP path for the Databricks SQL warehouse API (e.g., /sql/1.0/warehouses/abc123)."
-    Type: String
   DatabricksConnCatalog:
     Description: "The Databricks Unity Catalog name to connect to."
     Type: String
+    Default: workspace
   DatabricksFetchSize:
     Description: "Number of rows fetched per JDBC round trip. Higher values improve throughput but use more memory."
     Default: 10000
@@ -72,6 +80,7 @@ Resources:
       ImageUri: connectorconfig:v1
       Environment:
         Variables:
+          databricks_host: !Ref DatabricksHost
           disable_spill_encryption: !Ref DisableSpillEncryption
           spill_bucket: !Ref SpillBucket
           spill_prefix: !Ref SpillPrefix
