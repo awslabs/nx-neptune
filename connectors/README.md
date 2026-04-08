@@ -9,7 +9,8 @@ connectors/
 ├── pom.xml                              # Parent POM (multi-module build)
 ├── aws-athena-query-federation/         # Git submodule (pinned to specific version)
 │   └── athena-jdbc/                     # JDBC base module used by Databricks connector
-└── athena-databricks-connector/         # Databricks Unity Catalog connector
+├── athena-databricks-connector/         # Databricks Unity Catalog connector
+└── athena-s3vector-connector/           # S3 Vector connector
 ```
 
 ## Why the Submodule?
