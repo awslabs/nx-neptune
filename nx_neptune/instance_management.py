@@ -1582,7 +1582,7 @@ def _execute_athena_query(
     if sql_parameters is not None:
         query_execution_params["ExecutionParameters"] = sql_parameters
 
-    logger.info(f"Creating table using statement:{sql_statement}")
+    logger.info(f"Executing Athena statement: {sql_statement}")
 
     try:
         response = client.start_query_execution(**query_execution_params)
