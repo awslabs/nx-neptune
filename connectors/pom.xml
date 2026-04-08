@@ -11,5 +11,6 @@
     <modules>
         <module>aws-athena-query-federation/athena-jdbc</module>
         <module>athena-databricks-connector</module>
+        <module>athena-s3vector-connector</module>
     </modules>
 </project>

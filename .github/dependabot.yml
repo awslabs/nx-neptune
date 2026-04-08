@@ -5,7 +5,7 @@ updates:
     schedule:
       interval: "weekly"
   - package-ecosystem: "maven"
-    directory: "/athena-s3vector-connector"
+    directory: "/connectors/athena-s3vector-connector"
     schedule:
       interval: "weekly"
   - package-ecosystem: "pip"
