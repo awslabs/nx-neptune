@@ -20,10 +20,10 @@ Parameters:
     AllowedPattern: ^[a-z0-9-_]{1,64}$
     Default: databricks
   DatabricksHost:
-    Description: "The Databricks workspace hostname (e.g. dbc-59ed3753-5cf0.cloud.databricks.com). Do not include https:// or port."
+    Description: "The Databricks workspace hostname (e.g. dbc-12ab3456-7cd8.cloud.databricks.com). Do not include https:// or port."
     Type: String
     AllowedPattern: ^[a-zA-Z0-9][a-zA-Z0-9.\-]+[a-zA-Z0-9]$
-    ConstraintDescription: "Enter only the hostname (e.g. dbc-59ed3753-5cf0.cloud.databricks.com), not a full URL."
+    ConstraintDescription: "Enter only the hostname (e.g. dbc-12ab3456-7cd8.cloud.databricks.com), not a full URL."
   DatabricksHttpPath:
     Description: "The HTTP path for the Databricks SQL warehouse API (e.g., /sql/1.0/warehouses/abc123)."
     Type: String
