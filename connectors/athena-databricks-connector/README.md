@@ -152,7 +152,7 @@ aws athena start-query-execution \
 
 ## JDBC Driver Configuration
 
-### Arrow and Cloud Fetch (Disabled)
+### Arrow and Cloud Fetch (Disabled by default)
 
 The Databricks JDBC driver supports [Cloud Fetch](https://docs.databricks.com/en/integrations/jdbc/capability.html#cloud-fetch-in-jdbc), which downloads query results as ~20MB Arrow-serialized chunks in parallel from DBFS. While this is faster than row-by-row streaming, each in-flight chunk consumes Lambda memory. With the default thread pool of 16, this can easily exceed Lambda's memory limit (1–3GB) on large result sets.
 
