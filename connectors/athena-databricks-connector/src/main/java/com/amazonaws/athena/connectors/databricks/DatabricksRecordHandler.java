@@ -22,13 +22,29 @@ package com.amazonaws.athena.connectors.databricks;
 import com.amazonaws.athena.connector.lambda.domain.Split;
 import com.amazonaws.athena.connector.lambda.domain.TableName;
 import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
+import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfig;
+import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionInfo;
+import com.amazonaws.athena.connectors.jdbc.connection.GenericJdbcConnectionFactory;
+import com.amazonaws.athena.connectors.jdbc.connection.JdbcConnectionFactory;
+import com.amazonaws.athena.connectors.jdbc.manager.DefaultJdbcFederationExpressionParser;
+import com.amazonaws.athena.connectors.jdbc.manager.JDBCUtil;
 import com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandler;
+import com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder;
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.arrow.vector.types.pojo.Schema;
+import org.apache.commons.lang3.Validate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.services.athena.AthenaClient;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.Map;
+
+import static com.amazonaws.athena.connectors.databricks.DatabricksConstants.*;
 
 /**
  * Handles record reading from Databricks Unity Catalog via JDBC.
@@ -37,8 +53,41 @@ import java.util.Map;
 public class DatabricksRecordHandler
         extends JdbcRecordHandler
 {
-    protected DatabricksRecordHandler(String sourceType, Map<String, String> configOptions) {
-        super(sourceType, configOptions);
+    private static final Logger LOGGER = LoggerFactory.getLogger(DatabricksRecordHandler.class);
+    private final JdbcSplitQueryBuilder jdbcSplitQueryBuilder;
+    private final int fetchSize;
+
+    /**
+     * Instantiates handler to be used by Lambda function directly.
+     *
+     * Recommend using {@link DatabricksCompositeHandler} instead.
+     */
+    public DatabricksRecordHandler(Map<String, String> configOptions)
+    {
+        this(JDBCUtil.getSingleDatabaseConfigFromEnv(DATABRICKS_NAME, configOptions), configOptions);
+    }
+
+    /**
+     * Instantiates handler with explicit connection config.
+     */
+    public DatabricksRecordHandler(DatabaseConnectionConfig databaseConnectionConfig, Map<String, String> configOptions)
+    {
+        this(databaseConnectionConfig,
+                S3Client.create(),
+                SecretsManagerClient.create(),
+                AthenaClient.create(),
+                new GenericJdbcConnectionFactory(databaseConnectionConfig, buildJdbcProperties(configOptions), new DatabaseConnectionInfo(DATABRICKS_DRIVER_CLASS, DATABRICKS_DEFAULT_PORT)),
+                new DatabricksQueryStringBuilder(QUOTE_CHARACTER, new DefaultJdbcFederationExpressionParser()),
+                configOptions);
+    }
+
+    @VisibleForTesting
+    DatabricksRecordHandler(DatabaseConnectionConfig databaseConnectionConfig, S3Client s3Client, SecretsManagerClient secretsManager,
+            AthenaClient athena, JdbcConnectionFactory jdbcConnectionFactory, JdbcSplitQueryBuilder jdbcSplitQueryBuilder, Map<String, String> configOptions)
+    {
+        super(s3Client, secretsManager, athena, databaseConnectionConfig, jdbcConnectionFactory, configOptions);
+        this.jdbcSplitQueryBuilder = Validate.notNull(jdbcSplitQueryBuilder, "query builder must not be null");
+        this.fetchSize = Integer.parseInt(configOptions.getOrDefault(FETCH_SIZE_CONFIG_KEY, String.valueOf(DEFAULT_FETCH_SIZE)));
     }
 
     /**
@@ -46,6 +95,8 @@ public class DatabricksRecordHandler
      */
     @Override
     public PreparedStatement buildSplitSql(Connection jdbcConnection, String catalogName, TableName tableName, Schema schema, Constraints constraints, Split split) throws SQLException {
-        return null;
+        PreparedStatement preparedStatement = jdbcSplitQueryBuilder.buildSql(jdbcConnection, null, tableName.getSchemaName(), tableName.getTableName(), schema, constraints, split);
+        preparedStatement.setFetchSize(fetchSize);
+        return preparedStatement;
     }
 }

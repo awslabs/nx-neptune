@@ -64,6 +64,8 @@ sam deploy --guided -t connectors/athena-databricks-connector/athena-databricks-
 | LambdaMemory | Lambda memory in MB (128-3008) | 1024 |
 | SecretName | Name of the Secrets Manager secret containing the Databricks personal access token | Required |
 | DatabricksDefaultDatabase | Default Databricks Unity Catalog database (catalog.schema) | default |
+| DatabricksFetchSize | Number of rows fetched per JDBC round trip | 10000 |
+| EnableArrow | Enable Arrow-based result serialization (Cloud Fetch). Requires more Lambda memory | 0 |
 | DisableSpillEncryption | Disable encryption for spilled data | false |
 
 ### Update Lambda Function
@@ -149,6 +151,20 @@ aws athena start-query-execution \
   --work-group primary \
   --region <region>
 ```
+
+## JDBC Driver Configuration
+
+### Arrow and Cloud Fetch (Default: Disabled)
+
+The Databricks JDBC driver supports [Cloud Fetch](https://docs.databricks.com/en/integrations/jdbc/capability.html#cloud-fetch-in-jdbc), which downloads query results as ~20MB Arrow-serialized chunks in parallel from DBFS. While this is faster than row-by-row streaming, each in-flight chunk consumes Lambda memory. With the default thread pool of 16, this can easily exceed Lambda's memory limit (1–3GB) on large result sets.
+
+This connector disables Arrow by default (`EnableArrow=0`) so results stream row-by-row via Thrift instead. Memory usage is bounded by `DatabricksFetchSize` (default: 10,000 rows per JDBC round trip).
+
+To re-enable Cloud Fetch for higher throughput, set the `EnableArrow` parameter to `1` during deployment. You may also need to increase `LambdaMemory` to accommodate the larger in-flight buffers.
+
+### Fetch Size (Default: 10,000)
+
+`DatabricksFetchSize` controls how many rows the JDBC driver buffers per round trip. Higher values reduce network round trips but use more memory. The default of 10,000 is safe for Lambda at 1GB with typical row sizes (~1KB). Lower it for tables with very wide rows.
 
 ## Troubleshooting
 
