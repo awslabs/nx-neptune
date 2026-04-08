@@ -68,7 +68,10 @@ jupyter = [
     "ipykernel>=6.0.0",
     "matplotlib>=3.0.0",
     "nbstripout>=0.3.10",
-    "kagglehub"
+    "kagglehub",
+    "pandas",
+    "databricks-sdk",
+    "databricks-sql-connector"
 ]
 
 [tool.setuptools]
