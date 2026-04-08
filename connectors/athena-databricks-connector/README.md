@@ -40,8 +40,7 @@ From the repository root, initialize the submodule and build:
 
 ```bash
 git submodule update --init
-cd connectors
-mvn clean package -DskipTests
+mvn clean package -DskipTests -f connectors/pom.xml
 ```
 
 The parent POM builds the `athena-jdbc` dependency from the submodule first, then the Databricks connector.
@@ -58,10 +57,11 @@ sam deploy --guided -t connectors/athena-databricks-connector/athena-databricks-
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | AthenaCatalogName | Lambda function name (must match pattern: `^[a-z0-9-_]{1,64}$`) | databricks |
-| SpillBucket | S3 bucket for spilling data | Required |
+| SpillBucket | S3 bucket name for spilling data (bucket name only, not URI or ARN) | Required |
 | SpillPrefix | Prefix within SpillBucket | athena-spill |
 | LambdaTimeout | Maximum Lambda invocation runtime (1-900 seconds) | 900 |
 | LambdaMemory | Lambda memory in MB (128-3008) | 1024 |
+| DatabricksHost | Databricks workspace hostname (e.g. `dbc-59ed3753-5cf0.cloud.databricks.com`) | Required |
 | SecretName | Name of the Secrets Manager secret containing the Databricks personal access token | Required |
 | DatabricksDefaultDatabase | Default Databricks Unity Catalog database (catalog.schema) | default |
 | DatabricksFetchSize | Number of rows fetched per JDBC round trip | 10000 |
