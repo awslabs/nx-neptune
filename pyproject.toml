@@ -68,7 +68,10 @@ jupyter = [
     "ipykernel>=6.0.0",
     "matplotlib>=3.0.0",
     "nbstripout>=0.3.10",
-    "kagglehub"
+    "kagglehub",
+    "scipy>=1.9,!=1.11.0,!=1.11.1",
+    "pandas",
+    "requests"
 ]
 
 [tool.setuptools]

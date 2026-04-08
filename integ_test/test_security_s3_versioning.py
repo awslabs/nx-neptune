@@ -81,7 +81,7 @@ class TestS3VersioningCheck:
             Bucket=temp_bucket,
             VersioningConfiguration={"Status": "Enabled"},
         )
-        assert iam_client.check_s3_versioning_enabled(f"s3://{temp_bucket}/") is True
+        iam_client.check_s3_versioning_enabled(f"s3://{temp_bucket}/")
 
     def test_raises_when_versioning_suspended(self, iam_client, temp_bucket, s3_client):
         """After suspending versioning — must raise."""

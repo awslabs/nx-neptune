@@ -942,6 +942,11 @@ def _start_export_task(
         ClientError: If there's an issue with the AWS API call
     """
     logger.debug(f"Export S3 Graph [{graph_id}] data to S3 [{s3_destination}]")
+    if not kms_key_identifier:
+        raise ValueError(
+            "S3 bucket does not have KMS encryption enabled. "
+            "Configure SSE-KMS encryption on the bucket before exporting."
+        )
     try:
         kwargs_export: dict[str, Any] = {
             "graphIdentifier": graph_id,
