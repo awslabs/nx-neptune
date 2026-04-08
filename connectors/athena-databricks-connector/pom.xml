@@ -21,6 +21,7 @@
         <maven-shade-plugin.version>3.6.1</maven-shade-plugin.version>
 
         <!-- Test -->
+        <junit.version>4.13.2</junit.version>
         <junit-jupiter.version>5.9.0</junit-jupiter.version>
         <mockito.version>4.11.0</mockito.version>
     </properties>
@@ -89,6 +90,18 @@
         </dependency>
 
         <!-- Test -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.vintage</groupId>
+            <artifactId>junit-vintage-engine</artifactId>
+            <version>${junit-jupiter.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
