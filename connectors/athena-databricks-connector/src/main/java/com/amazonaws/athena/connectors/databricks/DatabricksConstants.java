@@ -44,6 +44,8 @@ public final class DatabricksConstants
     public static final String CONN_CATALOG_CONFIG_KEY = "databricks_conn_catalog";
     /** Environment variable key for the JDBC fetch size. */
     public static final String FETCH_SIZE_CONFIG_KEY = "databricks_fetch_size";
+    /** Environment variable key for enabling Arrow-based result serialization. */
+    public static final String ENABLE_ARROW_CONFIG_KEY = "enable_arrow";
 
     public static final int DEFAULT_FETCH_SIZE = 10000;
 
@@ -62,9 +64,9 @@ public final class DatabricksConstants
         Map<String, String> props = new HashMap<>(JDBC_PROPERTIES);
         props.put("httpPath", configOptions.getOrDefault(HTTP_PATH_CONFIG_KEY, ""));
         props.put("ConnCatalog", configOptions.getOrDefault(CONN_CATALOG_CONFIG_KEY, ""));
-        // Disable Arrow/Cloud Fetch to prevent OOM in memory-constrained Lambda.
+        // Disable Arrow/Cloud Fetch by default to prevent OOM in memory-constrained Lambda.
         // Results stream row-by-row via Thrift, controlled by PreparedStatement.setFetchSize().
-        props.put("EnableArrow", "0");
+        props.put("EnableArrow", configOptions.getOrDefault(ENABLE_ARROW_CONFIG_KEY, "0"));
         return props;
     }
 }
