@@ -23,15 +23,13 @@ show:             ## Show the current environment.
 install:          ## Install the project for examples.
 	@if [ "$(USING_POETRY)" ]; then poetry install && exit; fi
 	@echo "Don't forget to run 'make virtualenv' if you got errors."
-	$(ENV_PREFIX)pip install -r requirements-jupyter.txt
-	$(ENV_PREFIX)pip install -e . --no-deps
+	$(ENV_PREFIX)pip install -e .[jupyter]
 
 .PHONY: install-dev
-install-dev:          ## Install the project in dev mode.
+install-dev: install          ## Install the project in dev mode.
 	@if [ "$(USING_POETRY)" ]; then poetry install && exit; fi
 	@echo "Don't forget to run 'make virtualenv' if you got errors."
-	$(ENV_PREFIX)pip install -r requirements-dev.txt
-	$(ENV_PREFIX)pip install -e . --no-deps
+	$(ENV_PREFIX)pip install -e .[test,developer]
 
 
 .PHONY: lock
