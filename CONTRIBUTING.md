@@ -57,6 +57,24 @@ Follow the [NetworkX documentation guidelines](https://networkx.org/documentatio
 
 
 
+## Dependency Management
+
+This project uses [pip-tools](https://pip-tools.readthedocs.io/) to pin dependencies for reproducible builds. Top-level dependencies are declared in `pyproject.toml`, and exact versions are locked in:
+
+| Lock file | Contents |
+|---|---|
+| `requirements.txt` | Core dependencies |
+| `requirements-dev.txt` | Test + developer dependencies |
+| `requirements-jupyter.txt` | Jupyter notebook dependencies |
+
+When adding or changing a dependency:
+
+1. Edit `pyproject.toml` with the new dependency or version range.
+2. Run `make lock` to regenerate the lock files.
+3. Run `make install-dev` to update your local environment.
+4. Commit both `pyproject.toml` and the updated lock files.
+
+
 ## Code of Conduct
 This project has adopted the [Amazon Open Source Code of Conduct](https://aws.github.io/code-of-conduct).
 For more information see the [Code of Conduct FAQ](https://aws.github.io/code-of-conduct-faq) or contact

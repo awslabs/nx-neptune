@@ -23,14 +23,22 @@ show:             ## Show the current environment.
 install:          ## Install the project for examples.
 	@if [ "$(USING_POETRY)" ]; then poetry install && exit; fi
 	@echo "Don't forget to run 'make virtualenv' if you got errors."
-	$(ENV_PREFIX)pip install -e .[jupyter]
+	$(ENV_PREFIX)pip install -r requirements-jupyter.txt
+	$(ENV_PREFIX)pip install -e . --no-deps
 
 .PHONY: install-dev
-install-dev: install          ## Install the project in dev mode.
+install-dev:          ## Install the project in dev mode.
 	@if [ "$(USING_POETRY)" ]; then poetry install && exit; fi
 	@echo "Don't forget to run 'make virtualenv' if you got errors."
-	$(ENV_PREFIX)pip install -e .[test,developer]
+	$(ENV_PREFIX)pip install -r requirements-dev.txt
+	$(ENV_PREFIX)pip install -e . --no-deps
 
+
+.PHONY: lock
+lock:             ## Regenerate lock files from pyproject.toml.
+	$(ENV_PREFIX)pip-compile pyproject.toml -o requirements.txt --strip-extras
+	$(ENV_PREFIX)pip-compile pyproject.toml --extra test --extra developer -o requirements-dev.txt --strip-extras
+	$(ENV_PREFIX)pip-compile pyproject.toml --extra jupyter -o requirements-jupyter.txt --strip-extras
 
 .PHONY: dist
 dist: ## install the distribution
