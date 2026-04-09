@@ -108,16 +108,6 @@ aws secretsmanager create-secret \
   --region <region>
 ```
 
-### Reference the secret in the connection string
-
-The Lambda environment variable for the connection string should include the secret name in `${...}` syntax:
-
-```
-databricks://jdbc:databricks://<workspace-host>:443/default${my-databricks-secret}
-```
-
-The `SecretName` parameter in the SAM template must match the secret name (e.g., `my-databricks-secret`). This grants the Lambda role `secretsmanager:GetSecretValue` permission on that specific secret.
-
 ### Update the secret
 
 To rotate or update the token:
@@ -136,8 +126,14 @@ No redeployment needed — the connector reads the secret on each invocation.
 Once deployed, query Databricks data through Athena:
 
 ```sql
--- List databases
-SELECT * FROM `lambda:databricks`."information_schema"."schemata";
+-- List schemas
+SHOW DATABASES in `lambda:databricks`;
+     
+-- List tables in a schema
+SHOW TABLES in `lambda:databricks`.default;
+
+-- Describe table layout (column names and types)
+SHOW COLUMNS IN `lambda:databricks`.default.test_table
 
 -- Query a table
 SELECT * FROM `lambda:databricks`."default"."your_table" LIMIT 10;
@@ -146,9 +142,15 @@ SELECT * FROM `lambda:databricks`."default"."your_table" LIMIT 10;
 You can run queries from the Athena console or the AWS CLI:
 
 ```bash
+# Start a query
 aws athena start-query-execution \
   --query-string 'SELECT * FROM `lambda:databricks`."default"."your_table" LIMIT 10' \
   --work-group primary \
+  --region <region>
+
+# Fetch results (use the QueryExecutionId from the previous command)
+aws athena get-query-results \
+  --query-execution-id <query-execution-id> \
   --region <region>
 ```
 

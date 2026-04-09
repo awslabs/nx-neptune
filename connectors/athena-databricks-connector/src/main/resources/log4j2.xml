@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   #%L
-  Amazon Athena Query Federation SDK
+  Anthena-Databricks
   %%
-  Copyright (C) 2019 - 2020 Amazon Web Services
+  Copyright (C) 2019 - 2026 Amazon Web Services
   %%
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@
         </Lambda>
     </Appenders>
     <Loggers>
-        <Logger name="com.amazonaws.athena.connectors.jdbc" level="${env:ATHENA_FEDERATION_SDK_LOG_LEVEL:-debug}" />
+        <Logger name="com.amazonaws.athena.connectors.jdbc" level="${env:ATHENA_FEDERATION_SDK_LOG_LEVEL:-info}" />
         <Logger name="com.amazonaws.athena.connectors.databricks" level="${env:ATHENA_FEDERATION_SDK_LOG_LEVEL:-info}" />
         <Root level="warn">
             <AppenderRef ref="Lambda" />
