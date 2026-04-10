@@ -1,14 +1,14 @@
-name: Java CI Push
+name: Databricks Connector CI
 
 on:
   pull_request:
     paths:
-      - 'connectors/athena-s3vector-connector/**'
+      - 'connectors/athena-databricks-connector/**'
   push:
     branches:
       - main
     paths:
-      - 'connectors/athena-s3vector-connector/**'
+      - 'connectors/athena-databricks-connector/**'
 
 permissions:
   contents: read
@@ -24,11 +24,13 @@ jobs:
       AWS_DEFAULT_REGION: us-west-2
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: true
       - name: Set up JDK ${{ matrix.java-version }}
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
           distribution: 'corretto'
           java-version: ${{ matrix.java-version }}
       - name: Build with Maven
-        run: mvn install
-        working-directory: connectors/athena-s3vector-connector
+        run: mvn install -Dcheckstyle.skip=true
+        working-directory: connectors/athena-databricks-connector

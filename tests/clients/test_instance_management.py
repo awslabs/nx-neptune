@@ -35,6 +35,7 @@ from nx_neptune.instance_management import (
     ProjectionType,
     empty_s3_bucket,
     drop_athena_table,
+    get_athena_query_results,
 )
 
 NX_CREATE_SUCCESS_FIXTURE = """{
@@ -1609,3 +1610,102 @@ async def test_drop_athena_table_with_polling_params(
     )
 
     assert result == "test-query-execution-id"
+
+
+@patch("nx_neptune.instance_management.boto3.client")
+def test_get_athena_query_results_single_page(mock_boto3_client):
+    """Test fetching Athena query results with a single page."""
+    mock_athena_client = MagicMock()
+    mock_athena_client.get_query_execution.return_value = {
+        "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
+    }
+    mock_paginator = MagicMock()
+    mock_athena_client.get_paginator.return_value = mock_paginator
+    mock_paginator.paginate.return_value = [
+        {
+            "ResultSet": {
+                "Rows": [
+                    {"Data": [{"VarCharValue": "id"}, {"VarCharValue": "name"}]},
+                    {"Data": [{"VarCharValue": "1"}, {"VarCharValue": "Alice"}]},
+                    {"Data": [{"VarCharValue": "2"}, {"VarCharValue": "Bob"}]},
+                ]
+            }
+        }
+    ]
+
+    rows = get_athena_query_results("test-query-id", client=mock_athena_client)
+
+    assert len(rows) == 3
+    assert rows[0] == ["id", "name"]
+    assert rows[1] == ["1", "Alice"]
+    assert rows[2] == ["2", "Bob"]
+    mock_athena_client.get_paginator.assert_called_once_with("get_query_results")
+    mock_paginator.paginate.assert_called_once_with(QueryExecutionId="test-query-id")
+
+
+@patch("nx_neptune.instance_management.boto3.client")
+def test_get_athena_query_results_multiple_pages(mock_boto3_client):
+    """Test fetching Athena query results across multiple pages."""
+    mock_athena_client = MagicMock()
+    mock_athena_client.get_query_execution.return_value = {
+        "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
+    }
+    mock_paginator = MagicMock()
+    mock_athena_client.get_paginator.return_value = mock_paginator
+    mock_paginator.paginate.return_value = [
+        {
+            "ResultSet": {
+                "Rows": [
+                    {"Data": [{"VarCharValue": "id"}]},
+                    {"Data": [{"VarCharValue": "1"}]},
+                ]
+            }
+        },
+        {
+            "ResultSet": {
+                "Rows": [
+                    {"Data": [{"VarCharValue": "2"}]},
+                ]
+            }
+        },
+    ]
+
+    rows = get_athena_query_results("test-query-id", client=mock_athena_client)
+
+    assert len(rows) == 3
+    assert rows[0] == ["id"]
+    assert rows[1] == ["1"]
+    assert rows[2] == ["2"]
+
+
+@patch("nx_neptune.instance_management.boto3.client")
+def test_get_athena_query_results_empty(mock_boto3_client):
+    """Test fetching Athena query results with no rows."""
+    mock_athena_client = MagicMock()
+    mock_athena_client.get_query_execution.return_value = {
+        "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
+    }
+    mock_paginator = MagicMock()
+    mock_athena_client.get_paginator.return_value = mock_paginator
+    mock_paginator.paginate.return_value = [{"ResultSet": {"Rows": []}}]
+
+    rows = get_athena_query_results("test-query-id", client=mock_athena_client)
+
+    assert rows == []
+
+
+@patch("nx_neptune.instance_management.boto3.client")
+def test_get_athena_query_results_creates_default_client(mock_boto3_client):
+    """Test that a default Athena client is created when none is provided."""
+    mock_athena_client = MagicMock()
+    mock_boto3_client.return_value = mock_athena_client
+    mock_athena_client.get_query_execution.return_value = {
+        "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
+    }
+    mock_paginator = MagicMock()
+    mock_athena_client.get_paginator.return_value = mock_paginator
+    mock_paginator.paginate.return_value = [{"ResultSet": {"Rows": []}}]
+
+    get_athena_query_results("test-query-id")
+
+    mock_boto3_client.assert_called_once_with("athena")

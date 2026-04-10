@@ -1587,7 +1587,7 @@ def _execute_athena_query(
     if sql_parameters is not None:
         query_execution_params["ExecutionParameters"] = sql_parameters
 
-    logger.info(f"Creating table using statement:{sql_statement}")
+    logger.info(f"Executing Athena statement: {sql_statement}")
 
     try:
         response = client.start_query_execution(**query_execution_params)
@@ -1925,3 +1925,46 @@ def execute_athena_query(
         client,
         polling_interval=polling_interval,
     )
+
+
+def get_athena_query_results(
+    query_execution_id: str,
+    client: Optional[BaseClient] = None,
+) -> list[list[Optional[str]]]:
+    """Fetch results for a completed Athena query.
+
+    Args:
+        query_execution_id (str): The Athena query execution ID.
+        client (Optional[BaseClient]): Pre-configured Athena client.
+            If None, creates a new client instance.
+
+    Returns:
+        list[list[Optional[str]]]: Rows of string values. The first row
+            contains column headers. All values are returned as strings
+            (VarCharValue); NULL values are returned as None.
+
+    Note:
+        The caller is responsible for skipping the first row if headers
+        are not needed.
+    """
+    if client is None:
+        client = boto3.client("athena")
+
+    rows = []
+    try:
+        status = client.get_query_execution(QueryExecutionId=query_execution_id)
+        state = status["QueryExecution"]["Status"]["State"]
+        if state != "SUCCEEDED":
+            raise RuntimeError(
+                f"Query {query_execution_id} is in state {state}, cannot fetch results"
+            )
+
+        paginator = client.get_paginator("get_query_results")
+        for page in paginator.paginate(QueryExecutionId=query_execution_id):
+            for row in page["ResultSet"]["Rows"]:
+                rows.append([col.get("VarCharValue") for col in row["Data"]])
+    except ClientError as e:
+        logger.error(f"Error fetching query results: {e}")
+        raise
+
+    return rows

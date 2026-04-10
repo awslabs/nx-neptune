@@ -38,6 +38,7 @@ from .instance_management import (
     empty_s3_bucket,
     export_athena_table_to_s3,
     export_csv_to_s3,
+    get_athena_query_results,
     import_csv_from_s3,
     start_na_instance,
     stop_na_instance,
@@ -100,6 +101,7 @@ __all__ = [
     "create_csv_table_from_s3",
     "create_iceberg_table_from_table",
     "drop_athena_table",
+    "get_athena_query_results",
     # session management
     "SessionManager",
     "CleanupTask",

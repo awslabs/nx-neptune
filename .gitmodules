@@ -1,0 +1,4 @@
+[submodule "connectors/aws-athena-query-federation"]
+	path = connectors/aws-athena-query-federation
+	url = https://github.com/awslabs/aws-athena-query-federation.git
+	ignore = dirty
