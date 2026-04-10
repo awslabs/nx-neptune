@@ -87,7 +87,11 @@ aws lambda update-function-code \
 ## Secrets Manager Configuration
 
 The connector authenticates with Databricks using a personal access token (PAT) stored in AWS Secrets Manager. The token is retrieved at runtime by the Federation SDK — it is never embedded in code or environment variables.
+### Security Best Practices
 
+We recommend storing your Databricks personal access token in AWS Secrets Manager rather than as a plaintext Lambda environment variable. Reference the secret ARN in the `DATABRICKS_TOKEN` environment variable using dynamic references:
+
+    {{resolve:secretsmanager:your-secret-name:SecretString:token}}
 ### How it works
 
 The connector's JDBC connection string contains a `${secret-name}` placeholder. At runtime, the SDK:
