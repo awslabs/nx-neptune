@@ -5,6 +5,10 @@ updates:
     schedule:
       interval: "weekly"
   - package-ecosystem: "maven"
+    directory: "/connectors/athena-databricks-connector"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "maven"
     directory: "/connectors/athena-s3vector-connector"
     schedule:
       interval: "weekly"
