@@ -1616,6 +1616,9 @@ async def test_drop_athena_table_with_polling_params(
 def test_get_athena_query_results_single_page(mock_boto3_client):
     """Test fetching Athena query results with a single page."""
     mock_athena_client = MagicMock()
+    mock_athena_client.get_query_execution.return_value = {
+        "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
+    }
     mock_paginator = MagicMock()
     mock_athena_client.get_paginator.return_value = mock_paginator
     mock_paginator.paginate.return_value = [
@@ -1644,6 +1647,9 @@ def test_get_athena_query_results_single_page(mock_boto3_client):
 def test_get_athena_query_results_multiple_pages(mock_boto3_client):
     """Test fetching Athena query results across multiple pages."""
     mock_athena_client = MagicMock()
+    mock_athena_client.get_query_execution.return_value = {
+        "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
+    }
     mock_paginator = MagicMock()
     mock_athena_client.get_paginator.return_value = mock_paginator
     mock_paginator.paginate.return_value = [
@@ -1676,6 +1682,9 @@ def test_get_athena_query_results_multiple_pages(mock_boto3_client):
 def test_get_athena_query_results_empty(mock_boto3_client):
     """Test fetching Athena query results with no rows."""
     mock_athena_client = MagicMock()
+    mock_athena_client.get_query_execution.return_value = {
+        "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
+    }
     mock_paginator = MagicMock()
     mock_athena_client.get_paginator.return_value = mock_paginator
     mock_paginator.paginate.return_value = [{"ResultSet": {"Rows": []}}]
@@ -1690,6 +1699,9 @@ def test_get_athena_query_results_creates_default_client(mock_boto3_client):
     """Test that a default Athena client is created when none is provided."""
     mock_athena_client = MagicMock()
     mock_boto3_client.return_value = mock_athena_client
+    mock_athena_client.get_query_execution.return_value = {
+        "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
+    }
     mock_paginator = MagicMock()
     mock_athena_client.get_paginator.return_value = mock_paginator
     mock_paginator.paginate.return_value = [{"ResultSet": {"Rows": []}}]

@@ -1955,7 +1955,9 @@ def get_athena_query_results(
         status = client.get_query_execution(QueryExecutionId=query_execution_id)
         state = status["QueryExecution"]["Status"]["State"]
         if state != "SUCCEEDED":
-            raise RuntimeError(f"Query {query_execution_id} is in state {state}, cannot fetch results")
+            raise RuntimeError(
+                f"Query {query_execution_id} is in state {state}, cannot fetch results"
+            )
 
         paginator = client.get_paginator("get_query_results")
         for page in paginator.paginate(QueryExecutionId=query_execution_id):
