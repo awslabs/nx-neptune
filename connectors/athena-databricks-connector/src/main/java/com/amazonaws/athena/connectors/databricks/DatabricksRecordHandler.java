@@ -87,12 +87,14 @@ public class DatabricksRecordHandler
     {
         super(s3Client, secretsManager, athena, databaseConnectionConfig, jdbcConnectionFactory, configOptions);
         this.jdbcSplitQueryBuilder = Validate.notNull(jdbcSplitQueryBuilder, "query builder must not be null");
-try {
-    this.fetchSize = Integer.parseInt(configOptions.getOrDefault(FETCH_SIZE_CONFIG_KEY, String.valueOf(DEFAULT_FETCH_SIZE)));
-} catch (NumberFormatException e) {
-    LOGGER.warn("Invalid fetch size config, using default: {}", DEFAULT_FETCH_SIZE, e);
-    this.fetchSize = DEFAULT_FETCH_SIZE;
-}
+        int parsedFetchSize;
+        try {
+            parsedFetchSize = Integer.parseInt(configOptions.getOrDefault(FETCH_SIZE_CONFIG_KEY, String.valueOf(DEFAULT_FETCH_SIZE)));
+        } catch (NumberFormatException e) {
+            LOGGER.warn("Invalid fetch size config, using default: {}", DEFAULT_FETCH_SIZE, e);
+            parsedFetchSize = DEFAULT_FETCH_SIZE;
+        }
+        this.fetchSize = parsedFetchSize;
     }
 
     /**

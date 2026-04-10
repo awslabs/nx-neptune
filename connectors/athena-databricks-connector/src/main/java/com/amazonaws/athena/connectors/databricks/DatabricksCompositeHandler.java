@@ -31,7 +31,7 @@ public class DatabricksCompositeHandler
 {
     public DatabricksCompositeHandler()
     {
-        Map<String, String> env = new DatabricksEnvironmentProperties().createEnvironment();
-        super(new DatabricksMetadataHandler(env), new DatabricksRecordHandler(env));
+        super(new DatabricksMetadataHandler(new DatabricksEnvironmentProperties().createEnvironment()),
+                new DatabricksRecordHandler(new DatabricksEnvironmentProperties().createEnvironment()));
     }
 }
