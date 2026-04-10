@@ -72,7 +72,6 @@ jupyter = [
     "scipy>=1.9,!=1.11.0,!=1.11.1",
     "pandas",
     "requests",
-    "kagglehub",
     "databricks-sdk",
     "databricks-sql-connector"
 ]
