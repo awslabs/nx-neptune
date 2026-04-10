@@ -174,6 +174,7 @@ To re-enable Cloud Fetch for higher throughput, set the `EnableArrow` parameter 
 
 ## Troubleshooting
 
+- **No partitioning support**: All data is read in a single split. For large tables, use `LIMIT` or `WHERE` clauses to avoid Lambda timeout or out-of-memory errors.
 - **Check Lambda Logs**: `aws logs tail /aws/lambda/databricks --follow --format short --region <region>`
 - **Verify Permissions**: Ensure the Lambda execution role has access to Secrets Manager and the spill bucket
 

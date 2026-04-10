@@ -59,6 +59,8 @@ public class DatabricksQueryStringBuilder
     @Override
     protected List<String> getPartitionWhereClauses(Split split)
     {
+        // Partitioning is not implemented — all data is read in a single split.
+        // For large tables, use LIMIT or WHERE clauses to avoid Lambda timeout/OOM.
         return Collections.emptyList();
     }
 }
