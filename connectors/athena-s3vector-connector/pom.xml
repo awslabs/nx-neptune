@@ -23,7 +23,7 @@
         <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
         <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
         <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
-        <junit-jupiter.version>5.9.0</junit-jupiter.version>
+        <junit-jupiter.version>6.0.3</junit-jupiter.version>
     </properties>
     <dependencies>
         <dependency>
