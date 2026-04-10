@@ -102,7 +102,7 @@ Resources:
             - Action:
                 - athena:GetQueryExecution
               Effect: Allow
-              Resource: '*'
+              Resource: !Sub 'arn:${AWS::Partition}:athena:${AWS::Region}:${AWS::AccountId}:workgroup/*'
           Version: '2012-10-17'
         - Statement:
             - Action:
