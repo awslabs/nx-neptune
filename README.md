@@ -58,6 +58,8 @@ make lock
 > pip install pip-tools
 > make lock
 > ```
+>
+> CI only verifies `requirements.txt` and `requirements-dev.txt`. The jupyter lock file (`requirements-jupyter.txt`) is not checked because it may contain platform-specific packages (e.g., `appnope` on macOS) that differ between local and CI environments.
 
 ## Prerequisite 
 Before using this backend, ensure the following prerequisites are met:
