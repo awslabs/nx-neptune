@@ -32,6 +32,12 @@ install-dev: install          ## Install the project in dev mode.
 	$(ENV_PREFIX)pip install -e .[test,developer]
 
 
+.PHONY: lock
+lock:             ## Regenerate lock files from pyproject.toml.
+	$(ENV_PREFIX)pip-compile pyproject.toml -o requirements.txt --strip-extras
+	$(ENV_PREFIX)pip-compile pyproject.toml --extra test --extra developer -o requirements-dev.txt --strip-extras
+	$(ENV_PREFIX)pip-compile pyproject.toml --extra jupyter -o requirements-jupyter.txt --strip-extras
+
 .PHONY: dist
 dist: ## install the distribution
 	@echo "Building distribution:"

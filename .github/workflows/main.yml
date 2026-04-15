@@ -2,6 +2,10 @@
 
 name: CI
 
+permissions:
+  contents: read
+  pull-requests: write
+
 # Controls when the workflow will run
 on:
   # Triggers the workflow on push or pull request events but only for the main branch
@@ -30,6 +34,26 @@ jobs:
         run: make install-dev
       - name: Run linter
         run: make lint
+
+  lock-check:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.11]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install pip-tools
+        run: pip install pip-tools
+      - name: Check lock files are in sync
+        run: |
+          make lock
+          git diff --exit-code requirements.txt requirements-dev.txt || \
+            (echo "Lock files are out of sync with pyproject.toml. Run 'make lock' and commit." && exit 1)
 
   license-check:
     strategy:
