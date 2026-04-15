@@ -14,7 +14,7 @@ This repository contains three independently released components:
 
 ### 1. Ensure CI is green
 
-All of the following must pass on `main`:
+All of the following must pass on [`main`](https://github.com/awslabs/nx-neptune/tree/main):
 
 - **Lint + unit tests** (`main.yml`) — runs `make lint` and `make test`
 - **Lock file check** (`main.yml`) — verifies `requirements.txt` and `requirements-dev.txt` are in sync with `pyproject.toml`
@@ -57,7 +57,7 @@ This will:
 3. Commit and tag
 4. Push the tag to GitHub
 
-GitHub Actions will then:
+After the tag is pushed, [create a GitHub Release](https://github.com/awslabs/nx-neptune/releases/new) from the tag. GitHub Actions will then trigger automatically:
 - **Prerelease** (`python-prerelease.yml`): Triggered by `prereleased` events. Builds the wheel and uploads to GitHub Releases.
 - **Release** (`python-publish.yml`): Triggered by `released` events. Builds the wheel and publishes to PyPI via trusted publishing.
 
@@ -68,7 +68,7 @@ The Athena connectors are deployed separately as Lambda functions via SAM. They 
 ```bash
 # Databricks connector
 cd connectors/athena-databricks-connector
-mvn clean install -Dcheckstyle.skip=true
+mvn clean install
 
 # S3Vector connector
 cd connectors/athena-s3vector-connector
