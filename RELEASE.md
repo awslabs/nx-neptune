@@ -85,10 +85,11 @@ Integration tests live in `integ_test/` and require a live Neptune Analytics gra
 
 ### Prerequisites
 
-Set the following environment variable:
+Set the following environment variables:
 
 ```bash
 export NETWORKX_GRAPH_ID=g-your-graph-id
+export NETWORKX_S3_EXPORT_BUCKET_PATH=s3://your-bucket/path/  # for tier 2 (S3 bucket must have KMS + versioning enabled)
 ```
 
 ### Running tests
@@ -97,7 +98,10 @@ export NETWORKX_GRAPH_ID=g-your-graph-id
 # Run tier 1 only (NeptuneGraph CRUD + SessionManager read ops, ~1 min)
 pytest integ_test/tier1_graph/ -v
 
-# Run all integration tests (algorithms + security + tier 1)
+# Run tier 2 only (S3 import/export + IAM permissions, ~3 min)
+pytest integ_test/tier2_s3/ -v -s
+
+# Run all integration tests (algorithms + security + tier 1 + tier 2)
 make integ-test
 ```
 
@@ -108,6 +112,8 @@ make integ-test
 | Algorithms | `integ_test/test_algo_*.py` | PageRank, closeness, degree, Louvain, LPA, BFS |
 | Security | `integ_test/test_security_*.py` | Injection prevention, graph reset, S3 versioning |
 | Tier 1 — Graph CRUD | `integ_test/tier1_graph/` | add/update/delete nodes & edges, clear_graph, execute_call, SessionManager list/get graphs, validate_permissions |
+| Tier 2 — S3 Import/Export | `integ_test/tier2_s3/test_s3_import_export.py` | export_csv_to_s3, export with filter, round-trip import, empty_s3_bucket |
+| Tier 2 — IAM Permissions | `integ_test/tier2_s3/test_iam_permissions.py` | has_import/export/delete_s3_permissions, check_s3_versioning, S3 ARN parsing |
 
 ### Resource cleanup
 
