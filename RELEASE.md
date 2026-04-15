@@ -89,6 +89,7 @@ Integration tests live in `integ_test/` and are designed to be run incrementally
 |---|---|---|
 | Tier 1 | `NETWORKX_GRAPH_ID` | NeptuneGraph CRUD, SessionManager read ops, algorithms, security |
 | Tier 2 | Tier 1 + `NETWORKX_S3_EXPORT_BUCKET_PATH` | S3 export/import, snapshots, IAM permission checks |
+| Tier 3 | Tier 2 + IAM role with create/delete permissions | Instance create/delete/start/stop, SessionManager lifecycle, context manager cleanup |
 
 ### Environment variables
 
@@ -98,6 +99,8 @@ export NETWORKX_GRAPH_ID=g-your-graph-id
 
 # Tier 2 — add an S3 bucket (must have KMS encryption + versioning enabled)
 export NETWORKX_S3_EXPORT_BUCKET_PATH=s3://your-bucket/path/
+
+# Tier 3 — no additional env vars, but IAM role must have neptune-graph:Create*, Delete*, Start*, Stop* permissions
 ```
 
 ### Running tests
@@ -108,6 +111,9 @@ pytest integ_test/tier1_graph/ -v
 
 # Tier 2 only (~5 min, requires NETWORKX_GRAPH_ID + NETWORKX_S3_EXPORT_BUCKET_PATH)
 pytest integ_test/tier2_export_import/ -v -s
+
+# Tier 3 only (~15 min, creates/destroys real instances)
+pytest integ_test/tier3_lifecycle/ -v -s
 
 # All integration tests
 make integ-test
@@ -123,6 +129,8 @@ make integ-test
 | S3 Import/Export | `integ_test/tier2_export_import/test_s3_import_export.py` | 2 | export_csv_to_s3, export with filter, round-trip import, empty_s3_bucket |
 | Snapshots | `integ_test/tier2_export_import/test_snapshot.py` | 2 | create_graph_snapshot, delete_graph_snapshot |
 | IAM Permissions | `integ_test/tier2_export_import/test_iam_permissions.py` | 2 | has_import/export/delete_s3_permissions, check_s3_versioning, S3 ARN parsing |
+| Instance Lifecycle | `integ_test/tier3_lifecycle/test_instance_lifecycle.py` | 3 | create/delete instance, snapshot→restore→cleanup, stop→start→delete |
+| SessionManager Lifecycle | `integ_test/tier3_lifecycle/test_session_manager_lifecycle.py` | 3 | get_or_create_graph, create_from_csv, create_multiple_instances + destroy_all, context manager with DESTROY cleanup |
 
 ### Resource cleanup
 
