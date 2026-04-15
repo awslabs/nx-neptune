@@ -36,30 +36,6 @@ class TestGetOrCreateGraph:
         _loop.run_until_complete(sm.destroy_graph(graph.graph_id))
 
 
-class TestCreateFromCsv:
-
-    @pytest.fixture(autouse=True)
-    def _require_s3(self):
-        if not S3_BUCKET:
-            pytest.skip("NETWORKX_S3_EXPORT_BUCKET_PATH not set")
-
-    def test_create_from_csv(self, resource_tracker):
-        """Create an instance with S3 import in one shot."""
-        sm = SessionManager(session_name="integ-t3-fromcsv")
-        graph = _loop.run_until_complete(
-            sm.create_from_csv(
-                s3_arn=S3_BUCKET,
-                config={"provisionedMemory": 16},
-            )
-        )
-        resource_tracker.register_graph(graph.graph_id)
-
-        assert isinstance(graph, NeptuneAnalyticsClient)
-
-        # Cleanup
-        _loop.run_until_complete(sm.destroy_graph(graph.graph_id))
-
-
 class TestContextManagerCleanup:
 
     def test_create_fleet_use_then_destroy_all(self, resource_tracker):

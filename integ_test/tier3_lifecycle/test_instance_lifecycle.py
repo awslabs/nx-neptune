@@ -27,7 +27,7 @@ class TestCreateAndDeleteInstance:
         graph_id = asyncio.get_event_loop().run_until_complete(
             create_na_instance(
                 config={"provisionedMemory": 16, "publicConnectivity": False},
-                graph_name_prefix="integ-t4",
+                graph_name_prefix="integ-t3",
             )
         )
         resource_tracker.register_graph(graph_id)
@@ -51,14 +51,14 @@ class TestSnapshotLifecycle:
         source_id = asyncio.get_event_loop().run_until_complete(
             create_na_instance(
                 config={"provisionedMemory": 16, "publicConnectivity": False},
-                graph_name_prefix="integ-t4-snap-src",
+                graph_name_prefix="integ-t3-snap-src",
             )
         )
         resource_tracker.register_graph(source_id)
 
         # Create snapshot
         snapshot_id = asyncio.get_event_loop().run_until_complete(
-            create_graph_snapshot(source_id, "integ-t4-snapshot")
+            create_graph_snapshot(source_id, "integ-t3-snapshot")
         )
         resource_tracker.register_snapshot(snapshot_id)
         assert snapshot_id is not None
@@ -67,7 +67,7 @@ class TestSnapshotLifecycle:
         restored_id = asyncio.get_event_loop().run_until_complete(
             create_na_instance_from_snapshot(
                 snapshot_id,
-                graph_name_prefix="integ-t4-snap-rst",
+                graph_name_prefix="integ-t3-snap-rst",
             )
         )
         resource_tracker.register_graph(restored_id)
@@ -92,7 +92,7 @@ class TestStopAndStart:
         graph_id = asyncio.get_event_loop().run_until_complete(
             create_na_instance(
                 config={"provisionedMemory": 16, "publicConnectivity": False},
-                graph_name_prefix="integ-t4-stopstart",
+                graph_name_prefix="integ-t3-stopstart",
             )
         )
         resource_tracker.register_graph(graph_id)

@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-"""Tier 4 fixtures — creates and destroys Neptune Analytics instances.
+"""Tier 3 fixtures — creates and destroys Neptune Analytics instances.
 
 WARNING: These tests create real AWS resources and take ~10-15 minutes.
 
@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("nx_neptune").setLevel(logging.INFO)
 
 S3_BUCKET = os.environ.get("NETWORKX_S3_EXPORT_BUCKET_PATH")
-SESSION_PREFIX = "integ-t4"
+SESSION_PREFIX = "integ-t3"
 
 
 @pytest.fixture(scope="module", autouse=True)
