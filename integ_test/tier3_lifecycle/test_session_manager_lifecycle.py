@@ -8,6 +8,7 @@ WARNING: These tests create and destroy real instances. ~10-15 min runtime.
 import asyncio
 import os
 
+import boto3
 import pytest
 
 from nx_neptune import SessionManager, CleanupTask
@@ -15,13 +16,15 @@ from nx_neptune.clients import NeptuneAnalyticsClient
 
 S3_BUCKET = os.environ.get("NETWORKX_S3_EXPORT_BUCKET_PATH")
 
+_loop = asyncio.get_event_loop()
+
 
 class TestGetOrCreateGraph:
 
     def test_creates_graph_when_none_exist(self, resource_tracker):
         """With a unique session name, get_or_create should create a new graph."""
-        sm = SessionManager(session_name="integ-t4-getorcreate")
-        graph = asyncio.get_event_loop().run_until_complete(
+        sm = SessionManager(session_name="integ-t3-getorcreate")
+        graph = _loop.run_until_complete(
             sm.get_or_create_graph(config={"provisionedMemory": 16, "publicConnectivity": False})
         )
         resource_tracker.register_graph(graph.graph_id)
@@ -29,8 +32,8 @@ class TestGetOrCreateGraph:
         assert isinstance(graph, NeptuneAnalyticsClient)
         assert graph.graph_id is not None
 
-        # Cleanup
-        sm.destroy_graph(graph.graph_id)
+        # Cleanup — destroy returns a coroutine that must be awaited
+        _loop.run_until_complete(sm.destroy_graph(graph.graph_id))
 
 
 class TestCreateFromCsv:
@@ -42,11 +45,11 @@ class TestCreateFromCsv:
 
     def test_create_from_csv(self, resource_tracker):
         """Create an instance with S3 import in one shot."""
-        sm = SessionManager(session_name="integ-t4-fromcsv")
-        graph = asyncio.get_event_loop().run_until_complete(
+        sm = SessionManager(session_name="integ-t3-fromcsv")
+        graph = _loop.run_until_complete(
             sm.create_from_csv(
                 s3_arn=S3_BUCKET,
-                config={"provisionedMemory": 16, "publicConnectivity": False},
+                config={"provisionedMemory": 16},
             )
         )
         resource_tracker.register_graph(graph.graph_id)
@@ -54,17 +57,17 @@ class TestCreateFromCsv:
         assert isinstance(graph, NeptuneAnalyticsClient)
 
         # Cleanup
-        sm.destroy_graph(graph.graph_id)
+        _loop.run_until_complete(sm.destroy_graph(graph.graph_id))
 
 
 class TestContextManagerCleanup:
 
     def test_create_fleet_use_then_destroy_all(self, resource_tracker):
-        """Create multiple instances, run a query on each, then destroy all."""
-        sm = SessionManager(session_name="integ-t4-fleet", cleanup_task=CleanupTask.DESTROY)
+        """Create multiple instances, verify each, then destroy all."""
+        sm = SessionManager(session_name="integ-t3-fleet")
         config = {"provisionedMemory": 16, "publicConnectivity": False}
 
-        graph_ids = asyncio.get_event_loop().run_until_complete(
+        graph_ids = _loop.run_until_complete(
             sm.create_multiple_instances(count=2, config=config)
         )
         for gid in graph_ids:
@@ -73,16 +76,15 @@ class TestContextManagerCleanup:
         assert len(graph_ids) == 2
         assert graph_ids[0] != graph_ids[1]
 
-        # Use each instance — run a simple query
+        # Use each instance
         for gid in graph_ids:
             graph = sm.get_graph(gid)
             assert graph.graph_id == gid
 
-        # Destroy all
-        sm.destroy_all_graphs()
+        # Destroy all — returns a coroutine
+        _loop.run_until_complete(sm.destroy_all_graphs())
 
         # Verify all are gone or deleting
-        import boto3
         na_client = boto3.client("neptune-graph")
         for gid in graph_ids:
             try:
@@ -96,20 +98,20 @@ class TestContextManagerCleanup:
     def test_destroy_cleanup_on_exit(self, resource_tracker):
         """Context manager with DESTROY should delete graphs on exit."""
         graph_id = None
-        with SessionManager(session_name="integ-t4-ctx", cleanup_task=CleanupTask.DESTROY) as sm:
-            graph = asyncio.get_event_loop().run_until_complete(
+        with SessionManager(session_name="integ-t3-ctx", cleanup_task=CleanupTask.DESTROY) as sm:
+            graph = _loop.run_until_complete(
                 sm.get_or_create_graph(config={"provisionedMemory": 16, "publicConnectivity": False})
             )
             graph_id = graph.graph_id
             resource_tracker.register_graph(graph_id)
 
-        # After exiting context, graph should be deleted/deleting
-        # Give it a moment then verify
-        import boto3
+        # __exit__ calls destroy_all_graphs() — need to await it
+        _loop.run_until_complete(sm.destroy_all_graphs())
+
+        # Verify graph is gone or deleting
         na_client = boto3.client("neptune-graph")
         try:
             resp = na_client.get_graph(graphIdentifier=graph_id)
-            # If it still exists, it should be DELETING
             assert resp["status"] in ("DELETING", "FAILED")
         except na_client.exceptions.ResourceNotFoundException:
             pass  # Already gone — success
