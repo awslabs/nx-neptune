@@ -1,6 +1,11 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-"""Tier 2 fixtures — export/import tests (S3 + snapshots)."""
+"""Session manager fixtures — read ops, S3 export/import, snapshots, lifecycle.
+
+Env vars:
+  NETWORKX_GRAPH_ID              - required for all tests
+  NETWORKX_S3_EXPORT_BUCKET_PATH - required for S3 and import tests
+"""
 
 import logging
 import os
@@ -9,7 +14,7 @@ import boto3
 import networkx as nx
 import pytest
 
-from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID, Node, Edge
+from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID, SessionManager, CleanupTask, Node, Edge
 from nx_neptune.clients.iam_client import IamClient
 
 logging.basicConfig(level=logging.INFO)
@@ -22,6 +27,12 @@ S3_EXPORT_BUCKET = os.environ.get("NETWORKX_S3_EXPORT_BUCKET_PATH")
 def _require_graph_id():
     if not NETWORKX_GRAPH_ID:
         pytest.skip("NETWORKX_GRAPH_ID not set")
+
+
+@pytest.fixture(scope="module")
+def session_manager():
+    """SessionManager instance for read-only operations."""
+    return SessionManager()
 
 
 @pytest.fixture(scope="module")
@@ -53,7 +64,7 @@ def iam_client(_require_s3):
 
 @pytest.fixture(scope="module")
 def seeded_graph(neptune_graph):
-    """Graph with a few nodes and edges for export testing."""
+    """Graph with nodes and edges for export testing."""
     nodes = [
         Node(id="s1", labels=["Person"], properties={"name": "Alice"}),
         Node(id="s2", labels=["Person"], properties={"name": "Bob"}),
