@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-"""Tier 1 fixtures — requires only NETWORKX_GRAPH_ID."""
+"""Graph operations fixtures — requires only NETWORKX_GRAPH_ID."""
 
 import pytest
 import networkx as nx
@@ -28,3 +28,10 @@ def neptune_graph():
 def session_manager():
     """SessionManager instance for read-only operations."""
     return SessionManager()
+
+
+def pytest_runtest_setup(item):
+    """Clear the graph before any test whose name contains 'empty_graph'."""
+    if "empty_graph" in item.name:
+        g = nx.Graph()
+        NeptuneGraph.from_config(graph=g).clear_graph()
