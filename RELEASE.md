@@ -81,33 +81,56 @@ Refer to each connector's README for SAM deployment instructions.
 
 ## Integration tests
 
-Integration tests live in `integ_test/` and require a live Neptune Analytics graph instance. They are not run in CI and must be executed manually before each release.
+Integration tests live in `integ_test/` and are designed to be run incrementally — each tier adds more coverage as you provide more AWS resources. Tests auto-skip if the required environment variables are not set.
 
-### Prerequisites
+### Tiers
 
-Set the following environment variable:
+| Tier | What you provide | What you can test |
+|---|---|---|
+| Tier 1 | `NETWORKX_GRAPH_ID` | NeptuneGraph CRUD, SessionManager read ops, algorithms, security |
+| Tier 2 | Tier 1 + `NETWORKX_S3_EXPORT_BUCKET_PATH` | S3 export/import, snapshots, IAM permission checks |
+| Tier 3 | Tier 2 + IAM role with create/delete permissions | Instance create/delete/start/stop, SessionManager lifecycle, context manager cleanup |
+
+### Environment variables
 
 ```bash
+# Tier 1 — just a graph ID
 export NETWORKX_GRAPH_ID=g-your-graph-id
+
+# Tier 2 — add an S3 bucket (must have KMS encryption + versioning enabled)
+export NETWORKX_S3_EXPORT_BUCKET_PATH=s3://your-bucket/path/
+
+# Tier 3 — no additional env vars, but IAM role must have neptune-graph:Create*, Delete*, Start*, Stop* permissions
 ```
 
 ### Running tests
 
 ```bash
-# Run tier 1 only (NeptuneGraph CRUD + SessionManager read ops, ~1 min)
+# Tier 1 only (~1 min, requires NETWORKX_GRAPH_ID)
 pytest integ_test/tier1_graph/ -v
 
-# Run all integration tests (algorithms + security + tier 1)
+# Tier 2 only (~5 min, requires NETWORKX_GRAPH_ID + NETWORKX_S3_EXPORT_BUCKET_PATH)
+pytest integ_test/tier2_export_import/ -v -s
+
+# Tier 3 only (~15 min, creates/destroys real instances)
+pytest integ_test/tier3_lifecycle/ -v -s
+
+# All integration tests
 make integ-test
 ```
 
 ### What is covered
 
-| Test suite | Directory | What it covers |
-|---|---|---|
-| Algorithms | `integ_test/test_algo_*.py` | PageRank, closeness, degree, Louvain, LPA, BFS |
-| Security | `integ_test/test_security_*.py` | Injection prevention, graph reset, S3 versioning |
-| Tier 1 — Graph CRUD | `integ_test/tier1_graph/` | add/update/delete nodes & edges, clear_graph, execute_call, SessionManager list/get graphs, validate_permissions |
+| Test suite | Directory | Tier | What it covers |
+|---|---|---|---|
+| Algorithms | `integ_test/test_algo_*.py` | 1 | PageRank, closeness, degree, Louvain, LPA, BFS |
+| Security | `integ_test/test_security_*.py` | 1 | Injection prevention, graph reset, S3 versioning |
+| Graph CRUD | `integ_test/tier1_graph/` | 1 | add/update/delete nodes & edges, clear_graph, execute_call, SessionManager list/get graphs, validate_permissions |
+| S3 Import/Export | `integ_test/tier2_export_import/test_s3_import_export.py` | 2 | export_csv_to_s3, export with filter, round-trip import, empty_s3_bucket |
+| Snapshots | `integ_test/tier2_export_import/test_snapshot.py` | 2 | create_graph_snapshot, delete_graph_snapshot |
+| IAM Permissions | `integ_test/tier2_export_import/test_iam_permissions.py` | 2 | has_import/export/delete_s3_permissions, check_s3_versioning, S3 ARN parsing |
+| Instance Lifecycle | `integ_test/tier3_lifecycle/test_instance_lifecycle.py` | 3 | create/delete instance, snapshot→restore→cleanup, stop→start→delete |
+| SessionManager Lifecycle | `integ_test/tier3_lifecycle/test_session_manager_lifecycle.py` | 3 | get_or_create_graph, create_from_csv, create_multiple_instances + destroy_all, context manager with DESTROY cleanup |
 
 ### Resource cleanup
 
