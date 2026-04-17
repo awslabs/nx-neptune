@@ -178,7 +178,7 @@ sphinxcontrib-qthelp==2.0.0
     # via sphinx
 sphinxcontrib-serializinghtml==2.0.0
     # via sphinx
-sqlglot==30.4.2
+sqlglot==30.4.3
     # via nx-neptune (pyproject.toml)
 typing-extensions==4.15.0
     # via
