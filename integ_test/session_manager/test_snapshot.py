@@ -10,15 +10,17 @@ import asyncio
 
 import pytest
 
-from nx_neptune import NETWORKX_GRAPH_ID, create_graph_snapshot, delete_graph_snapshot
+from nx_neptune import NETWORKX_GRAPH_ID
 
 
 class TestSnapshotCreateAndDelete:
 
-    def test_create_snapshot_then_delete(self, resource_tracker):
+    def test_create_snapshot_then_delete(self, session_manager, resource_tracker):
         """Create a snapshot of the test graph, verify, then delete."""
+        graph = session_manager.get_graph(NETWORKX_GRAPH_ID)
+
         snapshot_id = asyncio.get_event_loop().run_until_complete(
-            create_graph_snapshot(NETWORKX_GRAPH_ID, "integ-t2-snapshot")
+            session_manager.create_snapshot(graph, "integ-t2-snapshot")
         )
         resource_tracker.register_snapshot(snapshot_id)
 
@@ -27,7 +29,7 @@ class TestSnapshotCreateAndDelete:
 
         # Delete
         deleted_id = asyncio.get_event_loop().run_until_complete(
-            delete_graph_snapshot(snapshot_id)
+            session_manager.delete_snapshot(snapshot_id)
         )
         assert deleted_id == snapshot_id
         resource_tracker.snapshots.remove(snapshot_id)

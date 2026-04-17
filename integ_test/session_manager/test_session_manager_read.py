@@ -44,11 +44,3 @@ class TestSessionNameFiltering:
         sm = SessionManager(session_name="zzz-no-match-prefix")
         graphs = sm.list_graphs()
         assert len(graphs) == 0
-
-
-class TestValidatePermissions:
-
-    def test_validate_permissions_returns_dict(self, session_manager):
-        result = session_manager.validate_permissions()
-        assert isinstance(result, dict)
-        assert len(result) > 0

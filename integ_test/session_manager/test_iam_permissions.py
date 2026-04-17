@@ -11,6 +11,14 @@ from nx_neptune.clients.iam_client import split_s3_arn_to_bucket_and_path
 S3_BUCKET = os.environ.get("NETWORKX_S3_EXPORT_BUCKET_PATH")
 
 
+class TestValidatePermissions:
+
+    def test_validate_permissions_returns_dict(self, session_manager):
+        result = session_manager.validate_permissions()
+        assert isinstance(result, dict)
+        assert len(result) > 0
+
+
 class TestS3PermissionChecks:
 
     def test_has_import_permissions(self, iam_client):
