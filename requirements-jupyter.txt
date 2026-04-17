@@ -178,7 +178,7 @@ jupyterlab-widgets==3.0.16
     # via ipywidgets
 kagglehub==1.0.0
     # via nx-neptune (pyproject.toml)
-kagglesdk==0.1.17
+kagglesdk==0.1.19
     # via kagglehub
 kiwisolver==1.5.0
     # via matplotlib
