@@ -53,7 +53,7 @@ make release
 
 This will:
 1. Prompt for the version number
-2. Write it to `nx_neptune/VERSION`
+2. Update version in `nx_neptune/__init__.py`
 3. Commit and tag
 4. Push the tag to GitHub
 
