@@ -29,7 +29,7 @@ class TestS3PermissionChecks:
 class TestS3ArnParsing:
 
     def test_split_s3_arn_bucket_and_path(self):
-        bucket, path = split_s3_arn_to_bucket_and_path("s3://my-bucket/some/prefix/")
+        bucket, path = split_s3_arn_to_bucket_and_path("s3://my-bucket/some/path/")
         assert bucket == "my-bucket"
         assert path == "some/prefix/"
 
