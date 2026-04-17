@@ -47,10 +47,6 @@ def neptune_graph():
 
 @pytest.fixture(scope="module")
 def s3_client():
-    """S3 client for verifying export results.
-    Tests will be skipped when NETWORKX_S3_EXPORT_BUCKET_PATH is absent."""
-    if not S3_EXPORT_BUCKET:
-        pytest.skip("NETWORKX_S3_EXPORT_BUCKET_PATH not set — skipping S3-dependent tests")
     return boto3.client("s3")
 
 

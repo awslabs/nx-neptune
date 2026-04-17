@@ -19,6 +19,7 @@ class TestValidatePermissions:
         assert len(result) > 0
 
 
+@pytest.mark.skipif(not S3_BUCKET, reason="NETWORKX_S3_EXPORT_BUCKET_PATH not set")
 class TestS3PermissionChecks:
 
     def test_has_import_permissions(self, iam_client):

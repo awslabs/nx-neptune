@@ -21,6 +21,11 @@ from nx_neptune.clients.iam_client import split_s3_arn_to_bucket_and_path
 
 S3_BUCKET = os.environ.get("NETWORKX_S3_EXPORT_BUCKET_PATH")
 
+pytestmark = pytest.mark.skipif(
+    not S3_BUCKET,
+    reason="NETWORKX_S3_EXPORT_BUCKET_PATH not set"
+)
+
 
 class TestExportCsvToS3:
 
