@@ -23,12 +23,6 @@ logging.getLogger("nx_neptune").setLevel(logging.INFO)
 S3_EXPORT_BUCKET = os.environ.get("NETWORKX_S3_EXPORT_BUCKET_PATH")
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _require_graph_id():
-    if not NETWORKX_GRAPH_ID:
-        pytest.skip("NETWORKX_GRAPH_ID not set")
-
-
 @pytest.fixture(scope="module")
 def session_manager():
     """SessionManager instance for read-only operations."""

@@ -8,12 +8,6 @@ import networkx as nx
 from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID, SessionManager
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _require_graph_id():
-    if not NETWORKX_GRAPH_ID:
-        pytest.skip("NETWORKX_GRAPH_ID not set")
-
-
 @pytest.fixture(scope="module")
 def neptune_graph():
     """NeptuneGraph instance backed by the test graph."""

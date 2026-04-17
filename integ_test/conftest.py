@@ -12,7 +12,15 @@ import boto3
 import pytest
 from botocore.exceptions import ClientError
 
+from nx_neptune import NETWORKX_GRAPH_ID
+
 logger = logging.getLogger(__name__)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _require_graph_id():
+    if not NETWORKX_GRAPH_ID:
+        pytest.skip("NETWORKX_GRAPH_ID not set")
 
 
 class ResourceTracker:
