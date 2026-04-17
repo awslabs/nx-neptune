@@ -48,7 +48,7 @@ flake8-pyproject==1.2.4
     # via nx-neptune (pyproject.toml)
 grpcio==1.80.0
     # via opensearch-protobufs
-identify==2.6.18
+identify==2.6.19
     # via pre-commit
 idna==3.11
     # via requests
