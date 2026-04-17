@@ -6,6 +6,11 @@ import pytest
 from nx_neptune import Node, Edge
 
 
+@pytest.fixture(autouse=True)
+def setup_before_test(neptune_graph):
+    neptune_graph.clear_graph()
+
+
 class TestAddAndGetNodes:
 
     def test_add_single_node(self, neptune_graph):
@@ -19,7 +24,6 @@ class TestAddAndGetNodes:
         assert nodes[0]["~properties"]["name"] == "Alice"
 
     def test_add_multiple_nodes(self, neptune_graph):
-        neptune_graph.clear_graph()
         nodes = [
             Node(id="a", labels=["City"], properties={"pop": 100}),
             Node(id="b", labels=["City"], properties={"pop": 200}),
@@ -32,7 +36,6 @@ class TestAddAndGetNodes:
         assert ids == {"a", "b", "c"}
 
     def test_add_node_no_properties(self, neptune_graph):
-        neptune_graph.clear_graph()
         node = Node(id="bare", labels=["Thing"])
         neptune_graph.add_node(node)
 
@@ -42,7 +45,6 @@ class TestAddAndGetNodes:
         assert "Thing" in nodes[0]["~labels"]
 
     def test_add_node_multiple_labels(self, neptune_graph):
-        neptune_graph.clear_graph()
         node = Node(id="multi", labels=["Person", "Employee"], properties={"dept": "eng"})
         neptune_graph.add_node(node)
 
@@ -56,7 +58,6 @@ class TestAddAndGetNodes:
 class TestUpdateNodes:
 
     def test_update_single_node(self, neptune_graph):
-        neptune_graph.clear_graph()
         node = Node(id="u1", labels=["Person"], properties={"name": "Bob"})
         neptune_graph.add_node(node)
 
@@ -73,7 +74,6 @@ class TestUpdateNodes:
         assert nodes[0]["~properties"]["name"] == "Robert"
 
     def test_update_multiple_nodes(self, neptune_graph):
-        neptune_graph.clear_graph()
         nodes = [
             Node(id="m1", labels=["Item"], properties={"status": "new"}),
             Node(id="m2", labels=["Item"], properties={"status": "new"}),
@@ -96,7 +96,6 @@ class TestUpdateNodes:
 class TestDeleteNodes:
 
     def test_delete_node(self, neptune_graph):
-        neptune_graph.clear_graph()
         node = Node(id="d1", labels=["Temp"])
         neptune_graph.add_node(node)
         assert len(neptune_graph.get_all_nodes()) == 1
@@ -105,7 +104,6 @@ class TestDeleteNodes:
         assert len(neptune_graph.get_all_nodes()) == 0
 
     def test_delete_nonexistent_node_no_effect(self, neptune_graph):
-        neptune_graph.clear_graph()
         node = Node(id="keep", labels=["Persist"])
         neptune_graph.add_node(node)
 
@@ -120,7 +118,6 @@ class TestDeleteNodes:
 class TestAddAndGetEdges:
 
     def test_add_single_edge(self, neptune_graph):
-        neptune_graph.clear_graph()
         src = Node(id="e_src", labels=["Person"])
         dst = Node(id="e_dst", labels=["Person"])
         neptune_graph.add_nodes([src, dst])
@@ -134,7 +131,6 @@ class TestAddAndGetEdges:
         assert edges[0]["~end"] == "e_dst"
 
     def test_add_multiple_edges(self, neptune_graph):
-        neptune_graph.clear_graph()
         a = Node(id="ea", labels=["N"])
         b = Node(id="eb", labels=["N"])
         c = Node(id="ec", labels=["N"])
@@ -153,7 +149,6 @@ class TestAddAndGetEdges:
         assert ("eb", "ec") in edge_pairs
 
     def test_edge_with_properties(self, neptune_graph):
-        neptune_graph.clear_graph()
         src = Node(id="ps", labels=["X"])
         dst = Node(id="pd", labels=["X"])
         neptune_graph.add_nodes([src, dst])
@@ -177,7 +172,6 @@ class TestAddAndGetEdges:
 class TestDeleteEdges:
 
     def test_delete_edge(self, neptune_graph):
-        neptune_graph.clear_graph()
         src = Node(id="ds", labels=["N"])
         dst = Node(id="dd", labels=["N"])
         neptune_graph.add_nodes([src, dst])
@@ -210,7 +204,6 @@ class TestClearGraph:
 class TestExecuteCall:
 
     def test_raw_cypher_query(self, neptune_graph):
-        neptune_graph.clear_graph()
         node = Node(id="raw1", labels=["Test"])
         neptune_graph.add_node(node)
 
@@ -218,7 +211,6 @@ class TestExecuteCall:
         assert result[0]["cnt"] == 1
 
     def test_parameterized_query(self, neptune_graph):
-        neptune_graph.clear_graph()
         node = Node(id="param1", labels=["Test"], properties={"val": 99})
         neptune_graph.add_node(node)
 
