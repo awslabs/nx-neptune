@@ -104,14 +104,20 @@ Lifecycle tests (instance create/delete/start/stop) also require the IAM role to
 
 ### Running tests
 
+**Graph operations** — Run for any changes to CRUD, algorithms, or query logic. Fast and safe; operates on an existing graph only.
 ```bash
-# Graph operations only (~1 min)
+# ~1 min, requires NETWORKX_GRAPH_ID
 pytest integ_test/graph_operations/ -v
+```
 
-# Session manager only (~5-15 min depending on lifecycle tests)
+**Session manager** — Run for changes to SessionManager, S3 import/export, snapshots, IAM checks, or instance lifecycle. Lifecycle tests create and destroy real instances, so expect longer runtimes.
+```bash
+# ~1-1.5 hours, requires NETWORKX_GRAPH_ID (+ NETWORKX_S3_EXPORT_BUCKET_PATH for S3 tests)
 pytest integ_test/session_manager/ -v -s
+```
 
-# All integration tests
+**All integration tests** — Run before a release or when changes span both graph operations and session management.
+```bash
 make integ-test
 ```
 
