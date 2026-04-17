@@ -36,13 +36,7 @@ def session_manager():
 
 
 @pytest.fixture(scope="module")
-def _require_s3():
-    if not S3_EXPORT_BUCKET:
-        pytest.skip("NETWORKX_S3_EXPORT_BUCKET_PATH not set")
-
-
-@pytest.fixture(scope="module")
-def neptune_graph(_require_s3):
+def neptune_graph():
     """NeptuneGraph instance with test data for export."""
     g = nx.Graph()
     na_graph = NeptuneGraph.from_config(graph=g)
@@ -52,12 +46,17 @@ def neptune_graph(_require_s3):
 
 
 @pytest.fixture(scope="module")
-def s3_client(_require_s3):
+def s3_client():
+    """S3 client for verifying export results.
+    Tests will be skipped when NETWORKX_S3_EXPORT_BUCKET_PATH is absent."""
+    if not S3_EXPORT_BUCKET:
+        pytest.skip("NETWORKX_S3_EXPORT_BUCKET_PATH not set — skipping S3-dependent tests")
     return boto3.client("s3")
 
 
 @pytest.fixture(scope="module")
-def iam_client(_require_s3):
+def iam_client():
+    """IAM client for permission checks."""
     sts_arn = boto3.client("sts").get_caller_identity()["Arn"]
     return IamClient(role_arn=sts_arn, client=boto3.client("iam"))
 
