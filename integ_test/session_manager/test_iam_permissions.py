@@ -31,7 +31,7 @@ class TestS3ArnParsing:
     def test_split_s3_arn_bucket_and_path(self):
         bucket, path = split_s3_arn_to_bucket_and_path("s3://my-bucket/some/path/")
         assert bucket == "my-bucket"
-        assert path == "some/prefix/"
+        assert path == "some/path/"
 
     def test_split_s3_arn_no_path(self):
         bucket, path = split_s3_arn_to_bucket_and_path("s3://my-bucket")
