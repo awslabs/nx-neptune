@@ -30,9 +30,7 @@ pytestmark = pytest.mark.skipif(
 class TestExportCsvToS3:
 
     def test_export_returns_task_id(self, session_manager, seeded_graph, s3_client):
-        task_id = asyncio.get_event_loop().run_until_complete(
-            session_manager.export_to_csv(seeded_graph.na_client, S3_BUCKET)
-        )
+        task_id = asyncio.run(session_manager.export_to_csv(seeded_graph.na_client, S3_BUCKET))
         assert task_id is not None
         assert isinstance(task_id, str)
 
@@ -46,9 +44,7 @@ class TestExportCsvToS3:
             "vertexFilter": {"Person": {}},
             "edgeFilter": {"KNOWS": {}},
         }
-        task_id = asyncio.get_event_loop().run_until_complete(
-            session_manager.export_to_csv(seeded_graph.na_client, S3_BUCKET, export_filter=export_filter)
-        )
+        task_id = asyncio.run(session_manager.export_to_csv(seeded_graph.na_client, S3_BUCKET, export_filter=export_filter))
         assert task_id is not None
 
 
@@ -60,14 +56,10 @@ class TestImportCsvFromS3:
         empty_s3_bucket(S3_BUCKET)
 
         # Export
-        asyncio.get_event_loop().run_until_complete(
-            session_manager.export_to_csv(seeded_graph.na_client, S3_BUCKET)
-        )
+        asyncio.run(session_manager.export_to_csv(seeded_graph.na_client, S3_BUCKET))
 
         # Clear and import
-        task_id = asyncio.get_event_loop().run_until_complete(
-            session_manager.import_from_csv(neptune_graph.na_client, S3_BUCKET, reset_graph_ahead=True)
-        )
+        task_id = asyncio.run(session_manager.import_from_csv(neptune_graph.na_client, S3_BUCKET, reset_graph_ahead=True))
         assert task_id is not None
 
         # Verify data came back
@@ -87,9 +79,7 @@ class TestEmptyS3Bucket:
 
     def test_empty_bucket_path(self, session_manager, seeded_graph, s3_client):
         """Export data then empty the path, verify nothing remains."""
-        asyncio.get_event_loop().run_until_complete(
-            session_manager.export_to_csv(seeded_graph.na_client, S3_BUCKET)
-        )
+        asyncio.run(session_manager.export_to_csv(seeded_graph.na_client, S3_BUCKET))
 
         empty_s3_bucket(S3_BUCKET)
 

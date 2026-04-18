@@ -19,17 +19,13 @@ class TestSnapshotCreateAndDelete:
         """Create a snapshot of the test graph, verify, then delete."""
         graph = session_manager.get_graph(NETWORKX_GRAPH_ID)
 
-        snapshot_id = asyncio.get_event_loop().run_until_complete(
-            session_manager.create_snapshot(graph, "integ-t2-snapshot")
-        )
+        snapshot_id = asyncio.run(session_manager.create_snapshot(graph, "integ-t2-snapshot"))
         resource_tracker.register_snapshot(snapshot_id)
 
         assert snapshot_id is not None
         assert isinstance(snapshot_id, str)
 
         # Delete
-        deleted_id = asyncio.get_event_loop().run_until_complete(
-            session_manager.delete_snapshot(snapshot_id)
-        )
+        deleted_id = asyncio.run(session_manager.delete_snapshot(snapshot_id))
         assert deleted_id == snapshot_id
         resource_tracker.snapshots.remove(snapshot_id)

@@ -16,7 +16,10 @@ from nx_neptune.clients import NeptuneAnalyticsClient
 
 S3_BUCKET = os.environ.get("NETWORKX_S3_EXPORT_BUCKET_PATH")
 
-_loop = asyncio.get_event_loop()
+# SessionManager's destroy/stop/start methods call asyncio.gather() synchronously,
+# which requires an existing event loop. Use a persistent loop for these calls.
+_loop = asyncio.new_event_loop()
+asyncio.set_event_loop(_loop)
 
 
 class TestGetOrCreateGraph:
@@ -24,16 +27,14 @@ class TestGetOrCreateGraph:
     def test_creates_graph_when_none_exist(self, resource_tracker):
         """With a unique session name, get_or_create should create a new graph."""
         sm = SessionManager(session_name="integ-t3-getorcreate")
-        graph = _loop.run_until_complete(
-            sm.get_or_create_graph(config={"provisionedMemory": 16, "publicConnectivity": False})
-        )
+        graph = _loop.run_until_complete(sm.get_or_create_graph(config={"provisionedMemory": 16, "publicConnectivity": False}))
         resource_tracker.register_graph(graph.graph_id)
 
         assert isinstance(graph, NeptuneAnalyticsClient)
         assert graph.graph_id is not None
 
         # Cleanup — destroy returns a coroutine that must be awaited
-        _loop.run_until_complete(sm.destroy_graph(graph.graph_id))
+        _loop.run_until_complete(sm.destroy_graph(graph.name))
 
 
 class TestContextManagerCleanup:
@@ -43,9 +44,7 @@ class TestContextManagerCleanup:
         sm = SessionManager(session_name="integ-t3-fleet")
         config = {"provisionedMemory": 16, "publicConnectivity": False}
 
-        graph_ids = _loop.run_until_complete(
-            sm.create_multiple_instances(count=2, config=config)
-        )
+        graph_ids = _loop.run_until_complete(sm.create_multiple_instances(count=2, config=config))
         for gid in graph_ids:
             resource_tracker.register_graph(gid)
 
@@ -75,9 +74,7 @@ class TestContextManagerCleanup:
         """Context manager with DESTROY should delete graphs on exit."""
         graph_id = None
         with SessionManager(session_name="integ-t3-ctx", cleanup_task=CleanupTask.DESTROY) as sm:
-            graph = _loop.run_until_complete(
-                sm.get_or_create_graph(config={"provisionedMemory": 16, "publicConnectivity": False})
-            )
+            graph = _loop.run_until_complete(sm.get_or_create_graph(config={"provisionedMemory": 16, "publicConnectivity": False}))
             graph_id = graph.graph_id
             resource_tracker.register_graph(graph_id)
 
