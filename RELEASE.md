@@ -45,23 +45,7 @@ make lock
 
 > `make lock` must be run with Python 3.11 to match CI. See [README.md](README.md) for details.
 
-### 5. Create the release
-
-```bash
-make release
-```
-
-This will:
-1. Prompt for the version number
-2. Update version in `nx_neptune/__init__.py`
-3. Commit and tag
-4. Push the tag to GitHub
-
-After the tag is pushed, [create a GitHub Release](https://github.com/awslabs/nx-neptune/releases/new) from the tag. GitHub Actions will then trigger automatically:
-- **Prerelease** (`python-prerelease.yml`): Triggered by `prereleased` events. Builds the wheel and uploads to GitHub Releases.
-- **Release** (`python-publish.yml`): Triggered by `released` events. Builds the wheel and publishes to PyPI via trusted publishing.
-
-### 6. Connector releases
+### 5. Connector releases
 
 The Athena connectors are deployed separately as Lambda functions via SAM. They are not published to PyPI. Build and deploy with:
 
