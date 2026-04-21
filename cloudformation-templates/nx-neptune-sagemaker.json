@@ -1,0 +1,434 @@
+{
+  "Description": "Creates a Neptune Analytics graph and SageMaker notebook with nx-neptune pre-installed",
+  "Parameters": {
+    "ApplicationId": {
+      "Description": "Application id (used to name all resources)",
+      "Type": "String",
+      "Default": "nx-neptune",
+      "AllowedPattern": "[a-z][a-z0-9-]*",
+      "MaxLength": 16,
+      "MinLength": 3
+    },
+    "ProvisionedMemory": {
+      "Description": "Number of m-NCUs to allocate to the graph",
+      "Type": "String",
+      "Default": "16",
+      "AllowedValues": ["16", "32", "64"]
+    },
+    "PublicConnectivity": {
+      "Description": "Enable public connectivity for the graph",
+      "Type": "String",
+      "Default": "true",
+      "AllowedValues": ["true", "false"]
+    },
+    "NotebookInstanceType": {
+      "Description": "SageMaker notebook instance type",
+      "Type": "String",
+      "Default": "ml.t3.medium",
+      "AllowedValues": ["ml.t3.medium"]
+    },
+    "AssetsS3Prefix": {
+      "Description": "S3 prefix containing assets to install (e.g. s3://bucket/prefix). Expects notebooks.zip and optionally a .whl file. Leave blank to install nx_neptune from PyPI with no notebooks.",
+      "Type": "String",
+      "Default": ""
+    },
+    "S3BucketName": {
+      "Description": "Existing S3 bucket name for import/export. Leave blank to auto-create one.",
+      "Type": "String",
+      "Default": ""
+    }
+  },
+  "Conditions": {
+    "HasAssets": {
+      "Fn::Not": [{ "Fn::Equals": [{ "Ref": "AssetsS3Prefix" }, ""] }]
+    },
+    "CreateS3Bucket": {
+      "Fn::Equals": [{ "Ref": "S3BucketName" }, ""]
+    }
+  },
+  "Resources": {
+    "Graph": {
+      "Type": "AWS::NeptuneGraph::Graph",
+      "Properties": {
+        "GraphName": { "Fn::Sub": "${ApplicationId}-graph" },
+        "DeletionProtection": false,
+        "ProvisionedMemory": { "Ref": "ProvisionedMemory" },
+        "PublicConnectivity": { "Ref": "PublicConnectivity" },
+        "Tags": [
+          { "Key": "Name", "Value": { "Fn::Sub": "${ApplicationId}-graph" } },
+          { "Key": "Stack", "Value": { "Fn::Sub": "${AWS::Region}-${AWS::StackName}" } }
+        ]
+      }
+    },
+    "S3BucketKey": {
+      "Type": "AWS::KMS::Key",
+      "Condition": "CreateS3Bucket",
+      "Properties": {
+        "Description": { "Fn::Sub": "KMS key for ${ApplicationId} S3 bucket" },
+        "KeyPolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowRootAccount",
+              "Effect": "Allow",
+              "Principal": { "AWS": { "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:root" } },
+              "Action": "kms:*",
+              "Resource": "*"
+            },
+            {
+              "Sid": "AllowNotebookRole",
+              "Effect": "Allow",
+              "Principal": { "AWS": { "Fn::GetAtt": ["NotebookRole", "Arn"] } },
+              "Action": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"],
+              "Resource": "*"
+            }
+          ]
+        }
+      }
+    },
+    "S3Bucket": {
+      "Type": "AWS::S3::Bucket",
+      "Condition": "CreateS3Bucket",
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "BucketName": { "Fn::Sub": "${ApplicationId}-${AWS::AccountId}-${AWS::Region}" },
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "aws:kms",
+                "KMSMasterKeyID": { "Fn::GetAtt": ["S3BucketKey", "Arn"] }
+              },
+              "BucketKeyEnabled": true
+            }
+          ]
+        },
+        "Tags": [
+          { "Key": "Stack", "Value": { "Fn::Sub": "${AWS::Region}-${AWS::StackName}" } }
+        ]
+      }
+    },
+    "NotebookRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "Service": "sagemaker.amazonaws.com" },
+              "Action": "sts:AssumeRole"
+            },
+            {
+              "Effect": "Allow",
+              "Principal": { "Service": "neptune-graph.amazonaws.com" },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/"
+      }
+    },
+    "NeptuneAccessPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "NeptuneGraphOps",
+              "Effect": "Allow",
+              "Action": [
+                "neptune-graph:ReadDataViaQuery",
+                "neptune-graph:WriteDataViaQuery",
+                "neptune-graph:DeleteDataViaQuery",
+                "neptune-graph:GetGraph",
+                "neptune-graph:ListGraphs",
+                "neptune-graph:ResetGraph",
+                "neptune-graph:CreateGraph",
+                "neptune-graph:CreateGraphUsingImportTask",
+                "neptune-graph:DeleteGraph",
+                "neptune-graph:UpdateGraph",
+                "neptune-graph:StartGraph",
+                "neptune-graph:StopGraph",
+                "neptune-graph:TagResource"
+              ],
+              "Resource": {
+                "Fn::Sub": [
+                  "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:graph/${graphId}",
+                  { "graphId": { "Ref": "Graph" } }
+                ]
+              }
+            },
+            {
+              "Sid": "NeptuneImportExportTasks",
+              "Effect": "Allow",
+              "Action": [
+                "neptune-graph:StartImportTask",
+                "neptune-graph:GetImportTask",
+                "neptune-graph:StartExportTask",
+                "neptune-graph:GetExportTask"
+              ],
+              "Resource": [
+                { "Fn::Sub": "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:graph/*" },
+                { "Fn::Sub": "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:import-task/*" },
+                { "Fn::Sub": "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:export-task/*" }
+              ]
+            },
+            {
+              "Sid": "NeptuneSnapshots",
+              "Effect": "Allow",
+              "Action": [
+                "neptune-graph:CreateGraphSnapshot",
+                "neptune-graph:DeleteGraphSnapshot",
+                "neptune-graph:GetGraphSnapshot",
+                "neptune-graph:RestoreGraphFromSnapshot",
+                "neptune-graph:TagResource"
+              ],
+              "Resource": [
+                { "Fn::Sub": [
+                  "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:graph/${graphId}",
+                  { "graphId": { "Ref": "Graph" } }
+                ]},
+                { "Fn::Sub": "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:graph-snapshot/*" }
+              ]
+            },
+            {
+              "Sid": "CloudWatchLogs",
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/sagemaker/*"
+              }
+            },
+            {
+              "Sid": "SageMakerDescribe",
+              "Effect": "Allow",
+              "Action": "sagemaker:DescribeNotebookInstance",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:notebook-instance/aws-neptune-${ApplicationId}"
+              }
+            },
+            {
+              "Sid": "S3AssetDownload",
+              "Effect": "Allow",
+              "Action": ["s3:GetObject", "s3:ListBucket"],
+              "Resource": {
+                "Fn::If": [
+                  "HasAssets",
+                  [
+                    { "Fn::Sub": [
+                      "arn:aws:s3:::${bucket}",
+                      { "bucket": { "Fn::Select": [0, { "Fn::Split": ["/", { "Fn::Select": [1, { "Fn::Split": ["s3://", { "Ref": "AssetsS3Prefix" }] }] }] }] } }
+                    ]},
+                    { "Fn::Sub": [
+                      "arn:aws:s3:::${bucket}/*",
+                      { "bucket": { "Fn::Select": [0, { "Fn::Split": ["/", { "Fn::Select": [1, { "Fn::Split": ["s3://", { "Ref": "AssetsS3Prefix" }] }] }] }] } }
+                    ]}
+                  ],
+                  "arn:aws:s3:::none/*"
+                ]
+              }
+            },
+            {
+              "Sid": "S3ImportExport",
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:ListBucket",
+                "s3:GetBucketVersioning",
+                "s3:GetEncryptionConfiguration",
+                "s3:GetBucketLocation"
+              ],
+              "Resource": [
+                { "Fn::Sub": [
+                  "arn:aws:s3:::${bucket}",
+                  { "bucket": { "Fn::If": ["CreateS3Bucket", { "Ref": "S3Bucket" }, { "Ref": "S3BucketName" }] } }
+                ]},
+                { "Fn::Sub": [
+                  "arn:aws:s3:::${bucket}/*",
+                  { "bucket": { "Fn::If": ["CreateS3Bucket", { "Ref": "S3Bucket" }, { "Ref": "S3BucketName" }] } }
+                ]}
+              ]
+            },
+            {
+              "Sid": "PassRoleToNeptune",
+              "Effect": "Allow",
+              "Action": ["iam:PassRole", "iam:GetRole", "iam:SimulatePrincipalPolicy"],
+              "Resource": { "Fn::GetAtt": ["NotebookRole", "Arn"] }
+            },
+            {
+              "Sid": "STSGetCaller",
+              "Effect": "Allow",
+              "Action": "sts:GetCallerIdentity",
+              "Resource": "*"
+            },
+            {
+              "Sid": "KMSAccess",
+              "Effect": "Allow",
+              "Action": [
+                "kms:Decrypt",
+                "kms:GenerateDataKey",
+                "kms:DescribeKey"
+              ],
+              "Resource": {
+                "Fn::If": [
+                  "CreateS3Bucket",
+                  { "Fn::GetAtt": ["S3BucketKey", "Arn"] },
+                  "*"
+                ]
+              }
+            }
+          ]
+        },
+        "Roles": [{ "Ref": "NotebookRole" }],
+        "Path": "/"
+      }
+    },
+    "NotebookLifecycleConfig": {
+      "Type": "AWS::SageMaker::NotebookInstanceLifecycleConfig",
+      "Properties": {
+        "OnCreate": [
+          {
+            "Content": {
+              "Fn::Base64": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "#!/bin/bash\n",
+                    "set -e\n",
+                    "sudo -u ec2-user -i <<'EOF'\n",
+                    "source /home/ec2-user/anaconda3/bin/activate python3\n",
+                    {
+                      "Fn::If": [
+                        "HasAssets",
+                        { "Fn::Join": ["", [
+                          "ASSETS_PREFIX=\"", { "Ref": "AssetsS3Prefix" }, "\"\n",
+                          "mkdir -p /home/ec2-user/SageMaker/.nx-neptune\n",
+                          "aws s3 cp \"${ASSETS_PREFIX%/}/\" /tmp/nx-assets/ --recursive --exclude '*' --include '*.whl' --include 'notebooks.zip'\n",
+                          "if ls /tmp/nx-assets/*.whl 1>/dev/null 2>&1; then\n",
+                          "  cp /tmp/nx-assets/*.whl /home/ec2-user/SageMaker/.nx-neptune/\n",
+                          "  pip install /home/ec2-user/SageMaker/.nx-neptune/*.whl\n",
+                          "else\n",
+                          "  pip install nx_neptune\n",
+                          "fi\n"
+                        ]]},
+                        "pip install nx_neptune\n"
+                      ]
+                    },
+                    "python -m ipykernel install --user --name python3 --display-name 'Python 3 (ipykernel)'\n",
+                    "conda deactivate\n",
+                    "cd /home/ec2-user/SageMaker\n",
+                    {
+                      "Fn::If": [
+                        "HasAssets",
+                        { "Fn::Join": ["", [
+                          "if [ -f /tmp/nx-assets/notebooks.zip ]; then\n",
+                          "  unzip -o /tmp/nx-assets/notebooks.zip -d .\n",
+                          "fi\n",
+                          "rm -rf /tmp/nx-assets\n"
+                        ]]},
+                        ""
+                      ]
+                    },
+                    "EOF"
+                  ]
+                ]
+              }
+            }
+          }
+        ],
+        "OnStart": [
+          {
+            "Content": {
+              "Fn::Base64": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "#!/bin/bash\n",
+                    "set -e\n",
+                    "# Install nx_neptune in conda python3 env\n",
+                    { "Fn::If": [
+                      "HasAssets",
+                      "sudo -u ec2-user -i bash -c 'source /home/ec2-user/anaconda3/bin/activate python3 && if ls /home/ec2-user/SageMaker/.nx-neptune/*.whl 1>/dev/null 2>&1; then pip install -q /home/ec2-user/SageMaker/.nx-neptune/*.whl; else pip install -q nx_neptune; fi'\n",
+                      "sudo -u ec2-user -i bash -c 'source /home/ec2-user/anaconda3/bin/activate python3 && pip install -q nx_neptune'\n"
+                    ]},
+                    "# Set env vars via os.environ so all child processes (kernels) inherit them\n",
+                    "cat >> /home/ec2-user/.jupyter/jupyter_notebook_config.py <<ENVEOF\n",
+                    "import os\n",
+                    "os.environ['NETWORKX_GRAPH_ID'] = '", { "Fn::GetAtt": ["Graph", "GraphId"] }, "'\n",
+                    "os.environ['AWS_REGION'] = '", { "Ref": "AWS::Region" }, "'\n",
+                    "os.environ['NETWORKX_S3_EXPORT_BUCKET_PATH'] = 's3://",
+                    { "Fn::If": ["CreateS3Bucket", { "Ref": "S3Bucket" }, { "Ref": "S3BucketName" }] },
+                    "/'\n",
+                    "os.environ['NETWORKX_S3_IMPORT_BUCKET_PATH'] = 's3://",
+                    { "Fn::If": ["CreateS3Bucket", { "Ref": "S3Bucket" }, { "Ref": "S3BucketName" }] },
+                    "/'\n",
+                    "ENVEOF\n",
+                    "# Restart jupyter to pick up the config\n",
+                    "initctl restart jupyter-server --no-wait 2>/dev/null || systemctl restart jupyter-server 2>/dev/null || true\n"
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "NotebookInstance": {
+      "Type": "AWS::SageMaker::NotebookInstance",
+      "Properties": {
+        "InstanceType": { "Ref": "NotebookInstanceType" },
+        "PlatformIdentifier": "notebook-al2-v3",
+        "NotebookInstanceName": { "Fn::Sub": "aws-neptune-${ApplicationId}" },
+        "RoleArn": { "Fn::GetAtt": ["NotebookRole", "Arn"] },
+        "LifecycleConfigName": {
+          "Fn::GetAtt": ["NotebookLifecycleConfig", "NotebookInstanceLifecycleConfigName"]
+        },
+        "Tags": [
+          { "Key": "Stack", "Value": { "Fn::Sub": "${AWS::Region}-${AWS::StackName}" } },
+          { "Key": "Application", "Value": { "Fn::Sub": "nx-neptune:${ApplicationId}" } }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "GraphId": {
+      "Description": "Neptune Analytics Graph ID",
+      "Value": { "Fn::GetAtt": ["Graph", "GraphId"] }
+    },
+    "NotebookURL": {
+      "Description": "SageMaker notebook URL",
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "https://",
+            {
+              "Fn::Select": [
+                1,
+                { "Fn::Split": ["/", { "Ref": "NotebookInstance" }] }
+              ]
+            },
+            ".notebook.",
+            { "Ref": "AWS::Region" },
+            ".sagemaker.aws/nbclassic/tree"
+          ]
+        ]
+      }
+    },
+    "S3BucketName": {
+      "Description": "S3 bucket used for import/export",
+      "Value": { "Fn::If": ["CreateS3Bucket", { "Ref": "S3Bucket" }, { "Ref": "S3BucketName" }] }
+    }
+  }
+}
