@@ -17,13 +17,16 @@ This template creates a Neptune Analytics graph and a SageMaker notebook instanc
 
 ## Deploy
 
-
 Build the wheel and zip the notebooks:
 
 ```bash
 python -m pip wheel -w dist .
 zip -r /tmp/notebooks.zip notebooks/
+```
 
+Upload both to an S3 bucket:
+
+```bash
 aws s3 cp dist/nx_neptune-*.whl s3://your-bucket/nx-neptune/
 aws s3 cp /tmp/notebooks.zip s3://your-bucket/nx-neptune/
 ```
@@ -39,6 +42,13 @@ aws cloudformation deploy \
 ```
 
 If no `.whl` is found in the prefix, `nx_neptune` is installed from PyPI.
+
+Alternatively, use the provided script which handles all of the above:
+
+```bash
+./cloudformation-templates/deploy.sh                        # defaults: nx-neptune-demo, us-west-1
+./cloudformation-templates/deploy.sh my-stack us-east-1     # custom stack name and region
+```
 
 ## Parameters
 
@@ -87,6 +97,13 @@ Then delete the stack:
 ```bash
 aws cloudformation delete-stack --stack-name nx-neptune-demo
 aws cloudformation wait stack-delete-complete --stack-name nx-neptune-demo
+```
+
+Alternatively, use the provided script which handles bucket cleanup and stack deletion:
+
+```bash
+./cloudformation-templates/teardown.sh                      # defaults: nx-neptune-demo, us-west-1
+./cloudformation-templates/teardown.sh my-stack us-east-1
 ```
 
 ## Notes
