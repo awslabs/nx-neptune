@@ -201,7 +201,9 @@
                 { "Fn::Sub": [
                   "arn:aws:s3:::${bucket}/*",
                   { "bucket": { "Fn::Select": [0, { "Fn::Split": ["/", { "Fn::Select": [1, { "Fn::Split": ["s3://", { "Ref": "AssetsS3Prefix" }] }] }] }] } }
-                ]}
+                ]},
+                { "Fn::Sub": "arn:aws:s3:::aws-neptune-notebook-${AWS::Region}" },
+                { "Fn::Sub": "arn:aws:s3:::aws-neptune-notebook-${AWS::Region}/*" }
               ]
             },
             {
@@ -291,6 +293,7 @@
                     "else\n",
                     "  pip install nx_neptune\n",
                     "fi\n",
+                    "pip install graph-notebook\n",
                     "python -m ipykernel install --user --name python3 --display-name 'Python 3 (ipykernel)'\n",
                     "conda deactivate\n",
                     "cd /home/ec2-user/SageMaker\n",
@@ -316,6 +319,20 @@
                     "set -e\n",
                     "# Install nx_neptune in conda python3 env\n",
                     "sudo -u ec2-user -i bash -c 'source /home/ec2-user/anaconda3/bin/activate python3 && if ls /home/ec2-user/SageMaker/.nx-neptune/*.whl 1>/dev/null 2>&1; then pip install -q /home/ec2-user/SageMaker/.nx-neptune/*.whl; else pip install -q nx_neptune; fi'\n",
+                    "# Install Neptune notebook tooling (magic commands, JupyterLab extensions)\n",
+                    "sudo -u ec2-user -i <<'EOF'\n",
+                    "echo \"export GRAPH_NOTEBOOK_AUTH_MODE=IAM\" >> ~/.bashrc\n",
+                    "echo \"export GRAPH_NOTEBOOK_SSL=True\" >> ~/.bashrc\n",
+                    "echo \"export GRAPH_NOTEBOOK_SERVICE=neptune-graph\" >> ~/.bashrc\n",
+                    "echo \"export GRAPH_NOTEBOOK_HOST=", { "Fn::GetAtt": ["Graph", "Endpoint"] }, "\" >> ~/.bashrc\n",
+                    "echo \"export GRAPH_NOTEBOOK_PORT=8182\" >> ~/.bashrc\n",
+                    "echo \"export AWS_REGION=", { "Ref": "AWS::Region" }, "\" >> ~/.bashrc\n",
+                    "source ~/.bashrc\n",
+                    "aws s3 cp s3://", { "Fn::Sub": "aws-neptune-notebook-${AWS::Region}" }, "/graph_notebook.tar.gz /tmp/graph_notebook.tar.gz\n",
+                    "rm -rf /tmp/graph_notebook\n",
+                    "tar -zxvf /tmp/graph_notebook.tar.gz -C /tmp\n",
+                    "/tmp/graph_notebook/install_jl4x.sh\n",
+                    "EOF\n",
                     "# Set env vars via os.environ so all child processes (kernels) inherit them\n",
                     "cat >> /home/ec2-user/.jupyter/jupyter_notebook_config.py <<ENVEOF\n",
                     "import os\n",
