@@ -329,7 +329,10 @@
                     "/import/'\n",
                     "os.environ['NETWORKX_STAGING_BUCKET'] = 's3://",
                     { "Ref": "StagingBucket" },
-                    "/staging'\n",
+                    "'\n",
+                    "os.environ['NETWORKX_S3_TABLES_CATALOG'] = 'AwsDataCatalog'\n",
+                    "os.environ['NETWORKX_S3_TABLES_DATABASE'] = 'default'\n",
+                    "os.environ['NETWORKX_S3_TABLES_TABLENAME'] = 'paysim_transactions'\n",
                     "ENVEOF\n",
                     "# Restart jupyter to pick up the config\n",
                     "initctl restart jupyter-server --no-wait 2>/dev/null || systemctl restart jupyter-server 2>/dev/null || true\n"
