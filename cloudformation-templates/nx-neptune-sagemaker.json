@@ -18,7 +18,7 @@
     "PublicConnectivity": {
       "Description": "Enable public connectivity for the graph",
       "Type": "String",
-      "Default": "false",
+      "Default": "true",
       "AllowedValues": ["true", "false"]
     },
     "NotebookInstanceType": {
