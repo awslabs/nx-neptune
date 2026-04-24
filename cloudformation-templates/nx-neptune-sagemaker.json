@@ -18,7 +18,7 @@
     "PublicConnectivity": {
       "Description": "Enable public connectivity for the graph",
       "Type": "String",
-      "Default": "true",
+      "Default": "false",
       "AllowedValues": ["true", "false"]
     },
     "NotebookInstanceType": {
@@ -76,11 +76,11 @@
         }
       }
     },
-    "S3Bucket": {
+    "StagingBucket": {
       "Type": "AWS::S3::Bucket",
       "DeletionPolicy": "Delete",
       "Properties": {
-        "BucketName": { "Fn::Sub": "${ApplicationId}-${AWS::AccountId}-${AWS::Region}" },
+        "BucketName": { "Fn::Sub": "${ApplicationId}-staging-${AWS::AccountId}-${AWS::Region}" },
         "VersioningConfiguration": {
           "Status": "Enabled"
         },
@@ -95,16 +95,6 @@
             }
           ]
         },
-        "Tags": [
-          { "Key": "Stack", "Value": { "Fn::Sub": "${AWS::Region}-${AWS::StackName}" } }
-        ]
-      }
-    },
-    "StagingBucket": {
-      "Type": "AWS::S3::Bucket",
-      "DeletionPolicy": "Delete",
-      "Properties": {
-        "BucketName": { "Fn::Sub": "${ApplicationId}-staging-${AWS::AccountId}-${AWS::Region}" },
         "Tags": [
           { "Key": "Stack", "Value": { "Fn::Sub": "${AWS::Region}-${AWS::StackName}" } }
         ]
@@ -238,21 +228,6 @@
                 "s3:GetBucketLocation"
               ],
               "Resource": [
-                { "Fn::Sub": "arn:aws:s3:::${S3Bucket}" },
-                { "Fn::Sub": "arn:aws:s3:::${S3Bucket}/*" }
-              ]
-            },
-            {
-              "Sid": "S3Staging",
-              "Effect": "Allow",
-              "Action": [
-                "s3:GetObject",
-                "s3:PutObject",
-                "s3:DeleteObject",
-                "s3:ListBucket",
-                "s3:GetBucketLocation"
-              ],
-              "Resource": [
                 { "Fn::Sub": "arn:aws:s3:::${StagingBucket}" },
                 { "Fn::Sub": "arn:aws:s3:::${StagingBucket}/*" }
               ]
@@ -378,14 +353,14 @@
                     "os.environ['NETWORKX_GRAPH_ID'] = '", { "Fn::GetAtt": ["Graph", "GraphId"] }, "'\n",
                     "os.environ['AWS_REGION'] = '", { "Ref": "AWS::Region" }, "'\n",
                     "os.environ['NETWORKX_S3_EXPORT_BUCKET_PATH'] = 's3://",
-                    { "Ref": "S3Bucket" },
-                    "/'\n",
+                    { "Ref": "StagingBucket" },
+                    "/export/'\n",
                     "os.environ['NETWORKX_S3_IMPORT_BUCKET_PATH'] = 's3://",
-                    { "Ref": "S3Bucket" },
-                    "/'\n",
+                    { "Ref": "StagingBucket" },
+                    "/import/'\n",
                     "os.environ['NETWORKX_STAGING_BUCKET'] = 's3://",
                     { "Ref": "StagingBucket" },
-                    "'\n",
+                    "/staging'\n",
                     "ENVEOF\n",
                     "# Restart jupyter to pick up the config\n",
                     "initctl restart jupyter-server --no-wait 2>/dev/null || systemctl restart jupyter-server 2>/dev/null || true\n"
@@ -439,12 +414,8 @@
         ]
       }
     },
-    "S3BucketName": {
-      "Description": "S3 bucket used for import/export",
-      "Value": { "Ref": "S3Bucket" }
-    },
     "StagingBucketName": {
-      "Description": "S3 staging bucket for datasets, Athena results, and general use",
+      "Description": "S3 bucket for import/export, datasets, Athena results, and general use",
       "Value": { "Ref": "StagingBucket" }
     }
   }

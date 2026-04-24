@@ -4,31 +4,22 @@ set -e
 STACK_NAME="${1:-nx-neptune-demo}"
 REGION="${2:-us-west-1}"
 
-# Get the data bucket name from stack outputs
-BUCKET=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" \
-  --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' --output text 2>/dev/null)
-
+# Get the staging bucket name from stack outputs
 STAGING=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" \
   --query 'Stacks[0].Outputs[?OutputKey==`StagingBucketName`].OutputValue' --output text 2>/dev/null)
 
-# Empty the versioned data bucket
-if [ -n "$BUCKET" ] && [ "$BUCKET" != "None" ]; then
-  echo "Emptying s3://${BUCKET}..."
-  aws s3 rm "s3://${BUCKET}" --recursive --region "$REGION" 2>/dev/null || true
-  aws s3api list-object-versions --bucket "$BUCKET" --region "$REGION" --output json 2>/dev/null | \
+# Empty the versioned staging bucket
+if [ -n "$STAGING" ] && [ "$STAGING" != "None" ]; then
+  echo "Emptying s3://${STAGING}..."
+  aws s3 rm "s3://${STAGING}" --recursive --region "$REGION" 2>/dev/null || true
+  aws s3api list-object-versions --bucket "$STAGING" --region "$REGION" --output json 2>/dev/null | \
     python3 -c "
 import json,sys,subprocess
 data=json.load(sys.stdin)
 for key in ['Versions','DeleteMarkers']:
     for o in (data.get(key) or []):
-        subprocess.run(['aws','s3api','delete-object','--bucket','$BUCKET','--key',o['Key'],'--version-id',o['VersionId'],'--region','$REGION'],capture_output=True)
+        subprocess.run(['aws','s3api','delete-object','--bucket','$STAGING','--key',o['Key'],'--version-id',o['VersionId'],'--region','$REGION'],capture_output=True)
 " 2>/dev/null
-fi
-
-# Empty the staging bucket
-if [ -n "$STAGING" ] && [ "$STAGING" != "None" ]; then
-  echo "Emptying s3://${STAGING}..."
-  aws s3 rm "s3://${STAGING}" --recursive --region "$REGION" 2>/dev/null || true
 fi
 
 # Delete the stack
