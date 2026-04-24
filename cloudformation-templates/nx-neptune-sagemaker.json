@@ -27,14 +27,9 @@
       "Default": "ml.t3.medium"
     },
     "AssetsS3Prefix": {
-      "Description": "S3 prefix containing assets to install (e.g. s3://bucket/prefix). Expects notebooks.zip and optionally a .whl file. Leave blank to install nx_neptune from PyPI with no notebooks.",
+      "Description": "S3 prefix containing notebooks.zip and optionally a .whl file (e.g. s3://bucket/prefix)",
       "Type": "String",
-      "Default": ""
-    }
-  },
-  "Conditions": {
-    "HasAssets": {
-      "Fn::Not": [{ "Fn::Equals": [{ "Ref": "AssetsS3Prefix" }, ""] }]
+      "AllowedPattern": "s3://.+"
     }
   },
   "Resources": {
@@ -198,22 +193,16 @@
               "Sid": "S3AssetDownload",
               "Effect": "Allow",
               "Action": ["s3:GetObject", "s3:ListBucket"],
-              "Resource": {
-                "Fn::If": [
-                  "HasAssets",
-                  [
-                    { "Fn::Sub": [
-                      "arn:aws:s3:::${bucket}",
-                      { "bucket": { "Fn::Select": [0, { "Fn::Split": ["/", { "Fn::Select": [1, { "Fn::Split": ["s3://", { "Ref": "AssetsS3Prefix" }] }] }] }] } }
-                    ]},
-                    { "Fn::Sub": [
-                      "arn:aws:s3:::${bucket}/*",
-                      { "bucket": { "Fn::Select": [0, { "Fn::Split": ["/", { "Fn::Select": [1, { "Fn::Split": ["s3://", { "Ref": "AssetsS3Prefix" }] }] }] }] } }
-                    ]}
-                  ],
-                  "arn:aws:s3:::none/*"
-                ]
-              }
+              "Resource": [
+                { "Fn::Sub": [
+                  "arn:aws:s3:::${bucket}",
+                  { "bucket": { "Fn::Select": [0, { "Fn::Split": ["/", { "Fn::Select": [1, { "Fn::Split": ["s3://", { "Ref": "AssetsS3Prefix" }] }] }] }] } }
+                ]},
+                { "Fn::Sub": [
+                  "arn:aws:s3:::${bucket}/*",
+                  { "bucket": { "Fn::Select": [0, { "Fn::Split": ["/", { "Fn::Select": [1, { "Fn::Split": ["s3://", { "Ref": "AssetsS3Prefix" }] }] }] }] } }
+                ]}
+              ]
             },
             {
               "Sid": "S3ImportExport",
@@ -293,38 +282,22 @@
                     "set -e\n",
                     "sudo -u ec2-user -i <<'EOF'\n",
                     "source /home/ec2-user/anaconda3/bin/activate python3\n",
-                    {
-                      "Fn::If": [
-                        "HasAssets",
-                        { "Fn::Join": ["", [
-                          "ASSETS_PREFIX=\"", { "Ref": "AssetsS3Prefix" }, "\"\n",
-                          "mkdir -p /home/ec2-user/SageMaker/.nx-neptune\n",
-                          "aws s3 cp \"${ASSETS_PREFIX%/}/\" /tmp/nx-assets/ --recursive --exclude '*' --include '*.whl' --include 'notebooks.zip'\n",
-                          "if ls /tmp/nx-assets/*.whl 1>/dev/null 2>&1; then\n",
-                          "  cp /tmp/nx-assets/*.whl /home/ec2-user/SageMaker/.nx-neptune/\n",
-                          "  pip install /home/ec2-user/SageMaker/.nx-neptune/*.whl\n",
-                          "else\n",
-                          "  pip install nx_neptune\n",
-                          "fi\n"
-                        ]]},
-                        "pip install nx_neptune\n"
-                      ]
-                    },
+                    "ASSETS_PREFIX=\"", { "Ref": "AssetsS3Prefix" }, "\"\n",
+                    "mkdir -p /home/ec2-user/SageMaker/.nx-neptune\n",
+                    "aws s3 cp \"${ASSETS_PREFIX%/}/\" /tmp/nx-assets/ --recursive --exclude '*' --include '*.whl' --include 'notebooks.zip'\n",
+                    "if ls /tmp/nx-assets/*.whl 1>/dev/null 2>&1; then\n",
+                    "  cp /tmp/nx-assets/*.whl /home/ec2-user/SageMaker/.nx-neptune/\n",
+                    "  pip install /home/ec2-user/SageMaker/.nx-neptune/*.whl\n",
+                    "else\n",
+                    "  pip install nx_neptune\n",
+                    "fi\n",
                     "python -m ipykernel install --user --name python3 --display-name 'Python 3 (ipykernel)'\n",
                     "conda deactivate\n",
                     "cd /home/ec2-user/SageMaker\n",
-                    {
-                      "Fn::If": [
-                        "HasAssets",
-                        { "Fn::Join": ["", [
-                          "if [ -f /tmp/nx-assets/notebooks.zip ]; then\n",
-                          "  unzip -o /tmp/nx-assets/notebooks.zip -d .\n",
-                          "fi\n",
-                          "rm -rf /tmp/nx-assets\n"
-                        ]]},
-                        ""
-                      ]
-                    },
+                    "if [ -f /tmp/nx-assets/notebooks.zip ]; then\n",
+                    "  unzip -o /tmp/nx-assets/notebooks.zip -d .\n",
+                    "fi\n",
+                    "rm -rf /tmp/nx-assets\n",
                     "EOF"
                   ]
                 ]
@@ -342,11 +315,7 @@
                     "#!/bin/bash\n",
                     "set -e\n",
                     "# Install nx_neptune in conda python3 env\n",
-                    { "Fn::If": [
-                      "HasAssets",
-                      "sudo -u ec2-user -i bash -c 'source /home/ec2-user/anaconda3/bin/activate python3 && if ls /home/ec2-user/SageMaker/.nx-neptune/*.whl 1>/dev/null 2>&1; then pip install -q /home/ec2-user/SageMaker/.nx-neptune/*.whl; else pip install -q nx_neptune; fi'\n",
-                      "sudo -u ec2-user -i bash -c 'source /home/ec2-user/anaconda3/bin/activate python3 && pip install -q nx_neptune'\n"
-                    ]},
+                    "sudo -u ec2-user -i bash -c 'source /home/ec2-user/anaconda3/bin/activate python3 && if ls /home/ec2-user/SageMaker/.nx-neptune/*.whl 1>/dev/null 2>&1; then pip install -q /home/ec2-user/SageMaker/.nx-neptune/*.whl; else pip install -q nx_neptune; fi'\n",
                     "# Set env vars via os.environ so all child processes (kernels) inherit them\n",
                     "cat >> /home/ec2-user/.jupyter/jupyter_notebook_config.py <<ENVEOF\n",
                     "import os\n",

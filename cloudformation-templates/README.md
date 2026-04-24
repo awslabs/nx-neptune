@@ -60,7 +60,7 @@ Set `BUILD_WHEEL=false` at the top of `deploy.sh` to skip wheel build and instal
 | ProvisionedMemory | Number of m-NCUs for the graph (16, 32, 64) | `16` |
 | PublicConnectivity | Enable public connectivity for the graph | `true` |
 | NotebookInstanceType | SageMaker instance type | `ml.t3.medium` |
-| AssetsS3Prefix | S3 prefix containing `notebooks.zip` and/or `.whl` | _(empty)_ |
+| AssetsS3Prefix | S3 prefix containing `notebooks.zip` and optionally a `.whl` | _(required)_ |
 
 ## Environment variables
 
