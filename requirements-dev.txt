@@ -38,7 +38,7 @@ dotenv==0.9.9
     # via nx-neptune (pyproject.toml)
 events==0.5
     # via opensearch-py
-filelock==3.25.2
+filelock==3.29.0
     # via
     #   python-discovery
     #   virtualenv
