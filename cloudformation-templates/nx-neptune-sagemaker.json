@@ -31,19 +31,11 @@
       "Description": "S3 prefix containing assets to install (e.g. s3://bucket/prefix). Expects notebooks.zip and optionally a .whl file. Leave blank to install nx_neptune from PyPI with no notebooks.",
       "Type": "String",
       "Default": ""
-    },
-    "S3BucketName": {
-      "Description": "Existing S3 bucket name for import/export. Leave blank to auto-create one.",
-      "Type": "String",
-      "Default": ""
     }
   },
   "Conditions": {
     "HasAssets": {
       "Fn::Not": [{ "Fn::Equals": [{ "Ref": "AssetsS3Prefix" }, ""] }]
-    },
-    "CreateS3Bucket": {
-      "Fn::Equals": [{ "Ref": "S3BucketName" }, ""]
     }
   },
   "Resources": {
@@ -62,7 +54,6 @@
     },
     "S3BucketKey": {
       "Type": "AWS::KMS::Key",
-      "Condition": "CreateS3Bucket",
       "Properties": {
         "Description": { "Fn::Sub": "KMS key for ${ApplicationId} S3 bucket" },
         "KeyPolicy": {
@@ -88,7 +79,6 @@
     },
     "S3Bucket": {
       "Type": "AWS::S3::Bucket",
-      "Condition": "CreateS3Bucket",
       "DeletionPolicy": "Delete",
       "Properties": {
         "BucketName": { "Fn::Sub": "${ApplicationId}-${AWS::AccountId}-${AWS::Region}" },
@@ -106,6 +96,16 @@
             }
           ]
         },
+        "Tags": [
+          { "Key": "Stack", "Value": { "Fn::Sub": "${AWS::Region}-${AWS::StackName}" } }
+        ]
+      }
+    },
+    "StagingBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "BucketName": { "Fn::Sub": "${ApplicationId}-staging-${AWS::AccountId}-${AWS::Region}" },
         "Tags": [
           { "Key": "Stack", "Value": { "Fn::Sub": "${AWS::Region}-${AWS::StackName}" } }
         ]
@@ -156,12 +156,7 @@
                 "neptune-graph:StopGraph",
                 "neptune-graph:TagResource"
               ],
-              "Resource": {
-                "Fn::Sub": [
-                  "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:graph/${graphId}",
-                  { "graphId": { "Ref": "Graph" } }
-                ]
-              }
+              "Resource": "*"
             },
             {
               "Sid": "NeptuneImportExportTasks",
@@ -188,13 +183,7 @@
                 "neptune-graph:RestoreGraphFromSnapshot",
                 "neptune-graph:TagResource"
               ],
-              "Resource": [
-                { "Fn::Sub": [
-                  "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:graph/${graphId}",
-                  { "graphId": { "Ref": "Graph" } }
-                ]},
-                { "Fn::Sub": "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:graph-snapshot/*" }
-              ]
+              "Resource": "*"
             },
             {
               "Sid": "CloudWatchLogs",
@@ -250,14 +239,23 @@
                 "s3:GetBucketLocation"
               ],
               "Resource": [
-                { "Fn::Sub": [
-                  "arn:aws:s3:::${bucket}",
-                  { "bucket": { "Fn::If": ["CreateS3Bucket", { "Ref": "S3Bucket" }, { "Ref": "S3BucketName" }] } }
-                ]},
-                { "Fn::Sub": [
-                  "arn:aws:s3:::${bucket}/*",
-                  { "bucket": { "Fn::If": ["CreateS3Bucket", { "Ref": "S3Bucket" }, { "Ref": "S3BucketName" }] } }
-                ]}
+                { "Fn::Sub": "arn:aws:s3:::${S3Bucket}" },
+                { "Fn::Sub": "arn:aws:s3:::${S3Bucket}/*" }
+              ]
+            },
+            {
+              "Sid": "S3Staging",
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:ListBucket",
+                "s3:GetBucketLocation"
+              ],
+              "Resource": [
+                { "Fn::Sub": "arn:aws:s3:::${StagingBucket}" },
+                { "Fn::Sub": "arn:aws:s3:::${StagingBucket}/*" }
               ]
             },
             {
@@ -267,10 +265,29 @@
               "Resource": { "Fn::GetAtt": ["NotebookRole", "Arn"] }
             },
             {
-              "Sid": "STSGetCaller",
+              "Sid": "AthenaQueryExecution",
               "Effect": "Allow",
-              "Action": "sts:GetCallerIdentity",
+              "Action": ["athena:StartQueryExecution", "athena:GetQueryExecution", "athena:GetQueryResults"],
               "Resource": "*"
+            },
+            {
+              "Sid": "GlueDataCatalog",
+              "Effect": "Allow",
+              "Action": [
+                "glue:GetDatabase",
+                "glue:GetTable",
+                "glue:GetTables",
+                "glue:CreateTable",
+                "glue:UpdateTable",
+                "glue:DeleteTable",
+                "glue:GetPartitions",
+                "glue:CreateDatabase"
+              ],
+              "Resource": [
+                { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog" },
+                { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/*" },
+                { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/*" }
+              ]
             },
             {
               "Sid": "KMSAccess",
@@ -280,13 +297,7 @@
                 "kms:GenerateDataKey",
                 "kms:DescribeKey"
               ],
-              "Resource": {
-                "Fn::If": [
-                  "CreateS3Bucket",
-                  { "Fn::GetAtt": ["S3BucketKey", "Arn"] },
-                  "*"
-                ]
-              }
+              "Resource": { "Fn::GetAtt": ["S3BucketKey", "Arn"] }
             }
           ]
         },
@@ -368,11 +379,14 @@
                     "os.environ['NETWORKX_GRAPH_ID'] = '", { "Fn::GetAtt": ["Graph", "GraphId"] }, "'\n",
                     "os.environ['AWS_REGION'] = '", { "Ref": "AWS::Region" }, "'\n",
                     "os.environ['NETWORKX_S3_EXPORT_BUCKET_PATH'] = 's3://",
-                    { "Fn::If": ["CreateS3Bucket", { "Ref": "S3Bucket" }, { "Ref": "S3BucketName" }] },
+                    { "Ref": "S3Bucket" },
                     "/'\n",
                     "os.environ['NETWORKX_S3_IMPORT_BUCKET_PATH'] = 's3://",
-                    { "Fn::If": ["CreateS3Bucket", { "Ref": "S3Bucket" }, { "Ref": "S3BucketName" }] },
+                    { "Ref": "S3Bucket" },
                     "/'\n",
+                    "os.environ['NETWORKX_STAGING_BUCKET'] = 's3://",
+                    { "Ref": "StagingBucket" },
+                    "'\n",
                     "ENVEOF\n",
                     "# Restart jupyter to pick up the config\n",
                     "initctl restart jupyter-server --no-wait 2>/dev/null || systemctl restart jupyter-server 2>/dev/null || true\n"
@@ -428,7 +442,11 @@
     },
     "S3BucketName": {
       "Description": "S3 bucket used for import/export",
-      "Value": { "Fn::If": ["CreateS3Bucket", { "Ref": "S3Bucket" }, { "Ref": "S3BucketName" }] }
+      "Value": { "Ref": "S3Bucket" }
+    },
+    "StagingBucketName": {
+      "Description": "S3 staging bucket for datasets, Athena results, and general use",
+      "Value": { "Ref": "StagingBucket" }
     }
   }
 }

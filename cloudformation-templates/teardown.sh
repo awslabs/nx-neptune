@@ -8,6 +8,9 @@ REGION="${2:-us-west-1}"
 BUCKET=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" \
   --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' --output text 2>/dev/null)
 
+STAGING=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" \
+  --query 'Stacks[0].Outputs[?OutputKey==`StagingBucketName`].OutputValue' --output text 2>/dev/null)
+
 # Empty the versioned data bucket
 if [ -n "$BUCKET" ] && [ "$BUCKET" != "None" ]; then
   echo "Emptying s3://${BUCKET}..."
@@ -20,6 +23,12 @@ for key in ['Versions','DeleteMarkers']:
     for o in (data.get(key) or []):
         subprocess.run(['aws','s3api','delete-object','--bucket','$BUCKET','--key',o['Key'],'--version-id',o['VersionId'],'--region','$REGION'],capture_output=True)
 " 2>/dev/null
+fi
+
+# Empty the staging bucket
+if [ -n "$STAGING" ] && [ "$STAGING" != "None" ]; then
+  echo "Emptying s3://${STAGING}..."
+  aws s3 rm "s3://${STAGING}" --recursive --region "$REGION" 2>/dev/null || true
 fi
 
 # Delete the stack
