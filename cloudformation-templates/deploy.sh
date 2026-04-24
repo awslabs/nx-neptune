@@ -5,27 +5,28 @@ STACK_NAME="${1:-nx-neptune-demo}"
 REGION="${2:-us-west-1}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BUILD_DIR="$SCRIPT_DIR/build"
 
-# Build wheel
 echo "Building wheel..."
-python -m pip wheel -w /tmp/nx-dist "$REPO_DIR" -q
+rm -rf "$BUILD_DIR"
+mkdir -p "$BUILD_DIR"
+python -m pip wheel -w "$BUILD_DIR" "$REPO_DIR" -q
 
-# Zip notebooks
 echo "Zipping notebooks..."
 cd "$REPO_DIR"
-zip -r /tmp/notebooks.zip notebooks/ -q
+zip -r "$BUILD_DIR/notebooks.zip" notebooks/ -q
 
-# Create assets bucket
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ASSETS_BUCKET="nx-neptune-assets-${ACCOUNT_ID}-${REGION}"
 aws s3 mb "s3://${ASSETS_BUCKET}" --region "$REGION" 2>/dev/null || true
 
-# Upload assets
 echo "Uploading assets to s3://${ASSETS_BUCKET}/..."
-aws s3 cp /tmp/nx-dist/nx_neptune-*.whl "s3://${ASSETS_BUCKET}/" --region "$REGION"
-aws s3 cp /tmp/notebooks.zip "s3://${ASSETS_BUCKET}/" --region "$REGION"
+aws s3 cp "$BUILD_DIR"/nx_neptune-*.whl "s3://${ASSETS_BUCKET}/" --region "$REGION"
+aws s3 cp "$BUILD_DIR/notebooks.zip" "s3://${ASSETS_BUCKET}/" --region "$REGION"
 
-# Deploy stack
+echo "Cleaning up build artifacts..."
+rm -rf "$BUILD_DIR"
+
 echo "Deploying stack ${STACK_NAME}..."
 aws cloudformation deploy \
   --stack-name "$STACK_NAME" \

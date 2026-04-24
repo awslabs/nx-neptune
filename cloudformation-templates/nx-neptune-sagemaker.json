@@ -24,8 +24,7 @@
     "NotebookInstanceType": {
       "Description": "SageMaker notebook instance type",
       "Type": "String",
-      "Default": "ml.t3.medium",
-      "AllowedValues": ["ml.t3.medium"]
+      "Default": "ml.t3.medium"
     },
     "AssetsS3Prefix": {
       "Description": "S3 prefix containing assets to install (e.g. s3://bucket/prefix). Expects notebooks.zip and optionally a .whl file. Leave blank to install nx_neptune from PyPI with no notebooks.",
