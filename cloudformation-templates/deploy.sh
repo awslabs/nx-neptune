@@ -3,13 +3,13 @@ set -e
 
 STACK_NAME="${1:-nx-neptune-demo}"
 REGION="${2:-us-west-1}"
-BUILD_WHEEL="${BUILD_WHEEL:-true}"
+BUILD_WHEEL="${3:-false}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$SCRIPT_DIR/build"
 
-rm -rf "$BUILD_DIR"
 echo "Cleaning stale build directory..."
+rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
 if [ "$BUILD_WHEEL" = true ]; then
