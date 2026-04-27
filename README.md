@@ -5,15 +5,55 @@
 [![CI](https://github.com/awslabs/nx-neptune/actions/workflows/main.yml/badge.svg)](https://github.com/awslabs/nx-neptune/actions/workflows/main.yml)
 [![Upload Python Package](https://github.com/awslabs/nx-neptune/actions/workflows/python-publish.yml/badge.svg)](https://github.com/awslabs/nx-neptune/actions/workflows/python-publish.yml)
 
-This project offers a NetworkX-compatible backend for Neptune Analytics, enabling users to offload graph algorithm workloads to AWS with no code changes. By using familiar NetworkX APIs, developers can seamlessly scale graph computations on-demand through Neptune Analytics. This approach combines the simplicity of local development with the performance and scalability of a fully managed AWS graph analytics service.
+**nx-neptune** is a Python library that brings graph analytics to your data lake. Project your data from Amazon S3 Tables, S3 Vectors, Databricks, Snowflake, OpenSearch, and other sources into [Neptune Analytics](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/what-is-neptune-analytics.html) for graph analysis — with results exported back to S3 or persisted as Iceberg tables.
 
-## Supported Algorithms
+### Graph Over Data Lake
+
+Run graph algorithms on data that lives in your data lake — without moving it permanently into a graph database. nx-neptune projects your data into a Neptune Analytics graph using SQL queries (via Amazon Athena), so you can run graph algorithms, explore relationships with openCypher queries, and visualize connections that are invisible in tabular form. When you're done, export the results back to S3 or destroy the graph.
+
+What previously required complex ETL pipelines to get data into a graph database is now a streamlined workflow: define your Athena query, give the module the right permissions, and it handles the projection for you.
+
+**Supported data sources:**
+
+- **Amazon S3 Tables** — query Iceberg tables via Athena SQL ([demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_table_demo.ipynb))
+- **Amazon S3 Vectors** — project vector embeddings via a custom Athena connector ([connector](https://github.com/awslabs/nx-neptune/blob/main/connectors/athena-s3vector-connector/), [demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_vector_embedding_demo.ipynb))
+- **Databricks Unity Catalog** — query Databricks tables via a JDBC-based Athena connector ([connector](https://github.com/awslabs/nx-neptune/blob/main/connectors/athena-databricks-connector/), [demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_databricks_demo.ipynb))
+- **Snowflake** — query tables via the Athena Snowflake connector ([demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_snowflake_table_demo.ipynb))
+- **Amazon OpenSearch** — project embeddings from OpenSearch indices ([demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_open_search_embedding_demo.ipynb))
+- Any source accessible through [Athena federated queries](https://docs.aws.amazon.com/athena/latest/ug/connect-to-a-data-source.html) — [25+ connectors available](https://docs.aws.amazon.com/athena/latest/ug/connectors-available.html)
+
+For data already in S3-compatible formats (CSV, Parquet), Neptune Analytics also supports [native S3 import](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/import-s3.html) without Athena.
+
+**Use cases demonstrated in the notebooks:**
+
+- **Fraud detection** — project financial transactions as a graph, run community detection (Louvain) to identify fraud rings ([S3 Tables demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_table_demo.ipynb), [Databricks demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_databricks_demo.ipynb))
+- **Product recommendation** — project product catalogs with vector embeddings, run similarity search to find related items ([S3 Vectors demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_vector_embedding_demo.ipynb), [OpenSearch demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_open_search_embedding_demo.ipynb))
+
+Vector embeddings are a natural add-on to graph analytics — import them alongside your graph data to combine structural traversal with semantic similarity search.
+
+**Session management:**
+
+The `SessionManager` API manages the full lifecycle of a Neptune Analytics graph: create, import, analyze, export, and destroy. See the [session manager demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/session_manager_comprehensive_demo.ipynb) and [instance lifecycle demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_lifecycle_demo.ipynb).
+
+### NetworkX Backend
+
+nx-neptune also serves as a [NetworkX](https://networkx.org/)-compatible backend for Neptune Analytics, enabling you to offload graph algorithm workloads to AWS with no code changes. Use familiar NetworkX APIs to seamlessly scale graph computations on-demand. This combines the simplicity of local development with the performance and scalability of a fully managed AWS graph analytics service.
+
+```python
+import networkx as nx
+
+G = nx.Graph()
+G.add_edge("Bill", "John")
+r = nx.pagerank(G, backend="neptune")
+```
+
+#### Supported Algorithms
 
 For details of all supported NetworkX algorithms see [algorithms.md](https://github.com/awslabs/nx-neptune/blob/main/algorithms.md)
 
-## Preview Status: Alpha Release
+## Preview Status
 
-We're making the `nx_neptune` plugin library an open-source project, and are releasing it now as an Alpha Preview to the community to gather feedback, and actively collaborate on the project roadmap. We welcome questions, suggestions, and contributions from all community members. At this point in development, the project has not been fully released to the public and is recommended for testing purposes only.  We're tracking its production readiness for general availability on the roadmap.   
+This project is in **Alpha Preview**. We welcome questions, suggestions, and contributions. It is recommended for testing purposes only — we're tracking production readiness on the [roadmap](https://github.com/awslabs/nx-neptune/issues).
 
 ## Installation
 
@@ -33,9 +73,7 @@ python -m pip wheel -w dist .
 pip install "dist/nx_neptune-0.6.0-py3-none-any.whl"
 ```
 
-### Installation
-
-To install the required nx_neptune dependencies:
+### Install from source
 
 ```bash
 git clone git@github.com:awslabs/nx-neptune.git
@@ -189,44 +227,41 @@ For full parameter reference, manual deploy steps, and environment variable deta
 
 For interactive exploration and visualization, you can use the Jupyter notebook integration.
 
-### Features
+### Deploy on SageMaker (recommended)
 
-The notebooks directory contains interactive demonstrations of using Neptune Analytics with NetworkX:
+The fastest way to get started is to deploy a pre-configured SageMaker notebook with a Neptune Analytics graph using the provided CloudFormation template. This creates everything you need — graph, notebook, IAM roles, S3 bucket — with no local setup required.
 
-- [pagerank_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/pagerank_demo.ipynb): Focused demonstration of the PageRank algorithm
-- [bfs_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/bfs_demo.ipynb): Demonstration of Breadth-First Search traversal
-- [degree_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/degree_demo.ipynb): Demonstration of Degree Centrality algorithm
-- [label_propagation_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/label_propagation_demo.ipynb): Demonstration of Label Propagation algorithm
-- [closeness_centrality_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/closeness_centrality_demo.ipynb): Focused demonstration of the Closeness Centrality algorithm
-- [louvain_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/louvain_demo.ipynb): Demonstration of Louvain algorithm
-- [s3_import_export_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/s3_import_export_demo.ipynb): A notebook demonstrating the process of importing from and exporting to an S3 bucket.
-- [import_s3_table_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_table_demo.ipynb): Demonstrates creating a view from S3 Tables and adding data back to a datalake
-- [instance_mgmt_lifecycle_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_lifecycle_demo.ipynb): A notebook to demonstrates the explicit workflow for managing the lifecycle of an instance.
-- [instance_mgmt_with_configuration.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_with_configuration.ipynb): A notebook to demonstrates a simplified approach to instance lifecycle management.   
-- [session_manager_comprehensive_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/session_manager_comprehensive_demo.ipynb): Demonstrates use-cases for the SessionManager wrapper
+See [cloudformation-templates/](https://github.com/awslabs/nx-neptune/blob/main/cloudformation-templates/) for the template and deployment scripts.
 
-### Uploading a package wheel
+### Notebooks
 
-We recommend uploading your package as a wheel to Jupyter Notebooks. 
+The notebooks directory contains interactive demonstrations:
 
-```bash
-# Package the project from source:
-python -m pip wheel -w dist .
-# creates dist/nx_neptune-0.6.0-py3-none-any.whl
-```
+**Data lake integration:**
+- [import_s3_table_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_table_demo.ipynb): Project S3 Tables data into a graph, run Louvain, export results back to Iceberg
+- [import_s3_vector_embedding_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_vector_embedding_demo.ipynb): Project S3 Vector embeddings via Athena federated query
+- [import_databricks_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_databricks_demo.ipynb): Project Databricks tables via Athena federated query
+- [import_snowflake_table_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_snowflake_table_demo.ipynb): Project Snowflake tables via Athena federated query
+- [import_open_search_embedding_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_open_search_embedding_demo.ipynb): Project OpenSearch embeddings via Athena federated query
+- [s3_import_export_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/s3_import_export_demo.ipynb): Import from and export to S3
 
-### Installation
+**Session and lifecycle management:**
+- [session_manager_comprehensive_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/session_manager_comprehensive_demo.ipynb): SessionManager API — create, import, analyze, export, destroy
+- [instance_mgmt_lifecycle_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_lifecycle_demo.ipynb): Explicit instance lifecycle management
+- [instance_mgmt_with_configuration.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_with_configuration.ipynb): Configuration-based instance management
+
+**Algorithm demos:**
+- [pagerank_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/pagerank_demo.ipynb), [bfs_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/bfs_demo.ipynb), [degree_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/degree_demo.ipynb), [closeness_centrality_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/closeness_centrality_demo.ipynb), [louvain_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/louvain_demo.ipynb), [label_propagation_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/label_propagation_demo.ipynb)
+
+### Running locally
+
+[A full tutorial is available to run in Neptune Jupyter Notebooks](https://github.com/awslabs/nx-neptune/blob/main/notebooks/README.md).
 
 To install the required dependencies for the Jupyter notebook (including the `Jupyter` dependencies):
 
 ```bash
-# Install with Jupyter dependencies from wheel: 
-pip install "dist/nx_neptune-0.6.0-py3-none-any.whl[jupyter]"
+pip install "nx_neptune[jupyter]"
 ```
-
-### Running the Jupyter Notebook
-
-[A full tutorial is available to run in Neptune Jupyter Notebooks](https://github.com/awslabs/nx-neptune/blob/main/notebooks/README.md).
 
 To run the Jupyter notebooks:
 
@@ -239,18 +274,13 @@ To run the Jupyter notebooks:
 
    ```bash
    export NETWORKX_ARN_IAM_ROLE=arn:aws:iam::AWS_ACCOUNT:role/IAM_ROLE_NAME
-   export NETWORKX_S3_IMPORT_BUCKET_PATH=s://S3_BUCKET_PATH
-   export NETWORKX_S3_EXPORT_BUCKET_PATH=s://S3_BUCKET_PATH
+   export NETWORKX_S3_IMPORT_BUCKET_PATH=s3://S3_BUCKET_PATH
+   export NETWORKX_S3_EXPORT_BUCKET_PATH=s3://S3_BUCKET_PATH
    ```
 
 3. Launch Jupyter Notebook:
    ```bash
    jupyter notebook notebooks/
-   ```
-
-4. You can also set the Graph ID directly in the notebook using:
-   ```python
-   %env NETWORKX_GRAPH_ID=your-neptune-analytics-graph-id
    ```
 
 ## Security
