@@ -187,3 +187,6 @@ nx-neptune/
 dependency-reduced-pom.xml
 
 
+
+# CloudFormation deploy artifacts
+cloudformation-templates/build/

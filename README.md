@@ -157,6 +157,34 @@ make integ-test
 
 You can set `BACKEND=False` to run the test suite using NetworkX without nx-neptune as the backend. 
 
+## CloudFormation Deployment
+
+A CloudFormation template is provided to deploy a complete Neptune Analytics + SageMaker notebook environment with a single command. The stack creates a Neptune Analytics graph, a SageMaker notebook instance with `nx_neptune` pre-installed, an S3 staging bucket with KMS encryption, and all required IAM permissions.
+
+### Quick deploy
+
+By default, the stack installs `nx_neptune` from PyPI:
+
+```bash
+./cloudformation-templates/deploy.sh                        # defaults: nx-neptune-demo, us-west-1
+./cloudformation-templates/deploy.sh my-stack us-east-1     # custom stack name and region
+```
+
+To deploy with a locally built wheel instead, pass `true` as the third argument:
+
+```bash
+./cloudformation-templates/deploy.sh nx-neptune-demo us-west-1 true
+```
+
+### Teardown
+
+```bash
+./cloudformation-templates/teardown.sh                      # defaults: nx-neptune-demo, us-west-1
+./cloudformation-templates/teardown.sh my-stack us-east-1
+```
+
+For full parameter reference, manual deploy steps, and environment variable details, see [cloudformation-templates/README.md](https://github.com/awslabs/nx-neptune/blob/main/cloudformation-templates/README.md).
+
 ## Jupyter Notebook Integration
 
 For interactive exploration and visualization, you can use the Jupyter notebook integration.
