@@ -225,13 +225,7 @@ For full parameter reference, manual deploy steps, and environment variable deta
 
 ## Jupyter Notebook Integration
 
-For interactive exploration and visualization, you can use the Jupyter notebook integration.
-
-### Deploy on SageMaker (recommended)
-
-The fastest way to get started is to deploy a pre-configured SageMaker notebook with a Neptune Analytics graph using the provided CloudFormation template. This creates everything you need — graph, notebook, IAM roles, S3 bucket — with no local setup required.
-
-See [cloudformation-templates/](https://github.com/awslabs/nx-neptune/blob/main/cloudformation-templates/) for the template and deployment scripts.
+For interactive exploration and visualization, you can use the Jupyter notebook integration. To deploy a pre-configured SageMaker notebook environment, see [CloudFormation Deployment](#cloudformation-deployment) above.
 
 ### Notebooks
 
