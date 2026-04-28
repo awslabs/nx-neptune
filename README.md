@@ -37,7 +37,7 @@ The `SessionManager` API manages the full lifecycle of a Neptune Analytics graph
 
 ### NetworkX Backend
 
-nx-neptune also serves as a [NetworkX](https://networkx.org/)-compatible backend for Neptune Analytics, enabling you to offload graph algorithm workloads to AWS with no code changes. Use familiar NetworkX APIs to seamlessly scale graph computations on-demand. This combines the simplicity of local development with the performance and scalability of a fully managed AWS graph analytics service.
+nx-neptune also serves as a [NetworkX](https://networkx.org/)-compatible backend for Neptune Analytics, enabling you to offload graph algorithm workloads to AWS with no code changes. Use familiar NetworkX APIs to seamlessly scale graph computations on-demand. This combines the simplicity of local development with the performance and scalability of a fully managed AWS graph analytics service. For more on NetworkX backends, see the [NetworkX backends documentation](https://networkx.org/documentation/latest/backends.html).
 
 ```python
 import networkx as nx
@@ -251,7 +251,12 @@ The notebooks directory contains interactive demonstrations:
 - [instance_mgmt_with_configuration.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_with_configuration.ipynb): Configuration-based instance management
 
 **Algorithm demos:**
-- [pagerank_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/pagerank_demo.ipynb), [bfs_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/bfs_demo.ipynb), [degree_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/degree_demo.ipynb), [closeness_centrality_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/closeness_centrality_demo.ipynb), [louvain_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/louvain_demo.ipynb), [label_propagation_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/label_propagation_demo.ipynb)
+- [pagerank_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/pagerank_demo.ipynb): Focused demonstration of the PageRank algorithm
+- [bfs_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/bfs_demo.ipynb): Demonstration of Breadth-First Search traversal
+- [degree_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/degree_demo.ipynb): Demonstration of Degree Centrality algorithm
+- [closeness_centrality_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/closeness_centrality_demo.ipynb): Focused demonstration of the Closeness Centrality algorithm
+- [louvain_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/louvain_demo.ipynb): Demonstration of Louvain algorithm
+- [label_propagation_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/label_propagation_demo.ipynb): Demonstration of Label Propagation algorithm
 
 ### Running locally
 

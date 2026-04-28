@@ -1,18 +1,31 @@
 # Running nx_neptune Notebooks on AWS
 
-This directory contains Jupyter notebooks demonstrating the integration between NetworkX and Neptune Analytics:
+This directory contains Jupyter notebooks demonstrating the integration between NetworkX and Neptune Analytics.
+
+## Algorithm Demos
 
 - [pagerank_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/pagerank_demo.ipynb): Demonstrates PageRank algorithm implementation and visualization
 - [bfs_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/bfs_demo.ipynb): Shows Breadth-First Search traversal with different parameters
-- [degree_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/degree_demo.ipynb): Demonstrates Degree Centrality algorithm implementation 
-- [label_propagation_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/label_propagation_demo.ipynb): Demonstrates Label Propagation algorithm implementation
+- [degree_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/degree_demo.ipynb): Demonstrates Degree Centrality algorithm implementation
 - [closeness_centrality_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/closeness_centrality_demo.ipynb): Shows Closeness Centrality traversal with different parameters
 - [louvain_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/louvain_demo.ipynb): Demonstrates Louvain algorithm implementation
-- [s3_import_export_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/s3_import_export_demo.ipynb): Demonstrates S3 import / export workflow
-- [import_s3_table_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_table_demo.ipynb): Demonstrates creating a view from S3 Tables and adding data back to a datalake
+- [label_propagation_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/label_propagation_demo.ipynb): Demonstrates Label Propagation algorithm implementation
+
+## Graph Over Data Lake
+
+- [import_s3_table_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_table_demo.ipynb): Project S3 Tables data into a graph, run Louvain, export results back to Iceberg
+- [import_s3_table_embedding_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_table_embedding_demo.ipynb): Project S3 Tables data with embeddings into a graph
+- [import_s3_vector_embedding_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_vector_embedding_demo.ipynb): Project S3 Vector embeddings via Athena federated query
+- [import_databricks_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_databricks_demo.ipynb): Project Databricks tables via Athena federated query
+- [import_snowflake_table_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_snowflake_table_demo.ipynb): Project Snowflake tables via Athena federated query
+- [import_open_search_embedding_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_open_search_embedding_demo.ipynb): Project OpenSearch embeddings via Athena federated query
+- [s3_import_export_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/s3_import_export_demo.ipynb): Import from and export to S3
+
+## Session and Lifecycle Management
+
+- [session_manager_comprehensive_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/session_manager_comprehensive_demo.ipynb): SessionManager API — create, import, analyze, export, destroy
 - [instance_mgmt_lifecycle_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_lifecycle_demo.ipynb): Demonstrates the usage of explicit instance management
 - [instance_mgmt_with_configuration.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_with_configuration.ipynb): Demonstrates the usage of implicit instance management
-- [session_manager_comprehensive_demo.ipynb](https://github.com/awslabs/nx-neptune/blob/main/notebooks/session_manager_comprehensive_demo.ipynb): Demonstrates use-cases for the SessionManager wrapper
 
 ## Running on AWS Neptune Notebooks
 

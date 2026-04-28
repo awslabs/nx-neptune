@@ -9,7 +9,7 @@ authors = [{name = "Amazon Web Services"}]
 readme = "README.md"
 requires-python = ">=3.11"
 dynamic = ['version']
-keywords = ["networkx", "graph", "data-lake", "neptune-analytics"]
+keywords = ["networkx", "graph", "data-lake", "neptune", "neptune-analytics"]
 license = {text = "Apache-2.0"}
 classifiers = [
     'Intended Audience :: Developers',
