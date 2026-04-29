@@ -10,12 +10,45 @@ This template creates a Neptune Analytics graph and a SageMaker notebook instanc
 - **KMS key** for S3 bucket encryption
 - **IAM role and policy** with Neptune, S3, KMS, Athena, Glue, and SageMaker permissions
 
+### Notebook environment variables
+
+The following are automatically set on the notebook instance for all Jupyter kernels:
+
+| Variable | Value |
+|----------|-------|
+| `NETWORKX_GRAPH_ID` | The created graph's ID |
+| `AWS_REGION` | Stack region |
+| `NETWORKX_S3_EXPORT_BUCKET_PATH` | `s3://<bucket>/export/` |
+| `NETWORKX_S3_IMPORT_BUCKET_PATH` | `s3://<bucket>/import/` |
+| `NETWORKX_STAGING_BUCKET` | `s3://<bucket>/staging` |
+
 ## Prerequisites
 
 - AWS CLI configured with valid credentials
 - IAM permissions to create CloudFormation stacks, Neptune Analytics graphs, SageMaker notebooks, S3 buckets, KMS keys, and IAM roles
 
-## Deploy
+## Deploy with script
+
+The provided script handles building, uploading assets, and deploying the stack:
+
+```bash
+./cloudformation-templates/deploy.sh                                # defaults: nx-neptune-demo, us-west-1, no wheel build
+./cloudformation-templates/deploy.sh nx-neptune-demo us-east-1      # custom stack name and region
+./cloudformation-templates/deploy.sh nx-neptune-demo us-east-1 true # build and deploy a local wheel
+```
+
+The script accepts three positional arguments:
+
+| Argument | Position | Default | Description |
+|----------|----------|---------|-------------|
+| `STACK_NAME` | 1st | `nx-neptune-demo` | CloudFormation stack name (also used as `ApplicationId`, max 16 characters) |
+| `REGION` | 2nd | `us-west-1` | AWS region |
+| `BUILD_WHEEL` | 3rd | `false` | Set to `true` to build and deploy a local wheel; `false` installs from PyPI |
+
+Notes: 
+ - The stack name is passed as the `ApplicationId` parameter, which names all created resources. 
+
+## Deploy with `aws cloudformation` CLI
 
 Build the wheel and zip the notebooks:
 
@@ -43,36 +76,32 @@ aws cloudformation deploy \
 
 If no `.whl` is found in the prefix, `nx_neptune` is installed from PyPI.
 
-Alternatively, use the provided script which handles all of the above:
+### Parameters
 
-```bash
-./cloudformation-templates/deploy.sh                        # defaults: nx-neptune-demo, us-west-1
-./cloudformation-templates/deploy.sh my-stack us-east-1     # custom stack name and region
-```
-
-Set `BUILD_WHEEL=false` at the top of `deploy.sh` to skip wheel build and install from PyPI instead.
-
-## Parameters
+These are the `--parameter-overrides` accepted by the CloudFormation template:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| ApplicationId | Application id used to name all resources | `nx-neptune` |
+| ApplicationId | Application id used to name all resources (max 16 characters) | `nx-neptune` |
 | ProvisionedMemory | Number of m-NCUs for the graph (16, 32, 64) | `16` |
 | PublicConnectivity | Enable public connectivity for the graph | `true` |
 | NotebookInstanceType | SageMaker instance type | `ml.t3.medium` |
 | AssetsS3Prefix | S3 prefix containing `notebooks.zip` and optionally a `.whl` | _(required)_ |
 
-## Environment variables
+### Example with all parameters
 
-The following are automatically set on the notebook instance for all Jupyter kernels:
-
-| Variable | Value |
-|----------|-------|
-| `NETWORKX_GRAPH_ID` | The created graph's ID |
-| `AWS_REGION` | Stack region |
-| `NETWORKX_S3_EXPORT_BUCKET_PATH` | `s3://<bucket>/export/` |
-| `NETWORKX_S3_IMPORT_BUCKET_PATH` | `s3://<bucket>/import/` |
-| `NETWORKX_STAGING_BUCKET` | `s3://<bucket>/staging` |
+```bash
+aws cloudformation deploy \
+  --stack-name nx-neptune-demo \
+  --template-file cloudformation-templates/nx-neptune-sagemaker.json \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    ApplicationId=my-custom-name \
+    ProvisionedMemory=32 \
+    PublicConnectivity=false \
+    NotebookInstanceType=ml.t3.large \
+    AssetsS3Prefix=s3://your-bucket/nx-neptune
+```
 
 ## Outputs
 
@@ -86,7 +115,7 @@ The following are automatically set on the notebook instance for all Jupyter ker
 aws cloudformation describe-stacks --stack-name nx-neptune-demo --query 'Stacks[0].Outputs'
 ```
 
-## Teardown
+## Stack Teardown
 
 The staging bucket has versioning enabled, so you must delete all object versions before stack deletion.
 
@@ -94,14 +123,14 @@ Use the provided script which handles bucket cleanup and stack deletion:
 
 ```bash
 ./cloudformation-templates/teardown.sh                      # defaults: nx-neptune-demo, us-west-1
-./cloudformation-templates/teardown.sh my-stack us-east-1
+./cloudformation-templates/teardown.sh nx-neptune-demo us-east-1
 ```
 
 Or manually:
 
 ```bash
 # Empty the bucket (including versioned objects)
-aws s3 rm s3://<bucket-name> --recursive
+aws s3 rm s3://<your-bucket> --recursive
 
 # Delete the stack
 aws cloudformation delete-stack --stack-name nx-neptune-demo

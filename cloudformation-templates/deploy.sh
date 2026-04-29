@@ -3,6 +3,11 @@ set -e
 
 STACK_NAME="${1:-nx-neptune-demo}"
 REGION="${2:-us-west-1}"
+
+if [ ${#STACK_NAME} -gt 16 ]; then
+  echo "Error: STACK_NAME '${STACK_NAME}' exceeds 16 characters (ApplicationId limit)." >&2
+  exit 1
+fi
 BUILD_WHEEL="${3:-false}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -40,7 +45,7 @@ aws cloudformation deploy \
   --template-file "$SCRIPT_DIR/nx-neptune-sagemaker.json" \
   --capabilities CAPABILITY_NAMED_IAM \
   --region "$REGION" \
-  --parameter-overrides "AssetsS3Prefix=s3://${ASSETS_BUCKET}"
+  --parameter-overrides "ApplicationId=${STACK_NAME}" "AssetsS3Prefix=s3://${ASSETS_BUCKET}"
 
 echo ""
 aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs' --output table
