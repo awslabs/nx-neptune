@@ -64,7 +64,7 @@ test = [
 ]
 jupyter = [
     "jupyter>=1.0.0",
-    "notebook>=7.0.0",
+    "notebook>=7.5.6",
     "ipykernel>=6.0.0",
     "matplotlib>=3.0.0",
     "nbstripout>=0.3.10",
