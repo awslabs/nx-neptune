@@ -507,17 +507,16 @@ def generate_projection_stmt(
 def _validate_sql_identifier(value: str) -> str:
     """Validate that *value* is a safe SQL identifier (table or column name).
 
-    Accepts dotted names like ``catalog.database.table``.
+    Accepts dotted names like ``catalog.database.table`` and
+    double-quoted segments like ``"lambda:db-test"."default"."table"``.
 
     Raises ``ValueError`` if the value contains characters that could
     enable SQL injection.
     """
-    _SQL_IDENTIFIER_RE = re.compile(
-        r"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*\Z"
-    )
+    # Each segment is either an unquoted identifier or a double-quoted identifier.
+    # Double-quoted segments reject ; and " to prevent injection.
+    _SEGMENT = r'(?:[a-zA-Z_][a-zA-Z0-9_]*|"[^";]+")'
+    _SQL_IDENTIFIER_RE = re.compile(rf"^{_SEGMENT}(\.{_SEGMENT})*\Z")
     if not value or not _SQL_IDENTIFIER_RE.match(value):
-        raise ValueError(
-            f"Invalid SQL identifier: {value!r}. "
-            "Only letters, digits, underscores, and dots are allowed."
-        )
+        raise ValueError(f"Invalid SQL identifier: {value!r}.")
     return value

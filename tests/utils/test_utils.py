@@ -159,6 +159,8 @@ class TestValidateSqlIdentifier:
     @pytest.mark.parametrize(
         "value",
         [
+            '"lambda:db-test"."default"."paysim_transactions"',
+            '"my-catalog".my_db.my_table',
             "my_table",
             "Table1",
             "_private",
@@ -183,6 +185,7 @@ class TestValidateSqlIdentifier:
             "table;",
             ".leading_dot",
             "trailing.",
+            '"table;DROP TABLE x"',
         ],
     )
     def test_invalid_identifiers(self, value):
