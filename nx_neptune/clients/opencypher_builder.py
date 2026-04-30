@@ -10,6 +10,7 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from cymple import QueryBuilder
@@ -1028,12 +1029,11 @@ def _get_nodes_in_list(source_nodes: list[str]):
 
     :param source_nodes: A list of node IDs or a single node ID as a string.
     :return: A string with node IDs enclosed in square brackets and single quotes, e.g., "['A','B','C']".
+    :raises ValueError: If any node ID contains unsafe characters.
     """
-    return (
-        "["
-        + ",".join(
-            f"'{s}'"
-            for s in ([source_nodes] if isinstance(source_nodes, str) else source_nodes)
-        )
-        + "]"
-    )
+    _NODE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-:.]+\Z")
+    nodes = [source_nodes] if isinstance(source_nodes, str) else source_nodes
+    for node_id in nodes:
+        if not _NODE_ID_RE.match(str(node_id)):
+            raise ValueError(f"Invalid node ID: {node_id!r}")
+    return "[" + ",".join(f"'{s}'" for s in nodes) + "]"
