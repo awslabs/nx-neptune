@@ -14,10 +14,30 @@ import csv
 import json
 import logging
 import os
+import re
 import sys
 from itertools import islice
 from time import sleep
 from typing import List, Optional
+
+
+_SQL_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*\Z")
+
+
+def _validate_sql_identifier(value: str, label: str = "identifier") -> str:
+    """Validate that *value* is a safe SQL identifier (table or column name).
+
+    Accepts dotted names like ``catalog.database.table``.
+
+    Raises ``ValueError`` if the value contains characters that could
+    enable SQL injection.
+    """
+    if not value or not _SQL_IDENTIFIER_RE.match(value):
+        raise ValueError(
+            f"Invalid SQL {label}: {value!r}. "
+            "Only letters, digits, underscores, and dots are allowed."
+        )
+    return value
 
 import boto3
 
@@ -376,6 +396,7 @@ def generate_create_table_ddl(table_name, s3_location, columns):
         >>> columns = [("id", "string"), ("name", "string"), ("embedding", "array<float>")]
         >>> ddl = generate_create_table_ddl("my_table", "s3://bucket/path/", columns)
     """
+    _validate_sql_identifier(table_name, "table name")
     column_defs = ",\n    ".join([f"`{name}` {dtype}" for name, dtype in columns])
 
     return f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
@@ -456,6 +477,8 @@ def generate_projection_stmt(
         posts p
         on u.id = p.user_id;
     """
+    for part in base_table.split():
+        _validate_sql_identifier(part, "table name")
     selects = [f'{col_id} AS "~id"']
 
     if col_label:

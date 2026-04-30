@@ -55,6 +55,7 @@ from .utils.task_future import (
     TaskType,
     wait_until_all_complete,
 )
+from .utils.utils import _validate_sql_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -1329,6 +1330,7 @@ def _build_sql_statement(
             table_columns[field] = datatype.lower()
 
     table_schema = ",\n    ".join(f"`{k}` {v}" for k, v in table_columns.items())
+    _validate_sql_identifier(table_name, "table name")
     if bucket_folder:
         s3_location = f"s3://{bucket_name}/{bucket_folder}/{prefix}"
     else:
@@ -1392,6 +1394,8 @@ async def create_iceberg_table_from_table(
     if table_columns:
         select_columns = '"' + '","'.join(table_columns) + '"'
 
+    _validate_sql_identifier(table_name, "table name")
+    _validate_sql_identifier(csv_table_name, "table name")
     sql_statement = f"""
 CREATE TABLE {table_name}
   WITH (
@@ -1527,6 +1531,7 @@ async def drop_athena_table(
     # Check Athena and S3/KMS permissions
     iam_client_wrapper.has_athena_permissions(s3_bucket, key_arn)
 
+    _validate_sql_identifier(table, "table name")
     drop_table_sql_statement = f"DROP TABLE {table}"
     query_execution_id = _execute_athena_query(
         athena_client,

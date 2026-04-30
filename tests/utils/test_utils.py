@@ -151,3 +151,42 @@ class TestReadCsv:
                 assert rows == []
             finally:
                 os.unlink(f.name)
+
+
+class TestValidateSqlIdentifier:
+    """Tests for _validate_sql_identifier function"""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "my_table",
+            "Table1",
+            "_private",
+            "catalog.database.table",
+            "db.my_table",
+        ],
+    )
+    def test_valid_identifiers(self, value):
+        from nx_neptune.utils.utils import _validate_sql_identifier
+
+        assert _validate_sql_identifier(value, "table name") == value
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "table; DROP TABLE users--",
+            "table name",
+            "1table",
+            "",
+            "table\n",
+            "table'",
+            "table;",
+            ".leading_dot",
+            "trailing.",
+        ],
+    )
+    def test_invalid_identifiers(self, value):
+        from nx_neptune.utils.utils import _validate_sql_identifier
+
+        with pytest.raises(ValueError, match="Invalid SQL"):
+            _validate_sql_identifier(value, "table name")
