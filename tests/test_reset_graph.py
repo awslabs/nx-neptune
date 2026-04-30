@@ -41,7 +41,7 @@ async def test_reset_graph_success():
         },
         "id": "xxx",
         "name": "andy-test-graph",
-        "arn": "arn:aws:neptune-graph:us-west-2:613481987977:graph/xxx",
+        "arn": "arn:aws:neptune-graph:us-west-2:123456789000:graph/xxx",
         "status": "RESETTING",
         "createTime": "xxx",
         "provisionedMemory": 16,
