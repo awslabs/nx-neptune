@@ -169,7 +169,7 @@ class TestValidateSqlIdentifier:
     def test_valid_identifiers(self, value):
         from nx_neptune.utils.utils import _validate_sql_identifier
 
-        assert _validate_sql_identifier(value, "table name") == value
+        assert _validate_sql_identifier(value) == value
 
     @pytest.mark.parametrize(
         "value",
@@ -189,4 +189,4 @@ class TestValidateSqlIdentifier:
         from nx_neptune.utils.utils import _validate_sql_identifier
 
         with pytest.raises(ValueError, match="Invalid SQL"):
-            _validate_sql_identifier(value, "table name")
+            _validate_sql_identifier(value)
