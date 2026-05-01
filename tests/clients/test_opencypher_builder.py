@@ -990,12 +990,19 @@ class TestOpencypherBuilderAdditional(unittest.TestCase):
         self.assertIn("'A'", query)
         self.assertEqual(params, {})
 
-    def test_closeness_centrality_query_rejects_invalid_node_id(self):
-        """Test closeness_centrality_query rejects node IDs with unsafe characters."""
+    def test_closeness_centrality_query_rejects_injection(self):
+        """Test closeness_centrality_query rejects node IDs with injection characters."""
         from nx_neptune.clients.opencypher_builder import closeness_centrality_query
 
         with self.assertRaises(ValueError):
             closeness_centrality_query(source_nodes=["A'; DROP MATCH--"])
+
+    def test_closeness_centrality_query_rejects_mixed_valid_invalid(self):
+        """Test that validation catches an invalid node even after valid ones."""
+        from nx_neptune.clients.opencypher_builder import closeness_centrality_query
+
+        with self.assertRaises(ValueError):
+            closeness_centrality_query(source_nodes=["validNode", "bad;node"])
 
     def test_closeness_centrality_mutation_query(self):
         """Test closeness_centrality_mutation_query."""
