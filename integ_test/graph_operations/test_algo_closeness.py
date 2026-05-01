@@ -56,6 +56,15 @@ class TestCloseness:
         assert isinstance(yvr_result, float)
         assert 0 <= yvr_result <= 1
 
+    def test_closeness_centrality_source_nodes_list(self, air_route_graph):
+        """Test closeness centrality with a list of source nodes"""
+        result = nx.closeness_centrality(
+            air_route_graph, backend=BACKEND, u=["YVR", "LAX", "JFK"]
+        )
+        assert isinstance(result, dict)
+        assert len(result) > 0
+        assert all(isinstance(v, float) for v in result.values())
+
     def test_closeness_centrality_mutation(self, air_route_graph, neptune_graph):
         """Test closeness centrality with write_property (mutation)"""
         nx.closeness_centrality(air_route_graph, backend=BACKEND, write_property="ccScore")

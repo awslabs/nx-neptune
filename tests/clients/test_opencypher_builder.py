@@ -972,6 +972,38 @@ class TestOpencypherBuilderAdditional(unittest.TestCase):
         self.assertIn("YIELD", query)
         self.assertEqual(params, {})
 
+    def test_closeness_centrality_query_with_source_nodes(self):
+        """Test closeness_centrality_query validates and interpolates source_nodes."""
+        from nx_neptune.clients.opencypher_builder import closeness_centrality_query
+
+        query, params = closeness_centrality_query(source_nodes=["A", "B", "C"])
+        self.assertIn("'A'", query)
+        self.assertIn("'B'", query)
+        self.assertIn("'C'", query)
+        self.assertEqual(params, {})
+
+    def test_closeness_centrality_query_with_single_source_node(self):
+        """Test closeness_centrality_query with a single string source node."""
+        from nx_neptune.clients.opencypher_builder import closeness_centrality_query
+
+        query, params = closeness_centrality_query(source_nodes="A")
+        self.assertIn("'A'", query)
+        self.assertEqual(params, {})
+
+    def test_closeness_centrality_query_rejects_injection(self):
+        """Test closeness_centrality_query rejects node IDs with injection characters."""
+        from nx_neptune.clients.opencypher_builder import closeness_centrality_query
+
+        with self.assertRaises(ValueError):
+            closeness_centrality_query(source_nodes=["A'; DROP MATCH--"])
+
+    def test_closeness_centrality_query_rejects_mixed_valid_invalid(self):
+        """Test that validation catches an invalid node even after valid ones."""
+        from nx_neptune.clients.opencypher_builder import closeness_centrality_query
+
+        with self.assertRaises(ValueError):
+            closeness_centrality_query(source_nodes=["validNode", "bad;node"])
+
     def test_closeness_centrality_mutation_query(self):
         """Test closeness_centrality_mutation_query."""
         from nx_neptune.clients.opencypher_builder import (
