@@ -59,7 +59,7 @@ cycler==0.12.1
     # via matplotlib
 cymple==0.12.0
     # via nx-neptune (pyproject.toml)
-databricks-sdk==0.67.0
+databricks-sdk==0.106.0
     # via nx-neptune (pyproject.toml)
 databricks-sql-connector==2.0.2
     # via nx-neptune (pyproject.toml)
