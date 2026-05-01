@@ -156,7 +156,7 @@ requests==2.33.1
     #   sphinx
 roman-numerals==4.1.0
     # via sphinx
-s3transfer==0.16.0
+s3transfer==0.17.0
     # via boto3
 scipy==1.17.1
     # via nx-neptune (pyproject.toml)

@@ -331,7 +331,7 @@ rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
-s3transfer==0.16.0
+s3transfer==0.17.0
     # via boto3
 scipy==1.17.1
     # via nx-neptune (pyproject.toml)
