@@ -77,7 +77,7 @@ fonttools==4.62.1
     # via matplotlib
 fqdn==1.5.1
     # via jsonschema
-google-auth==2.49.2
+google-auth==2.50.0
     # via databricks-sdk
 h11==0.16.0
     # via httpcore
