@@ -1,0 +1,71 @@
+---
+title: Quick Start
+---
+
+import { Steps, Code, Aside } from '@astrojs/starlight/components';
+
+<Steps>
+
+1. **Install nx-neptune**
+
+   ```bash
+   pip install nx_neptune
+   ```
+
+2. **Set your Neptune Analytics graph ID**
+
+   ```bash
+   export NETWORKX_GRAPH_ID=your-neptune-analytics-graph-id
+   ```
+
+3. **Run a graph algorithm**
+
+   ```python
+   import networkx as nx
+
+   G = nx.Graph()
+   G.add_node("Bill")
+   G.add_node("John")
+   G.add_edge("Bill", "John")
+
+   r = nx.pagerank(G, backend="neptune")
+   print(r)
+   ```
+
+4. **Execute**
+
+   ```bash
+   python nx_example.py
+   ```
+
+</Steps>
+
+<Aside type="tip">
+  You can also pass the graph ID inline:
+  ```bash
+  NETWORKX_GRAPH_ID=your-graph-id python nx_example.py
+  ```
+</Aside>
+
+## Running tests
+
+Unit tests:
+
+```bash
+make test
+```
+
+Integration tests (requires a live Neptune Analytics instance):
+
+```bash
+export NETWORKX_GRAPH_ID=g-test12345
+make integ-test
+```
+
+Set `BACKEND=False` to run the test suite using NetworkX without nx-neptune as the backend.
+
+## Next steps
+
+- [NetworkX Backend interface](/nx-neptune/networkx-backend/interface/) — learn how the backend works
+- [Session Manager](/nx-neptune/data-lake/session-manager/) — project data lake sources into a graph
+- [Deployment](/nx-neptune/reference/deployment/) — deploy with CloudFormation

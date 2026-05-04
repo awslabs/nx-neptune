@@ -1,0 +1,16 @@
+{
+  "name": "nx-neptune-docs",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.32.5",
+    "astro": "5.7.13",
+    "sharp": "0.33.5"
+  }
+}

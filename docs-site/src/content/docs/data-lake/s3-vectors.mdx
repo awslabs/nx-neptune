@@ -1,0 +1,26 @@
+---
+title: S3 Vectors
+---
+
+Project **Amazon S3 Vector** embeddings into a Neptune Analytics graph via a custom Athena connector.
+
+## Overview
+
+S3 Vectors stores vector embeddings alongside metadata. nx-neptune uses a custom Athena federated query connector to read these embeddings and project them into Neptune Analytics, enabling combined graph traversal and semantic similarity search.
+
+## Custom connector
+
+The [athena-s3vector-connector](https://github.com/awslabs/nx-neptune/blob/main/connectors/athena-s3vector-connector/) is a Lambda-based Athena connector that reads from S3 Vectors. See the [connectors documentation](/nx-neptune/reference/source-layout/) for build instructions.
+
+## Demo notebook
+
+The [S3 Vectors demo notebook](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_vector_embedding_demo.ipynb) demonstrates:
+
+- Deploying the custom Athena connector
+- Querying vector embeddings via Athena federated query
+- Projecting embeddings into a graph
+- Running similarity search
+
+## Use case: Product recommendation
+
+Project product catalogs with vector embeddings into a graph. Combine structural graph traversal (what products are related) with semantic similarity search (what products have similar descriptions).

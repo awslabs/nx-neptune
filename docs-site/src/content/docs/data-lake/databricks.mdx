@@ -1,0 +1,26 @@
+---
+title: Databricks
+---
+
+Project data from **Databricks Unity Catalog** tables into a Neptune Analytics graph via a JDBC-based Athena connector.
+
+## Overview
+
+The Databricks connector uses Athena federated queries with a custom JDBC-based Lambda connector to read from Databricks Unity Catalog tables and project the data into Neptune Analytics.
+
+## Custom connector
+
+The [athena-databricks-connector](https://github.com/awslabs/nx-neptune/blob/main/connectors/athena-databricks-connector/) extends the AWS Athena Query Federation SDK's JDBC base classes. See the [connectors documentation](/nx-neptune/reference/source-layout/) for build instructions.
+
+## Demo notebook
+
+The [Databricks demo notebook](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_databricks_demo.ipynb) demonstrates:
+
+- Configuring the Databricks Athena connector
+- Querying Unity Catalog tables via Athena federated query
+- Projecting tabular data as a graph
+- Running Louvain community detection for fraud ring identification
+
+## Use case: Fraud detection
+
+Project financial transaction data stored in Databricks as a graph. Run community detection to identify fraud rings that are invisible in tabular form.

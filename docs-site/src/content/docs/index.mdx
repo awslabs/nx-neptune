@@ -1,0 +1,69 @@
+---
+title: nx-neptune
+description: Graph analytics for your data lake — powered by NetworkX and Amazon Neptune Analytics.
+template: splash
+hero:
+  title: |
+    Graph analytics<br/>
+    for your data lake.
+  tagline: A Python library that brings graph analytics to your data lake. Use familiar NetworkX APIs or project data from S3, Databricks, Snowflake, and more into Neptune Analytics.
+  actions:
+    - text: Get started
+      link: /nx-neptune/getting-started/installation/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/awslabs/nx-neptune
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, Code } from '@astrojs/starlight/components';
+
+<CardGrid>
+  <Card title="NetworkX Backend" icon="rocket">
+    Use familiar NetworkX APIs to run graph algorithms on Neptune Analytics — no code changes required. Just add `backend="neptune"`.
+  </Card>
+  <Card title="Graph Over Data Lake" icon="puzzle">
+    Project data from S3 Tables, S3 Vectors, Databricks, Snowflake, and OpenSearch into a graph for analysis, then export results back.
+  </Card>
+  <Card title="Session Manager" icon="setting">
+    Manage the full lifecycle of a Neptune Analytics graph: create, import, analyze, export, and destroy — all from Python.
+  </Card>
+  <Card title="Open Source" icon="github">
+    Apache 2.0 licensed, developed in the open by AWS Labs. Alpha preview — contributions welcome.
+  </Card>
+</CardGrid>
+
+## Quick example
+
+<Code
+  code={`import networkx as nx
+
+G = nx.Graph()
+G.add_edge("Bill", "John")
+r = nx.pagerank(G, backend="neptune")
+print(r)`}
+  lang="python"
+  title="nx_example.py"
+/>
+
+## Two interfaces
+
+nx-neptune provides two distinct ways to work with Neptune Analytics:
+
+| | NetworkX Backend | Session Manager |
+|---|---|---|
+| **Use case** | Run algorithms on existing graphs | Project data lake sources into a graph |
+| **API style** | Drop-in NetworkX replacement | Explicit lifecycle management |
+| **Data source** | In-memory NetworkX graph | S3, Databricks, Snowflake, OpenSearch |
+| **Setup** | Set `NETWORKX_GRAPH_ID` env var | Configure sources and IAM roles |
+
+<CardGrid>
+  <Card title="NetworkX Backend →" icon="right-arrow">
+    [Learn about the NetworkX backend interface](/nx-neptune/networkx-backend/interface/)
+  </Card>
+  <Card title="Session Manager →" icon="right-arrow">
+    [Learn about Graph Over Data Lake](/nx-neptune/data-lake/session-manager/)
+  </Card>
+</CardGrid>

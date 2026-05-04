@@ -1,0 +1,117 @@
+---
+title: Deployment
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A CloudFormation template deploys a complete Neptune Analytics + SageMaker notebook environment with a single command.
+
+## What it creates
+
+- **Neptune Analytics graph** with configurable provisioned memory
+- **SageMaker notebook instance** with `nx_neptune` pre-installed
+- **S3 staging bucket** with versioning + KMS encryption
+- **KMS key** for S3 bucket encryption
+- **IAM role and policy** with Neptune, S3, KMS, Athena, Glue, and SageMaker permissions
+
+### Notebook environment variables
+
+Automatically set on the notebook instance:
+
+| Variable | Value |
+|----------|-------|
+| `NETWORKX_GRAPH_ID` | Created graph's ID |
+| `AWS_REGION` | Stack region |
+| `NETWORKX_S3_EXPORT_BUCKET_PATH` | `s3://<bucket>/export/` |
+| `NETWORKX_S3_IMPORT_BUCKET_PATH` | `s3://<bucket>/import/` |
+| `NETWORKX_STAGING_BUCKET` | `s3://<bucket>/staging` |
+
+## Quick deploy
+
+<Steps>
+
+1. **Default deployment** (installs from PyPI):
+
+   ```bash
+   ./cloudformation-templates/deploy.sh
+   ```
+
+2. **Custom stack name and region:**
+
+   ```bash
+   ./cloudformation-templates/deploy.sh my-stack us-east-1
+   ```
+
+3. **Deploy with local wheel:**
+
+   ```bash
+   ./cloudformation-templates/deploy.sh nx-neptune-demo us-west-1 true
+   ```
+
+</Steps>
+
+### Script arguments
+
+| Argument | Position | Default | Description |
+|----------|----------|---------|-------------|
+| `STACK_NAME` | 1st | `nx-neptune-demo` | Stack name (max 16 chars) |
+| `REGION` | 2nd | `us-west-1` | AWS region |
+| `BUILD_WHEEL` | 3rd | `false` | Build and deploy local wheel |
+
+## Manual deploy with AWS CLI
+
+```bash
+# Build wheel and zip notebooks
+python -m pip wheel -w dist .
+zip -r /tmp/notebooks.zip notebooks/
+
+# Upload to S3
+aws s3 cp dist/nx_neptune-*.whl s3://your-bucket/nx-neptune/
+aws s3 cp /tmp/notebooks.zip s3://your-bucket/nx-neptune/
+
+# Deploy
+aws cloudformation deploy \
+  --stack-name nx-neptune-demo \
+  --template-file cloudformation-templates/nx-neptune-sagemaker.json \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides AssetsS3Prefix=s3://your-bucket/nx-neptune
+```
+
+### Parameters
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `ApplicationId` | Resource naming prefix (max 16 chars) | `nx-neptune` |
+| `ProvisionedMemory` | m-NCUs for the graph (16, 32, 64) | `16` |
+| `PublicConnectivity` | Enable public connectivity | `true` |
+| `NotebookInstanceType` | SageMaker instance type | `ml.t3.medium` |
+| `AssetsS3Prefix` | S3 prefix with `notebooks.zip` and optional `.whl` | _(required)_ |
+
+## Outputs
+
+| Output | Description |
+|--------|-------------|
+| `GraphId` | Neptune Analytics graph ID |
+| `NotebookURL` | SageMaker notebook URL |
+| `StagingBucketName` | S3 bucket for import/export |
+
+```bash
+aws cloudformation describe-stacks --stack-name nx-neptune-demo --query 'Stacks[0].Outputs'
+```
+
+## Teardown
+
+```bash
+./cloudformation-templates/teardown.sh                      # defaults
+./cloudformation-templates/teardown.sh my-stack us-east-1   # custom
+```
+
+<Aside type="caution">
+  The staging bucket has versioning enabled. The teardown script handles deleting all object versions before stack deletion.
+</Aside>
+
+## Notes
+
+- Neptune Analytics graph takes ~5–10 minutes to create
+- Environment variables require a notebook stop/start to update
+- On every notebook start, `OnStart` re-installs `nx_neptune`

@@ -1,0 +1,115 @@
+---
+title: NetworkX Backend Interface
+---
+
+import { Aside, Code } from '@astrojs/starlight/components';
+
+nx-neptune serves as a [NetworkX](https://networkx.org/)-compatible backend for Neptune Analytics. This enables you to offload graph algorithm workloads to AWS with **no code changes** — use familiar NetworkX APIs to seamlessly scale graph computations on-demand.
+
+For more on NetworkX backends, see the [NetworkX backends documentation](https://networkx.org/documentation/latest/backends.html).
+
+## How it works
+
+1. You write standard NetworkX code
+2. Add `backend="neptune"` to any supported algorithm call
+3. nx-neptune transparently syncs your graph to Neptune Analytics, executes the algorithm there, and returns results in NetworkX-compatible format
+
+```python
+import networkx as nx
+
+G = nx.Graph()
+G.add_node("Bill")
+G.add_node("John")
+G.add_edge("Bill", "John")
+
+# Runs on Neptune Analytics, returns standard NetworkX result format
+r = nx.pagerank(G, backend="neptune")
+```
+
+## Configuration
+
+Set the `NETWORKX_GRAPH_ID` environment variable to point at your Neptune Analytics instance:
+
+```bash
+export NETWORKX_GRAPH_ID=your-neptune-analytics-graph-id
+python ./nx_example.py
+```
+
+Or inline:
+
+```bash
+NETWORKX_GRAPH_ID=your-neptune-analytics-graph-id python ./nx_example.py
+```
+
+<Aside type="caution">
+  Without a valid `NETWORKX_GRAPH_ID`, algorithm calls will fail to connect. Make sure your AWS credentials are configured and your IAM role has the required permissions (`ReadDataViaQuery`, `WriteDataViaQuery`, `DeleteDataViaQuery`).
+</Aside>
+
+## Backend registration
+
+The backend is registered via the `nx_plugin` entry point in `pyproject.toml`. When you install `nx_neptune`, NetworkX automatically discovers the `"neptune"` backend.
+
+```python
+# No explicit import needed — just use the backend parameter
+result = nx.pagerank(G, backend="neptune")
+```
+
+## Algorithm implementation pattern
+
+Each algorithm follows this pattern:
+
+```python
+from nx_neptune.utils.decorators import configure_if_nx_active
+
+@configure_if_nx_active()
+def algorithm_name(neptune_graph: NeptuneGraph, **kwargs):
+    # Build openCypher query
+    # Execute on Neptune Analytics
+    # Transform results to NetworkX format
+    return result
+```
+
+## Supported algorithms
+
+nx-neptune supports algorithms across four categories:
+
+| Category | Algorithms |
+|----------|-----------|
+| **Traversal** | `bfs_edges`, `descendants_at_distance`, `bfs_layers` |
+| **Link Analysis** | `pagerank` |
+| **Centrality** | `degree_centrality`, `in_degree_centrality`, `out_degree_centrality`, `closeness_centrality` |
+| **Community** | `louvain_communities`, `label_propagation_communities`, `fast_label_propagation_communities`, `asyn_lpa_communities` |
+
+→ [Full algorithm reference](/nx-neptune/networkx-backend/algorithms/)
+
+## Neptune Analytics extensions
+
+Beyond standard NetworkX parameters, nx-neptune exposes Neptune Analytics-specific parameters on each algorithm:
+
+- `vertex_label` — filter by vertex label
+- `edge_labels` — filter by edge labels
+- `concurrency` — control thread count
+- `traversal_direction` — `"outbound"` or `"inbound"`
+- `write_property` — persist results as node properties
+- `edge_weight_property` / `edge_weight_type` — weighted computation
+
+These are passed as additional keyword arguments:
+
+```python
+r = nx.pagerank(
+    G,
+    backend="neptune",
+    vertex_label="Person",
+    edge_labels=["KNOWS"],
+    write_property="pr_score",
+)
+```
+
+## Notebooks
+
+- [PageRank demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/pagerank_demo.ipynb)
+- [BFS demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/bfs_demo.ipynb)
+- [Degree Centrality demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/degree_demo.ipynb)
+- [Closeness Centrality demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/closeness_centrality_demo.ipynb)
+- [Louvain demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/louvain_demo.ipynb)
+- [Label Propagation demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/label_propagation_demo.ipynb)
