@@ -83,19 +83,3 @@ import { Card, CardGrid, Code, Tabs, TabItem } from '@astrojs/starlight/componen
     ```
   </TabItem>
 </Tabs>
-
-## What you can do
-
-nx-neptune provides two ways to work with Neptune Analytics:
-
-<Card title="Graph Over Data Lake →" icon="right-arrow">
-  Project your data lake sources into a temporary graph, run algorithms (community detection, centrality, traversal), and export results back to S3 or Iceberg. The SessionManager handles the full lifecycle — no permanent graph database needed.
-
-  [Learn more →](/nx-neptune/data-lake/session-manager/)
-</Card>
-
-<Card title="NetworkX Backend →" icon="right-arrow">
-  Offload NetworkX algorithm calls to Neptune Analytics with zero code changes. Add `backend="neptune"` to any supported algorithm and your computation runs on AWS infrastructure.
-
-  [Learn more →](/nx-neptune/networkx-backend/interface/)
-</Card>
