@@ -53,8 +53,8 @@ export default defineConfig({
         {
           label: 'Reference',
           items: [
-            { label: 'Source Code Layout', slug: 'reference/source-layout' },
-            { label: 'Limitations', slug: 'reference/limitations' },
+            { label: 'Project Structure', slug: 'reference/source-layout' },
+            { label: 'Known Considerations', slug: 'reference/limitations' },
             { label: 'Deployment', slug: 'reference/deployment' },
           ],
         },

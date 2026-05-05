@@ -1,22 +1,18 @@
 ---
-title: Limitations
+title: Known Considerations
 ---
 
-## General limitations
+## General
 
 - **Python ≥3.11** — the library requires Python 3.11 or higher
 - **AWS credentials required** — all operations require valid AWS credentials with appropriate IAM permissions
-- **Region availability** — Neptune Analytics is not available in all AWS regions
-- **Provisioned memory** — graph size is limited by the provisioned m-NCU capacity (16, 32, or 64)
-- **No auto-scaling** — graph capacity must be pre-provisioned; there is no automatic scaling
 
-## Session Manager limitations
+## Session Manager
 
 - **Athena dependency** — data lake projections require Athena; query execution time depends on data volume
-- **No incremental updates** — each import replaces the graph data; there is no incremental/delta import
-- **Export formats** — results can be exported to S3 (CSV/Parquet); direct write-back to source systems is not supported
+- **Full graph refresh** — each import projects a fresh graph from your data lake queries, so no ETL pipeline is needed to keep the graph in sync
 
-## Connector limitations
+## Connectors
 
-- **athena-databricks-connector** — requires the `athena-jdbc` module built from source (not on Maven Central); see [build instructions](/nx-neptune/reference/source-layout/)
-- **athena-s3vector-connector** — custom Lambda connector; must be deployed to your AWS account before use
+- **athena-databricks-connector** — custom connector; must be built and deployed to your AWS account. See [installation instructions](https://github.com/awslabs/nx-neptune/blob/main/connectors/athena-databricks-connector/)
+- **athena-s3vector-connector** — custom Lambda connector; must be deployed to your AWS account. See [installation instructions](https://github.com/awslabs/nx-neptune/blob/main/connectors/athena-s3vector-connector/)
