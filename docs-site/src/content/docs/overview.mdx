@@ -14,20 +14,6 @@ import { Aside } from '@astrojs/starlight/components';
 
 nx-neptune exposes two distinct interfaces for different use cases:
 
-### NetworkX Backend
-
-A [NetworkX](https://networkx.org/)-compatible backend that lets you offload graph algorithm workloads to AWS with **no code changes**. Use familiar NetworkX APIs to seamlessly scale graph computations on-demand.
-
-```python
-import networkx as nx
-
-G = nx.Graph()
-G.add_edge("Bill", "John")
-r = nx.pagerank(G, backend="neptune")
-```
-
-→ [NetworkX Backend docs](/nx-neptune/networkx-backend/interface/)
-
 ### Graph Over Data Lake (Session Manager)
 
 Run graph algorithms on data that lives in your data lake — without moving it permanently into a graph database. The `SessionManager` API manages the full lifecycle: create, import, analyze, export, and destroy.
@@ -42,6 +28,21 @@ Run graph algorithms on data that lives in your data lake — without moving it 
 - Any source accessible through [Athena federated queries](https://docs.aws.amazon.com/athena/latest/ug/connect-to-a-data-source.html)
 
 → [Session Manager docs](/nx-neptune/data-lake/session-manager/)
+
+
+### NetworkX Backend
+
+A [NetworkX](https://networkx.org/)-compatible backend that lets you offload graph algorithm workloads to AWS with **no code changes**. Use familiar NetworkX APIs to seamlessly scale graph computations on-demand.
+
+```python
+import networkx as nx
+
+G = nx.Graph()
+G.add_edge("Bill", "John")
+r = nx.pagerank(G, backend="neptune")
+```
+
+→ [NetworkX Backend docs](/nx-neptune/networkx-backend/interface/)
 
 ## Use cases
 
