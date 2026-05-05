@@ -2,8 +2,6 @@
 title: S3 Tables
 ---
 
-import { Aside } from '@astrojs/starlight/components';
-
 Project data from **Amazon S3 Tables** (Iceberg tables) into a Neptune Analytics graph via Athena SQL, run graph algorithms, and export results back to Iceberg.
 
 ## Overview
@@ -28,7 +26,3 @@ Project financial transactions as a graph where accounts are nodes and transacti
 - S3 Tables bucket with Iceberg tables
 - Athena configured to query the tables
 - IAM permissions: `athena:StartQueryExecution`, `athena:GetQueryExecution`, `s3:GetObject`
-
-<Aside type="note">
-  For S3 data already in CSV or Parquet format, you can use [native S3 import](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/import-s3.html) without Athena. See the [S3 import/export demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/s3_import_export_demo.ipynb).
-</Aside>

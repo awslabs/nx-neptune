@@ -33,13 +33,6 @@ export default defineConfig({
           ],
         },
         {
-          label: 'NetworkX Backend',
-          items: [
-            { label: 'Interface', slug: 'networkx-backend/interface' },
-            { label: 'Algorithms', slug: 'networkx-backend/algorithms' },
-          ],
-        },
-        {
           label: 'Graph Over Data Lake',
           items: [
             { label: 'Session Manager', slug: 'data-lake/session-manager' },
@@ -48,6 +41,13 @@ export default defineConfig({
             { label: 'Databricks', slug: 'data-lake/databricks' },
             { label: 'Snowflake', slug: 'data-lake/snowflake' },
             { label: 'OpenSearch', slug: 'data-lake/opensearch' },
+          ],
+        },
+        {
+          label: 'NetworkX Backend',
+          items: [
+            { label: 'Interface', slug: 'networkx-backend/interface' },
+            { label: 'Algorithms', slug: 'networkx-backend/algorithms' },
           ],
         },
         {

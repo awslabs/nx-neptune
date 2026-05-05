@@ -112,6 +112,5 @@ aws cloudformation describe-stacks --stack-name nx-neptune-demo --query 'Stacks[
 
 ## Notes
 
-- Neptune Analytics graph takes ~5–10 minutes to create
 - Environment variables require a notebook stop/start to update
-- On every notebook start, `OnStart` re-installs `nx_neptune`
+- On every notebook start, `OnStart` re-installs `nx_neptune` (from the `.whl` if provided, otherwise from PyPI)

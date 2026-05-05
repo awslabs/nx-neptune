@@ -2,44 +2,16 @@
 title: Limitations
 ---
 
-import { Aside } from '@astrojs/starlight/components';
-
-<Aside type="caution" title="Alpha Preview">
-  This project is in **Alpha Preview**. It is recommended for testing purposes only. We're tracking production readiness on the [roadmap](https://github.com/awslabs/nx-neptune/issues).
-</Aside>
-
 ## General limitations
 
-- **Python 3.11 only** — the library requires Python 3.11; other versions are not supported during preview
+- **Python ≥3.11** — the library requires Python 3.11 or higher
 - **AWS credentials required** — all operations require valid AWS credentials with appropriate IAM permissions
-- **Neptune Analytics only** — the backend targets Neptune Analytics specifically, not Neptune Database
-
-## NetworkX Backend limitations
-
-### Unsupported NetworkX parameters
-
-Several standard NetworkX parameters are not supported by Neptune Analytics and will be ignored or raise warnings:
-
-| Algorithm | Unsupported Parameters |
-|-----------|----------------------|
-| `pagerank` | `personalization`, `nstart`, `weight`, `dangling` |
-| `louvain_communities` | `resolution`, `seed` |
-| `bfs_edges` | `sort_neighbors` |
-| `closeness_centrality` | `distance` |
-
-### Algorithm coverage
-
-Only a subset of NetworkX algorithms are implemented. See the [full algorithm list](/nx-neptune/networkx-backend/algorithms/). Calling an unsupported algorithm with `backend="neptune"` will fall back to the default NetworkX implementation.
-
-### Graph synchronization
-
-- The entire NetworkX graph is synced to Neptune Analytics before each algorithm call
-- Large graphs may incur significant transfer time
-- Graph mutations on Neptune Analytics are not reflected back to the local NetworkX graph
+- **Region availability** — Neptune Analytics is not available in all AWS regions
+- **Provisioned memory** — graph size is limited by the provisioned m-NCU capacity (16, 32, or 64)
+- **No auto-scaling** — graph capacity must be pre-provisioned; there is no automatic scaling
 
 ## Session Manager limitations
 
-- **Graph creation time** — Neptune Analytics graphs take ~5–10 minutes to provision
 - **Athena dependency** — data lake projections require Athena; query execution time depends on data volume
 - **No incremental updates** — each import replaces the graph data; there is no incremental/delta import
 - **Export formats** — results can be exported to S3 (CSV/Parquet); direct write-back to source systems is not supported
@@ -48,9 +20,3 @@ Only a subset of NetworkX algorithms are implemented. See the [full algorithm li
 
 - **athena-databricks-connector** — requires the `athena-jdbc` module built from source (not on Maven Central); see [build instructions](/nx-neptune/reference/source-layout/)
 - **athena-s3vector-connector** — custom Lambda connector; must be deployed to your AWS account before use
-
-## Infrastructure limitations
-
-- **Region availability** — Neptune Analytics is not available in all AWS regions
-- **Provisioned memory** — graph size is limited by the provisioned m-NCU capacity (16, 32, or 64)
-- **No auto-scaling** — graph capacity must be pre-provisioned; there is no automatic scaling

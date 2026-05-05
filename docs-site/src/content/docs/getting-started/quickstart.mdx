@@ -2,7 +2,71 @@
 title: Quick Start
 ---
 
-import { Steps, Code, Aside } from '@astrojs/starlight/components';
+import { Tabs, TabItem, Steps, Aside } from '@astrojs/starlight/components';
+
+<Tabs>
+  <TabItem label="Data Lake Import">
+
+Use the SessionManager to project data from your data lake into a Neptune Analytics graph, run algorithms, and export results.
+
+<Steps>
+
+1. **Install nx-neptune**
+
+   ```bash
+   pip install nx_neptune
+   ```
+
+2. **Set environment variables**
+
+   ```bash
+   export AWS_REGION=us-west-2
+   export NETWORKX_S3_IMPORT_BUCKET_PATH=s3://my-bucket/import/
+   export NETWORKX_S3_EXPORT_BUCKET_PATH=s3://my-bucket/export/
+   export NETWORKX_STAGING_BUCKET=s3://my-bucket/staging
+   ```
+
+3. **Project data and run algorithms**
+
+   ```python
+   from nx_neptune.session_manager import SessionManager
+
+   session = SessionManager.session("my-session")
+   graph = await session.get_or_create_graph(config={"provisionedMemory": 32})
+
+   NODES = """
+   SELECT DISTINCT "~id", 'customer' AS "~label"
+   FROM (
+       SELECT "nameOrig" as "~id" FROM transactions
+       UNION ALL
+       SELECT "nameDest" as "~id" FROM transactions
+   );"""
+
+   EDGES = """
+   SELECT "nameOrig" as "~from", "nameDest" as "~to", "type" AS "~label",
+          "amount" AS "amount:Float"
+   FROM transactions;"""
+
+   await session.import_from_table(graph, s3_import_path, [NODES, EDGES],
+                                   catalog=catalog, database=database)
+
+   # Run Louvain community detection
+   result = graph.execute_query(
+       'CALL neptune.algo.louvain.mutate({writeProperty:"community"}) '
+       'YIELD success RETURN success'
+   )
+   ```
+
+</Steps>
+
+<Aside type="note">
+  Data lake integration requires an S3 bucket for staging import/export data. The [CloudFormation deployment](/nx-neptune/reference/deployment/) creates this automatically.
+</Aside>
+
+  </TabItem>
+  <TabItem label="NetworkX Backend">
+
+Use nx-neptune as a drop-in NetworkX backend to run algorithms on Neptune Analytics.
 
 <Steps>
 
@@ -47,6 +111,9 @@ import { Steps, Code, Aside } from '@astrojs/starlight/components';
   ```
 </Aside>
 
+  </TabItem>
+</Tabs>
+
 ## Running tests
 
 Unit tests:
@@ -62,10 +129,8 @@ export NETWORKX_GRAPH_ID=g-test12345
 make integ-test
 ```
 
-Set `BACKEND=False` to run the test suite using NetworkX without nx-neptune as the backend.
-
 ## Next steps
 
-- [NetworkX Backend interface](/nx-neptune/networkx-backend/interface/) — learn how the backend works
 - [Session Manager](/nx-neptune/data-lake/session-manager/) — project data lake sources into a graph
+- [NetworkX Backend](/nx-neptune/networkx-backend/interface/) — offload algorithms to Neptune Analytics
 - [Deployment](/nx-neptune/reference/deployment/) — deploy with CloudFormation

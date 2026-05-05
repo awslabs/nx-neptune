@@ -1,69 +1,93 @@
 ---
 title: nx-neptune
-description: Graph analytics for your data lake — powered by NetworkX and Amazon Neptune Analytics.
+description: Graph analytics for your data lake — powered by Amazon Neptune Analytics.
 template: splash
 hero:
   title: |
     Graph analytics<br/>
     for your data lake.
-  tagline: A Python library that brings graph analytics to your data lake. Use familiar NetworkX APIs or project data from S3, Databricks, Snowflake, and more into Neptune Analytics.
+  tagline: A Python library that brings graph analytics to your data lake. Project data from S3, Databricks, Snowflake, and more into Neptune Analytics — then export results back.
   actions:
     - text: Get started
       link: /nx-neptune/getting-started/installation/
       icon: right-arrow
       variant: primary
-    - text: View on GitHub
+    - text: GitHub
       link: https://github.com/awslabs/nx-neptune
       icon: external
       variant: minimal
 ---
 
-import { Card, CardGrid, Code } from '@astrojs/starlight/components';
+import { Card, CardGrid, Code, Tabs, TabItem } from '@astrojs/starlight/components';
 
 <CardGrid>
-  <Card title="NetworkX Backend" icon="rocket">
-    Use familiar NetworkX APIs to run graph algorithms on Neptune Analytics — no code changes required. Just add `backend="neptune"`.
-  </Card>
   <Card title="Graph Over Data Lake" icon="puzzle">
     Project data from S3 Tables, S3 Vectors, Databricks, Snowflake, and OpenSearch into a graph for analysis, then export results back.
   </Card>
   <Card title="Session Manager" icon="setting">
     Manage the full lifecycle of a Neptune Analytics graph: create, import, analyze, export, and destroy — all from Python.
   </Card>
+  <Card title="NetworkX Backend" icon="rocket">
+    Use familiar NetworkX APIs to run graph algorithms on Neptune Analytics — no code changes required. Just add `backend="neptune"`.
+  </Card>
   <Card title="Open Source" icon="github">
-    Apache 2.0 licensed, developed in the open by AWS Labs. Alpha preview — contributions welcome.
+    Apache 2.0 licensed, developed in the open by AWS Labs.
   </Card>
 </CardGrid>
 
 ## Quick example
 
-<Code
-  code={`import networkx as nx
+<Tabs>
+  <TabItem label="Data Lake Import">
+    ```python
+    from nx_neptune.session_manager import SessionManager
 
-G = nx.Graph()
-G.add_edge("Bill", "John")
-r = nx.pagerank(G, backend="neptune")
-print(r)`}
-  lang="python"
-  title="nx_example.py"
-/>
+    session = SessionManager.session("fraud-detection")
+    graph = await session.get_or_create_graph(config={"provisionedMemory": 32})
 
-## Two interfaces
+    # Define your Athena SQL to project nodes and edges
+    NODES = """
+    SELECT DISTINCT "~id", 'customer' AS "~label"
+    FROM (
+        SELECT "nameOrig" as "~id" FROM transactions
+        UNION ALL
+        SELECT "nameDest" as "~id" FROM transactions
+    );"""
 
-nx-neptune provides two distinct ways to work with Neptune Analytics:
+    EDGES = """
+    SELECT "nameOrig" as "~from", "nameDest" as "~to", "type" AS "~label",
+           "amount" AS "amount:Float", "isFraud" AS "isFraud:Int"
+    FROM transactions;"""
 
-| | NetworkX Backend | Session Manager |
-|---|---|---|
-| **Use case** | Run algorithms on existing graphs | Project data lake sources into a graph |
-| **API style** | Drop-in NetworkX replacement | Explicit lifecycle management |
-| **Data source** | In-memory NetworkX graph | S3, Databricks, Snowflake, OpenSearch |
-| **Setup** | Set `NETWORKX_GRAPH_ID` env var | Configure sources and IAM roles |
+    # Import, run Louvain, export back to Iceberg
+    await session.import_from_table(graph, s3_import_path, [NODES, EDGES],
+                                    catalog=catalog, database=database)
+    ```
+  </TabItem>
+  <TabItem label="NetworkX Backend">
+    ```python
+    import networkx as nx
 
-<CardGrid>
-  <Card title="NetworkX Backend →" icon="right-arrow">
-    [Learn about the NetworkX backend interface](/nx-neptune/networkx-backend/interface/)
-  </Card>
-  <Card title="Session Manager →" icon="right-arrow">
-    [Learn about Graph Over Data Lake](/nx-neptune/data-lake/session-manager/)
-  </Card>
-</CardGrid>
+    G = nx.Graph()
+    G.add_edge("Bill", "John")
+    r = nx.pagerank(G, backend="neptune")
+    print(r)
+    ```
+  </TabItem>
+</Tabs>
+
+## What you can do
+
+nx-neptune provides two ways to work with Neptune Analytics:
+
+<Card title="Graph Over Data Lake →" icon="right-arrow">
+  Project your data lake sources into a temporary graph, run algorithms (community detection, centrality, traversal), and export results back to S3 or Iceberg. The SessionManager handles the full lifecycle — no permanent graph database needed.
+
+  [Learn more →](/nx-neptune/data-lake/session-manager/)
+</Card>
+
+<Card title="NetworkX Backend →" icon="right-arrow">
+  Offload NetworkX algorithm calls to Neptune Analytics with zero code changes. Add `backend="neptune"` to any supported algorithm and your computation runs on AWS infrastructure.
+
+  [Learn more →](/nx-neptune/networkx-backend/interface/)
+</Card>
