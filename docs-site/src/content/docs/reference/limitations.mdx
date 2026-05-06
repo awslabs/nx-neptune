@@ -1,0 +1,18 @@
+---
+title: Known Considerations
+---
+
+## General
+
+- **Python ≥3.11** — the library requires Python 3.11 or higher
+- **AWS credentials required** — all operations require valid AWS credentials with appropriate IAM permissions
+
+## Session Manager
+
+- **Athena dependency** — data lake projections require Athena; query execution time depends on data volume
+- **Full graph refresh** — each import projects a fresh graph from your data lake queries, so no ETL pipeline is needed to keep the graph in sync
+
+## Connectors
+
+- **athena-databricks-connector** — custom connector; must be built and deployed to your AWS account. See [installation instructions](https://github.com/awslabs/nx-neptune/blob/main/connectors/athena-databricks-connector/)
+- **athena-s3vector-connector** — custom Lambda connector; must be deployed to your AWS account. See [installation instructions](https://github.com/awslabs/nx-neptune/blob/main/connectors/athena-s3vector-connector/)

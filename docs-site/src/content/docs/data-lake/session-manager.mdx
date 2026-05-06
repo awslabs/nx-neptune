@@ -1,0 +1,82 @@
+---
+title: Session Manager
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+The `SessionManager` API manages the full lifecycle of a Neptune Analytics graph for data lake analytics: **create → import → analyze → export → destroy**.
+
+This is the primary interface for the "Graph Over Data Lake" workflow — run graph algorithms on data that lives in your data lake without moving it permanently into a graph database.
+
+<Aside type="tip">
+  For the NetworkX backend interface (drop-in replacement for `nx.algorithm()`), see [NetworkX Backend](/nx-neptune/networkx-backend/interface/).
+</Aside>
+
+## How it works
+
+<Steps>
+
+1. **Define your data source** — point to S3 Tables, Databricks, Snowflake, OpenSearch, or any Athena-accessible source
+
+2. **Create a graph** — SessionManager provisions a Neptune Analytics instance
+
+3. **Import data** — project your tabular data into graph form via Athena SQL queries
+
+4. **Analyze** — run graph algorithms (community detection, centrality, traversal) or explore with openCypher
+
+5. **Export results** — write results back to S3 or persist as Iceberg tables
+
+6. **Destroy** — tear down the graph when done (no ongoing cost)
+
+</Steps>
+
+## Supported data sources
+
+| Source | Connector | Demo |
+|--------|-----------|------|
+| **Amazon S3 Tables** | Native Athena SQL | [Notebook](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_table_demo.ipynb) |
+| **Amazon S3 Vectors** | Custom Athena connector | [Notebook](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_vector_embedding_demo.ipynb) |
+| **Databricks Unity Catalog** | JDBC-based Athena connector | [Notebook](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_databricks_demo.ipynb) |
+| **Snowflake** | Athena Snowflake connector | [Notebook](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_snowflake_table_demo.ipynb) |
+| **Amazon OpenSearch** | Athena OpenSearch connector | [Notebook](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_open_search_embedding_demo.ipynb) |
+| **Any Athena source** | [25+ federated connectors](https://docs.aws.amazon.com/athena/latest/ug/connectors-available.html) | — |
+
+For data already in S3-compatible formats (CSV, Parquet), Neptune Analytics also supports [native S3 import](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/import-s3.html) without Athena.
+
+## Use cases
+
+- **Fraud detection** — project financial transactions as a graph, run Louvain to identify fraud rings
+- **Product recommendation** — project product catalogs with vector embeddings, run similarity search
+
+## API overview
+
+The `SessionManager` class is in [`nx_neptune/session_manager.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/session_manager.py).
+
+```python
+from nx_neptune.session_manager import SessionManager
+
+session = SessionManager(
+    graph_id="my-graph",
+    region="us-west-2",
+    iam_role_arn="arn:aws:iam::123456789012:role/NeptuneRole",
+    s3_import_path="s3://my-bucket/import/",
+    s3_export_path="s3://my-bucket/export/",
+)
+
+# Create graph, import data, run algorithms, export, destroy
+```
+
+## Instance management
+
+For explicit control over Neptune Analytics instance lifecycle (create, start, stop, delete), see the instance management module:
+
+- [`nx_neptune/instance_management.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/instance_management.py)
+- [Instance lifecycle demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_lifecycle_demo.ipynb)
+- [Configuration-based management demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_with_configuration.ipynb)
+
+Configuration settings are handled through the `NeptuneConfig` class in [`nx_plugin/config.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_plugin/config.py).
+
+## Notebooks
+
+- [SessionManager comprehensive demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/session_manager_comprehensive_demo.ipynb) — full create → import → analyze → export → destroy workflow
+- [S3 import/export demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/s3_import_export_demo.ipynb) — import from and export to S3

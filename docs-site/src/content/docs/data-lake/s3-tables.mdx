@@ -1,0 +1,28 @@
+---
+title: S3 Tables
+---
+
+Project data from **Amazon S3 Tables** (Iceberg tables) into a Neptune Analytics graph via Athena SQL, run graph algorithms, and export results back to Iceberg.
+
+## Overview
+
+S3 Tables stores data as Apache Iceberg tables. nx-neptune queries these tables via Amazon Athena, transforms the results into graph vertices and edges, and imports them into Neptune Analytics.
+
+## Demo notebook
+
+The [S3 Tables demo notebook](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_table_demo.ipynb) demonstrates:
+
+- Querying Iceberg tables via Athena
+- Projecting tabular data as a graph (nodes and edges)
+- Running Louvain community detection
+- Exporting results back to Iceberg
+
+## Use case: Fraud detection
+
+Project financial transactions as a graph where accounts are nodes and transactions are edges. Run community detection (Louvain) to identify clusters of accounts that may represent fraud rings.
+
+## Prerequisites
+
+- S3 Tables bucket with Iceberg tables
+- Athena configured to query the tables
+- IAM permissions: `athena:StartQueryExecution`, `athena:GetQueryExecution`, `s3:GetObject`

@@ -1,0 +1,64 @@
+---
+title: Prerequisites
+---
+
+## Python Runtime
+
+- **Python 3.11 or higher** is required.
+
+## AWS IAM Permissions
+
+The IAM role or user accessing Neptune Analytics must have the following permissions.
+
+### Graph query operations
+
+Required to read, write, and manage graph data via queries:
+
+- `neptune-graph:ReadDataViaQuery`
+- `neptune-graph:WriteDataViaQuery`
+- `neptune-graph:DeleteDataViaQuery`
+
+### Graph lifecycle
+
+Required to start/stop a Neptune Analytics graph:
+
+- `neptune-graph:StartGraph`
+- `neptune-graph:StopGraph`
+
+### Snapshots
+
+Required to save/restore a Neptune Analytics snapshot:
+
+- `neptune-graph:CreateGraphSnapshot`
+- `neptune-graph:RestoreGraphFromSnapshot`
+- `neptune-graph:DeleteGraphSnapshot`
+- `neptune-graph:TagResource`
+
+### S3 import/export
+
+Required to import/export between S3 and Neptune Analytics:
+
+- `s3:GetObject`
+- `s3:PutObject`
+- `s3:ListBucket`
+- `s3:DeleteBucket`
+- `kms:Decrypt`
+- `kms:GenerateDataKey`
+- `kms:DescribeKey`
+
+### Athena (for data lake integration)
+
+Required to read from/write to an S3 Tables data lake:
+
+- `athena:StartQueryExecution`
+- `athena:GetQueryExecution`
+
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `NETWORKX_GRAPH_ID` | Neptune Analytics graph identifier |
+| `NETWORKX_ARN_IAM_ROLE` | IAM role ARN for S3 import/export |
+| `NETWORKX_S3_IMPORT_BUCKET_PATH` | S3 path for imports |
+| `NETWORKX_S3_EXPORT_BUCKET_PATH` | S3 path for exports |
+| `AWS_REGION` | AWS region |

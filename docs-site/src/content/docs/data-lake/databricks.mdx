@@ -1,0 +1,22 @@
+---
+title: Databricks
+---
+
+Project data from **Databricks Unity Catalog** tables into a Neptune Analytics graph via a custom Athena connector.
+
+## Overview
+
+The Databricks integration uses Athena federated queries with a custom JDBC-based Lambda connector to read from Databricks Unity Catalog tables and project the data into Neptune Analytics.
+
+## Custom connector
+
+A custom Athena connector is required. See the [athena-databricks-connector](https://github.com/awslabs/nx-neptune/blob/main/connectors/athena-databricks-connector/) for installation and deployment instructions.
+
+## Demo notebook
+
+The [Databricks demo notebook](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_databricks_demo.ipynb) demonstrates:
+
+- Configuring the Databricks Athena connector
+- Querying Unity Catalog tables via Athena federated query
+- Projecting tabular data as a graph
+- Running graph algorithms on the projected data

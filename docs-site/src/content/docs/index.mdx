@@ -1,0 +1,96 @@
+---
+title: nx-neptune
+description: Graph analytics for your data lake — powered by Amazon Neptune Analytics.
+template: splash
+hero:
+  title: |
+    Graph analytics<br/>
+    for your data lake.
+  tagline: A Python library that brings graph analytics to your data lake. Project data from S3, Databricks, Snowflake, and more into Neptune Analytics — then export results back.
+  actions:
+    - text: Get started
+      link: /nx-neptune/getting-started/installation/
+      icon: right-arrow
+      variant: primary
+    - text: GitHub
+      link: https://github.com/awslabs/nx-neptune
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, Code, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<CardGrid>
+  <Card title="Graph Over Data Lake" icon="puzzle">
+    Project data from S3 Tables, S3 Vectors, Databricks, Snowflake, and OpenSearch into a graph for analysis, then export results back.
+
+    [Learn more →](/nx-neptune/data-lake/session-manager/)
+  </Card>
+  <Card title="Session Manager" icon="setting">
+    Manage the full lifecycle of a Neptune Analytics graph: create, import, analyze, export, and destroy — all from Python.
+
+    [Learn more →](/nx-neptune/data-lake/session-manager/)
+  </Card>
+  <Card title="NetworkX Backend" icon="rocket">
+    Use familiar NetworkX APIs to run graph algorithms on Neptune Analytics — no code changes required. Just add `backend="neptune"`.
+
+    [Learn more →](/nx-neptune/networkx-backend/interface/)
+  </Card>
+  <Card title="Open Source" icon="github">
+    Apache 2.0 licensed, developed in the open by AWS Labs.
+
+    [Learn more →](https://github.com/awslabs/nx-neptune)
+  </Card>
+</CardGrid>
+
+## Quick example
+
+<Tabs>
+  <TabItem label="Data Lake Import">
+    ```python
+    from nx_neptune.session_manager import SessionManager
+
+    session = SessionManager.session("fraud-detection")
+    graph = await session.get_or_create_graph(config={"provisionedMemory": 32})
+
+    # Define your Athena SQL to project nodes and edges
+    NODES = """
+    SELECT DISTINCT "~id", 'customer' AS "~label"
+    FROM (
+        SELECT "nameOrig" as "~id" FROM transactions
+        UNION ALL
+        SELECT "nameDest" as "~id" FROM transactions
+    );"""
+
+    EDGES = """
+    SELECT "nameOrig" as "~from", "nameDest" as "~to", "type" AS "~label",
+           "amount" AS "amount:Float", "isFraud" AS "isFraud:Int"
+    FROM transactions;"""
+
+    # Import, run Louvain, export back to Iceberg
+    await session.import_from_table(graph, s3_import_path, [NODES, EDGES],
+                                    catalog=catalog, database=database)
+    ```
+  </TabItem>
+  <TabItem label="NetworkX Backend">
+    ```python
+    import networkx as nx
+
+    # Build a small social network
+    G = nx.DiGraph()
+    G.add_edges_from([
+        ("Alice", "Bob"),
+        ("Alice", "Carol"),
+        ("Bob", "Carol"),
+        ("Carol", "Dave"),
+        ("Dave", "Alice"),
+    ])
+
+    # Run PageRank on Neptune Analytics
+    scores = nx.pagerank(G, backend="neptune")
+
+    for name, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
+        print(f"{name}: {score:.4f}")
+    ```
+  </TabItem>
+</Tabs>

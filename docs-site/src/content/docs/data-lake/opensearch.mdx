@@ -1,0 +1,28 @@
+---
+title: OpenSearch
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Project data from **Amazon OpenSearch** indices into a Neptune Analytics graph.
+
+## Overview
+
+OpenSearch integration uses the Athena OpenSearch connector to query data from OpenSearch indices and project it into Neptune Analytics for graph analysis.
+
+## Demo notebook
+
+The [OpenSearch demo notebook](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_open_search_embedding_demo.ipynb) demonstrates:
+
+- Querying OpenSearch data via Athena federated query
+- Projecting data into a graph
+- Running graph algorithms on the projected data
+
+## Prerequisites
+
+- Amazon OpenSearch domain
+- Athena OpenSearch connector deployed
+
+<Aside type="caution">
+  If your OpenSearch domain is in a VPC, the Athena connector Lambda must be configured with VPC access to reach the domain. See the [Athena OpenSearch connector documentation](https://docs.aws.amazon.com/athena/latest/ug/connectors-opensearch.html) for VPC configuration details.
+</Aside>

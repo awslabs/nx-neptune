@@ -1,0 +1,24 @@
+---
+title: Snowflake
+---
+
+Project data from **Snowflake** tables into a Neptune Analytics graph via the Athena Snowflake connector.
+
+## Overview
+
+Snowflake integration uses the [AWS-provided Athena Snowflake connector](https://docs.aws.amazon.com/athena/latest/ug/connectors-available.html) to query Snowflake tables via federated queries and project the results into Neptune Analytics.
+
+## Demo notebook
+
+The [Snowflake demo notebook](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_snowflake_table_demo.ipynb) demonstrates:
+
+- Configuring the Athena Snowflake connector
+- Querying Snowflake tables via Athena federated query
+- Projecting tabular data as a graph
+- Running graph algorithms on the projected data
+
+## Prerequisites
+
+- Snowflake account with accessible tables
+- Athena Snowflake connector deployed
+- IAM permissions for Athena and the connector Lambda

@@ -1,0 +1,15 @@
+---
+title: Project Structure
+---
+
+## Modules
+
+| Directory | Description |
+|-----------|-------------|
+| [`nx_neptune/`](https://github.com/awslabs/nx-neptune/tree/main/nx_neptune) | Core library — algorithm implementations, session manager, instance lifecycle, AWS clients |
+| [`nx_plugin/`](https://github.com/awslabs/nx-neptune/tree/main/nx_plugin) | NetworkX plugin — registers `backend="neptune"` via entry point |
+| [`connectors/`](https://github.com/awslabs/nx-neptune/tree/main/connectors) | Athena federated query connectors (Databricks, S3 Vectors) |
+| [`notebooks/`](https://github.com/awslabs/nx-neptune/tree/main/notebooks) | Jupyter notebook demos |
+| [`cloudformation-templates/`](https://github.com/awslabs/nx-neptune/tree/main/cloudformation-templates) | One-click deployment template |
+| [`tests/`](https://github.com/awslabs/nx-neptune/tree/main/tests) | Unit tests (pytest) |
+| [`integ_test/`](https://github.com/awslabs/nx-neptune/tree/main/integ_test) | Integration tests (requires live Neptune Analytics) |

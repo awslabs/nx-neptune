@@ -1,0 +1,292 @@
+---
+title: Algorithms
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+nx-neptune algorithms map NetworkX calls to Amazon Neptune Analytics functions. For a complete listing of Neptune Analytics algorithms, see the [Neptune Analytics documentation](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/algorithms.html).
+
+<Aside type="tip">
+  All algorithms support Neptune Analytics extensions (`vertex_label`, `edge_labels`, `concurrency`, `write_property`) in addition to their standard NetworkX parameters.
+</Aside>
+
+## Traversal Algorithms
+
+### bfs_edges
+
+Iterate over edges in a breadth-first search starting at source.
+
+- **Neptune Analytics docs:** [BFS Standard](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/bfs-standard.html)
+- **Source:** [`nx_neptune/algorithms/traversal/bfs.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/algorithms/traversal/bfs.py)
+
+```python
+@configure_if_nx_active()
+def bfs_edges(
+    neptune_graph: NeptuneGraph,
+    source,
+    reverse=False,
+    depth_limit=None,
+    sort_neighbors=None,
+    vertex_label: Optional[str] = None,
+    edge_labels: Optional[List] = None,
+    concurrency: Optional[int] = None,
+):
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `source` | node | Starting node for BFS |
+| `reverse` | bool | Traverse directed graph in reverse |
+| `depth_limit` | int | Maximum search depth |
+| `sort_neighbors` | function | ⚠️ Not supported in Neptune Analytics |
+| `vertex_label` | str | Vertex label filter |
+| `edge_labels` | list | Edge label filter |
+| `concurrency` | int | Thread count (0 = all available) |
+
+**Yields:** Edges in the BFS starting from `source`.
+
+---
+
+### descendants_at_distance
+
+Find all nodes at a given distance from a source node using BFS-Levels.
+
+- **Neptune Analytics docs:** [BFS Levels](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/bfs-levels.html)
+- **Source:** [`nx_neptune/algorithms/traversal/bfs.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/algorithms/traversal/bfs.py)
+
+```python
+@configure_if_nx_active()
+def descendants_at_distance(
+    neptune_graph: NeptuneGraph,
+    source,
+    distance: int,
+    edge_labels: Optional[List] = None,
+    vertex_label: Optional[str] = None,
+    traversal_direction: Optional[str] = None,
+    concurrency: Optional[int] = None,
+):
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `source` | node | Starting node |
+| `distance` | int | Distance from source |
+| `edge_labels` | list | Edge label filter |
+| `vertex_label` | str | Vertex label filter |
+| `traversal_direction` | str | `"outbound"` or `"inbound"` |
+| `concurrency` | int | Thread count |
+
+**Returns:** `set()` of descendants at the given distance.
+
+---
+
+### bfs_layers
+
+Return all nodes grouped by their BFS level from the source.
+
+- **Neptune Analytics docs:** [BFS Levels](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/bfs-levels.html)
+- **Source:** [`nx_neptune/algorithms/traversal/bfs.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/algorithms/traversal/bfs.py)
+
+```python
+@configure_if_nx_active()
+def bfs_layers(
+    neptune_graph: NeptuneGraph,
+    sources,
+    edge_labels: Optional[List] = None,
+    vertex_label: Optional[str] = None,
+    traversal_direction: Optional[str] = None,
+    concurrency: Optional[int] = None,
+):
+```
+
+**Yields:** Lists of nodes at the same distance from `sources`.
+
+---
+
+## Link Analysis Algorithms
+
+### pagerank
+
+Execute the PageRank algorithm on the graph.
+
+- **Neptune Analytics docs:** [PageRank](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/page-rank.html)
+- **Source:** [`nx_neptune/algorithms/link_analysis/pagerank.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/algorithms/link_analysis/pagerank.py)
+
+```python
+@configure_if_nx_active()
+def pagerank(
+    neptune_graph: NeptuneGraph,
+    alpha: float,
+    personalization: Optional[Dict],
+    max_iter: int,
+    tol: float,
+    nstart: Optional[Dict],
+    weight: Optional[str] = None,
+    dangling: Optional[Dict] = None,
+    vertex_label: Optional[str] = None,
+    edge_labels: Optional[List] = None,
+    concurrency: Optional[int] = None,
+    traversal_direction: Optional[str] = None,
+    edge_weight_property: Optional[str] = None,
+    edge_weight_type: Optional[str] = None,
+    source_nodes: Optional[List] = None,
+    source_weights: Optional[List] = None,
+    write_property: Optional[str] = None,
+):
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `alpha` | float | Damping parameter |
+| `personalization` | dict | ⚠️ Not supported in Neptune Analytics |
+| `max_iter` | int | Maximum iterations |
+| `tol` | float | Convergence tolerance |
+| `nstart` | dict | ⚠️ Not supported in Neptune Analytics |
+| `weight` | str | ⚠️ Not supported in Neptune Analytics |
+| `dangling` | dict | ⚠️ Not supported in Neptune Analytics |
+| `vertex_label` | str | Vertex label filter |
+| `edge_labels` | list | Edge label filter |
+| `concurrency` | int | Thread count |
+| `traversal_direction` | str | `"outbound"` or `"inbound"` |
+| `edge_weight_property` | str | Weight property for weighted PageRank |
+| `edge_weight_type` | str | `"int"`, `"long"`, `"float"`, `"double"` |
+| `source_nodes` | list | Personalized source nodes |
+| `source_weights` | list | Personalization weight list |
+| `write_property` | str | Persist results as node property |
+
+**Returns:** Dictionary of `{node_id: pagerank_score}`, or empty dict when `write_property` is specified.
+
+---
+
+## Centrality Algorithms
+
+### degree_centrality
+
+Compute degree centrality for nodes.
+
+- **Neptune Analytics docs:** [Degree](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/degree.html)
+- **Source:** [`nx_neptune/algorithms/centrality/degree_centrality.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/algorithms/centrality/degree_centrality.py)
+
+```python
+@configure_if_nx_active()
+def degree_centrality(
+    neptune_graph: NeptuneGraph,
+    vertex_label: Optional[str] = None,
+    edge_labels: Optional[List] = None,
+    concurrency: Optional[int] = None,
+    write_property: Optional[str] = None,
+):
+```
+
+**Returns:** Dictionary of `{node_id: degree}` pairs.
+
+**Variants:** `in_degree_centrality` (inbound edges), `out_degree_centrality` (outbound edges) — same signature.
+
+---
+
+### closeness_centrality
+
+Compute closeness centrality for nodes.
+
+- **Neptune Analytics docs:** [Closeness Centrality](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/closeness-centrality.html)
+- **Source:** [`nx_neptune/algorithms/centrality/closeness.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/algorithms/centrality/closeness.py)
+
+```python
+@configure_if_nx_active()
+def closeness_centrality(
+    neptune_graph: NeptuneGraph,
+    u=None,
+    distance=None,
+    wf_improved=True,
+    num_sources: Optional[int] = None,
+    edge_labels: Optional[List] = None,
+    vertex_label: Optional[str] = None,
+    traversal_direction: Optional[str] = None,
+    concurrency: Optional[int] = None,
+    write_property: Optional[str] = None,
+):
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `u` | node | Limit computation to a single node |
+| `distance` | — | ⚠️ Not supported |
+| `wf_improved` | bool | Use Wasserman-Faust improved formula |
+| `num_sources` | int | Approximate with N source nodes (omit for exact) |
+| `traversal_direction` | str | `"outbound"` or `"inbound"` |
+
+**Returns:** Dictionary of `{node_id: closeness_score}`.
+
+---
+
+## Community Algorithms
+
+### louvain_communities
+
+Execute the Louvain community detection algorithm.
+
+- **Neptune Analytics docs:** [Louvain](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/louvain.html)
+- **Source:** [`nx_neptune/algorithms/communities/louvain.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/algorithms/communities/louvain.py)
+
+```python
+@configure_if_nx_active()
+def louvain_communities(
+    neptune_graph: NeptuneGraph,
+    weight: str,
+    resolution: float,
+    threshold: float,
+    max_level: Optional[int],
+    seed: Optional[int],
+    edge_weight_property: Optional[str] = None,
+    edge_weight_type: Optional[str] = None,
+    edge_labels: Optional[List] = None,
+    max_iterations: Optional[int] = None,
+    concurrency: Optional[int] = None,
+    level_tolerance: Optional[float] = None,
+    write_property: Optional[str] = None,
+):
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `weight` | str | Edge weight attribute |
+| `resolution` | float | ⚠️ Not supported in Neptune Analytics |
+| `threshold` | float | Modularity gain threshold |
+| `max_level` | int | Maximum hierarchy levels |
+| `seed` | int | ⚠️ Not supported in Neptune Analytics |
+| `edge_weight_property` | str | Weight property |
+| `edge_weight_type` | str | `"int"`, `"long"`, `"float"`, `"double"` |
+| `max_iterations` | int | Maximum iterations |
+| `level_tolerance` | float | Minimum modularity change per level |
+
+**Returns:** List of sets (communities).
+
+---
+
+### label_propagation_communities
+
+Execute the Label Propagation community detection algorithm.
+
+- **Neptune Analytics docs:** [Label Propagation](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/label-propagation.html)
+- **Source:** [`nx_neptune/algorithms/communities/label_propagation.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/algorithms/communities/label_propagation.py)
+
+```python
+@configure_if_nx_active()
+def label_propagation_communities(
+    neptune_graph: NeptuneGraph,
+    edge_labels: Optional[List] = None,
+    vertex_label: Optional[str] = None,
+    vertex_weight_property: Optional[str] = None,
+    vertex_weight_type: Optional[str] = None,
+    edge_weight_property: Optional[str] = None,
+    edge_weight_type: Optional[str] = None,
+    max_iterations: Optional[int] = None,
+    traversal_direction: Optional[str] = None,
+    concurrency: Optional[int] = None,
+    write_property: Optional[str] = None,
+):
+```
+
+**Returns:** Dictionary of community items to members.
+
+**Variants:** `fast_label_propagation_communities`, `asyn_lpa_communities` — same parameters plus `weight` and `seed`.

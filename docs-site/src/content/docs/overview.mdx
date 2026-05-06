@@ -1,0 +1,74 @@
+---
+title: Overview
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+**nx-neptune** is a Python library that brings graph analytics to your data lake. Project your data from Amazon S3 Tables, S3 Vectors, Databricks, Snowflake, OpenSearch, and other sources into [Neptune Analytics](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/what-is-neptune-analytics.html) for graph analysis — with results exported back to S3 or persisted as Iceberg tables.
+
+<Aside type="caution" title="Preview Status">
+  This project is in **Alpha Preview**. We welcome questions, suggestions, and contributions. It is recommended for testing purposes only.
+</Aside>
+
+## Two interfaces
+
+nx-neptune exposes two distinct interfaces for different use cases:
+
+### Graph Over Data Lake (Session Manager)
+
+Run graph algorithms on data that lives in your data lake — without moving it permanently into a graph database. The `SessionManager` API manages the full lifecycle: create, import, analyze, export, and destroy.
+
+**Supported data sources:**
+
+- **Amazon S3 Tables** — query Iceberg tables via Athena SQL
+- **Amazon S3 Vectors** — project vector embeddings via a custom Athena connector
+- **Databricks Unity Catalog** — query via a JDBC-based Athena connector
+- **Snowflake** — query via the Athena Snowflake connector
+- **Amazon OpenSearch** — project embeddings from OpenSearch indices
+- Any source accessible through [Athena federated queries](https://docs.aws.amazon.com/athena/latest/ug/connect-to-a-data-source.html)
+
+→ [Session Manager docs](/nx-neptune/data-lake/session-manager/)
+
+
+### NetworkX Backend
+
+A [NetworkX](https://networkx.org/)-compatible backend that lets you offload graph algorithm workloads to AWS with **no code changes**. Use familiar NetworkX APIs to seamlessly scale graph computations on-demand.
+
+```python
+import networkx as nx
+
+# Build a small social network
+G = nx.DiGraph()
+G.add_edges_from([
+    ("Alice", "Bob"),
+    ("Alice", "Carol"),
+    ("Bob", "Carol"),
+    ("Carol", "Dave"),
+    ("Dave", "Alice"),
+])
+
+# Run PageRank on Neptune Analytics
+scores = nx.pagerank(G, backend="neptune")
+
+# Who's most influential?
+top = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+for name, score in top:
+    print(f"{name}: {score:.4f}")
+```
+
+→ [NetworkX Backend docs](/nx-neptune/networkx-backend/interface/)
+
+## Use cases
+
+- **Fraud detection** — project financial transactions as a graph, run community detection (Louvain) to identify fraud rings
+- **Product recommendation** — project product catalogs with vector embeddings, run similarity search to find related items
+
+## Notebooks
+
+Interactive Jupyter notebooks demonstrate each feature:
+
+| Category | Notebooks |
+|----------|-----------|
+| Algorithm demos | [PageRank](https://github.com/awslabs/nx-neptune/blob/main/notebooks/pagerank_demo.ipynb), [BFS](https://github.com/awslabs/nx-neptune/blob/main/notebooks/bfs_demo.ipynb), [Degree](https://github.com/awslabs/nx-neptune/blob/main/notebooks/degree_demo.ipynb), [Closeness](https://github.com/awslabs/nx-neptune/blob/main/notebooks/closeness_centrality_demo.ipynb), [Louvain](https://github.com/awslabs/nx-neptune/blob/main/notebooks/louvain_demo.ipynb), [Label Propagation](https://github.com/awslabs/nx-neptune/blob/main/notebooks/label_propagation_demo.ipynb) |
+| Data lake | [S3 Tables](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_table_demo.ipynb), [S3 Vectors](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_vector_embedding_demo.ipynb), [Databricks](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_databricks_demo.ipynb), [Snowflake](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_snowflake_table_demo.ipynb), [OpenSearch](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_open_search_embedding_demo.ipynb) |
+| Session management | [SessionManager](https://github.com/awslabs/nx-neptune/blob/main/notebooks/session_manager_comprehensive_demo.ipynb), [Instance lifecycle](https://github.com/awslabs/nx-neptune/blob/main/notebooks/instance_mgmt_lifecycle_demo.ipynb) |
