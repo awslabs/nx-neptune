@@ -76,10 +76,21 @@ import { Card, CardGrid, Code, Tabs, TabItem } from '@astrojs/starlight/componen
     ```python
     import networkx as nx
 
-    G = nx.Graph()
-    G.add_edge("Bill", "John")
-    r = nx.pagerank(G, backend="neptune")
-    print(r)
+    # Build a small social network
+    G = nx.DiGraph()
+    G.add_edges_from([
+        ("Alice", "Bob"),
+        ("Alice", "Carol"),
+        ("Bob", "Carol"),
+        ("Carol", "Dave"),
+        ("Dave", "Alice"),
+    ])
+
+    # Run PageRank on Neptune Analytics
+    scores = nx.pagerank(G, backend="neptune")
+
+    for name, score in sorted(scores.items(), key=lambda x: x[1], reverse=True):
+        print(f"{name}: {score:.4f}")
     ```
   </TabItem>
 </Tabs>

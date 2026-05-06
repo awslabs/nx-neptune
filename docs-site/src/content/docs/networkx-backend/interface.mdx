@@ -17,13 +17,23 @@ For more on NetworkX backends, see the [NetworkX backends documentation](https:/
 ```python
 import networkx as nx
 
-G = nx.Graph()
-G.add_node("Bill")
-G.add_node("John")
-G.add_edge("Bill", "John")
+# Build a small social network
+G = nx.DiGraph()
+G.add_edges_from([
+    ("Alice", "Bob"),
+    ("Alice", "Carol"),
+    ("Bob", "Carol"),
+    ("Carol", "Dave"),
+    ("Dave", "Alice"),
+])
 
 # Runs on Neptune Analytics, returns standard NetworkX result format
-r = nx.pagerank(G, backend="neptune")
+scores = nx.pagerank(G, backend="neptune")
+
+# Who's most influential?
+top = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+for name, score in top:
+    print(f"{name}: {score:.4f}")
 ```
 
 ## Configuration
