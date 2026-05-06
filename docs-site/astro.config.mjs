@@ -10,9 +10,9 @@ export default defineConfig({
       description:
         'Graph analytics for your data lake — powered by NetworkX and Amazon Neptune Analytics.',
       customCss: ['./src/styles/custom.css'],
-      social: {
-        github: 'https://github.com/awslabs/nx-neptune',
-      },
+      social: [
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/awslabs/nx-neptune' },
+      ],
       head: [
         {
           tag: 'link',
