@@ -16,7 +16,7 @@ botocore==1.42.91
     # via
     #   boto3
     #   s3transfer
-certifi==2026.2.25
+certifi==2026.4.22
     # via
     #   opensearch-py
     #   requests
