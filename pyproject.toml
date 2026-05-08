@@ -47,7 +47,6 @@ developer = [
     "black",
     "Flake8-pyproject",
     "mypy",
-    "sphinx",
     "isort",
     "pip-licenses>=5.5"
 ]
