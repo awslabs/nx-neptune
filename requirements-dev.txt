@@ -150,7 +150,7 @@ typing-extensions==4.15.0
     #   grpcio
     #   mypy
     #   pytest-asyncio
-urllib3==2.6.3
+urllib3==2.7.0
     # via
     #   botocore
     #   opensearch-py

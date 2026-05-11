@@ -26,5 +26,5 @@ six==1.17.0
     # via python-dateutil
 sqlglot==30.4.3
     # via nx-neptune (pyproject.toml)
-urllib3==2.6.3
+urllib3==2.7.0
     # via botocore
