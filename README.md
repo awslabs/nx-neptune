@@ -39,7 +39,7 @@ The `SessionManager` API manages the full lifecycle of a Neptune Analytics graph
 
 ### NetworkX Backend
 
-nx-neptune also serves as a [NetworkX](https://networkx.org/)-compatible backend for Neptune Analytics, enabling you to offload graph algorithm workloads to AWS with no code changes. Use familiar NetworkX APIs to seamlessly scale graph computations on-demand. This combines the simplicity of local development with the performance and scalability of a fully managed AWS graph analytics service. For more on NetworkX backends, see the [NetworkX backends documentation](https://networkx.org/documentation/latest/backends.html).
+nx-neptune also serves as a [NetworkX](https://networkx.org/)-compatible backend for Neptune Analytics, enabling you to offload graph algorithm workloads to AWS with no code changes. Use familiar NetworkX APIs to seamlessly scale graph computations on-demand. This combines the simplicity of local development with the performance and scalability of a fully managed AWS graph analytics service. For more on NetworkX backends, see the [NetworkX backends documentation](https://networkx.org/documentation/stable/backends.html).
 
 ```python
 import networkx as nx
