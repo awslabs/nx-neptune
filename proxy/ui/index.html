@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nx-neptune proxy</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+  h1 { margin-bottom: 1.5rem; }
+  label { display: block; margin-top: 1rem; font-weight: 500; font-size: 0.9rem; }
+  input, textarea { width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; }
+  textarea { height: 80px; font-family: monospace; }
+  button { margin-top: 1.5rem; padding: 0.6rem 1.5rem; background: #0073bb; color: #fff; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; }
+  button:disabled { background: #999; cursor: not-allowed; }
+  #progress-section { display: none; margin-top: 2rem; }
+  .progress-bar { width: 100%; height: 24px; background: #eee; border-radius: 4px; overflow: hidden; margin-top: 0.5rem; }
+  .progress-fill { height: 100%; background: #0073bb; transition: width 0.3s; }
+  #status-text { margin-top: 0.5rem; font-size: 0.9rem; color: #555; }
+  #error-text { margin-top: 0.5rem; color: #d13212; font-size: 0.9rem; }
+  #result { margin-top: 1rem; padding: 1rem; background: #f0fdf4; border-radius: 4px; display: none; }
+</style>
+</head>
+<body>
+<h1>nx-neptune proxy</h1>
+
+<form id="setup-form">
+  <label>AWS Region
+    <input name="region" value="us-east-1" required>
+  </label>
+  <label>Athena Database
+    <input name="athenaDatabase" required>
+  </label>
+  <label>SQL Query
+    <textarea name="sqlQuery" required placeholder="SELECT ~id, ~label, col1, col2 FROM my_table"></textarea>
+  </label>
+  <label>Athena Output Bucket
+    <input name="athenaOutputBucket" required placeholder="s3://my-bucket/athena-results/">
+  </label>
+  <label>CSV Staging Bucket
+    <input name="csvStagingBucket" required placeholder="s3://my-bucket/neptune-import/">
+  </label>
+  <label>Graph Name
+    <input name="graphName" required placeholder="my-graph">
+  </label>
+  <label>Graph Memory (GB)
+    <input name="graphMemoryGb" type="number" value="16" min="16" step="16">
+  </label>
+  <button type="submit">Run Migration</button>
+</form>
+
+<div id="progress-section">
+  <strong>Pipeline Progress</strong>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  <div id="status-text"></div>
+  <div id="error-text"></div>
+  <div id="result"></div>
+</div>
+
+<script>
+const form = document.getElementById('setup-form');
+const progressSection = document.getElementById('progress-section');
+const progressFill = document.getElementById('progress-fill');
+const statusText = document.getElementById('status-text');
+const errorText = document.getElementById('error-text');
+const resultDiv = document.getElementById('result');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(form));
+  data.graphMemoryGb = parseInt(data.graphMemoryGb);
+
+  form.querySelector('button').disabled = true;
+  progressSection.style.display = 'block';
+  errorText.textContent = '';
+  resultDiv.style.display = 'none';
+
+  const res = await fetch('/api/v0/datasource/setup', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    errorText.textContent = err.detail || 'Setup failed';
+    form.querySelector('button').disabled = false;
+    return;
+  }
+
+  pollStatus();
+});
+
+async function pollStatus() {
+  const res = await fetch('/api/v0/datasource/setup/status');
+  const status = await res.json();
+
+  progressFill.style.width = status.progress + '%';
+  statusText.textContent = status.stepLabel || status.step || '';
+
+  if (status.status === 'complete') {
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = `<strong>✓ Graph ready</strong><br>Endpoint: <code>${status.graphEndpoint}</code>`;
+    form.querySelector('button').disabled = false;
+    return;
+  }
+
+  if (status.status === 'failed') {
+    errorText.textContent = '✗ ' + (status.error || 'Pipeline failed');
+    form.querySelector('button').disabled = false;
+    return;
+  }
+
+  setTimeout(pollStatus, 2000);
+}
+</script>
+</body>
+</html>
