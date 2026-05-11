@@ -33,9 +33,14 @@ install-dev: install          ## Install the project in dev mode.
 
 
 .PHONY: lock
-lock:             ## Regenerate lock files from pyproject.toml.
+lock:             ## Regenerate lock files from pyproject.toml (fetches latest versions).
 	$(ENV_PREFIX)pip-compile pyproject.toml -o requirements.txt --strip-extras --upgrade
 	$(ENV_PREFIX)pip-compile pyproject.toml --extra test --extra developer -o requirements-dev.txt --strip-extras --upgrade
+
+.PHONY: lock-check
+lock-check:       ## Verify lock files are in sync with pyproject.toml (used by CI).
+	$(ENV_PREFIX)pip-compile pyproject.toml -o requirements.txt --strip-extras
+	$(ENV_PREFIX)pip-compile pyproject.toml --extra test --extra developer -o requirements-dev.txt --strip-extras
 
 
 .PHONY: dist
