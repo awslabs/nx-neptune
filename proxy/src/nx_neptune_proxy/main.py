@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +9,9 @@ from typing import Optional
 import asyncio
 
 from nx_neptune_proxy.state import proxy_state
+
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("nx_neptune").setLevel(logging.DEBUG)
 
 app = FastAPI(title="nx-neptune-proxy", version="0.1.0")
 

@@ -20,7 +20,7 @@ async def run_pipeline(config: dict) -> None:
         _update(step="graph_creation", label="Creating Neptune Analytics graph", progress=5)
         sm = SessionManager(session_name=config["graphName"])
         graph = await sm.get_or_create_graph(
-            config={"graph_memory": config.get("graphMemoryGb", 16)}
+            config={"provisionedMemory": config.get("graphMemoryGb", 16)}
         )
         proxy_state.graph_id = graph.graph_id
         _update(step="graph_creation", label="Graph available", progress=40)
