@@ -94,12 +94,6 @@ virtualenv:       ## Create a virtual environment.
 	@echo
 	@echo "!!! Please run 'source .venv/bin/activate' to enable the environment !!!"
 
-.PHONY: doc-sphinx
-doc-sphinx:             ## Build the documentation.
-	@echo "building Sphinx documentation ..."
-	@$(ENV_PREFIX)sphinx-build -M html ./doc ./sphinx_output
-
-
 .PHONY: license-check
 license-check:             ## Perform license check on core dependencies
 	@echo "license check ..."

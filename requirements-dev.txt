@@ -4,10 +4,6 @@
 #
 #    pip-compile --extra=developer --extra=test --output-file=requirements-dev.txt --strip-extras pyproject.toml
 #
-alabaster==1.0.0
-    # via sphinx
-babel==2.18.0
-    # via sphinx
 black==26.3.1
     # via nx-neptune (pyproject.toml)
 boto3==1.42.87
@@ -32,8 +28,6 @@ cymple==0.12.0
     # via nx-neptune (pyproject.toml)
 distlib==0.4.0
     # via virtualenv
-docutils==0.22.4
-    # via sphinx
 dotenv==0.9.9
     # via nx-neptune (pyproject.toml)
 events==0.5
@@ -52,22 +46,16 @@ identify==2.6.19
     # via pre-commit
 idna==3.11
     # via requests
-imagesize==2.0.0
-    # via sphinx
 iniconfig==2.3.0
     # via pytest
 isort==8.0.1
     # via nx-neptune (pyproject.toml)
-jinja2==3.1.6
-    # via sphinx
 jmespath==1.1.0
     # via
     #   boto3
     #   botocore
 librt==0.9.0
     # via mypy
-markupsafe==3.0.3
-    # via jinja2
 mccabe==0.7.0
     # via flake8
 mypy==1.20.0
@@ -93,7 +81,6 @@ packaging==26.0
     # via
     #   black
     #   pytest
-    #   sphinx
 pandas==3.0.2
     # via nx-neptune (pyproject.toml)
 pathspec==1.0.4
@@ -122,9 +109,7 @@ pycodestyle==2.14.0
 pyflakes==3.4.0
     # via flake8
 pygments==2.20.0
-    # via
-    #   pytest
-    #   sphinx
+    # via pytest
 pytest==9.0.3
     # via
     #   nx-neptune (pyproject.toml)
@@ -151,33 +136,13 @@ pytokens==0.4.1
 pyyaml==6.0.3
     # via pre-commit
 requests==2.33.1
-    # via
-    #   opensearch-py
-    #   sphinx
-roman-numerals==4.1.0
-    # via sphinx
+    # via opensearch-py
 s3transfer==0.16.0
     # via boto3
 scipy==1.17.1
     # via nx-neptune (pyproject.toml)
 six==1.17.0
     # via python-dateutil
-snowballstemmer==3.0.1
-    # via sphinx
-sphinx==9.0.4
-    # via nx-neptune (pyproject.toml)
-sphinxcontrib-applehelp==2.0.0
-    # via sphinx
-sphinxcontrib-devhelp==2.0.0
-    # via sphinx
-sphinxcontrib-htmlhelp==2.1.0
-    # via sphinx
-sphinxcontrib-jsmath==1.0.1
-    # via sphinx
-sphinxcontrib-qthelp==2.0.0
-    # via sphinx
-sphinxcontrib-serializinghtml==2.0.0
-    # via sphinx
 sqlglot==30.4.3
     # via nx-neptune (pyproject.toml)
 typing-extensions==4.15.0
