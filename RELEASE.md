@@ -27,13 +27,23 @@ Integration tests require a live Neptune Analytics instance and are not run in C
 
 ### 3. Update the version
 
-The version is defined in `nx_neptune/__init__.py`:
+The Python module version is defined in `nx_neptune/__init__.py`:
 
 ```python
 __version__ = "0.5.0"
 ```
 
-Update this to the new version number.
+The connector versions are defined in their respective `pom.xml` files:
+
+- `connectors/pom.xml` (parent)
+- `connectors/athena-databricks-connector/pom.xml`
+- `connectors/athena-s3vector-connector/pom.xml`
+
+```xml
+<version>0.7.0</version>
+```
+
+Update all to the new version number.
 
 ### 4. Update lock files
 
