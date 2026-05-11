@@ -5,6 +5,8 @@
 [![CI](https://github.com/awslabs/nx-neptune/actions/workflows/main.yml/badge.svg)](https://github.com/awslabs/nx-neptune/actions/workflows/main.yml)
 [![Upload Python Package](https://github.com/awslabs/nx-neptune/actions/workflows/python-publish.yml/badge.svg)](https://github.com/awslabs/nx-neptune/actions/workflows/python-publish.yml)
 
+📖 **[Documentation](https://awslabs.github.io/nx-neptune/)**
+
 **nx-neptune** is a Python library that brings graph analytics to your data lake. Project your data from Amazon S3 Tables, S3 Vectors, Databricks, Snowflake, OpenSearch, and other sources into [Neptune Analytics](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/what-is-neptune-analytics.html) for graph analysis — with results exported back to S3 or persisted as Iceberg tables.
 
 ### Graph Over Data Lake
