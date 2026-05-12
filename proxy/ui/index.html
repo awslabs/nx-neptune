@@ -47,6 +47,7 @@
     <input name="graphMemoryGb" type="number" value="16" min="16" step="16">
   </label>
   <button type="button" id="validate-btn" style="background:#16a34a">Validate</button>
+  <button type="button" id="validate-query-btn" style="background:#0e7490">Validate Query</button>
 </form>
 
 <div id="validation-section" style="margin-top:1.5rem;">
@@ -74,6 +75,7 @@ const statusText = document.getElementById('status-text');
 const errorText = document.getElementById('error-text');
 const resultDiv = document.getElementById('result');
 const validateBtn = document.getElementById('validate-btn');
+const validateQueryBtn = document.getElementById('validate-query-btn');
 const validationSection = document.getElementById('validation-section');
 const validationResults = document.getElementById('validation-results');
 const runBtn = document.getElementById('run-btn');
@@ -102,6 +104,26 @@ validateBtn.addEventListener('click', async () => {
 
   validateBtn.disabled = false;
   validateBtn.textContent = 'Validate';
+});
+
+validateQueryBtn.addEventListener('click', async () => {
+  validateQueryBtn.disabled = true;
+  validateQueryBtn.textContent = 'Testing...';
+  validationResults.innerHTML = '';
+
+  const res = await fetch('/api/v0/datasource/test/query', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(getFormData()),
+  });
+  const result = await res.json();
+
+  validationResults.innerHTML = result.checks.map(c =>
+    `<div class="check-row ${c.passed ? 'check-pass' : 'check-fail'}">${c.passed ? '✓' : '✗'} <strong>${c.check}</strong>: ${c.message}</div>`
+  ).join('');
+
+  validateQueryBtn.disabled = false;
+  validateQueryBtn.textContent = 'Validate Query';
 });
 
 runBtn.addEventListener('click', async () => {

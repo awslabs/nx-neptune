@@ -74,9 +74,24 @@ def post_test(req: SetupRequest):
         s3_staging_bucket=req.csvStagingBucket,
         athena_catalog=req.athenaCatalog or "AwsDataCatalog",
         athena_database=req.athenaDatabase,
+        sql_query=req.sqlQuery,
         graph_name=req.graphName,
     )
     return {"valid": all(c["passed"] for c in checks), "checks": checks}
+
+
+@app.post("/api/v0/datasource/test/query")
+def post_test_query(req: SetupRequest):
+    from nx_neptune.validators import check_athena_query
+
+    result = check_athena_query(
+        sql_query=req.sqlQuery,
+        catalog=req.athenaCatalog or "AwsDataCatalog",
+        database=req.athenaDatabase,
+        output_location=req.csvStagingBucket,
+        region=req.region,
+    )
+    return {"valid": result.passed, "checks": [result.to_dict()]}
 
 
 @app.get("/api/v0/datasource/setup/status")

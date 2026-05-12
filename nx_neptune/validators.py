@@ -167,6 +167,42 @@ def check_athena_table(catalog: str, database: str, table: str, region: str) -> 
         return CheckResult("athena_table", False, str(e))
 
 
+def check_athena_query(
+    sql_query: str, catalog: str, database: str, output_location: str, region: str
+) -> CheckResult:
+    """Validate SQL query by running with LIMIT 0 and checking required columns."""
+    import time
+
+    try:
+        athena = boto3.client("athena", region_name=region)
+        wrapped = f"SELECT * FROM ({sql_query}) LIMIT 0"
+
+        exec_id = athena.start_query_execution(
+            QueryString=wrapped,
+            QueryExecutionContext={"Catalog": catalog, "Database": database},
+            ResultConfiguration={"OutputLocation": output_location},
+        )["QueryExecutionId"]
+
+        while True:
+            resp = athena.get_query_execution(QueryExecutionId=exec_id)
+            state = resp["QueryExecution"]["Status"]["State"]
+            if state == "SUCCEEDED":
+                results = athena.get_query_results(QueryExecutionId=exec_id, MaxResults=1)
+                columns = [c["Name"] for c in results["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]]
+                if "~id" not in columns:
+                    return CheckResult(
+                        "athena_query", False,
+                        f"Query missing required '~id' column. Got: {', '.join(columns)}",
+                    )
+                return CheckResult("athena_query", True, f"Query valid. Columns: {', '.join(columns)}")
+            if state in ("FAILED", "CANCELLED"):
+                reason = resp["QueryExecution"]["Status"].get("StateChangeReason", "Unknown error")
+                return CheckResult("athena_query", False, f"Query failed: {reason}")
+            time.sleep(1)
+    except ClientError as e:
+        return CheckResult("athena_query", False, str(e))
+
+
 # --- Neptune Analytics checks ---
 
 
@@ -210,6 +246,7 @@ def validate_resources(
     athena_catalog: str = "AwsDataCatalog",
     athena_database: Optional[str] = None,
     athena_table: Optional[str] = None,
+    sql_query: Optional[str] = None,
     graph_name: Optional[str] = None,
 ) -> list[dict]:
     """Run all applicable validation checks and return results.
@@ -241,6 +278,10 @@ def validate_resources(
         results.append(check_athena_database(athena_catalog, athena_database, region))
         if athena_table:
             results.append(check_athena_table(athena_catalog, athena_database, athena_table, region))
+
+    # Athena query validation
+    if sql_query and athena_database and s3_staging_bucket:
+        results.append(check_athena_query(sql_query, athena_catalog, athena_database, s3_staging_bucket, region))
 
     # Neptune graph name
     if graph_name:
