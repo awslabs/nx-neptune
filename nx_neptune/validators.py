@@ -175,7 +175,8 @@ def check_athena_query(
 
     try:
         athena = boto3.client("athena", region_name=region)
-        wrapped = f"SELECT * FROM ({sql_query}) LIMIT 0"
+        # Append LIMIT 0 to validate without scanning data
+        wrapped = f"{sql_query.rstrip().rstrip(';')} LIMIT 0"
 
         exec_id = athena.start_query_execution(
             QueryString=wrapped,
