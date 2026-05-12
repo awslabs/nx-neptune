@@ -19,6 +19,9 @@
   #status-text { margin-top: 0.5rem; font-size: 0.9rem; color: #555; }
   #error-text { margin-top: 0.5rem; color: #d13212; font-size: 0.9rem; }
   #result { margin-top: 1rem; padding: 1rem; background: #f0fdf4; border-radius: 4px; display: none; }
+  .check-row { padding: 0.4rem 0; font-size: 0.85rem; border-bottom: 1px solid #eee; }
+  .check-pass { color: #16a34a; }
+  .check-fail { color: #d13212; }
 </style>
 </head>
 <body>
@@ -34,10 +37,7 @@
   <label>SQL Query
     <textarea name="sqlQuery" required placeholder="SELECT ~id, ~label, col1, col2 FROM my_table"></textarea>
   </label>
-  <label>Athena Output Bucket
-    <input name="athenaOutputBucket" required placeholder="s3://my-bucket/athena-results/">
-  </label>
-  <label>CSV Staging Bucket
+  <label>S3 Staging Bucket
     <input name="csvStagingBucket" required placeholder="s3://my-bucket/neptune-import/">
   </label>
   <label>Graph Name
@@ -46,8 +46,17 @@
   <label>Graph Memory (GB)
     <input name="graphMemoryGb" type="number" value="16" min="16" step="16">
   </label>
-  <button type="submit">Run Migration</button>
+  <button type="button" id="validate-btn" style="background:#16a34a">Validate</button>
 </form>
+
+<div id="validation-section" style="margin-top:1.5rem;">
+  <strong>Validation Results</strong>
+  <div id="validation-results" style="height:180px; overflow-y:auto; border:1px solid #ddd; border-radius:4px; padding:0.5rem; margin-top:0.5rem; background:#fafafa;"></div>
+</div>
+
+<div style="margin-top:1.5rem;">
+  <button type="button" id="run-btn">Run Migration</button>
+</div>
 
 <div id="progress-section">
   <strong>Pipeline Progress</strong>
@@ -64,13 +73,39 @@ const progressFill = document.getElementById('progress-fill');
 const statusText = document.getElementById('status-text');
 const errorText = document.getElementById('error-text');
 const resultDiv = document.getElementById('result');
+const validateBtn = document.getElementById('validate-btn');
+const validationSection = document.getElementById('validation-section');
+const validationResults = document.getElementById('validation-results');
+const runBtn = document.getElementById('run-btn');
 
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
+function getFormData() {
   const data = Object.fromEntries(new FormData(form));
   data.graphMemoryGb = parseInt(data.graphMemoryGb);
+  return data;
+}
 
-  form.querySelector('button').disabled = true;
+validateBtn.addEventListener('click', async () => {
+  validateBtn.disabled = true;
+  validateBtn.textContent = 'Validating...';
+  validationResults.innerHTML = '';
+
+  const res = await fetch('/api/v0/datasource/test', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(getFormData()),
+  });
+  const result = await res.json();
+
+  validationResults.innerHTML = result.checks.map(c =>
+    `<div class="check-row ${c.passed ? 'check-pass' : 'check-fail'}">${c.passed ? '✓' : '✗'} <strong>${c.check}</strong>: ${c.message}</div>`
+  ).join('');
+
+  validateBtn.disabled = false;
+  validateBtn.textContent = 'Validate';
+});
+
+runBtn.addEventListener('click', async () => {
+  runBtn.disabled = true;
   progressSection.style.display = 'block';
   errorText.textContent = '';
   resultDiv.style.display = 'none';
@@ -78,13 +113,13 @@ form.addEventListener('submit', async (e) => {
   const res = await fetch('/api/v0/datasource/setup', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(data),
+    body: JSON.stringify(getFormData()),
   });
 
   if (!res.ok) {
     const err = await res.json();
     errorText.textContent = err.detail || 'Setup failed';
-    form.querySelector('button').disabled = false;
+    runBtn.disabled = false;
     return;
   }
 
@@ -101,13 +136,13 @@ async function pollStatus() {
   if (status.status === 'complete') {
     resultDiv.style.display = 'block';
     resultDiv.innerHTML = `<strong>✓ Graph ready</strong><br>Endpoint: <code>${status.graphEndpoint}</code>`;
-    form.querySelector('button').disabled = false;
+    runBtn.disabled = false;
     return;
   }
 
   if (status.status === 'failed') {
     errorText.textContent = '✗ ' + (status.error || 'Pipeline failed');
-    form.querySelector('button').disabled = false;
+    runBtn.disabled = false;
     return;
   }
 

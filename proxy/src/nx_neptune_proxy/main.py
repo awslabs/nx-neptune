@@ -27,7 +27,6 @@ class SetupRequest(BaseModel):
     region: str
     athenaDatabase: str
     sqlQuery: str
-    athenaOutputBucket: str
     csvStagingBucket: str
     graphName: str
     graphMemoryGb: int = 16
@@ -73,7 +72,6 @@ def post_test(req: SetupRequest):
     checks = validate_resources(
         region=req.region,
         s3_staging_bucket=req.csvStagingBucket,
-        athena_output_bucket=req.athenaOutputBucket,
         athena_catalog=req.athenaCatalog or "AwsDataCatalog",
         athena_database=req.athenaDatabase,
         graph_name=req.graphName,

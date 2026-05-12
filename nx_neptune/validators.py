@@ -115,6 +115,24 @@ def check_bucket_versioning(s3_uri: str, region: str) -> CheckResult:
         return CheckResult("s3_bucket_versioning", False, str(e))
 
 
+def check_path_empty(s3_uri: str, region: str) -> CheckResult:
+    """Check that the S3 path has no existing objects."""
+    bucket = _parse_bucket(s3_uri)
+    prefix = s3_uri.replace("s3://", "").split("/", 1)[1] if "/" in s3_uri.replace("s3://", "") else ""
+    try:
+        s3 = boto3.client("s3", region_name=region)
+        resp = s3.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
+        count = resp.get("KeyCount", 0)
+        if count == 0:
+            return CheckResult("s3_path_empty", True, f"Path '{s3_uri}' is empty")
+        return CheckResult(
+            "s3_path_empty", False,
+            f"Path '{s3_uri}' is not empty — leftover files may cause issues",
+        )
+    except ClientError as e:
+        return CheckResult("s3_path_empty", False, str(e))
+
+
 # --- Athena checks ---
 
 
@@ -210,12 +228,13 @@ def validate_resources(
     if s3_staging_bucket:
         results.append(check_bucket_exists(s3_staging_bucket, region))
         results.append(check_bucket_region(s3_staging_bucket, region))
-        results.append(check_bucket_encryption(s3_staging_bucket, region))
+        results.append(check_path_empty(s3_staging_bucket, region))
 
     # Athena output bucket
     if athena_output_bucket:
         results.append(check_bucket_exists(athena_output_bucket, region))
         results.append(check_bucket_region(athena_output_bucket, region))
+        results.append(check_path_empty(athena_output_bucket, region))
 
     # Athena database/table
     if athena_database:
