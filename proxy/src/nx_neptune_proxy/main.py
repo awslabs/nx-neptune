@@ -66,6 +66,21 @@ def post_setup(req: SetupRequest, background_tasks: BackgroundTasks):
     return {"jobId": proxy_state.job_id or "pending", "status": "accepted"}
 
 
+@app.post("/api/v0/datasource/test")
+def post_test(req: SetupRequest):
+    from nx_neptune.validators import validate_resources
+
+    checks = validate_resources(
+        region=req.region,
+        s3_staging_bucket=req.csvStagingBucket,
+        athena_output_bucket=req.athenaOutputBucket,
+        athena_catalog=req.athenaCatalog or "AwsDataCatalog",
+        athena_database=req.athenaDatabase,
+        graph_name=req.graphName,
+    )
+    return {"valid": all(c["passed"] for c in checks), "checks": checks}
+
+
 @app.get("/api/v0/datasource/setup/status")
 def get_setup_status():
     resp = {
