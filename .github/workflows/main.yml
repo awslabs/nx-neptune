@@ -51,7 +51,7 @@ jobs:
         run: pip install pip-tools
       - name: Check lock files are in sync
         run: |
-          make lock
+          make lock-check
           git diff --exit-code requirements.txt requirements-dev.txt || \
             (echo "Lock files are out of sync with pyproject.toml. Run 'make lock' and commit." && exit 1)
 
