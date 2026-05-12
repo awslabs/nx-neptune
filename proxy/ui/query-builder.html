@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nx-neptune — Query Builder</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; max-width: 700px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+  h1 { margin-bottom: 0.5rem; }
+  nav { margin-bottom: 1.5rem; font-size: 0.85rem; }
+  nav a { color: #0073bb; text-decoration: none; }
+  label { display: block; margin-top: 1rem; font-weight: 500; font-size: 0.9rem; }
+  select, input { width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; }
+  select { background: #fff; }
+  .section { margin-top: 1.5rem; }
+  .section h3 { font-size: 0.95rem; margin-bottom: 0.5rem; }
+  .columns-list { max-height: 180px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 0.25rem 0.5rem; background: #fafafa; }
+  .col-item { padding: 0; line-height: 1.4; font-size: 0.8rem; }
+  .col-item label { display: inline; font-weight: normal; margin-top: 0; cursor: pointer; }
+  .mapping-row { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+  .mapping-row span { min-width: 60px; font-weight: 500; font-size: 0.85rem; }
+  .mapping-row select { flex: 1; }
+  #sql-output { margin-top: 1rem; padding: 0.75rem; background: #f1f5f9; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; min-height: 60px; }
+  button { margin-top: 1rem; padding: 0.5rem 1.2rem; background: #0073bb; color: #fff; border: none; border-radius: 4px; font-size: 0.9rem; cursor: pointer; margin-right: 0.5rem; }
+  button:hover { background: #005a94; }
+</style>
+</head>
+<body>
+<h1>Query Builder</h1>
+<nav><a href="/">← Back to Import</a></nav>
+
+<label>AWS Region
+  <input id="region" value="us-west-2">
+</label>
+
+<div class="section">
+  <h3>1. Select source</h3>
+  <label>Database
+    <select id="database"><option value="">— select —</option></select>
+  </label>
+  <label>Table
+    <select id="table" disabled><option value="">— select database first —</option></select>
+  </label>
+</div>
+
+<div class="section" id="columns-section" style="display:none;">
+  <h3>2. Map to graph structure</h3>
+  <div class="mapping-row"><span>~id</span><select id="map-id"></select></div>
+  <div class="mapping-row"><span>~label</span><select id="map-label"></select></div>
+  <div class="mapping-row"><span>~from</span><select id="map-from"></select></div>
+  <div class="mapping-row"><span>~to</span><select id="map-to"></select></div>
+</div>
+
+<div class="section" id="props-section" style="display:none;">
+  <h3>3. Include as properties</h3>
+  <div class="columns-list" id="props-list"></div>
+</div>
+
+<div class="section" id="output-section" style="display:none;">
+  <h3>4. Generated SQL</h3>
+  <div id="sql-output"></div>
+  <button id="copy-btn">Copy SQL</button>
+</div>
+
+<script>
+const regionInput = document.getElementById('region');
+const dbSelect = document.getElementById('database');
+const tableSelect = document.getElementById('table');
+const columnsSection = document.getElementById('columns-section');
+const propsSection = document.getElementById('props-section');
+const propsList = document.getElementById('props-list');
+const outputSection = document.getElementById('output-section');
+const sqlOutput = document.getElementById('sql-output');
+const mapId = document.getElementById('map-id');
+const mapLabel = document.getElementById('map-label');
+const mapFrom = document.getElementById('map-from');
+const mapTo = document.getElementById('map-to');
+
+let allColumns = [];
+let currentTable = '';
+
+// Load databases on region change or page load
+async function loadDatabases() {
+  const region = regionInput.value;
+  const res = await fetch(`/api/v0/athena/databases?region=${region}`);
+  const dbs = await res.json();
+  dbSelect.innerHTML = '<option value="">— select —</option>' +
+    dbs.map(d => `<option value="${d}">${d}</option>`).join('');
+}
+
+dbSelect.addEventListener('change', async () => {
+  const db = dbSelect.value;
+  if (!db) { tableSelect.disabled = true; return; }
+  const region = regionInput.value;
+  const res = await fetch(`/api/v0/athena/tables?region=${region}&database=${db}`);
+  const tables = await res.json();
+  tableSelect.innerHTML = '<option value="">— select —</option>' +
+    tables.map(t => `<option value="${t}">${t}</option>`).join('');
+  tableSelect.disabled = false;
+  columnsSection.style.display = 'none';
+  propsSection.style.display = 'none';
+  outputSection.style.display = 'none';
+});
+
+tableSelect.addEventListener('change', async () => {
+  const table = tableSelect.value;
+  if (!table) return;
+  currentTable = table;
+  const region = regionInput.value;
+  const db = dbSelect.value;
+  const res = await fetch(`/api/v0/athena/columns?region=${region}&database=${db}&table=${table}`);
+  allColumns = await res.json();
+
+  const none = '<option value="">(none)</option>';
+  const opts = allColumns.map(c => `<option value="${c.name}">${c.name} (${c.type})</option>`).join('');
+  mapId.innerHTML = none + opts;
+  mapLabel.innerHTML = none + opts;
+  mapFrom.innerHTML = none + opts;
+  mapTo.innerHTML = none + opts;
+
+  propsList.innerHTML = allColumns.map(c =>
+    `<div class="col-item"><label><input type="checkbox" value="${c.name}" checked> ${c.name} (${c.type})</label></div>`
+  ).join('');
+
+  columnsSection.style.display = 'block';
+  propsSection.style.display = 'block';
+  outputSection.style.display = 'block';
+  generateSQL();
+});
+
+// Regenerate SQL on any mapping change
+[mapId, mapLabel, mapFrom, mapTo].forEach(el => el.addEventListener('change', generateSQL));
+propsList.addEventListener('change', generateSQL);
+
+function generateSQL() {
+  const idCol = mapId.value;
+  const labelCol = mapLabel.value;
+  const fromCol = mapFrom.value;
+  const toCol = mapTo.value;
+
+  const checked = [...propsList.querySelectorAll('input:checked')].map(i => i.value);
+  const mapped = new Set([idCol, labelCol, fromCol, toCol].filter(Boolean));
+
+  const parts = [];
+  if (idCol) parts.push(`${idCol} AS "~id"`);
+  if (labelCol) parts.push(`${labelCol} AS "~label"`);
+  if (fromCol) parts.push(`${fromCol} AS "~from"`);
+  if (toCol) parts.push(`${toCol} AS "~to"`);
+
+  for (const col of checked) {
+    if (!mapped.has(col)) parts.push(col);
+  }
+
+  const sql = parts.length
+    ? `SELECT ${parts.join(', ')}\nFROM ${currentTable}`
+    : '-- select columns above';
+  sqlOutput.textContent = sql;
+}
+
+document.getElementById('copy-btn').addEventListener('click', () => {
+  navigator.clipboard.writeText(sqlOutput.textContent);
+  document.getElementById('copy-btn').textContent = 'Copied!';
+  setTimeout(() => document.getElementById('copy-btn').textContent = 'Copy SQL', 1500);
+});
+
+regionInput.addEventListener('change', loadDatabases);
+loadDatabases();
+</script>
+</body>
+</html>

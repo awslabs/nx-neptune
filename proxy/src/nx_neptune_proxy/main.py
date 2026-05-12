@@ -94,6 +94,34 @@ def post_test_query(req: SetupRequest):
     return {"valid": result.passed, "checks": [result.to_dict()]}
 
 
+@app.get("/api/v0/athena/databases")
+def get_athena_databases(region: str, catalog: str = "AwsDataCatalog"):
+    import boto3
+
+    athena = boto3.client("athena", region_name=region)
+    resp = athena.list_databases(CatalogName=catalog)
+    return [db["Name"] for db in resp.get("DatabaseList", [])]
+
+
+@app.get("/api/v0/athena/tables")
+def get_athena_tables(region: str, database: str, catalog: str = "AwsDataCatalog"):
+    import boto3
+
+    athena = boto3.client("athena", region_name=region)
+    resp = athena.list_table_metadata(CatalogName=catalog, DatabaseName=database)
+    return [t["Name"] for t in resp.get("TableMetadataList", [])]
+
+
+@app.get("/api/v0/athena/columns")
+def get_athena_columns(region: str, database: str, table: str, catalog: str = "AwsDataCatalog"):
+    import boto3
+
+    athena = boto3.client("athena", region_name=region)
+    resp = athena.get_table_metadata(CatalogName=catalog, DatabaseName=database, TableName=table)
+    columns = resp["TableMetadata"].get("Columns", [])
+    return [{"name": c["Name"], "type": c["Type"]} for c in columns]
+
+
 @app.get("/api/v0/datasource/setup/status")
 def get_setup_status():
     resp = {
