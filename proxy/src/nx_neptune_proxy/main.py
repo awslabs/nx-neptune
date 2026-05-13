@@ -111,7 +111,6 @@ def post_test(req: SetupRequest):
         athena_catalog=req.athenaCatalog or "AwsDataCatalog",
         athena_database=req.athenaDatabase,
         sql_query=req.sqlQuery,
-        graph_name=f"{GRAPH_PREFIX}{req.graphName}",
     )
     return {"valid": all(c["passed"] for c in checks), "checks": checks}
 
@@ -128,6 +127,43 @@ def post_test_query(req: SetupRequest):
         region=req.region,
     )
     return {"valid": result.passed, "checks": [result.to_dict()]}
+
+
+@app.post("/api/v0/datasource/preview")
+def post_preview(req: SetupRequest):
+    import boto3
+    import time
+
+    athena = boto3.client("athena", region_name=req.region)
+    import re
+    stripped = re.sub(r'\s+LIMIT\s+\d+\s*$', '', req.sqlQuery.rstrip().rstrip(';'), flags=re.IGNORECASE)
+    query = f"{stripped} LIMIT 10"
+
+    exec_id = athena.start_query_execution(
+        QueryString=query,
+        QueryExecutionContext={
+            "Catalog": req.athenaCatalog or "AwsDataCatalog",
+            "Database": req.athenaDatabase,
+        },
+        ResultConfiguration={"OutputLocation": req.csvStagingBucket},
+    )["QueryExecutionId"]
+
+    while True:
+        resp = athena.get_query_execution(QueryExecutionId=exec_id)
+        state = resp["QueryExecution"]["Status"]["State"]
+        if state == "SUCCEEDED":
+            break
+        if state in ("FAILED", "CANCELLED"):
+            reason = resp["QueryExecution"]["Status"].get("StateChangeReason", "Unknown error")
+            return {"error": reason, "columns": [], "rows": []}
+        time.sleep(1)
+
+    results = athena.get_query_results(QueryExecutionId=exec_id)
+    columns = [c["Name"] for c in results["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]]
+    rows = []
+    for row in results["ResultSet"]["Rows"][1:]:  # skip header
+        rows.append([d.get("VarCharValue", "") for d in row["Data"]])
+    return {"error": None, "columns": columns, "rows": rows}
 
 
 # --- Graphs management ---

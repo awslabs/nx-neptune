@@ -22,6 +22,11 @@
   .check-row { padding: 0.4rem 0; font-size: 0.85rem; border-bottom: 1px solid #eee; }
   .check-pass { color: #16a34a; }
   .check-fail { color: #d13212; }
+  #preview-section { margin-top: 1.5rem; display: none; }
+  #preview-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  #preview-table th, #preview-table td { padding: 0.3rem 0.5rem; border: 1px solid #ddd; text-align: left; white-space: nowrap; }
+  #preview-table th { background: #f8f9fa; font-weight: 600; }
+  .preview-wrap { max-height: 250px; overflow: auto; border: 1px solid #ddd; border-radius: 4px; }
 </style>
 </head>
 <body>
@@ -49,11 +54,19 @@
   </label>
   <button type="button" id="validate-btn" style="background:#16a34a">Validate</button>
   <button type="button" id="validate-query-btn" style="background:#0e7490">Validate Query</button>
+  <button type="button" id="preview-btn" style="background:#7c3aed">Preview</button>
 </form>
 
 <div id="validation-section" style="margin-top:1.5rem;">
   <strong>Validation Results</strong>
   <div id="validation-results" style="height:180px; overflow-y:auto; border:1px solid #ddd; border-radius:4px; padding:0.5rem; margin-top:0.5rem; background:#fafafa;"></div>
+</div>
+
+<div id="preview-section">
+  <strong>Preview (10 rows)</strong>
+  <div class="preview-wrap" style="margin-top:0.5rem;">
+    <table id="preview-table"></table>
+  </div>
 </div>
 
 <div style="margin-top:1.5rem;">
@@ -87,7 +100,13 @@ function getFormData() {
   return data;
 }
 
+function checkRequired() {
+  if (!form.reportValidity()) return false;
+  return true;
+}
+
 validateBtn.addEventListener('click', async () => {
+  if (!checkRequired()) return;
   validateBtn.disabled = true;
   validateBtn.textContent = 'Validating...';
   validationResults.innerHTML = '';
@@ -108,6 +127,7 @@ validateBtn.addEventListener('click', async () => {
 });
 
 validateQueryBtn.addEventListener('click', async () => {
+  if (!checkRequired()) return;
   validateQueryBtn.disabled = true;
   validateQueryBtn.textContent = 'Testing...';
   validationResults.innerHTML = '';
@@ -127,7 +147,38 @@ validateQueryBtn.addEventListener('click', async () => {
   validateQueryBtn.textContent = 'Validate Query';
 });
 
+const previewBtn = document.getElementById('preview-btn');
+const previewSection = document.getElementById('preview-section');
+const previewTable = document.getElementById('preview-table');
+
+previewBtn.addEventListener('click', async () => {
+  if (!checkRequired()) return;
+  previewBtn.disabled = true;
+  previewBtn.textContent = 'Loading...';
+  previewSection.style.display = 'none';
+
+  const res = await fetch('/api/v0/datasource/preview', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(getFormData()),
+  });
+  const result = await res.json();
+
+  if (result.error) {
+    validationResults.innerHTML = `<div class="check-row check-fail">✗ <strong>preview</strong>: ${result.error}</div>`;
+  } else {
+    const header = '<tr>' + result.columns.map(c => `<th>${c}</th>`).join('') + '</tr>';
+    const rows = result.rows.map(r => '<tr>' + r.map(v => `<td>${v}</td>`).join('') + '</tr>').join('');
+    previewTable.innerHTML = header + rows;
+    previewSection.style.display = 'block';
+  }
+
+  previewBtn.disabled = false;
+  previewBtn.textContent = 'Preview';
+});
+
 runBtn.addEventListener('click', async () => {
+  if (!checkRequired()) return;
   runBtn.disabled = true;
   progressSection.style.display = 'block';
   errorText.textContent = '';

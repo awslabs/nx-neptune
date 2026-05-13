@@ -174,9 +174,12 @@ def check_athena_query(
     import time
 
     try:
+        import re
+
         athena = boto3.client("athena", region_name=region)
         # Append LIMIT 0 to validate without scanning data
-        wrapped = f"{sql_query.rstrip().rstrip(';')} LIMIT 0"
+        stripped = re.sub(r'\s+LIMIT\s+\d+\s*$', '', sql_query.rstrip().rstrip(';'), flags=re.IGNORECASE)
+        wrapped = f"{stripped} LIMIT 0"
 
         exec_id = athena.start_query_execution(
             QueryString=wrapped,
@@ -283,9 +286,5 @@ def validate_resources(
     # Athena query validation
     if sql_query and athena_database and s3_staging_bucket:
         results.append(check_athena_query(sql_query, athena_catalog, athena_database, s3_staging_bucket, region))
-
-    # Neptune graph name
-    if graph_name:
-        results.append(check_graph_name_available(graph_name, region))
 
     return [r.to_dict() for r in results]
