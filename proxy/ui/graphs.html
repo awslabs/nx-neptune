@@ -33,7 +33,7 @@
 <button class="btn-refresh" onclick="loadGraphs()">Refresh</button>
 
 <table id="graphs-table">
-  <thead><tr><th>Name</th><th>ID</th><th>Status</th><th>Import</th><th>Memory</th><th>Actions</th></tr></thead>
+  <thead><tr><th>Name</th><th>ID</th><th>Status</th><th>Import</th><th>SQL</th><th>Memory</th><th>Actions</th></tr></thead>
   <tbody id="graphs-body"></tbody>
 </table>
 <div id="no-graphs" style="display:none;">No graphs found with prefix "nxp-"</div>
@@ -65,12 +65,14 @@ async function loadGraphs() {
     if (g.importError) importCell = `<span style="color:#d13212" title="${g.importError}">✗ failed</span>`;
     else if (g.importStatus === 'complete') importCell = '<span style="color:#16a34a">✓ done</span>';
     else if (g.importStatus === 'running') importCell = `<span style="color:#d97706">⟳ ${g.importStep || 'running'}</span>`;
+    const queryCell = g.sqlQuery ? `<code style="font-size:0.75rem; cursor:pointer;" title="${g.sqlQuery.replace(/"/g,'&quot;')}" onclick="alert(this.title)">📋 view</code>` : '—';
     return `
     <tr>
       <td>${g.name}</td>
       <td><code>${g.id}</code></td>
       <td class="status-${g.status.toLowerCase()}">${g.status}</td>
       <td>${importCell}</td>
+      <td>${queryCell}</td>
       <td>${g.memory} GB</td>
       <td>
         ${g.status === 'AVAILABLE' ? `<button class="btn-query" onclick="selectGraph('${g.id}','${g.name}')">Query</button>` : ''}

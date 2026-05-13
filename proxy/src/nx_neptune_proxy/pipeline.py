@@ -14,10 +14,14 @@ async def run_pipeline(config: dict) -> None:
     job_id = str(uuid.uuid4())
     graph_name = f"{GRAPH_PREFIX}{config['graphName']}"
     s3_location = config["csvStagingBucket"].rstrip("/") + f"/{job_id}/"
-    state = GraphState(job_id=job_id, graph_name=graph_name)
+    state = GraphState(job_id=job_id, graph_name=graph_name, sql_query=config["sqlQuery"])
     graphs[job_id] = state
 
     try:
+        # Ensure boto3 uses the requested region
+        import os
+        os.environ["AWS_DEFAULT_REGION"] = config.get("region", "us-west-2")
+
         # Step 1: Create graph
         _update(state, step="graph_creation", label="Creating Neptune Analytics graph", progress=5)
         sm = SessionManager(session_name=graph_name)

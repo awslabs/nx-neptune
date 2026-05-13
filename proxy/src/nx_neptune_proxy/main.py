@@ -187,6 +187,7 @@ def get_graphs(region: str = "us-west-2"):
                 "importStatus": None,
                 "importStep": None,
                 "importError": None,
+                "sqlQuery": None,
             }
             # Merge local pipeline state if available
             for state in graphs.values():
@@ -194,6 +195,7 @@ def get_graphs(region: str = "us-west-2"):
                     entry["importStatus"] = state.status
                     entry["importStep"] = state.step_label
                     entry["importError"] = state.error
+                    entry["sqlQuery"] = state.sql_query
                     break
             result.append(entry)
     return result
@@ -272,5 +274,7 @@ def get_athena_columns(region: str, database: str, table: str, catalog: str = "A
 # --- Static UI (must be last) ---
 
 UI_DIR = Path(__file__).parent.parent.parent / "ui"
+if not UI_DIR.exists():
+    UI_DIR = Path("/app/proxy/ui")
 if UI_DIR.exists():
     app.mount("/", StaticFiles(directory=UI_DIR, html=True), name="ui")

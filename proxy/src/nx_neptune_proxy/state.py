@@ -12,6 +12,7 @@ class GraphState:
     graph_name: str
     graph_id: Optional[str] = None
     graph_endpoint: Optional[str] = None
+    sql_query: Optional[str] = None
     status: str = "running"  # running | complete | failed
     step: Optional[str] = None
     step_label: Optional[str] = None
