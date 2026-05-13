@@ -9,43 +9,56 @@
   body { font-family: system-ui, sans-serif; max-width: 700px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
   h1 { margin-bottom: 0.5rem; }
   nav { margin-bottom: 1.5rem; font-size: 0.85rem; }
-  nav a { color: #0073bb; text-decoration: none; }
-  label { display: block; margin-top: 1rem; font-weight: 500; font-size: 0.9rem; }
-  select, input { width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; }
-  select { background: #fff; }
+  nav a { color: #0073bb; text-decoration: none; margin-right: 1rem; }
+  label { display: block; margin-top: 0.75rem; font-weight: 500; font-size: 0.9rem; }
+  select, input { width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; background: #fff; }
   .section { margin-top: 1.5rem; }
   .section h3 { font-size: 0.95rem; margin-bottom: 0.5rem; }
-  .columns-list { max-height: 180px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 0.25rem 0.5rem; background: #fafafa; }
-  .col-item { padding: 0; line-height: 1.4; font-size: 0.8rem; }
-  .col-item label { display: inline; font-weight: normal; margin-top: 0; cursor: pointer; }
+  .join-block { border: 1px solid #ddd; border-radius: 4px; padding: 0.75rem; margin-top: 0.5rem; background: #f9fafb; }
+  .join-row { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.4rem; font-size: 0.85rem; }
+  .join-row select { flex: 1; }
+  .join-row span { font-weight: 500; min-width: 30px; }
   .mapping-row { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
   .mapping-row span { min-width: 60px; font-weight: 500; font-size: 0.85rem; }
   .mapping-row select { flex: 1; }
-  #sql-output { margin-top: 1rem; padding: 0.75rem; background: #f1f5f9; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; min-height: 60px; }
-  button { margin-top: 1rem; padding: 0.5rem 1.2rem; background: #0073bb; color: #fff; border: none; border-radius: 4px; font-size: 0.9rem; cursor: pointer; margin-right: 0.5rem; }
+  .columns-list { max-height: 160px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 0.25rem 0.5rem; background: #fafafa; }
+  .col-item { padding: 0.2rem 0; font-size: 0.8rem; display: flex; align-items: center; gap: 0.5rem; }
+  .col-item label { display: inline; font-weight: normal; margin-top: 0; cursor: pointer; }
+  .col-item .col-name { min-width: 180px; font-size: 0.8rem; }
+  .col-item .alias-input { width: 120px; padding: 0.2rem 0.4rem; font-size: 0.8rem; border: 1px solid #ccc; border-radius: 3px; }
+  #sql-output { margin-top: 1rem; padding: 0.75rem; background: #f1f5f9; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; min-height: 80px; }
+  button { margin-top: 0.75rem; padding: 0.5rem 1.2rem; background: #0073bb; color: #fff; border: none; border-radius: 4px; font-size: 0.9rem; cursor: pointer; margin-right: 0.5rem; }
   button:hover { background: #005a94; }
+  .btn-secondary { background: #16a34a; }
+  .btn-remove { background: #d13212; font-size: 0.8rem; padding: 0.3rem 0.8rem; }
 </style>
 </head>
 <body>
 <h1>Query Builder</h1>
-<nav><a href="/">← Back to Import</a> <a href="/join-builder.html">Join Builder</a></nav>
+<nav><a href="/">← Import</a><a href="/graphs.html">Graphs</a></nav>
 
 <label>AWS Region
   <input id="region" value="us-west-2">
 </label>
+<label>Database
+  <select id="database"><option value="">— select —</option></select>
+</label>
 
 <div class="section">
-  <h3>1. Select source</h3>
-  <label>Database
-    <select id="database"><option value="">— select —</option></select>
-  </label>
+  <h3>1. Primary table</h3>
   <label>Table
-    <select id="table" disabled><option value="">— select database first —</option></select>
+    <select id="primary-table"><option value="">— select database first —</option></select>
   </label>
 </div>
 
-<div class="section" id="columns-section" style="display:none;">
-  <h3>2. Map to graph structure</h3>
+<div class="section">
+  <h3>2. Joins</h3>
+  <div id="joins-container"></div>
+  <button type="button" class="btn-secondary" id="add-join-btn">+ Add Join</button>
+</div>
+
+<div class="section" id="mapping-section" style="display:none;">
+  <h3>3. Column mapping</h3>
   <div class="mapping-row"><span>~id</span><select id="map-id"></select></div>
   <div class="mapping-row"><span>~label</span><select id="map-label"></select></div>
   <div class="mapping-row"><span>~from</span><select id="map-from"></select></div>
@@ -53,12 +66,12 @@
 </div>
 
 <div class="section" id="props-section" style="display:none;">
-  <h3>3. Include as properties</h3>
+  <h3>4. Include as properties</h3>
   <div class="columns-list" id="props-list"></div>
 </div>
 
 <div class="section" id="output-section" style="display:none;">
-  <h3>4. Generated SQL</h3>
+  <h3>5. Generated SQL</h3>
   <div id="sql-output"></div>
   <button id="copy-btn">Copy SQL</button>
 </div>
@@ -66,8 +79,9 @@
 <script>
 const regionInput = document.getElementById('region');
 const dbSelect = document.getElementById('database');
-const tableSelect = document.getElementById('table');
-const columnsSection = document.getElementById('columns-section');
+const primaryTable = document.getElementById('primary-table');
+const joinsContainer = document.getElementById('joins-container');
+const mappingSection = document.getElementById('mapping-section');
 const propsSection = document.getElementById('props-section');
 const propsList = document.getElementById('props-list');
 const outputSection = document.getElementById('output-section');
@@ -77,69 +91,139 @@ const mapLabel = document.getElementById('map-label');
 const mapFrom = document.getElementById('map-from');
 const mapTo = document.getElementById('map-to');
 
-let allColumns = [];
-let currentTable = '';
+let allTables = [];
+let tableColumns = {}; // {tableName: [{name, type}]}
+let joins = []; // [{table, leftCol, rightCol}]
 
-// Load databases on region change or page load
 async function loadDatabases() {
-  const region = regionInput.value;
-  const res = await fetch(`/api/v0/athena/databases?region=${region}`);
+  const res = await fetch(`/api/v0/athena/databases?region=${regionInput.value}`);
   const dbs = await res.json();
-  dbSelect.innerHTML = '<option value="">— select —</option>' +
-    dbs.map(d => `<option value="${d}">${d}</option>`).join('');
+  dbSelect.innerHTML = '<option value="">— select —</option>' + dbs.map(d => `<option>${d}</option>`).join('');
 }
 
 dbSelect.addEventListener('change', async () => {
-  const db = dbSelect.value;
-  if (!db) { tableSelect.disabled = true; return; }
-  const region = regionInput.value;
-  const res = await fetch(`/api/v0/athena/tables?region=${region}&database=${db}`);
-  const tables = await res.json();
-  tableSelect.innerHTML = '<option value="">— select —</option>' +
-    tables.map(t => `<option value="${t}">${t}</option>`).join('');
-  tableSelect.disabled = false;
-  columnsSection.style.display = 'none';
-  propsSection.style.display = 'none';
-  outputSection.style.display = 'none';
+  if (!dbSelect.value) return;
+  const res = await fetch(`/api/v0/athena/tables?region=${regionInput.value}&database=${dbSelect.value}`);
+  allTables = await res.json();
+  const opts = '<option value="">— select —</option>' + allTables.map(t => `<option>${t}</option>`).join('');
+  primaryTable.innerHTML = opts;
+  primaryTable.disabled = false;
+  tableColumns = {};
+  joins = [];
+  joinsContainer.innerHTML = '';
+  hideMappings();
 });
 
-tableSelect.addEventListener('change', async () => {
-  const table = tableSelect.value;
-  if (!table) return;
-  currentTable = table;
-  const region = regionInput.value;
-  const db = dbSelect.value;
-  const res = await fetch(`/api/v0/athena/columns?region=${region}&database=${db}&table=${table}`);
-  allColumns = await res.json();
+primaryTable.addEventListener('change', async () => {
+  if (!primaryTable.value) return;
+  await loadColumns(primaryTable.value);
+  refreshMappings();
+});
+
+document.getElementById('add-join-btn').addEventListener('click', () => {
+  const idx = joins.length;
+  joins.push({ table: '', leftCol: '', rightCol: '' });
+  const block = document.createElement('div');
+  block.className = 'join-block';
+  block.dataset.idx = idx;
+  block.innerHTML = `
+    <div class="join-row"><span>JOIN</span><select class="join-table">${allTables.filter(t => t !== primaryTable.value).map(t => `<option>${t}</option>`).join('')}</select>
+    <button type="button" class="btn-remove" onclick="removeJoin(${idx})">✕</button></div>
+    <div class="join-row"><span>ON</span><select class="join-left"></select><span>=</span><select class="join-right"></select></div>
+  `;
+  joinsContainer.appendChild(block);
+
+  const tableSelect = block.querySelector('.join-table');
+  const leftSelect = block.querySelector('.join-left');
+  const rightSelect = block.querySelector('.join-right');
+
+  tableSelect.addEventListener('change', async () => {
+    joins[idx].table = tableSelect.value;
+    await loadColumns(tableSelect.value);
+    populateJoinSelects(block, idx);
+    joins[idx].leftCol = leftSelect.value;
+    joins[idx].rightCol = rightSelect.value;
+    refreshMappings();
+  });
+  leftSelect.addEventListener('change', () => { joins[idx].leftCol = leftSelect.value; generateSQL(); });
+  rightSelect.addEventListener('change', () => { joins[idx].rightCol = rightSelect.value; generateSQL(); });
+
+  // Auto-trigger first table
+  if (tableSelect.value) tableSelect.dispatchEvent(new Event('change'));
+});
+
+window.removeJoin = function(idx) {
+  joins.splice(idx, 1);
+  joinsContainer.children[idx]?.remove();
+  // Re-index
+  [...joinsContainer.children].forEach((el, i) => { el.dataset.idx = i; });
+  refreshMappings();
+};
+
+async function loadColumns(table) {
+  if (tableColumns[table]) return;
+  const res = await fetch(`/api/v0/athena/columns?region=${regionInput.value}&database=${dbSelect.value}&table=${table}`);
+  tableColumns[table] = await res.json();
+}
+
+function populateJoinSelects(block, idx) {
+  const leftSelect = block.querySelector('.join-left');
+  const rightSelect = block.querySelector('.join-right');
+  const primaryCols = (tableColumns[primaryTable.value] || []).map(c => `${primaryTable.value}.${c.name}`);
+  const joinTable = joins[idx].table;
+  const joinCols = (tableColumns[joinTable] || []).map(c => `${joinTable}.${c.name}`);
+  const allLeft = [...primaryCols, ...joins.filter((_, i) => i < idx).flatMap(j => (tableColumns[j.table] || []).map(c => `${j.table}.${c.name}`))];
+  leftSelect.innerHTML = allLeft.map(c => `<option>${c}</option>`).join('');
+  rightSelect.innerHTML = joinCols.map(c => `<option>${c}</option>`).join('');
+}
+
+function getAllColumns() {
+  const cols = [];
+  const pt = primaryTable.value;
+  if (pt && tableColumns[pt]) {
+    tableColumns[pt].forEach(c => cols.push({ full: `${pt}.${c.name}`, name: c.name, table: pt, type: c.type }));
+  }
+  joins.forEach(j => {
+    if (j.table && tableColumns[j.table]) {
+      tableColumns[j.table].forEach(c => cols.push({ full: `${j.table}.${c.name}`, name: c.name, table: j.table, type: c.type }));
+    }
+  });
+  return cols;
+}
+
+function refreshMappings() {
+  const cols = getAllColumns();
+  if (!cols.length) { hideMappings(); return; }
 
   const none = '<option value="">(none)</option>';
-  const opts = allColumns.map(c => `<option value="${c.name}">${c.name} (${c.type})</option>`).join('');
+  const opts = cols.map(c => `<option value="${c.full}">${c.full} (${c.type})</option>`).join('');
   mapId.innerHTML = none + opts;
   mapLabel.innerHTML = none + opts;
   mapFrom.innerHTML = none + opts;
   mapTo.innerHTML = none + opts;
 
-  propsList.innerHTML = allColumns.map(c =>
-    `<div class="col-item"><label><input type="checkbox" value="${c.name}" checked> ${c.name} (${c.type})</label></div>`
+  propsList.innerHTML = cols.map(c =>
+    `<div class="col-item"><span class="col-name">${c.full}</span><input type="text" class="alias-input" data-col="${c.full}" placeholder="rename"><input type="checkbox" value="${c.full}" checked></div>`
   ).join('');
 
-  columnsSection.style.display = 'block';
+  mappingSection.style.display = 'block';
   propsSection.style.display = 'block';
   outputSection.style.display = 'block';
   generateSQL();
-});
+}
 
-// Regenerate SQL on any mapping change
-[mapId, mapLabel, mapFrom, mapTo].forEach(el => el.addEventListener('change', generateSQL));
-propsList.addEventListener('change', generateSQL);
+function hideMappings() {
+  mappingSection.style.display = 'none';
+  propsSection.style.display = 'none';
+  outputSection.style.display = 'none';
+}
 
 function generateSQL() {
   const idCol = mapId.value;
   const labelCol = mapLabel.value;
   const fromCol = mapFrom.value;
   const toCol = mapTo.value;
-
-  const checked = [...propsList.querySelectorAll('input:checked')].map(i => i.value);
+  const checked = [...propsList.querySelectorAll('input[type=checkbox]:checked')].map(i => i.value);
   const mapped = new Set([idCol, labelCol, fromCol, toCol].filter(Boolean));
 
   const parts = [];
@@ -147,16 +231,26 @@ function generateSQL() {
   if (labelCol) parts.push(`${labelCol} AS "~label"`);
   if (fromCol) parts.push(`${fromCol} AS "~from"`);
   if (toCol) parts.push(`${toCol} AS "~to"`);
-
   for (const col of checked) {
-    if (!mapped.has(col)) parts.push(col);
+    if (!mapped.has(col)) {
+      const aliasInput = propsList.querySelector(`.alias-input[data-col="${col}"]`);
+      const alias = aliasInput?.value.trim();
+      parts.push(alias ? `${col} AS "${alias}"` : col);
+    }
   }
 
-  const sql = parts.length
-    ? `SELECT ${parts.join(', ')}\nFROM ${currentTable}`
-    : '-- select columns above';
+  let sql = parts.length ? `SELECT ${parts.join(',\n       ')}\nFROM ${primaryTable.value}` : '-- select columns above';
+  joins.forEach(j => {
+    if (j.table && j.leftCol && j.rightCol) {
+      sql += `\nJOIN ${j.table} ON ${j.leftCol} = ${j.rightCol}`;
+    }
+  });
   sqlOutput.textContent = sql;
 }
+
+[mapId, mapLabel, mapFrom, mapTo].forEach(el => el.addEventListener('change', generateSQL));
+propsList.addEventListener('change', generateSQL);
+propsList.addEventListener('input', generateSQL);
 
 document.getElementById('copy-btn').addEventListener('click', () => {
   navigator.clipboard.writeText(sqlOutput.textContent);
