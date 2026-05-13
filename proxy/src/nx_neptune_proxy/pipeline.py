@@ -13,6 +13,7 @@ async def run_pipeline(config: dict) -> None:
 
     job_id = str(uuid.uuid4())
     graph_name = f"{GRAPH_PREFIX}{config['graphName']}"
+    s3_location = config["csvStagingBucket"].rstrip("/") + f"/{job_id}/"
     state = GraphState(job_id=job_id, graph_name=graph_name)
     graphs[job_id] = state
 
@@ -30,7 +31,7 @@ async def run_pipeline(config: dict) -> None:
         _update(state, step="athena_import", label="Running Athena query and importing data", progress=45)
         await sm.import_from_table(
             graph=graph,
-            s3_location=config["csvStagingBucket"],
+            s3_location=s3_location,
             sql_queries=[config["sqlQuery"]],
             catalog=config.get("athenaCatalog"),
             database=config.get("athenaDatabase"),
