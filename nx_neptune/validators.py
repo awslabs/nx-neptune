@@ -171,38 +171,48 @@ def check_athena_query(
     sql_query: str, catalog: str, database: str, output_location: str, region: str
 ) -> CheckResult:
     """Validate SQL query by running with LIMIT 0 and checking required columns."""
+    import re
     import time
 
+    queries = [q.strip() for q in sql_query.split(";") if q.strip()]
+    all_columns = []
+
     try:
-        import re
-
         athena = boto3.client("athena", region_name=region)
-        # Append LIMIT 0 to validate without scanning data
-        stripped = re.sub(r'\s+LIMIT\s+\d+\s*$', '', sql_query.rstrip().rstrip(';'), flags=re.IGNORECASE)
-        wrapped = f"{stripped} LIMIT 0"
 
-        exec_id = athena.start_query_execution(
-            QueryString=wrapped,
-            QueryExecutionContext={"Catalog": catalog, "Database": database},
-            ResultConfiguration={"OutputLocation": output_location},
-        )["QueryExecutionId"]
+        for i, q in enumerate(queries):
+            stripped = re.sub(r'\s+LIMIT\s+\d+\s*$', '', q.rstrip(), flags=re.IGNORECASE)
+            wrapped = f"{stripped} LIMIT 0"
 
-        while True:
-            resp = athena.get_query_execution(QueryExecutionId=exec_id)
-            state = resp["QueryExecution"]["Status"]["State"]
-            if state == "SUCCEEDED":
-                results = athena.get_query_results(QueryExecutionId=exec_id, MaxResults=1)
-                columns = [c["Name"] for c in results["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]]
-                if "~id" not in columns:
-                    return CheckResult(
-                        "athena_query", False,
-                        f"Query missing required '~id' column. Got: {', '.join(columns)}",
-                    )
-                return CheckResult("athena_query", True, f"Query valid. Columns: {', '.join(columns)}")
-            if state in ("FAILED", "CANCELLED"):
-                reason = resp["QueryExecution"]["Status"].get("StateChangeReason", "Unknown error")
-                return CheckResult("athena_query", False, f"Query failed: {reason}")
-            time.sleep(1)
+            exec_id = athena.start_query_execution(
+                QueryString=wrapped,
+                QueryExecutionContext={"Catalog": catalog, "Database": database},
+                ResultConfiguration={"OutputLocation": output_location},
+            )["QueryExecutionId"]
+
+            while True:
+                resp = athena.get_query_execution(QueryExecutionId=exec_id)
+                state = resp["QueryExecution"]["Status"]["State"]
+                if state == "SUCCEEDED":
+                    results = athena.get_query_results(QueryExecutionId=exec_id, MaxResults=1)
+                    columns = [c["Name"] for c in results["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]]
+                    all_columns.append(columns)
+                    break
+                if state in ("FAILED", "CANCELLED"):
+                    reason = resp["QueryExecution"]["Status"].get("StateChangeReason", "Unknown error")
+                    return CheckResult("athena_query", False, f"Query {i+1} failed: {reason}")
+                time.sleep(1)
+
+        # Check all queries have ~id
+        for i, columns in enumerate(all_columns):
+            if "~id" not in columns:
+                return CheckResult(
+                    "athena_query", False,
+                    f"Query {i+1} missing required '~id' column. Got: {', '.join(columns)}",
+                )
+
+        combined = [c for cols in all_columns for c in cols]
+        return CheckResult("athena_query", True, f"{len(queries)} query(ies) valid. Columns: {', '.join(set(combined))}")
     except ClientError as e:
         return CheckResult("athena_query", False, str(e))
 

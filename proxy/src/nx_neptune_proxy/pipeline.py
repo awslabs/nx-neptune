@@ -33,10 +33,11 @@ async def run_pipeline(config: dict) -> None:
 
         # Step 2: Athena query + CSV import
         _update(state, step="athena_import", label="Running Athena query and importing data", progress=45)
+        sql_queries = [q.strip() for q in config["sqlQuery"].split(";") if q.strip()]
         await sm.import_from_table(
             graph=graph,
             s3_location=s3_location,
-            sql_queries=[config["sqlQuery"]],
+            sql_queries=sql_queries,
             catalog=config.get("athenaCatalog"),
             database=config.get("athenaDatabase"),
             remove_buckets=True,

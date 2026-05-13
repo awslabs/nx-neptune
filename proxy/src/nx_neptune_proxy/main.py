@@ -132,38 +132,44 @@ def post_test_query(req: SetupRequest):
 @app.post("/api/v0/datasource/preview")
 def post_preview(req: SetupRequest):
     import boto3
+    import re
     import time
 
     athena = boto3.client("athena", region_name=req.region)
-    import re
-    stripped = re.sub(r'\s+LIMIT\s+\d+\s*$', '', req.sqlQuery.rstrip().rstrip(';'), flags=re.IGNORECASE)
-    query = f"{stripped} LIMIT 10"
+    queries = [q.strip() for q in req.sqlQuery.split(";") if q.strip()]
+    all_results = []
 
-    exec_id = athena.start_query_execution(
-        QueryString=query,
-        QueryExecutionContext={
-            "Catalog": req.athenaCatalog or "AwsDataCatalog",
-            "Database": req.athenaDatabase,
-        },
-        ResultConfiguration={"OutputLocation": req.csvStagingBucket},
-    )["QueryExecutionId"]
+    for i, q in enumerate(queries):
+        stripped = re.sub(r'\s+LIMIT\s+\d+\s*$', '', q.rstrip(), flags=re.IGNORECASE)
+        limited = f"{stripped} LIMIT 10"
 
-    while True:
-        resp = athena.get_query_execution(QueryExecutionId=exec_id)
-        state = resp["QueryExecution"]["Status"]["State"]
-        if state == "SUCCEEDED":
-            break
-        if state in ("FAILED", "CANCELLED"):
-            reason = resp["QueryExecution"]["Status"].get("StateChangeReason", "Unknown error")
-            return {"error": reason, "columns": [], "rows": []}
-        time.sleep(1)
+        exec_id = athena.start_query_execution(
+            QueryString=limited,
+            QueryExecutionContext={
+                "Catalog": req.athenaCatalog or "AwsDataCatalog",
+                "Database": req.athenaDatabase,
+            },
+            ResultConfiguration={"OutputLocation": req.csvStagingBucket},
+        )["QueryExecutionId"]
 
-    results = athena.get_query_results(QueryExecutionId=exec_id)
-    columns = [c["Name"] for c in results["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]]
-    rows = []
-    for row in results["ResultSet"]["Rows"][1:]:  # skip header
-        rows.append([d.get("VarCharValue", "") for d in row["Data"]])
-    return {"error": None, "columns": columns, "rows": rows}
+        while True:
+            resp = athena.get_query_execution(QueryExecutionId=exec_id)
+            state = resp["QueryExecution"]["Status"]["State"]
+            if state == "SUCCEEDED":
+                break
+            if state in ("FAILED", "CANCELLED"):
+                reason = resp["QueryExecution"]["Status"].get("StateChangeReason", "Unknown error")
+                return {"error": f"Query {i+1} failed: {reason}", "results": all_results}
+            time.sleep(1)
+
+        results = athena.get_query_results(QueryExecutionId=exec_id)
+        columns = [c["Name"] for c in results["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]]
+        rows = []
+        for row in results["ResultSet"]["Rows"][1:]:
+            rows.append([d.get("VarCharValue", "") for d in row["Data"]])
+        all_results.append({"columns": columns, "rows": rows})
+
+    return {"error": None, "results": all_results}
 
 
 # --- Graphs management ---

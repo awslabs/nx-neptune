@@ -167,9 +167,11 @@ previewBtn.addEventListener('click', async () => {
   if (result.error) {
     validationResults.innerHTML = `<div class="check-row check-fail">✗ <strong>preview</strong>: ${result.error}</div>`;
   } else {
-    const header = '<tr>' + result.columns.map(c => `<th>${c}</th>`).join('') + '</tr>';
-    const rows = result.rows.map(r => '<tr>' + r.map(v => `<td>${v}</td>`).join('') + '</tr>').join('');
-    previewTable.innerHTML = header + rows;
+    previewTable.innerHTML = result.results.map((r, i) => {
+      const header = '<tr>' + r.columns.map(c => `<th>${c}</th>`).join('') + '</tr>';
+      const rows = r.rows.map(row => '<tr>' + row.map(v => `<td>${v}</td>`).join('') + '</tr>').join('');
+      return `<tr><td colspan="100" style="background:#e2e8f0; font-weight:600; font-size:0.8rem; padding:0.4rem;">Query ${i+1} (${r.rows.length} rows)</td></tr>` + header + rows;
+    }).join('');
     previewSection.style.display = 'block';
   }
 
