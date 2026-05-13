@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 import asyncio
 
-from nx_neptune_proxy.state import proxy_state
+from nx_neptune_proxy.state import graphs, GRAPH_PREFIX
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("nx_neptune").setLevel(logging.DEBUG)
@@ -33,6 +33,14 @@ class SetupRequest(BaseModel):
     athenaCatalog: Optional[str] = None
 
 
+class QueryRequest(BaseModel):
+    query: str
+    graphId: Optional[str] = None
+
+
+# --- Datasource info ---
+
+
 @app.get("/api/v0/datasource/info")
 def get_info():
     return {
@@ -45,24 +53,52 @@ def get_info():
 
 @app.get("/api/v0/datasource/ready")
 def get_ready():
-    if proxy_state.graph_endpoint:
+    ready_graphs = [g for g in graphs.values() if g.status == "complete"]
+    if ready_graphs:
+        latest = ready_graphs[-1]
         return {
             "ready": True,
-            "message": f"Neptune Analytics graph '{proxy_state.graph_name}' is available",
-            "details": {"graphEndpoint": proxy_state.graph_endpoint},
+            "message": f"Neptune Analytics graph '{latest.graph_name}' is available",
+            "details": {"graphEndpoint": latest.graph_endpoint, "graphId": latest.graph_id},
         }
     return {"ready": False, "message": "No graph provisioned yet"}
 
 
+# --- Setup + status ---
+
+
 @app.post("/api/v0/datasource/setup", status_code=202)
 def post_setup(req: SetupRequest, background_tasks: BackgroundTasks):
-    if proxy_state.status == "running":
-        raise HTTPException(status_code=409, detail="Setup already running")
-
     from nx_neptune_proxy.pipeline import run_pipeline
 
     background_tasks.add_task(asyncio.run, run_pipeline(req.model_dump()))
-    return {"jobId": proxy_state.job_id or "pending", "status": "accepted"}
+    return {"status": "accepted"}
+
+
+@app.get("/api/v0/datasource/setup/status")
+def get_setup_status(job_id: Optional[str] = None):
+    if job_id and job_id in graphs:
+        state = graphs[job_id]
+    elif graphs:
+        state = list(graphs.values())[-1]
+    else:
+        return {"jobId": None, "status": "idle", "step": None, "stepLabel": None, "progress": 0}
+
+    resp = {
+        "jobId": state.job_id,
+        "status": state.status,
+        "step": state.step,
+        "stepLabel": state.step_label,
+        "progress": state.progress,
+    }
+    if state.graph_endpoint:
+        resp["graphEndpoint"] = state.graph_endpoint
+    if state.error:
+        resp["error"] = state.error
+    return resp
+
+
+# --- Validation ---
 
 
 @app.post("/api/v0/datasource/test")
@@ -75,7 +111,7 @@ def post_test(req: SetupRequest):
         athena_catalog=req.athenaCatalog or "AwsDataCatalog",
         athena_database=req.athenaDatabase,
         sql_query=req.sqlQuery,
-        graph_name=req.graphName,
+        graph_name=f"{GRAPH_PREFIX}{req.graphName}",
     )
     return {"valid": all(c["passed"] for c in checks), "checks": checks}
 
@@ -92,6 +128,81 @@ def post_test_query(req: SetupRequest):
         region=req.region,
     )
     return {"valid": result.passed, "checks": [result.to_dict()]}
+
+
+# --- Graphs management ---
+
+
+@app.get("/api/v0/graphs")
+def get_graphs(region: str = "us-west-2"):
+    import boto3
+
+    client = boto3.client("neptune-graph", region_name=region)
+    resp = client.list_graphs()
+    result = []
+    for g in resp.get("graphs", []):
+        if g["name"].startswith(GRAPH_PREFIX):
+            entry = {
+                "id": g["id"],
+                "name": g["name"],
+                "status": g["status"],
+                "endpoint": g.get("endpoint"),
+                "memory": g.get("provisionedMemory"),
+                "importStatus": None,
+                "importStep": None,
+                "importError": None,
+            }
+            # Merge local pipeline state if available
+            for state in graphs.values():
+                if state.graph_id == g["id"]:
+                    entry["importStatus"] = state.status
+                    entry["importStep"] = state.step_label
+                    entry["importError"] = state.error
+                    break
+            result.append(entry)
+    return result
+
+
+@app.delete("/api/v0/graphs/{graph_id}")
+def delete_graph(graph_id: str, region: str = "us-west-2"):
+    import boto3
+
+    client = boto3.client("neptune-graph", region_name=region)
+    client.delete_graph(graphIdentifier=graph_id, skipSnapshot=True)
+    # Remove from local state if tracked
+    to_remove = [k for k, v in graphs.items() if v.graph_id == graph_id]
+    for k in to_remove:
+        del graphs[k]
+    return {"status": "deleting", "graphId": graph_id}
+
+
+# --- Query ---
+
+
+@app.post("/api/v0/query")
+def post_query(req: QueryRequest):
+    graph_id = req.graphId
+    if not graph_id:
+        # Use latest complete graph
+        ready = [g for g in graphs.values() if g.status == "complete"]
+        if not ready:
+            raise HTTPException(status_code=503, detail="No graph ready")
+        graph_id = ready[-1].graph_id
+
+    import boto3
+    import json
+
+    client = boto3.client("neptune-graph")
+    response = client.execute_query(
+        graphIdentifier=graph_id,
+        queryString=req.query,
+        language="OPEN_CYPHER",
+    )
+    payload = json.loads(response["payload"].read())
+    return {"results": payload}
+
+
+# --- Athena metadata ---
 
 
 @app.get("/api/v0/athena/databases")
@@ -122,44 +233,7 @@ def get_athena_columns(region: str, database: str, table: str, catalog: str = "A
     return [{"name": c["Name"], "type": c["Type"]} for c in columns]
 
 
-@app.get("/api/v0/datasource/setup/status")
-def get_setup_status():
-    resp = {
-        "jobId": proxy_state.job_id,
-        "status": proxy_state.status,
-        "step": proxy_state.step,
-        "stepLabel": proxy_state.step_label,
-        "progress": proxy_state.progress,
-    }
-    if proxy_state.graph_endpoint:
-        resp["graphEndpoint"] = proxy_state.graph_endpoint
-    if proxy_state.error:
-        resp["error"] = proxy_state.error
-    return resp
-
-
-class QueryRequest(BaseModel):
-    query: str
-
-
-@app.post("/api/v0/query")
-def post_query(req: QueryRequest):
-    if not proxy_state.graph_id:
-        raise HTTPException(status_code=503, detail="Graph not ready")
-
-    import boto3
-
-    client = boto3.client("neptune-graph")
-    response = client.execute_query(
-        graphIdentifier=proxy_state.graph_id,
-        queryString=req.query,
-        language="OPEN_CYPHER",
-    )
-    import json
-
-    payload = json.loads(response["payload"].read())
-    return {"results": payload}
-
+# --- Static UI (must be last) ---
 
 UI_DIR = Path(__file__).parent.parent.parent / "ui"
 if UI_DIR.exists():

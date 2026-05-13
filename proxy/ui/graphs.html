@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nx-neptune — Graphs</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+  h1 { margin-bottom: 0.5rem; }
+  nav { margin-bottom: 1.5rem; font-size: 0.85rem; }
+  nav a { color: #0073bb; text-decoration: none; margin-right: 1rem; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.85rem; }
+  th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #eee; }
+  th { background: #f8f9fa; font-weight: 600; }
+  .status-available { color: #16a34a; }
+  .status-creating { color: #d97706; }
+  .status-deleting { color: #9ca3af; }
+  button { padding: 0.3rem 0.8rem; border: none; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+  .btn-delete { background: #d13212; color: #fff; }
+  .btn-query { background: #0073bb; color: #fff; }
+  .btn-refresh { background: #16a34a; color: #fff; padding: 0.5rem 1rem; font-size: 0.9rem; margin-bottom: 1rem; }
+  #query-section { display: none; margin-top: 2rem; border-top: 1px solid #ddd; padding-top: 1rem; }
+  textarea { width: 100%; height: 60px; font-family: monospace; font-size: 0.85rem; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; margin-top: 0.5rem; }
+  #query-result { margin-top: 0.75rem; padding: 0.75rem; background: #f1f5f9; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+  #no-graphs { color: #666; margin-top: 1rem; }
+</style>
+</head>
+<body>
+<h1>Graphs</h1>
+<nav><a href="/">← Import</a><a href="/query-builder.html">Query Builder</a><a href="/join-builder.html">Join Builder</a></nav>
+
+<button class="btn-refresh" onclick="loadGraphs()">Refresh</button>
+
+<table id="graphs-table">
+  <thead><tr><th>Name</th><th>ID</th><th>Status</th><th>Import</th><th>Memory</th><th>Actions</th></tr></thead>
+  <tbody id="graphs-body"></tbody>
+</table>
+<div id="no-graphs" style="display:none;">No graphs found with prefix "nxp-"</div>
+
+<div id="query-section">
+  <h3>Query: <span id="query-graph-name"></span></h3>
+  <textarea id="query-input" placeholder="MATCH (n) RETURN n LIMIT 10"></textarea>
+  <button class="btn-query" onclick="runQuery()">Run</button>
+  <div id="query-result"></div>
+</div>
+
+<script>
+let selectedGraphId = null;
+
+async function loadGraphs() {
+  const res = await fetch('/api/v0/graphs?region=us-west-2');
+  const data = await res.json();
+  const tbody = document.getElementById('graphs-body');
+
+  if (!data.length) {
+    tbody.innerHTML = '';
+    document.getElementById('no-graphs').style.display = 'block';
+    return;
+  }
+  document.getElementById('no-graphs').style.display = 'none';
+
+  tbody.innerHTML = data.map(g => {
+    let importCell = '—';
+    if (g.importError) importCell = `<span style="color:#d13212" title="${g.importError}">✗ failed</span>`;
+    else if (g.importStatus === 'complete') importCell = '<span style="color:#16a34a">✓ done</span>';
+    else if (g.importStatus === 'running') importCell = `<span style="color:#d97706">⟳ ${g.importStep || 'running'}</span>`;
+    return `
+    <tr>
+      <td>${g.name}</td>
+      <td><code>${g.id}</code></td>
+      <td class="status-${g.status.toLowerCase()}">${g.status}</td>
+      <td>${importCell}</td>
+      <td>${g.memory} GB</td>
+      <td>
+        ${g.status === 'AVAILABLE' ? `<button class="btn-query" onclick="selectGraph('${g.id}','${g.name}')">Query</button>` : ''}
+        <button class="btn-delete" onclick="deleteGraph('${g.id}')">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function selectGraph(id, name) {
+  selectedGraphId = id;
+  document.getElementById('query-graph-name').textContent = `${name} (${id})`;
+  document.getElementById('query-section').style.display = 'block';
+  document.getElementById('query-result').textContent = '';
+}
+
+async function deleteGraph(id) {
+  if (!confirm(`Delete graph ${id}? This cannot be undone.`)) return;
+  await fetch(`/api/v0/graphs/${id}?region=us-west-2`, { method: 'DELETE' });
+  loadGraphs();
+}
+
+async function runQuery() {
+  if (!selectedGraphId) return;
+  const query = document.getElementById('query-input').value;
+  const res = await fetch('/api/v0/query', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, graphId: selectedGraphId }),
+  });
+  const data = await res.json();
+  document.getElementById('query-result').textContent = JSON.stringify(data.results, null, 2);
+}
+
+loadGraphs();
+</script>
+</body>
+</html>

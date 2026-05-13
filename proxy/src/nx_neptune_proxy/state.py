@@ -1,20 +1,23 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+GRAPH_PREFIX = "nxp-"
+
 
 @dataclass
-class ProxyState:
-    """Mutable singleton holding pipeline state."""
+class GraphState:
+    """State for a single graph pipeline."""
 
-    graph_endpoint: Optional[str] = None
-    graph_name: Optional[str] = None
+    job_id: str
+    graph_name: str
     graph_id: Optional[str] = None
-    job_id: Optional[str] = None
-    status: str = "idle"  # idle | running | complete | failed
+    graph_endpoint: Optional[str] = None
+    status: str = "running"  # running | complete | failed
     step: Optional[str] = None
     step_label: Optional[str] = None
     progress: float = 0
     error: Optional[str] = None
 
 
-proxy_state = ProxyState()
+# All tracked graphs keyed by job_id
+graphs: dict[str, GraphState] = {}

@@ -266,6 +266,7 @@ def validate_resources(
     if s3_staging_bucket:
         results.append(check_bucket_exists(s3_staging_bucket, region))
         results.append(check_bucket_region(s3_staging_bucket, region))
+        results.append(check_bucket_versioning(s3_staging_bucket, region))
         results.append(check_path_empty(s3_staging_bucket, region))
 
     # Athena output bucket
