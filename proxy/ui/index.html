@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nx-neptune proxy</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+  h1 { margin-bottom: 1.5rem; }
+  label { display: block; margin-top: 1rem; font-weight: 500; font-size: 0.9rem; }
+  input, textarea { width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; }
+  textarea { height: 80px; font-family: monospace; }
+  button { margin-top: 1.5rem; padding: 0.6rem 1.5rem; background: #0073bb; color: #fff; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; }
+  button:disabled { background: #999; cursor: not-allowed; }
+  #progress-section { display: none; margin-top: 2rem; }
+  .progress-bar { width: 100%; height: 24px; background: #eee; border-radius: 4px; overflow: hidden; margin-top: 0.5rem; }
+  .progress-fill { height: 100%; background: #0073bb; transition: width 0.3s; }
+  #status-text { margin-top: 0.5rem; font-size: 0.9rem; color: #555; }
+  #error-text { margin-top: 0.5rem; color: #d13212; font-size: 0.9rem; }
+  #result { margin-top: 1rem; padding: 1rem; background: #f0fdf4; border-radius: 4px; display: none; }
+  .check-row { padding: 0.4rem 0; font-size: 0.85rem; border-bottom: 1px solid #eee; }
+  .check-pass { color: #16a34a; }
+  .check-fail { color: #d13212; }
+  #preview-section { margin-top: 1.5rem; display: none; }
+  #preview-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  #preview-table th, #preview-table td { padding: 0.3rem 0.5rem; border: 1px solid #ddd; text-align: left; white-space: nowrap; }
+  #preview-table th { background: #f8f9fa; font-weight: 600; }
+  .preview-wrap { max-height: 250px; overflow: auto; border: 1px solid #ddd; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>nx-neptune proxy</h1>
+<nav style="margin-bottom:1.5rem; font-size:0.85rem;"><a href="/query-builder.html" style="color:#0073bb; text-decoration:none;">→ Query Builder</a> <a href="/graphs.html" style="color:#0073bb; text-decoration:none; margin-left:1rem;">→ Graphs</a></nav>
+
+<form id="setup-form">
+  <label>AWS Region
+    <input name="region" value="us-east-1" required>
+  </label>
+  <label>Athena Database
+    <input name="athenaDatabase" required>
+  </label>
+  <label>SQL Query
+    <textarea name="sqlQuery" required placeholder="SELECT ~id, ~label, col1, col2 FROM my_table"></textarea>
+  </label>
+  <label>S3 Staging Bucket
+    <input name="csvStagingBucket" required placeholder="s3://my-bucket/neptune-import/">
+  </label>
+  <label>Graph Name
+    <input name="graphName" required placeholder="my-graph">
+  </label>
+  <label>Graph Memory (GB)
+    <input name="graphMemoryGb" type="number" value="16" min="16" step="16">
+  </label>
+  <button type="button" id="validate-btn" style="background:#16a34a">Validate</button>
+  <button type="button" id="validate-query-btn" style="background:#0e7490">Validate Query</button>
+  <button type="button" id="preview-btn" style="background:#7c3aed">Preview</button>
+</form>
+
+<div id="validation-section" style="margin-top:1.5rem;">
+  <strong>Validation Results</strong>
+  <div id="validation-results" style="height:180px; overflow-y:auto; border:1px solid #ddd; border-radius:4px; padding:0.5rem; margin-top:0.5rem; background:#fafafa;"></div>
+</div>
+
+<div id="preview-section">
+  <strong>Preview (10 rows)</strong>
+  <div class="preview-wrap" style="margin-top:0.5rem;">
+    <table id="preview-table"></table>
+  </div>
+</div>
+
+<div style="margin-top:1.5rem;">
+  <button type="button" id="run-btn">Run Migration</button>
+</div>
+
+<div id="progress-section">
+  <strong>Pipeline Progress</strong>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  <div id="status-text"></div>
+  <div id="error-text"></div>
+  <div id="result"></div>
+</div>
+
+<script>
+const form = document.getElementById('setup-form');
+const progressSection = document.getElementById('progress-section');
+const progressFill = document.getElementById('progress-fill');
+const statusText = document.getElementById('status-text');
+const errorText = document.getElementById('error-text');
+const resultDiv = document.getElementById('result');
+const validateBtn = document.getElementById('validate-btn');
+const validateQueryBtn = document.getElementById('validate-query-btn');
+const validationSection = document.getElementById('validation-section');
+const validationResults = document.getElementById('validation-results');
+const runBtn = document.getElementById('run-btn');
+
+function getFormData() {
+  const data = Object.fromEntries(new FormData(form));
+  data.graphMemoryGb = parseInt(data.graphMemoryGb);
+  return data;
+}
+
+function checkRequired() {
+  if (!form.reportValidity()) return false;
+  return true;
+}
+
+validateBtn.addEventListener('click', async () => {
+  if (!checkRequired()) return;
+  validateBtn.disabled = true;
+  validateBtn.textContent = 'Validating...';
+  validationResults.innerHTML = '';
+
+  const res = await fetch('/api/v0/datasource/test', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(getFormData()),
+  });
+  const result = await res.json();
+
+  validationResults.innerHTML = result.checks.map(c =>
+    `<div class="check-row ${c.passed ? 'check-pass' : 'check-fail'}">${c.passed ? '✓' : '✗'} <strong>${c.check}</strong>: ${c.message}</div>`
+  ).join('');
+
+  validateBtn.disabled = false;
+  validateBtn.textContent = 'Validate';
+});
+
+validateQueryBtn.addEventListener('click', async () => {
+  if (!checkRequired()) return;
+  validateQueryBtn.disabled = true;
+  validateQueryBtn.textContent = 'Testing...';
+  validationResults.innerHTML = '';
+
+  const res = await fetch('/api/v0/datasource/test/query', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(getFormData()),
+  });
+  const result = await res.json();
+
+  validationResults.innerHTML = result.checks.map(c =>
+    `<div class="check-row ${c.passed ? 'check-pass' : 'check-fail'}">${c.passed ? '✓' : '✗'} <strong>${c.check}</strong>: ${c.message}</div>`
+  ).join('');
+
+  validateQueryBtn.disabled = false;
+  validateQueryBtn.textContent = 'Validate Query';
+});
+
+const previewBtn = document.getElementById('preview-btn');
+const previewSection = document.getElementById('preview-section');
+const previewTable = document.getElementById('preview-table');
+
+previewBtn.addEventListener('click', async () => {
+  if (!checkRequired()) return;
+  previewBtn.disabled = true;
+  previewBtn.textContent = 'Loading...';
+  previewSection.style.display = 'none';
+
+  const res = await fetch('/api/v0/datasource/preview', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(getFormData()),
+  });
+  const result = await res.json();
+
+  if (result.error) {
+    validationResults.innerHTML = `<div class="check-row check-fail">✗ <strong>preview</strong>: ${result.error}</div>`;
+  } else {
+    previewTable.innerHTML = result.results.map((r, i) => {
+      const header = '<tr>' + r.columns.map(c => `<th>${c}</th>`).join('') + '</tr>';
+      const rows = r.rows.map(row => '<tr>' + row.map(v => `<td>${v}</td>`).join('') + '</tr>').join('');
+      return `<tr><td colspan="100" style="background:#e2e8f0; font-weight:600; font-size:0.8rem; padding:0.4rem;">Query ${i+1} (${r.rows.length} rows)</td></tr>` + header + rows;
+    }).join('');
+    previewSection.style.display = 'block';
+  }
+
+  previewBtn.disabled = false;
+  previewBtn.textContent = 'Preview';
+});
+
+runBtn.addEventListener('click', async () => {
+  if (!checkRequired()) return;
+  runBtn.disabled = true;
+  progressSection.style.display = 'block';
+  errorText.textContent = '';
+  resultDiv.style.display = 'none';
+
+  const res = await fetch('/api/v0/datasource/setup', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(getFormData()),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    errorText.textContent = err.detail || 'Setup failed';
+    runBtn.disabled = false;
+    return;
+  }
+
+  pollStatus();
+});
+
+async function pollStatus() {
+  const res = await fetch('/api/v0/datasource/setup/status');
+  const status = await res.json();
+
+  progressFill.style.width = status.progress + '%';
+  statusText.textContent = status.stepLabel || status.step || '';
+
+  if (status.status === 'complete') {
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = `<strong>✓ Graph ready</strong><br>Endpoint: <code>${status.graphEndpoint}</code>`;
+    runBtn.disabled = false;
+    return;
+  }
+
+  if (status.status === 'failed') {
+    errorText.textContent = '✗ ' + (status.error || 'Pipeline failed');
+    runBtn.disabled = false;
+    return;
+  }
+
+  setTimeout(pollStatus, 10000);
+}
+</script>
+</body>
+</html>

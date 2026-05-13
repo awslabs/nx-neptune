@@ -1,0 +1,17 @@
+[project]
+name = "nx-neptune-proxy"
+version = "0.1.0"
+description = "REST proxy for nx-neptune graph-over-data-lake migrations"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.34,<1",
+    "nx-neptune",
+]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
