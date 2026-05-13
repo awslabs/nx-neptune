@@ -19,6 +19,7 @@
   button { padding: 0.3rem 0.8rem; border: none; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
   .btn-delete { background: #d13212; color: #fff; }
   .btn-query { background: #0073bb; color: #fff; }
+  .btn-stats { background: #4a5568; color: #fff; }
   .btn-refresh { background: #16a34a; color: #fff; padding: 0.5rem 1rem; font-size: 0.9rem; margin-bottom: 1rem; }
   #query-section { display: none; margin-top: 2rem; border-top: 1px solid #ddd; padding-top: 1rem; }
   textarea { width: 100%; height: 60px; font-family: monospace; font-size: 0.85rem; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; margin-top: 0.5rem; }
@@ -33,7 +34,7 @@
 <button class="btn-refresh" onclick="loadGraphs()">Refresh</button>
 
 <table id="graphs-table">
-  <thead><tr><th>Name</th><th>ID</th><th>Status</th><th>Import</th><th>SQL</th><th>Memory</th><th>Actions</th></tr></thead>
+  <thead><tr><th>Name</th><th>ID</th><th>Status</th><th>Import</th><th>SQL</th><th>Stats</th><th>Memory</th><th>Actions</th></tr></thead>
   <tbody id="graphs-body"></tbody>
 </table>
 <div id="no-graphs" style="display:none;">No graphs found with prefix "nxp-"</div>
@@ -73,9 +74,11 @@ async function loadGraphs() {
       <td class="status-${g.status.toLowerCase()}">${g.status}</td>
       <td>${importCell}</td>
       <td>${queryCell}</td>
+      <td><span id="stats-${g.id}">—</span></td>
       <td>${g.memory} GB</td>
       <td>
         ${g.status === 'AVAILABLE' ? `<button class="btn-query" onclick="selectGraph('${g.id}','${g.name}')">Query</button>` : ''}
+        ${g.status === 'AVAILABLE' ? `<button class="btn-stats" onclick="fetchStats('${g.id}')">Stats</button>` : ''}
         <button class="btn-delete" onclick="deleteGraph('${g.id}')">Delete</button>
       </td>
     </tr>`;
@@ -105,6 +108,24 @@ async function runQuery() {
   });
   const data = await res.json();
   document.getElementById('query-result').textContent = JSON.stringify(data.results, null, 2);
+}
+
+async function fetchStats(graphId) {
+  const span = document.getElementById(`stats-${graphId}`);
+  span.textContent = '...';
+  const nodeRes = await fetch('/api/v0/query', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: 'MATCH (n) RETURN count(n) AS nodes', graphId }),
+  });
+  const edgeRes = await fetch('/api/v0/query', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: 'MATCH ()-[e]->() RETURN count(e) AS edges', graphId }),
+  });
+  const nodes = (await nodeRes.json()).results?.results?.[0]?.nodes ?? '?';
+  const edges = (await edgeRes.json()).results?.results?.[0]?.edges ?? '?';
+  span.textContent = `${nodes}n / ${edges}e`;
 }
 
 loadGraphs();
