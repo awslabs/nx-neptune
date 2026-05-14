@@ -54,9 +54,15 @@ class NeptuneAnalyticsClient:
         with optional custom logger and boto client.
         """
         self.graph_id = graph_id
-        self.client = client or boto3.client(
-            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-        )
+        if client:
+            self.client = client
+        else:
+            config_kwargs = {"user_agent_appid": APP_ID_NX}
+            if timeout_seconds:
+                config_kwargs["read_timeout"] = timeout_seconds
+            self.client = boto3.client(
+                service_name=SERVICE_NA, config=Config(**config_kwargs)
+            )
         self.logger = logger or logging.getLogger(__name__)
         self.name = name or ""
         self.status = status or ""
