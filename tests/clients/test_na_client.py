@@ -199,3 +199,31 @@ class TestNeptuneAnalyticsClient:
 
         call_kwargs = mock_na_client.client.execute_query.call_args[1]
         assert "queryTimeoutMilliseconds" not in call_kwargs
+
+    @patch("nx_neptune.clients.na_client.boto3")
+    def test_init_with_timeout_sets_read_timeout(self, mock_boto3):
+        """Test that timeout_seconds sets read_timeout on the boto3 Config."""
+        NeptuneAnalyticsClient(graph_id="g-123", timeout_seconds=120)
+
+        mock_boto3.client.assert_called_once()
+        config = mock_boto3.client.call_args[1]["config"]
+        assert config.read_timeout == 120
+
+    @patch("nx_neptune.clients.na_client.boto3")
+    def test_init_without_timeout_uses_default(self, mock_boto3):
+        """Test that no timeout_seconds leaves read_timeout at boto3 default (60s)."""
+        NeptuneAnalyticsClient(graph_id="g-123")
+
+        mock_boto3.client.assert_called_once()
+        config = mock_boto3.client.call_args[1]["config"]
+        assert config.read_timeout == 60
+
+    @patch("nx_neptune.clients.na_client.boto3")
+    def test_init_with_client_ignores_timeout_seconds(self, mock_boto3):
+        """Test that providing a client uses it directly; timeout_seconds does not create a new client."""
+        mock_client = MagicMock()
+        na = NeptuneAnalyticsClient(
+            graph_id="g-123", client=mock_client, timeout_seconds=120
+        )
+        assert na.client == mock_client
+        mock_boto3.client.assert_not_called()
