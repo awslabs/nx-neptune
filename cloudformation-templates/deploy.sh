@@ -45,7 +45,7 @@ aws cloudformation deploy \
   --template-file "$SCRIPT_DIR/nx-neptune-sagemaker.json" \
   --capabilities CAPABILITY_NAMED_IAM \
   --region "$REGION" \
-  --parameter-overrides "ApplicationId=${STACK_NAME}" "AssetsS3Prefix=s3://${ASSETS_BUCKET}"
+  --parameter-overrides "ApplicationId=${STACK_NAME}" "AssetsS3Prefix=s3://${ASSETS_BUCKET}" "CustomNotebooks=true"
 
 echo ""
 aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs' --output table
