@@ -12,7 +12,7 @@
 # language governing permissions and limitations under the License.
 import json
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 import boto3
 from botocore.client import BaseClient
@@ -57,7 +57,7 @@ class NeptuneAnalyticsClient:
         if client:
             self.client = client
         else:
-            config_kwargs = {"user_agent_appid": APP_ID_NX}
+            config_kwargs: dict[str, Any] = {"user_agent_appid": APP_ID_NX}
             if timeout_seconds:
                 config_kwargs["read_timeout"] = timeout_seconds
             self.client = boto3.client(

@@ -222,6 +222,8 @@ class TestNeptuneAnalyticsClient:
     def test_init_with_client_ignores_timeout_seconds(self, mock_boto3):
         """Test that providing a client uses it directly; timeout_seconds does not create a new client."""
         mock_client = MagicMock()
-        na = NeptuneAnalyticsClient(graph_id="g-123", client=mock_client, timeout_seconds=120)
+        na = NeptuneAnalyticsClient(
+            graph_id="g-123", client=mock_client, timeout_seconds=120
+        )
         assert na.client == mock_client
         mock_boto3.client.assert_not_called()
