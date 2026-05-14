@@ -27,10 +27,20 @@
       "Default": "ml.t3.medium"
     },
     "AssetsS3Prefix": {
-      "Description": "S3 prefix containing notebooks.zip and optionally a .whl file (e.g. s3://bucket/prefix)",
+      "Description": "S3 prefix containing notebooks.zip and optionally a .whl file (e.g. s3://bucket/prefix). Required when NotebookSource is s3.",
       "Type": "String",
-      "AllowedPattern": "s3://.+"
+      "Default": "",
+      "AllowedPattern": "(s3://.+|)"
+    },
+    "NotebookSource": {
+      "Description": "Where to fetch notebooks from: s3 (requires AssetsS3Prefix) or release (downloads from GitHub Releases)",
+      "Type": "String",
+      "Default": "release",
+      "AllowedValues": ["s3", "release"]
     }
+  },
+  "Conditions": {
+    "UseS3Source": { "Fn::Equals": [{ "Ref": "NotebookSource" }, "s3"] }
   },
   "Resources": {
     "Graph": {
@@ -194,13 +204,19 @@
               "Effect": "Allow",
               "Action": ["s3:GetObject", "s3:ListBucket"],
               "Resource": [
-                { "Fn::Sub": [
-                  "arn:aws:s3:::${bucket}",
-                  { "bucket": { "Fn::Select": [0, { "Fn::Split": ["/", { "Fn::Select": [1, { "Fn::Split": ["s3://", { "Ref": "AssetsS3Prefix" }] }] }] }] } }
+                { "Fn::If": ["UseS3Source",
+                  { "Fn::Sub": [
+                    "arn:aws:s3:::${bucket}",
+                    { "bucket": { "Fn::Select": [0, { "Fn::Split": ["/", { "Fn::Select": [1, { "Fn::Split": ["s3://", { "Ref": "AssetsS3Prefix" }] }] }] }] } }
+                  ]},
+                  { "Ref": "AWS::NoValue" }
                 ]},
-                { "Fn::Sub": [
-                  "arn:aws:s3:::${bucket}/*",
-                  { "bucket": { "Fn::Select": [0, { "Fn::Split": ["/", { "Fn::Select": [1, { "Fn::Split": ["s3://", { "Ref": "AssetsS3Prefix" }] }] }] }] } }
+                { "Fn::If": ["UseS3Source",
+                  { "Fn::Sub": [
+                    "arn:aws:s3:::${bucket}/*",
+                    { "bucket": { "Fn::Select": [0, { "Fn::Split": ["/", { "Fn::Select": [1, { "Fn::Split": ["s3://", { "Ref": "AssetsS3Prefix" }] }] }] }] } }
+                  ]},
+                  { "Ref": "AWS::NoValue" }
                 ]},
                 { "Fn::Sub": "arn:aws:s3:::aws-neptune-notebook-${AWS::Region}" },
                 { "Fn::Sub": "arn:aws:s3:::aws-neptune-notebook-${AWS::Region}/*" }
@@ -284,23 +300,30 @@
                     "set -e\n",
                     "sudo -u ec2-user -i <<'EOF'\n",
                     "source /home/ec2-user/anaconda3/bin/activate python3\n",
+                    "NOTEBOOK_SOURCE=\"", { "Ref": "NotebookSource" }, "\"\n",
                     "ASSETS_PREFIX=\"", { "Ref": "AssetsS3Prefix" }, "\"\n",
                     "mkdir -p /home/ec2-user/SageMaker/.nx-neptune\n",
-                    "aws s3 cp \"${ASSETS_PREFIX%/}/\" /tmp/nx-assets/ --recursive --exclude '*' --include '*.whl' --include 'notebooks.zip'\n",
-                    "if ls /tmp/nx-assets/*.whl 1>/dev/null 2>&1; then\n",
-                    "  cp /tmp/nx-assets/*.whl /home/ec2-user/SageMaker/.nx-neptune/\n",
-                    "  pip install /home/ec2-user/SageMaker/.nx-neptune/*.whl\n",
+                    "if [ \"$NOTEBOOK_SOURCE\" = \"s3\" ]; then\n",
+                    "  aws s3 cp \"${ASSETS_PREFIX%/}/\" /tmp/nx-assets/ --recursive --exclude '*' --include '*.whl' --include 'notebooks.zip'\n",
+                    "  if ls /tmp/nx-assets/*.whl 1>/dev/null 2>&1; then\n",
+                    "    cp /tmp/nx-assets/*.whl /home/ec2-user/SageMaker/.nx-neptune/\n",
+                    "    pip install /home/ec2-user/SageMaker/.nx-neptune/*.whl\n",
+                    "  else\n",
+                    "    pip install nx_neptune\n",
+                    "  fi\n",
+                    "  if [ -f /tmp/nx-assets/notebooks.zip ]; then\n",
+                    "    unzip -o /tmp/nx-assets/notebooks.zip -d /home/ec2-user/SageMaker\n",
+                    "  fi\n",
+                    "  rm -rf /tmp/nx-assets\n",
                     "else\n",
                     "  pip install nx_neptune\n",
+                    "  curl -sL https://github.com/awslabs/nx-neptune/releases/latest/download/notebooks.zip -o /tmp/notebooks.zip\n",
+                    "  unzip -o /tmp/notebooks.zip -d /home/ec2-user/SageMaker/notebooks\n",
+                    "  rm -f /tmp/notebooks.zip\n",
                     "fi\n",
                     "pip install graph-notebook\n",
                     "python -m ipykernel install --user --name python3 --display-name 'Python 3 (ipykernel)'\n",
                     "conda deactivate\n",
-                    "cd /home/ec2-user/SageMaker\n",
-                    "if [ -f /tmp/nx-assets/notebooks.zip ]; then\n",
-                    "  unzip -o /tmp/nx-assets/notebooks.zip -d .\n",
-                    "fi\n",
-                    "rm -rf /tmp/nx-assets\n",
                     "EOF"
                   ]
                 ]
