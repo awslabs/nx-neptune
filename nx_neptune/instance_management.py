@@ -25,6 +25,7 @@ from botocore.exceptions import ClientError
 from sqlglot import exp, parse_one
 
 from .clients import SERVICE_IAM, SERVICE_NA, SERVICE_STS, IamClient
+from .clients.client_factory import ClientFactory
 from .clients.iam_client import split_s3_arn_to_bucket_and_path
 from .clients.neptune_constants import APP_ID_NX, SERVICE_ATHENA, SERVICE_S3
 from .na_graph import NeptuneGraph
@@ -649,9 +650,7 @@ async def reset_graph(
         Exception: If an invalid status code is returned
     """
     if na_client is None:
-        na_client = boto3.client(
-            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-        )
+        na_client = ClientFactory().neptune()
 
     logger.info(
         f"Perform reset_graph action on graph: [{graph_id}] with skip_snapshot: [{skip_snapshot}]"
@@ -982,7 +981,7 @@ def _get_bucket_encryption_key_arn(s3_arn):
     """
     try:
         # Create an S3 client
-        s3_client = boto3.client(SERVICE_S3)
+        s3_client = ClientFactory().s3()
 
         # Get the bucket encryption configuration
         bucket_name = _clean_s3_path(s3_arn)
@@ -1128,7 +1127,7 @@ async def export_athena_table_to_s3(
         query_execution_ids.append(query_execution_id)
 
     # Wait on all query execution IDs
-    s3_client = s3_client or boto3.client(SERVICE_S3)
+    s3_client = s3_client or ClientFactory().s3()
     bucket_name, bucket_prefix = split_s3_arn_to_bucket_and_path(s3_bucket)
 
     await wait_until_all_complete(
@@ -1207,7 +1206,7 @@ async def create_csv_table_from_s3(
     iam_client_wrapper.has_athena_permissions(s3_output_bucket, output_key_arn)
 
     # Wait on all query execution IDs
-    s3_client = s3_client or boto3.client(SERVICE_S3)
+    s3_client = s3_client or ClientFactory().s3()
     bucket_name, bucket_prefix = split_s3_arn_to_bucket_and_path(s3_bucket)
 
     logger.debug(f"Inspecting files from {s3_bucket}")
@@ -1633,7 +1632,7 @@ def empty_s3_bucket(
 
     # Create S3 client if not provided
     if s3_client is None:
-        s3_client = boto3.client(SERVICE_S3)
+        s3_client = ClientFactory().s3()
 
     # Create IamClient using _get_or_create_clients
     iam_client_wrapper, _, _ = _get_or_create_clients(sts_client, iam_client, None)
@@ -1683,8 +1682,9 @@ def empty_s3_bucket(
 
 
 def validate_permissions():
-    user_arn = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
-    iam_client = IamClient(role_arn=user_arn, client=boto3.client(SERVICE_IAM))
+    factory = ClientFactory()
+    user_arn = factory.sts().get_caller_identity()["Arn"]
+    iam_client = IamClient(role_arn=user_arn, client=factory.iam())
 
     s3_import = os.getenv("NETWORKX_S3_IMPORT_BUCKET_PATH")
     s3_export = os.getenv("NETWORKX_S3_EXPORT_BUCKET_PATH")
@@ -1850,6 +1850,7 @@ def _get_or_create_clients(
     iam_client: Optional[BaseClient] = None,
     na_client: Optional[BaseClient] = None,
     athena_client: Optional[BaseClient] = None,
+    clients: Optional[ClientFactory] = None,
 ):
     """
     Create or reuse provided AWS clients.
@@ -1859,28 +1860,29 @@ def _get_or_create_clients(
         iam_client (Optional[BaseClient]): Optional IAM boto3 client
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client
         athena_client (Optional[BaseClient]): Optional Athena boto3 client
+        clients (Optional[ClientFactory]): Optional client factory for creating clients
 
     Returns:
         Tuple[IamClient, BaseClient, BaseClient]: Tuple containing (iam_client, na_client, athena_client)
     """
+    factory = clients or ClientFactory()
+
     if sts_client is None:
-        sts_client = boto3.client(SERVICE_STS)
+        sts_client = factory.sts()
     user_arn = sts_client.get_caller_identity()["Arn"]
 
     # Create IamClient
     if iam_client is None:
-        iam_client = boto3.client(SERVICE_IAM)
+        iam_client = factory.iam()
     iam_client_wrapper = IamClient(role_arn=user_arn, client=iam_client)
 
     # Create Neptune Analytics client if not provided
     if na_client is None:
-        na_client = boto3.client(
-            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-        )
+        na_client = factory.neptune()
 
     # Create Athena client if not provided
     if athena_client is None:
-        athena_client = boto3.client(SERVICE_ATHENA)
+        athena_client = factory.athena()
 
     return iam_client_wrapper, na_client, athena_client
 
@@ -1920,7 +1922,7 @@ def execute_athena_query(
         Exception: If the query execution fails or times out
     """
     if client is None:
-        client = boto3.client("athena")
+        client = ClientFactory().athena()
     execution_id = _execute_athena_query(
         client, sql_statement, output_location, sql_parameters, catalog, database
     )
@@ -1953,7 +1955,7 @@ def get_athena_query_results(
         are not needed.
     """
     if client is None:
-        client = boto3.client("athena")
+        client = ClientFactory().athena()
 
     rows = []
     try:
