@@ -137,7 +137,7 @@ pytokens==0.4.1
     # via black
 pyyaml==6.0.3
     # via pre-commit
-requests==2.33.1
+requests==2.34.2
     # via opensearch-py
 s3transfer==0.17.0
     # via boto3
