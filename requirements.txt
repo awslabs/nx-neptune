@@ -24,7 +24,7 @@ s3transfer==0.17.0
     # via boto3
 six==1.17.0
     # via python-dateutil
-sqlglot==30.7.0
+sqlglot==30.8.0
     # via nx-neptune (pyproject.toml)
 urllib3==2.7.0
     # via botocore
