@@ -34,7 +34,7 @@ class CleanupTask(Enum):
 class SessionManager:
     """Manages Neptune Analytics sessions and graph operations."""
 
-    def __init__(self, session_name=None, cleanup_task=None):
+    def __init__(self, session_name=None, cleanup_task=None, clients=None):
         """Initialize a SessionManager instance.
 
         Args:
@@ -43,10 +43,11 @@ class SessionManager:
               When set to DESTROY, will destroy all instances in the session on exit.
               When set to RESET, will reset all instances in the session on exit.
               When set to STOP, will stop all instances in the session on exit.
+            clients (ClientFactory, optional): Factory for creating boto3 clients. If None, a default is created.
         """
         self.session_name = session_name
         self.cleanup_task = cleanup_task or CleanupTask.NONE
-        self._clients = ClientFactory.default()
+        self._clients = clients or ClientFactory()
         self._neptune_client = self._clients.neptune()
         self._sts_client = self._clients.sts()
         self._s3_iam_role = self._sts_client.get_caller_identity()["Arn"]
