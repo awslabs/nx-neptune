@@ -14,7 +14,7 @@
 
         <athena-sdk.version>2026.17.1</athena-sdk.version>
         <databricks.version>3.3.3</databricks.version>
-        <slf4j.version>2.0.17</slf4j.version>
+        <slf4j.version>2.0.18</slf4j.version>
         <log4j.version>2.26.0</log4j.version>
         <log4j2-transformer.version>2.15</log4j2-transformer.version>
         <aws-lambda-java-log4j2.version>1.6.2</aws-lambda-java-log4j2.version>
