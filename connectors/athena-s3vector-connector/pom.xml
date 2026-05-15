@@ -11,7 +11,7 @@
         <aws-sdk.version>2.44.4</aws-sdk.version>
         <guava.version>33.5.0-jre</guava.version>
         <slf4j-log4j.version>2.0.17</slf4j-log4j.version>
-        <slf4j.version>2.0.17</slf4j.version>
+        <slf4j.version>2.0.18</slf4j.version>
         <log4j.version>2.26.0</log4j.version>
         <junit.version>4.13.2</junit.version>
         <mockito.version>4.11.0</mockito.version>
