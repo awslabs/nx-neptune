@@ -390,14 +390,14 @@ def test_validate_athena_query(query, projection_type, expected_result):
         ),
     ],
 )
-@patch("boto3.client")
+@patch("nx_neptune.instance_management.ClientFactory")
 def test_get_bucket_encryption_key_arn(
-    mock_boto3_client, mock_response, expected_result
+    mock_factory_cls, mock_response, expected_result
 ):
     """Test the _get_bucket_encryption_key_arn function with various scenarios."""
     # Mock the S3 client
     mock_s3_client = MagicMock()
-    mock_boto3_client.return_value = mock_s3_client
+    mock_factory_cls.return_value.s3.return_value = mock_s3_client
 
     # Configure the mock response
     mock_s3_client.get_bucket_encryption.return_value = mock_response
@@ -409,18 +409,18 @@ def test_get_bucket_encryption_key_arn(
     assert result == expected_result
 
     # Verify the S3 client was called correctly
-    mock_boto3_client.assert_called_once_with("s3")
+    mock_factory_cls.return_value.s3.assert_called_once()
     mock_s3_client.get_bucket_encryption.assert_called_once_with(
         Bucket="my-test-bucket"
     )
 
 
-@patch("boto3.client")
-def test_get_bucket_encryption_key_arn_with_exception(mock_boto3_client):
+@patch("nx_neptune.instance_management.ClientFactory")
+def test_get_bucket_encryption_key_arn_with_exception(mock_factory_cls):
     """Test handling of exceptions when retrieving bucket encryption."""
     # Mock the S3 client to raise an exception
     mock_s3_client = MagicMock()
-    mock_boto3_client.return_value = mock_s3_client
+    mock_factory_cls.return_value.s3.return_value = mock_s3_client
     mock_s3_client.get_bucket_encryption.side_effect = Exception(
         "Bucket encryption not configured"
     )
@@ -432,7 +432,7 @@ def test_get_bucket_encryption_key_arn_with_exception(mock_boto3_client):
     assert result is None
 
     # Verify the S3 client was called correctly
-    mock_boto3_client.assert_called_once_with("s3")
+    mock_factory_cls.return_value.s3.assert_called_once()
     mock_s3_client.get_bucket_encryption.assert_called_once_with(
         Bucket="my-test-bucket"
     )
@@ -1694,11 +1694,11 @@ def test_get_athena_query_results_empty(mock_boto3_client):
     assert rows == []
 
 
-@patch("nx_neptune.instance_management.boto3.client")
-def test_get_athena_query_results_creates_default_client(mock_boto3_client):
+@patch("nx_neptune.instance_management.ClientFactory")
+def test_get_athena_query_results_creates_default_client(mock_factory_cls):
     """Test that a default Athena client is created when none is provided."""
     mock_athena_client = MagicMock()
-    mock_boto3_client.return_value = mock_athena_client
+    mock_factory_cls.return_value.athena.return_value = mock_athena_client
     mock_athena_client.get_query_execution.return_value = {
         "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
     }
@@ -1708,4 +1708,4 @@ def test_get_athena_query_results_creates_default_client(mock_boto3_client):
 
     get_athena_query_results("test-query-id")
 
-    mock_boto3_client.assert_called_once_with("athena")
+    mock_factory_cls.return_value.athena.assert_called_once()
