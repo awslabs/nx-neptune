@@ -24,3 +24,13 @@ def go_to_tmpdir(request):
     # Chdir only for the duration of the test.
     with tmpdir.as_cwd():
         yield
+
+
+@pytest.fixture(autouse=True)
+def reset_client_factory():
+    """Reset the ClientFactory singleton between tests to prevent leakage."""
+    from nx_neptune.clients.client_factory import ClientFactory
+
+    ClientFactory._default = None
+    yield
+    ClientFactory._default = None

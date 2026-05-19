@@ -34,11 +34,23 @@ class ClientFactory:
     Ensures consistent configuration (user agent, timeouts, region) across
     all AWS service clients used by the library.
 
+    Use ``ClientFactory.default()`` for a shared singleton, or create an
+    instance for custom configuration.
+
     Args:
         region: AWS region name. If None, uses boto3 default.
         timeout_seconds: Read timeout for long-running operations (e.g., queries).
             Applied to the Neptune Analytics client.
     """
+
+    _default: Optional["ClientFactory"] = None
+
+    @classmethod
+    def default(cls) -> "ClientFactory":
+        """Return the shared default factory (lazy-initialized)."""
+        if cls._default is None:
+            cls._default = cls()
+        return cls._default
 
     def __init__(
         self,
