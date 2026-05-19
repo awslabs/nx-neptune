@@ -26,6 +26,14 @@ class CheckResult:
     passed: bool
     message: str
 
+    @classmethod
+    def ok(cls, check: str, msg: str) -> "CheckResult":
+        return cls(check, True, msg)
+
+    @classmethod
+    def fail(cls, check: str, msg: str) -> "CheckResult":
+        return cls(check, False, msg)
+
     def to_dict(self) -> dict:
         return {"check": self.check, "passed": self.passed, "message": self.message}
 
@@ -49,18 +57,16 @@ def check_bucket_exists(s3_uri: str) -> CheckResult:
     bucket = _parse_bucket(s3_uri)
     try:
         ClientFactory.default().s3().head_bucket(Bucket=bucket)
-        return CheckResult("s3_bucket_exists", True, f"Bucket '{bucket}' exists")
+        return CheckResult.ok("s3_bucket_exists", f"Bucket '{bucket}' exists")
     except ClientError as e:
         code = e.response["Error"]["Code"]
         if code == "404":
-            return CheckResult(
-                "s3_bucket_exists", False, f"Bucket '{bucket}' not found"
-            )
+            return CheckResult.fail("s3_bucket_exists", f"Bucket '{bucket}' not found")
         if code == "403":
-            return CheckResult(
-                "s3_bucket_exists", False, f"Access denied to bucket '{bucket}'"
+            return CheckResult.fail(
+                "s3_bucket_exists", f"Access denied to bucket '{bucket}'"
             )
-        return CheckResult("s3_bucket_exists", False, str(e))
+        return CheckResult.fail("s3_bucket_exists", str(e))
 
 
 def check_bucket_region(s3_uri: str, expected_region: str) -> CheckResult:
@@ -72,16 +78,15 @@ def check_bucket_region(s3_uri: str, expected_region: str) -> CheckResult:
             resp.get("LocationConstraint") or "us-east-1"
         )  # S3 API returns None for us-east-1
         if location == expected_region:
-            return CheckResult(
-                "s3_bucket_region", True, f"Bucket '{bucket}' is in {expected_region}"
+            return CheckResult.ok(
+                "s3_bucket_region", f"Bucket '{bucket}' is in {expected_region}"
             )
-        return CheckResult(
+        return CheckResult.fail(
             "s3_bucket_region",
-            False,
             f"Bucket '{bucket}' is in {location}, expected {expected_region}",
         )
     except ClientError as e:
-        return CheckResult("s3_bucket_region", False, str(e))
+        return CheckResult.fail("s3_bucket_region", str(e))
 
 
 def check_bucket_encryption(s3_uri: str) -> CheckResult:
@@ -94,22 +99,16 @@ def check_bucket_encryption(s3_uri: str) -> CheckResult:
             sse = rule.get("ApplyServerSideEncryptionByDefault", {})
             if sse.get("SSEAlgorithm") == "aws:kms":
                 key = sse.get("KMSMasterKeyID", "AWS managed key")
-                return CheckResult(
-                    "s3_bucket_encryption", True, f"KMS encryption: {key}"
-                )
-        return CheckResult(
-            "s3_bucket_encryption",
-            False,
-            f"Bucket '{bucket}' does not use KMS encryption",
+                return CheckResult.ok("s3_bucket_encryption", f"KMS encryption: {key}")
+        return CheckResult.fail(
+            "s3_bucket_encryption", f"Bucket '{bucket}' does not use KMS encryption"
         )
     except ClientError as e:
         if "ServerSideEncryptionConfigurationNotFoundError" in str(e):
-            return CheckResult(
-                "s3_bucket_encryption",
-                False,
-                f"No encryption configured on bucket '{bucket}'",
+            return CheckResult.fail(
+                "s3_bucket_encryption", f"No encryption configured on bucket '{bucket}'"
             )
-        return CheckResult("s3_bucket_encryption", False, str(e))
+        return CheckResult.fail("s3_bucket_encryption", str(e))
 
 
 def check_bucket_versioning(s3_uri: str) -> CheckResult:
@@ -119,16 +118,14 @@ def check_bucket_versioning(s3_uri: str) -> CheckResult:
         resp = ClientFactory.default().s3().get_bucket_versioning(Bucket=bucket)
         status = resp.get("Status", "Disabled")
         if status == "Enabled":
-            return CheckResult(
-                "s3_bucket_versioning", True, f"Versioning enabled on '{bucket}'"
+            return CheckResult.ok(
+                "s3_bucket_versioning", f"Versioning enabled on '{bucket}'"
             )
-        return CheckResult(
-            "s3_bucket_versioning",
-            False,
-            f"Versioning not enabled on '{bucket}'",
+        return CheckResult.fail(
+            "s3_bucket_versioning", f"Versioning not enabled on '{bucket}'"
         )
     except ClientError as e:
-        return CheckResult("s3_bucket_versioning", False, str(e))
+        return CheckResult.fail("s3_bucket_versioning", str(e))
 
 
 def check_path_empty(s3_uri: str) -> CheckResult:
@@ -142,14 +139,13 @@ def check_path_empty(s3_uri: str) -> CheckResult:
             .list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
         )
         if resp.get("KeyCount", 0) == 0:
-            return CheckResult("s3_path_empty", True, f"Path '{s3_uri}' is empty")
-        return CheckResult(
+            return CheckResult.ok("s3_path_empty", f"Path '{s3_uri}' is empty")
+        return CheckResult.fail(
             "s3_path_empty",
-            False,
             f"Path '{s3_uri}' is not empty — leftover files may cause issues",
         )
     except ClientError as e:
-        return CheckResult("s3_path_empty", False, str(e))
+        return CheckResult.fail("s3_path_empty", str(e))
 
 
 # --- Athena checks ---
@@ -163,19 +159,16 @@ def check_athena_database(
         ClientFactory.default().athena().get_database(
             CatalogName=catalog, DatabaseName=database
         )
-        return CheckResult(
-            "athena_database",
-            True,
-            f"Database '{database}' found in catalog '{catalog}'",
+        return CheckResult.ok(
+            "athena_database", f"Database '{database}' found in catalog '{catalog}'"
         )
     except ClientError as e:
         if "EntityNotFoundException" in str(e) or "MetadataException" in str(e):
-            return CheckResult(
+            return CheckResult.fail(
                 "athena_database",
-                False,
                 f"Database '{database}' not found in catalog '{catalog}'",
             )
-        return CheckResult("athena_database", False, str(e))
+        return CheckResult.fail("athena_database", str(e))
 
 
 def check_athena_table(
@@ -192,17 +185,16 @@ def check_athena_table(
         )
         columns = resp["TableMetadata"].get("Columns", [])
         col_names = [c["Name"] for c in columns]
-        return CheckResult(
+        return CheckResult.ok(
             "athena_table",
-            True,
             f"Table '{table}' found with {len(columns)} columns: {', '.join(col_names)}",
         )
     except ClientError as e:
         if "EntityNotFoundException" in str(e) or "MetadataException" in str(e):
-            return CheckResult(
-                "athena_table", False, f"Table '{table}' not found in '{database}'"
+            return CheckResult.fail(
+                "athena_table", f"Table '{table}' not found in '{database}'"
             )
-        return CheckResult("athena_table", False, str(e))
+        return CheckResult.fail("athena_table", str(e))
 
 
 def check_athena_query(
@@ -244,27 +236,25 @@ def check_athena_query(
                     reason = resp["QueryExecution"]["Status"].get(
                         "StateChangeReason", "Unknown error"
                     )
-                    return CheckResult(
-                        "athena_query", False, f"Query {i+1} failed: {reason}"
+                    return CheckResult.fail(
+                        "athena_query", f"Query {i+1} failed: {reason}"
                     )
                 time.sleep(1)
 
         for i, columns in enumerate(all_columns):
             if "~id" not in columns:
-                return CheckResult(
+                return CheckResult.fail(
                     "athena_query",
-                    False,
                     f"Query {i+1} missing required '~id' column. Got: {', '.join(columns)}",
                 )
 
         combined = [c for cols in all_columns for c in cols]
-        return CheckResult(
+        return CheckResult.ok(
             "athena_query",
-            True,
             f"{len(queries)} query(ies) valid. Columns: {', '.join(set(combined))}",
         )
     except ClientError as e:
-        return CheckResult("athena_query", False, str(e))
+        return CheckResult.fail("athena_query", str(e))
 
 
 # --- Neptune Analytics checks ---
@@ -276,16 +266,15 @@ def check_graph_name_available(graph_name: str) -> CheckResult:
         resp = ClientFactory.default().neptune().list_graphs()
         for g in resp.get("graphs", []):
             if g["name"] == graph_name:
-                return CheckResult(
+                return CheckResult.fail(
                     "graph_name_available",
-                    False,
                     f"Graph '{g['name']}' ({g['id']}) already exists",
                 )
-        return CheckResult(
-            "graph_name_available", True, f"No existing graph named '{graph_name}'"
+        return CheckResult.ok(
+            "graph_name_available", f"No existing graph named '{graph_name}'"
         )
     except ClientError as e:
-        return CheckResult("graph_name_available", False, str(e))
+        return CheckResult.fail("graph_name_available", str(e))
 
 
 # --- Credentials check ---
@@ -295,9 +284,9 @@ def check_credentials() -> CheckResult:
     """Check that AWS credentials are valid."""
     try:
         identity = ClientFactory.default().sts().get_caller_identity()
-        return CheckResult("credentials", True, f"Resolved as {identity['Arn']}")
+        return CheckResult.ok("credentials", f"Resolved as {identity['Arn']}")
     except Exception as e:
-        return CheckResult("credentials", False, f"Cannot resolve credentials: {e}")
+        return CheckResult.fail("credentials", f"Cannot resolve credentials: {e}")
 
 
 # --- Orchestrator ---
