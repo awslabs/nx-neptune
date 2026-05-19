@@ -20,6 +20,7 @@ from botocore.config import Config
 
 from .client_factory import ClientFactory
 from .neptune_constants import APP_ID_NX, SERVICE_NA
+from .client_factory import ClientFactory
 
 
 class NeptuneAnalyticsClient:
