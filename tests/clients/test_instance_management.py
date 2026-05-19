@@ -1386,9 +1386,7 @@ def test_empty_s3_bucket_folder_success(mock_resolve_iam, mock_boto3_client):
 
 @patch("nx_neptune.instance_management.boto3.client")
 @patch("nx_neptune.instance_management._create_iam_wrapper")
-def test_empty_s3_bucket_specific_key_success(
-    mock_resolve_iam, mock_boto3_client
-):
+def test_empty_s3_bucket_specific_key_success(mock_resolve_iam, mock_boto3_client):
     """Test empty_s3_bucket with specific key path."""
     # Setup mocks
     mock_s3_client = MagicMock()
@@ -1421,9 +1419,7 @@ def test_empty_s3_bucket_invalid_arn(mock_boto3_client):
 
 @patch("nx_neptune.instance_management.boto3.client")
 @patch("nx_neptune.instance_management._create_iam_wrapper")
-def test_empty_s3_bucket_permission_error(
-    mock_resolve_iam, mock_boto3_client
-):
+def test_empty_s3_bucket_permission_error(mock_resolve_iam, mock_boto3_client):
     """Test empty_s3_bucket with permission error."""
     # Setup mocks
     mock_iam_client = MagicMock()
