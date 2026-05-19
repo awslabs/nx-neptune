@@ -16,6 +16,19 @@ from typing import Optional
 from botocore.exceptions import ClientError
 
 from nx_neptune.clients.client_factory import ClientFactory
+from nx_neptune.clients.response_utils import (
+    get_bucket_region,
+    get_caller_arn,
+    get_graph_names,
+    get_kms_key_id,
+    get_object_count,
+    get_query_failure_reason,
+    get_query_result_columns,
+    get_query_state,
+    get_table_columns,
+    is_kms_encrypted,
+    is_versioning_enabled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +87,7 @@ def check_bucket_region(s3_uri: str, expected_region: str) -> CheckResult:
     bucket = _parse_bucket(s3_uri)
     try:
         resp = ClientFactory.default().s3().get_bucket_location(Bucket=bucket)
-        location = (
-            resp.get("LocationConstraint") or "us-east-1"
-        )  # S3 API returns None for us-east-1
+        location = get_bucket_region(resp)
         if location == expected_region:
             return CheckResult.ok(
                 "s3_bucket_region", f"Bucket '{bucket}' is in {expected_region}"
@@ -94,12 +105,10 @@ def check_bucket_encryption(s3_uri: str) -> CheckResult:
     bucket = _parse_bucket(s3_uri)
     try:
         resp = ClientFactory.default().s3().get_bucket_encryption(Bucket=bucket)
-        rules = resp.get("ServerSideEncryptionConfiguration", {}).get("Rules", [])
-        for rule in rules:
-            sse = rule.get("ApplyServerSideEncryptionByDefault", {})
-            if sse.get("SSEAlgorithm") == "aws:kms":
-                key = sse.get("KMSMasterKeyID", "AWS managed key")
-                return CheckResult.ok("s3_bucket_encryption", f"KMS encryption: {key}")
+        if is_kms_encrypted(resp):
+            return CheckResult.ok(
+                "s3_bucket_encryption", f"KMS encryption: {get_kms_key_id(resp)}"
+            )
         return CheckResult.fail(
             "s3_bucket_encryption", f"Bucket '{bucket}' does not use KMS encryption"
         )
@@ -116,8 +125,7 @@ def check_bucket_versioning(s3_uri: str) -> CheckResult:
     bucket = _parse_bucket(s3_uri)
     try:
         resp = ClientFactory.default().s3().get_bucket_versioning(Bucket=bucket)
-        status = resp.get("Status", "Disabled")
-        if status == "Enabled":
+        if is_versioning_enabled(resp):
             return CheckResult.ok(
                 "s3_bucket_versioning", f"Versioning enabled on '{bucket}'"
             )
@@ -138,7 +146,7 @@ def check_path_empty(s3_uri: str) -> CheckResult:
             .s3()
             .list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
         )
-        if resp.get("KeyCount", 0) == 0:
+        if get_object_count(resp) == 0:
             return CheckResult.ok("s3_path_empty", f"Path '{s3_uri}' is empty")
         return CheckResult.fail(
             "s3_path_empty",
@@ -183,11 +191,10 @@ def check_athena_table(
                 CatalogName=catalog, DatabaseName=database, TableName=table
             )
         )
-        columns = resp["TableMetadata"].get("Columns", [])
-        col_names = [c["Name"] for c in columns]
+        col_names = get_table_columns(resp)
         return CheckResult.ok(
             "athena_table",
-            f"Table '{table}' found with {len(columns)} columns: {', '.join(col_names)}",
+            f"Table '{table}' found with {len(col_names)} columns: {', '.join(col_names)}",
         )
     except ClientError as e:
         if "EntityNotFoundException" in str(e) or "MetadataException" in str(e):
@@ -221,21 +228,15 @@ def check_athena_query(
 
             while True:
                 resp = athena.get_query_execution(QueryExecutionId=exec_id)
-                state = resp["QueryExecution"]["Status"]["State"]
+                state = get_query_state(resp)
                 if state == "SUCCEEDED":
                     results = athena.get_query_results(
                         QueryExecutionId=exec_id, MaxResults=1
                     )
-                    columns = [
-                        c["Name"]
-                        for c in results["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]
-                    ]
-                    all_columns.append(columns)
+                    all_columns.append(get_query_result_columns(results))
                     break
                 if state in ("FAILED", "CANCELLED"):
-                    reason = resp["QueryExecution"]["Status"].get(
-                        "StateChangeReason", "Unknown error"
-                    )
+                    reason = get_query_failure_reason(resp)
                     return CheckResult.fail(
                         "athena_query", f"Query {i+1} failed: {reason}"
                     )
@@ -264,7 +265,7 @@ def check_graph_name_available(graph_name: str) -> CheckResult:
     """Check that no existing graph uses this name."""
     try:
         resp = ClientFactory.default().neptune().list_graphs()
-        for g in resp.get("graphs", []):
+        for g in get_graph_names(resp):
             if g["name"] == graph_name:
                 return CheckResult.fail(
                     "graph_name_available",
@@ -283,8 +284,8 @@ def check_graph_name_available(graph_name: str) -> CheckResult:
 def check_credentials() -> CheckResult:
     """Check that AWS credentials are valid."""
     try:
-        identity = ClientFactory.default().sts().get_caller_identity()
-        return CheckResult.ok("credentials", f"Resolved as {identity['Arn']}")
+        resp = ClientFactory.default().sts().get_caller_identity()
+        return CheckResult.ok("credentials", f"Resolved as {get_caller_arn(resp)}")
     except Exception as e:
         return CheckResult.fail("credentials", f"Cannot resolve credentials: {e}")
 
