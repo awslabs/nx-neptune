@@ -19,6 +19,7 @@ from botocore.client import BaseClient
 from botocore.config import Config
 
 from .neptune_constants import APP_ID_NX, SERVICE_NA
+from .client_factory import ClientFactory
 
 
 class NeptuneAnalyticsClient:
@@ -57,8 +58,6 @@ class NeptuneAnalyticsClient:
         if client:
             self.client = client
         else:
-            from .client_factory import ClientFactory
-
             self.client = ClientFactory(timeout_seconds=timeout_seconds).neptune()
         self.logger = logger or logging.getLogger(__name__)
         self.name = name or ""
