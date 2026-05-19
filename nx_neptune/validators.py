@@ -26,7 +26,10 @@ from nx_neptune.clients.response_utils import (
     get_query_result_columns,
     get_query_state,
     get_table_columns,
+    is_access_denied,
+    is_entity_not_found,
     is_kms_encrypted,
+    is_not_found,
     is_versioning_enabled,
 )
 
@@ -72,13 +75,10 @@ def check_bucket_exists(s3_uri: str) -> CheckResult:
         ClientFactory.default().s3().head_bucket(Bucket=bucket)
         return CheckResult.ok("s3_bucket_exists", f"Bucket '{bucket}' exists")
     except ClientError as e:
-        code = e.response["Error"]["Code"]
-        if code == "404":
+        if is_not_found(e):
             return CheckResult.fail("s3_bucket_exists", f"Bucket '{bucket}' not found")
-        if code == "403":
-            return CheckResult.fail(
-                "s3_bucket_exists", f"Access denied to bucket '{bucket}'"
-            )
+        if is_access_denied(e):
+            return CheckResult.fail("s3_bucket_exists", f"Access denied to bucket '{bucket}'")
         return CheckResult.fail("s3_bucket_exists", str(e))
 
 
@@ -171,7 +171,7 @@ def check_athena_database(
             "athena_database", f"Database '{database}' found in catalog '{catalog}'"
         )
     except ClientError as e:
-        if "EntityNotFoundException" in str(e) or "MetadataException" in str(e):
+        if is_entity_not_found(e):
             return CheckResult.fail(
                 "athena_database",
                 f"Database '{database}' not found in catalog '{catalog}'",
@@ -197,7 +197,7 @@ def check_athena_table(
             f"Table '{table}' found with {len(col_names)} columns: {', '.join(col_names)}",
         )
     except ClientError as e:
-        if "EntityNotFoundException" in str(e) or "MetadataException" in str(e):
+        if is_entity_not_found(e):
             return CheckResult.fail(
                 "athena_table", f"Table '{table}' not found in '{database}'"
             )
