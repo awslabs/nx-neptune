@@ -81,10 +81,14 @@ class TestCheckBucketEncryption:
     def test_kms_encrypted(self, mock_factory):
         mock_factory.s3.return_value.get_bucket_encryption.return_value = {
             "ServerSideEncryptionConfiguration": {
-                "Rules": [{"ApplyServerSideEncryptionByDefault": {
-                    "SSEAlgorithm": "aws:kms",
-                    "KMSMasterKeyID": "arn:aws:kms:us-west-2:123:key/abc",
-                }}]
+                "Rules": [
+                    {
+                        "ApplyServerSideEncryptionByDefault": {
+                            "SSEAlgorithm": "aws:kms",
+                            "KMSMasterKeyID": "arn:aws:kms:us-west-2:123:key/abc",
+                        }
+                    }
+                ]
             }
         }
         result = check_bucket_encryption("s3://my-bucket/")
@@ -94,7 +98,9 @@ class TestCheckBucketEncryption:
     def test_no_kms(self, mock_factory):
         mock_factory.s3.return_value.get_bucket_encryption.return_value = {
             "ServerSideEncryptionConfiguration": {
-                "Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]
+                "Rules": [
+                    {"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}
+                ]
             }
         }
         result = check_bucket_encryption("s3://my-bucket/")
@@ -103,7 +109,9 @@ class TestCheckBucketEncryption:
 
 class TestCheckBucketVersioning:
     def test_versioning_enabled(self, mock_factory):
-        mock_factory.s3.return_value.get_bucket_versioning.return_value = {"Status": "Enabled"}
+        mock_factory.s3.return_value.get_bucket_versioning.return_value = {
+            "Status": "Enabled"
+        }
         result = check_bucket_versioning("s3://my-bucket/")
         assert result.passed is True
 
@@ -128,7 +136,7 @@ class TestCheckPathEmpty:
 class TestCheckAthenaDatabase:
     def test_database_exists(self, mock_factory):
         mock_factory.athena.return_value.get_database.return_value = {}
-        result = check_athena_database("AwsDataCatalog", "mydb")
+        result = check_athena_database("mydb")
         assert result.passed is True
 
     def test_database_not_found(self, mock_factory):
@@ -136,7 +144,7 @@ class TestCheckAthenaDatabase:
             {"Error": {"Code": "EntityNotFoundException", "Message": "not found"}},
             "GetDatabase",
         )
-        result = check_athena_database("AwsDataCatalog", "missing")
+        result = check_athena_database("missing")
         assert result.passed is False
 
 
@@ -145,7 +153,7 @@ class TestCheckAthenaTable:
         mock_factory.athena.return_value.get_table_metadata.return_value = {
             "TableMetadata": {"Columns": [{"Name": "~id"}, {"Name": "name"}]}
         }
-        result = check_athena_table("AwsDataCatalog", "mydb", "mytable")
+        result = check_athena_table("mydb", "mytable")
         assert result.passed is True
         assert "2 columns" in result.message
 
@@ -158,7 +166,7 @@ class TestCheckGraphNameAvailable:
 
     def test_name_taken(self, mock_factory):
         mock_factory.neptune.return_value.list_graphs.return_value = {
-            "graphs": [{"name": "my-graph-123", "id": "g-abc"}]
+            "graphs": [{"name": "my-graph", "id": "g-abc"}]
         }
         result = check_graph_name_available("my-graph")
         assert result.passed is False
@@ -174,22 +182,30 @@ class TestCheckCredentials:
         assert result.passed is True
 
     def test_invalid_credentials(self, mock_factory):
-        mock_factory.sts.return_value.get_caller_identity.side_effect = Exception("expired")
+        mock_factory.sts.return_value.get_caller_identity.side_effect = Exception(
+            "expired"
+        )
         result = check_credentials()
         assert result.passed is False
 
 
 class TestValidateResources:
     def test_credentials_fail_short_circuits(self, mock_factory):
-        mock_factory.sts.return_value.get_caller_identity.side_effect = Exception("no creds")
+        mock_factory.sts.return_value.get_caller_identity.side_effect = Exception(
+            "no creds"
+        )
         results = validate_resources(s3_staging_bucket="s3://bucket/")
         assert len(results) == 1
         assert results[0]["passed"] is False
 
     def test_s3_checks_run(self, mock_factory):
-        mock_factory.sts.return_value.get_caller_identity.return_value = {"Arn": "arn:aws:iam::123:user/dev"}
+        mock_factory.sts.return_value.get_caller_identity.return_value = {
+            "Arn": "arn:aws:iam::123:user/dev"
+        }
         mock_factory.s3.return_value.head_bucket.return_value = {}
-        mock_factory.s3.return_value.get_bucket_versioning.return_value = {"Status": "Enabled"}
+        mock_factory.s3.return_value.get_bucket_versioning.return_value = {
+            "Status": "Enabled"
+        }
         results = validate_resources(s3_staging_bucket="s3://bucket/")
         checks = [r["check"] for r in results]
         assert "credentials" in checks
