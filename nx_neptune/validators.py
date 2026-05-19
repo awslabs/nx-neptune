@@ -7,9 +7,9 @@ Provides upfront checks for S3, Athena, and Neptune Analytics resources
 so configuration errors surface immediately — not minutes into a pipeline.
 """
 
+import asyncio
 import logging
 import re
-import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -32,6 +32,7 @@ from nx_neptune.clients.response_utils import (
     is_not_found,
     is_versioning_enabled,
 )
+from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,9 @@ def check_bucket_exists(s3_uri: str) -> CheckResult:
         if is_not_found(e):
             return CheckResult.fail("s3_bucket_exists", f"Bucket '{bucket}' not found")
         if is_access_denied(e):
-            return CheckResult.fail("s3_bucket_exists", f"Access denied to bucket '{bucket}'")
+            return CheckResult.fail(
+                "s3_bucket_exists", f"Access denied to bucket '{bucket}'"
+            )
         return CheckResult.fail("s3_bucket_exists", str(e))
 
 
@@ -226,21 +229,20 @@ def check_athena_query(
                 ResultConfiguration={"OutputLocation": output_location},
             )["QueryExecutionId"]
 
-            while True:
-                resp = athena.get_query_execution(QueryExecutionId=exec_id)
-                state = get_query_state(resp)
-                if state == "SUCCEEDED":
-                    results = athena.get_query_results(
-                        QueryExecutionId=exec_id, MaxResults=1
-                    )
-                    all_columns.append(get_query_result_columns(results))
-                    break
-                if state in ("FAILED", "CANCELLED"):
-                    reason = get_query_failure_reason(resp)
-                    return CheckResult.fail(
-                        "athena_query", f"Query {i+1} failed: {reason}"
-                    )
-                time.sleep(1)
+            asyncio.run(
+                wait_until_all_complete([exec_id], TaskType.EXPORT_ATHENA_TABLE, athena)
+            )
+
+            resp = athena.get_query_execution(QueryExecutionId=exec_id)
+            state = get_query_state(resp)
+            if state != "SUCCEEDED":
+                return CheckResult.fail(
+                    "athena_query",
+                    f"Query {i+1} failed: {get_query_failure_reason(resp)}",
+                )
+
+            results = athena.get_query_results(QueryExecutionId=exec_id, MaxResults=1)
+            all_columns.append(get_query_result_columns(results))
 
         for i, columns in enumerate(all_columns):
             if "~id" not in columns:
