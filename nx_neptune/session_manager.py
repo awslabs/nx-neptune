@@ -13,14 +13,6 @@ from botocore.exceptions import ClientError
 from . import NeptuneGraph, instance_management
 from .clients import IamClient, NeptuneAnalyticsClient
 from .clients.client_factory import ClientFactory
-from .clients.neptune_constants import (
-    APP_ID_NX,
-    SERVICE_ATHENA,
-    SERVICE_IAM,
-    SERVICE_NA,
-    SERVICE_S3,
-    SERVICE_STS,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +47,7 @@ class SessionManager:
         """
         self.session_name = session_name
         self.cleanup_task = cleanup_task or CleanupTask.NONE
-        self._clients = clients or ClientFactory()
+        self._clients = clients or ClientFactory.default()
         self._neptune_client = self._clients.neptune()
         self._sts_client = self._clients.sts()
         self._s3_iam_role = self._sts_client.get_caller_identity()["Arn"]
