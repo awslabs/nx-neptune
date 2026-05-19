@@ -211,3 +211,177 @@ class TestValidateResources:
         assert "credentials" in checks
         assert "s3_bucket_exists" in checks
         assert "s3_bucket_versioning" in checks
+
+    def test_athena_checks_run(self, mock_factory):
+        mock_factory.sts.return_value.get_caller_identity.return_value = {
+            "Arn": "arn:aws:iam::123:user/dev"
+        }
+        mock_factory.athena.return_value.get_database.return_value = {}
+        mock_factory.athena.return_value.get_table_metadata.return_value = {
+            "TableMetadata": {"Columns": [{"Name": "~id"}]}
+        }
+        results = validate_resources(athena_database="mydb", athena_table="mytable")
+        checks = [r["check"] for r in results]
+        assert "athena_database" in checks
+        assert "athena_table" in checks
+
+    def test_graph_name_check_runs(self, mock_factory):
+        mock_factory.sts.return_value.get_caller_identity.return_value = {
+            "Arn": "arn:aws:iam::123:user/dev"
+        }
+        mock_factory.neptune.return_value.list_graphs.return_value = {"graphs": []}
+        results = validate_resources(graph_name="my-graph")
+        checks = [r["check"] for r in results]
+        assert "graph_name_available" in checks
+
+    def test_region_check_runs(self, mock_factory):
+        mock_factory.sts.return_value.get_caller_identity.return_value = {
+            "Arn": "arn:aws:iam::123:user/dev"
+        }
+        mock_factory.s3.return_value.head_bucket.return_value = {}
+        mock_factory.s3.return_value.get_bucket_location.return_value = {
+            "LocationConstraint": "us-west-2"
+        }
+        mock_factory.s3.return_value.get_bucket_versioning.return_value = {
+            "Status": "Enabled"
+        }
+        results = validate_resources(
+            s3_staging_bucket="s3://bucket/", expected_region="us-west-2"
+        )
+        checks = [r["check"] for r in results]
+        assert "s3_bucket_region" in checks
+
+
+class TestCheckBucketEncryptionErrors:
+    def test_no_encryption_configured(self, mock_factory):
+        mock_factory.s3.return_value.get_bucket_encryption.side_effect = ClientError(
+            {
+                "Error": {
+                    "Code": "ServerSideEncryptionConfigurationNotFoundError",
+                    "Message": "",
+                }
+            },
+            "GetBucketEncryption",
+        )
+        result = check_bucket_encryption("s3://my-bucket/")
+        assert result.passed is False
+        assert "No encryption configured" in result.message
+
+    def test_unexpected_error(self, mock_factory):
+        mock_factory.s3.return_value.get_bucket_encryption.side_effect = ClientError(
+            {"Error": {"Code": "500", "Message": "Internal"}}, "GetBucketEncryption"
+        )
+        result = check_bucket_encryption("s3://my-bucket/")
+        assert result.passed is False
+
+
+class TestCheckPathEmpty:
+    def test_path_empty(self, mock_factory):
+        mock_factory.s3.return_value.list_objects_v2.return_value = {"KeyCount": 0}
+        result = check_path_empty("s3://my-bucket/output/")
+        assert result.passed is True
+
+    def test_path_not_empty(self, mock_factory):
+        mock_factory.s3.return_value.list_objects_v2.return_value = {"KeyCount": 1}
+        result = check_path_empty("s3://my-bucket/output/")
+        assert result.passed is False
+
+    def test_error(self, mock_factory):
+        mock_factory.s3.return_value.list_objects_v2.side_effect = ClientError(
+            {"Error": {"Code": "NoSuchBucket", "Message": ""}}, "ListObjectsV2"
+        )
+        result = check_path_empty("s3://missing/path/")
+        assert result.passed is False
+
+
+class TestCheckAthenaTableErrors:
+    def test_table_not_found(self, mock_factory):
+        mock_factory.athena.return_value.get_table_metadata.side_effect = ClientError(
+            {"Error": {"Code": "EntityNotFoundException", "Message": "not found"}},
+            "GetTableMetadata",
+        )
+        from nx_neptune.validators import check_athena_table
+
+        result = check_athena_table("mydb", "missing")
+        assert result.passed is False
+        assert "not found" in result.message
+
+
+class TestCheckAthenaQuery:
+    @patch("nx_neptune.validators.wait_until_all_complete")
+    def test_query_succeeds(self, mock_wait, mock_factory):
+        athena = mock_factory.athena.return_value
+        athena.start_query_execution.return_value = {"QueryExecutionId": "qid-1"}
+        mock_wait.return_value = None
+        athena.get_query_execution.return_value = {
+            "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
+        }
+        athena.get_query_results.return_value = {
+            "ResultSet": {
+                "ResultSetMetadata": {"ColumnInfo": [{"Name": "~id"}, {"Name": "name"}]}
+            }
+        }
+        from nx_neptune.validators import check_athena_query
+
+        result = check_athena_query("SELECT * FROM t", "mydb", "s3://output/")
+        assert result.passed is True
+        assert "1 query" in result.message
+
+    @patch("nx_neptune.validators.wait_until_all_complete")
+    def test_query_fails(self, mock_wait, mock_factory):
+        athena = mock_factory.athena.return_value
+        athena.start_query_execution.return_value = {"QueryExecutionId": "qid-1"}
+        mock_wait.return_value = None
+        athena.get_query_execution.return_value = {
+            "QueryExecution": {
+                "Status": {"State": "FAILED", "StateChangeReason": "Syntax error"}
+            }
+        }
+        from nx_neptune.validators import check_athena_query
+
+        result = check_athena_query("SELECT bad", "mydb", "s3://output/")
+        assert result.passed is False
+        assert "Syntax error" in result.message
+
+    @patch("nx_neptune.validators.wait_until_all_complete")
+    def test_query_missing_id_column(self, mock_wait, mock_factory):
+        athena = mock_factory.athena.return_value
+        athena.start_query_execution.return_value = {"QueryExecutionId": "qid-1"}
+        mock_wait.return_value = None
+        athena.get_query_execution.return_value = {
+            "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
+        }
+        athena.get_query_results.return_value = {
+            "ResultSet": {
+                "ResultSetMetadata": {
+                    "ColumnInfo": [{"Name": "name"}, {"Name": "value"}]
+                }
+            }
+        }
+        from nx_neptune.validators import check_athena_query
+
+        result = check_athena_query("SELECT * FROM t", "mydb", "s3://output/")
+        assert result.passed is False
+        assert "~id" in result.message
+
+
+class TestCheckGraphNameAvailable:
+    def test_name_available(self, mock_factory):
+        mock_factory.neptune.return_value.list_graphs.return_value = {"graphs": []}
+        result = check_graph_name_available("my-graph")
+        assert result.passed is True
+
+    def test_name_taken(self, mock_factory):
+        mock_factory.neptune.return_value.list_graphs.return_value = {
+            "graphs": [{"name": "my-graph", "id": "g-abc"}]
+        }
+        result = check_graph_name_available("my-graph")
+        assert result.passed is False
+        assert "already exists" in result.message
+
+    def test_error(self, mock_factory):
+        mock_factory.neptune.return_value.list_graphs.side_effect = ClientError(
+            {"Error": {"Code": "500", "Message": "err"}}, "ListGraphs"
+        )
+        result = check_graph_name_available("my-graph")
+        assert result.passed is False

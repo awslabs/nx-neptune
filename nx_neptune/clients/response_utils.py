@@ -11,7 +11,6 @@ from typing import Optional
 
 from botocore.exceptions import ClientError
 
-
 # --- Error classifiers ---
 
 
@@ -34,6 +33,7 @@ def is_entity_not_found(e: ClientError) -> bool:
     """Is this an Athena entity-not-found error?"""
     msg = str(e)
     return "EntityNotFoundException" in msg or "MetadataException" in msg
+
 
 # --- S3 ---
 
