@@ -95,7 +95,7 @@ async def create_na_instance(
     Raises:
         Exception: If the Neptune Analytics instance creation fails
     """
-    iam_client = _resolve_iam_client(sts_client, iam_client)
+    iam_client = _create_iam_wrapper(sts_client, iam_client)
     na_client = na_client or ClientFactory.default().neptune()
     iam_client.has_create_na_permissions()
 
@@ -164,7 +164,7 @@ async def create_na_instance_with_s3_import(
         ValueError: If the role lacks required permissions
     """
 
-    iam_client_wrapper = _resolve_iam_client(sts_client, iam_client)
+    iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
 
     na_client = na_client or ClientFactory.default().neptune()
     # Retrieve key_arn for the bucket and permission check if present
@@ -239,7 +239,7 @@ async def create_na_instance_from_snapshot(
         Exception: If the Neptune Analytics instance creation fails
         ValueError: If the role lacks required permissions
     """
-    iam_client_wrapper = _resolve_iam_client(sts_client, iam_client)
+    iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
     na_client = na_client or ClientFactory.default().neptune()
 
     # Permissions check
@@ -294,7 +294,7 @@ async def delete_graph_snapshot(
         Exception: If the snapshot deletion fails
         ValueError: If the role lacks required permissions
     """
-    iam_client_wrapper = _resolve_iam_client(sts_client, iam_client)
+    iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
     na_client = na_client or ClientFactory.default().neptune()
 
     # Permissions check
@@ -346,7 +346,7 @@ async def start_na_instance(
         Exception: If the start operation fails with an invalid status code
         ValueError: If the role lacks required permissions or if graph is not in STOPPED state
     """
-    iam_client_wrapper = _resolve_iam_client(sts_client, iam_client)
+    iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
     na_client = na_client or ClientFactory.default().neptune()
     iam_client_wrapper.has_start_na_permissions()
 
@@ -393,7 +393,7 @@ async def stop_na_instance(
         Exception: If the stop operation fails with an invalid status code
         ValueError: If the role lacks required permissions or if graph is not in AVAILABLE state
     """
-    iam_client_wrapper = _resolve_iam_client(sts_client, iam_client)
+    iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
     na_client = na_client or ClientFactory.default().neptune()
     iam_client_wrapper.has_stop_na_permissions()
 
@@ -442,7 +442,7 @@ async def delete_na_instance(
         ValueError: If the role lacks required permissions
     """
 
-    iam_client = _resolve_iam_client(sts_client, iam_client)
+    iam_client = _create_iam_wrapper(sts_client, iam_client)
 
     na_client = na_client or ClientFactory.default().neptune()
     # Permission check
@@ -493,7 +493,7 @@ async def create_graph_snapshot(
         ValueError: If the role lacks required permissions
     """
     # Permission check
-    iam_client = _resolve_iam_client(sts_client, iam_client)
+    iam_client = _create_iam_wrapper(sts_client, iam_client)
     na_client = na_client or ClientFactory.default().neptune()
     iam_client.has_create_na_snapshot_permissions()
 
@@ -696,7 +696,7 @@ async def update_na_instance_size(
         Exception: If the resize operation fails
         ValueError: If the role lacks required permissions
     """
-    iam_client = _resolve_iam_client(sts_client, iam_client)
+    iam_client = _create_iam_wrapper(sts_client, iam_client)
     na_client = na_client or ClientFactory.default().neptune()
 
     # Permission check
@@ -1105,7 +1105,7 @@ async def export_athena_table_to_s3(
     Returns:
         list: List of successfully processed query execute ids.
     """
-    iam_client_wrapper = _resolve_iam_client(sts_client, iam_client)
+    iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
     athena_client = athena_client or ClientFactory.default().athena()
 
     # Get KMS key if bucket is encrypted
@@ -1192,7 +1192,7 @@ async def create_csv_table_from_s3(
         Exception: If any query fails
     """
     # Permission checks
-    iam_client_wrapper = _resolve_iam_client(sts_client, iam_client)
+    iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
     athena_client = athena_client or ClientFactory.default().athena()
 
     # Get KMS keys if buckets are encrypted
@@ -1377,7 +1377,7 @@ async def create_iceberg_table_from_table(
         str: Returns the query_execution_id if successful
     """
     # Permission checks
-    iam_client_wrapper = _resolve_iam_client(sts_client, iam_client)
+    iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
     athena_client = athena_client or ClientFactory.default().athena()
 
     # Get KMS key if output bucket is encrypted
@@ -1457,7 +1457,7 @@ async def create_table_schema_from_s3(
         str: Returns the query_execution_id if successful
     """
     # Permission checks
-    iam_client_wrapper = _resolve_iam_client(sts_client, iam_client)
+    iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
     athena_client = athena_client or ClientFactory.default().athena()
 
     # Get KMS key if bucket is encrypted
@@ -1516,7 +1516,7 @@ async def drop_athena_table(
         str: Returns the query_execution_id if successful
     """
     # Permission checks
-    iam_client_wrapper = _resolve_iam_client(sts_client, iam_client)
+    iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
     athena_client = athena_client or ClientFactory.default().athena()
 
     # Get KMS key if bucket is encrypted
@@ -1629,7 +1629,7 @@ def empty_s3_bucket(
     if s3_client is None:
         s3_client = ClientFactory.default().s3()
 
-    iam_client_wrapper = _resolve_iam_client(sts_client, iam_client)
+    iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
 
     # raises an error validation fails
     iam_client_wrapper.has_delete_s3_permissions(s3_arn)
@@ -1839,7 +1839,7 @@ def _get_status_check_future(
     return asyncio.wrap_future(fut)
 
 
-def _resolve_iam_client(
+def _create_iam_wrapper(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
 ) -> IamClient:

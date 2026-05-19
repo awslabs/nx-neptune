@@ -1202,7 +1202,7 @@ async def test_create_na_instance_from_snapshot_success(mock_boto3_client, mock_
 
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management._get_status_check_future")
-@patch("nx_neptune.instance_management._resolve_iam_client")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
 async def test_create_na_instance_with_s3_import_success(
     mock_get_bucket_encryption_key_arn,
@@ -1283,7 +1283,7 @@ def test_get_create_instance_with_import_config_custom():
 @pytest.mark.asyncio
 @patch("nx_neptune.instance_management._execute_athena_query")
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("nx_neptune.instance_management._resolve_iam_client")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
 @patch("boto3.client")
 async def test_export_athena_table_to_s3_success(
     mock_boto3_client,
@@ -1354,7 +1354,7 @@ async def test_update_instance_size_success(mock_boto3_client, mock_get_future):
 
 
 @patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management._resolve_iam_client")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
 def test_empty_s3_bucket_folder_success(mock_resolve_iam, mock_boto3_client):
     """Test empty_s3_bucket with folder path (ends with /)."""
     # Setup mocks
@@ -1385,7 +1385,7 @@ def test_empty_s3_bucket_folder_success(mock_resolve_iam, mock_boto3_client):
 
 
 @patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management._resolve_iam_client")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
 def test_empty_s3_bucket_specific_key_success(
     mock_resolve_iam, mock_boto3_client
 ):
@@ -1420,7 +1420,7 @@ def test_empty_s3_bucket_invalid_arn(mock_boto3_client):
 
 
 @patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management._resolve_iam_client")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
 def test_empty_s3_bucket_permission_error(
     mock_resolve_iam, mock_boto3_client
 ):
@@ -1441,7 +1441,7 @@ def test_empty_s3_bucket_permission_error(
 
 
 @patch("nx_neptune.instance_management.boto3.client")
-@patch("nx_neptune.instance_management._resolve_iam_client")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
 def test_empty_s3_bucket_client_error(mock_resolve_iam, mock_boto3_client):
     """Test empty_s3_bucket with S3 client error."""
     # Setup mocks
@@ -1467,7 +1467,7 @@ def test_empty_s3_bucket_client_error(mock_resolve_iam, mock_boto3_client):
 @patch("nx_neptune.instance_management.boto3.client")
 @patch("nx_neptune.instance_management._execute_athena_query")
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("nx_neptune.instance_management._resolve_iam_client")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
 @patch("nx_neptune.instance_management.TaskFuture")
 async def test_drop_athena_table_success(
     mock_task_future,
@@ -1512,7 +1512,7 @@ async def test_drop_athena_table_success(
 @patch("nx_neptune.instance_management.boto3.client")
 @patch("nx_neptune.instance_management._execute_athena_query")
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("nx_neptune.instance_management._resolve_iam_client")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
 @patch("nx_neptune.instance_management.TaskFuture")
 async def test_drop_athena_table_with_catalog_database(
     mock_task_future,
@@ -1560,7 +1560,7 @@ async def test_drop_athena_table_with_catalog_database(
 @patch("nx_neptune.instance_management.boto3.client")
 @patch("nx_neptune.instance_management._execute_athena_query")
 @patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
-@patch("nx_neptune.instance_management._resolve_iam_client")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
 @patch("nx_neptune.instance_management.TaskFuture")
 async def test_drop_athena_table_with_polling_params(
     mock_task_future,
