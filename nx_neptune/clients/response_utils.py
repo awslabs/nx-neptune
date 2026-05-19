@@ -14,19 +14,14 @@ from botocore.exceptions import ClientError
 # --- Error classifiers ---
 
 
-def get_error_code(e: ClientError) -> str:
-    """Get HTTP error code from a ClientError."""
-    return e.response["Error"]["Code"]
-
-
 def is_not_found(e: ClientError) -> bool:
     """Is this a 404 / not-found error?"""
-    return get_error_code(e) == "404"
+    return e.response["Error"]["Code"] == "404"
 
 
 def is_access_denied(e: ClientError) -> bool:
     """Is this a 403 / access-denied error?"""
-    return get_error_code(e) == "403"
+    return e.response["Error"]["Code"] == "403"
 
 
 def is_entity_not_found(e: ClientError) -> bool:
