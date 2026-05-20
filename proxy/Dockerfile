@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 WORKDIR /app
-COPY proxy/pyproject.toml proxy/src ./proxy/
+COPY proxy/ ./proxy/
 RUN pip install --no-cache-dir ./proxy && useradd --create-home appuser
 USER appuser
 EXPOSE 8080
