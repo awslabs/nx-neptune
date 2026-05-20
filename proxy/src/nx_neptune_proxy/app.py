@@ -4,10 +4,12 @@
 import logging
 import time
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from nx_neptune_proxy.config import Settings
 
@@ -69,3 +71,10 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+# --- Static UI (must be last — catch-all) ---
+
+UI_DIR = Path(__file__).parent.parent.parent / "ui"
+if UI_DIR.exists():
+    app.mount("/", StaticFiles(directory=UI_DIR, html=True), name="ui")
