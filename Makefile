@@ -42,6 +42,12 @@ lock-check:       ## Verify lock files are in sync with pyproject.toml (used by 
 	$(ENV_PREFIX)pip-compile pyproject.toml -o requirements.txt --strip-extras
 	$(ENV_PREFIX)pip-compile pyproject.toml --extra test --extra developer -o requirements-dev.txt --strip-extras
 
+.PHONY: lock-and-test
+lock-and-test:    ## Regenerate lock files, install deps, and run tests.
+	$(MAKE) lock
+	$(ENV_PREFIX)pip install -r requirements-dev.txt
+	$(MAKE) test
+
 
 .PHONY: dist
 dist: ## install the distribution
