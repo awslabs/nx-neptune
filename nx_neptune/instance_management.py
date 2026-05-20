@@ -27,6 +27,16 @@ from sqlglot import exp, parse_one
 from .clients import IamClient
 from .clients.client_factory import ClientFactory
 from .clients.iam_client import split_s3_arn_to_bucket_and_path
+from .clients.response_utils import (
+    athena_get_query_execution_id,
+    athena_get_query_state,
+    boto_get_status_code,
+    na_get_graph_id,
+    na_get_snapshot_id,
+    na_get_task_id,
+    s3_get_contents,
+    sts_get_caller_arn,
+)
 from .na_graph import NeptuneGraph
 
 __all__ = [
@@ -100,8 +110,8 @@ async def create_na_instance(
     iam_client.has_create_na_permissions()
 
     response = _create_na_instance_task(na_client, config, graph_name_prefix)
-    prospective_graph_id = _get_graph_id(response)
-    status_code = _get_status_code(response)
+    prospective_graph_id = na_get_graph_id(response)
+    status_code = boto_get_status_code(response)
 
     if status_code == 201:
         await _get_status_check_future(
@@ -178,10 +188,10 @@ async def create_na_instance_with_s3_import(
         graph_name, s3_arn, iam_client_wrapper.role_arn, config
     )
     response = na_client.create_graph_using_import_task(**kwargs)
-    graph_id = response.get("graphId")
-    task_id = response.get("taskId")
+    graph_id = na_get_graph_id(response)
+    task_id = na_get_task_id(response)
 
-    if _get_status_code(response) == 201:
+    if boto_get_status_code(response) == 201:
         # Import task status check
         await _get_status_check_future(
             na_client, TaskType.IMPORT, task_id, polling_interval, max_attempts
@@ -248,9 +258,9 @@ async def create_na_instance_from_snapshot(
     response = _create_na_instance_from_snapshot_task(
         na_client, snapshot_id, config, graph_name_prefix
     )
-    prospective_graph_id = _get_graph_id(response)
+    prospective_graph_id = na_get_graph_id(response)
 
-    if _get_status_code(response) == 201:
+    if boto_get_status_code(response) == 201:
         await _get_status_check_future(
             na_client,
             TaskType.CREATE,
@@ -301,7 +311,7 @@ async def delete_graph_snapshot(
     iam_client_wrapper.has_delete_snapshot_permissions()
     response = na_client.delete_graph_snapshot(snapshotIdentifier=snapshot_id)
 
-    status_code = _get_status_code(response)
+    status_code = boto_get_status_code(response)
     if status_code == 200:
         await _get_status_check_future(
             na_client,
@@ -354,7 +364,7 @@ async def start_na_instance(
         await status_exception  # This will raise the exception
 
     response = na_client.start_graph(graphIdentifier=graph_id)
-    status_code = _get_status_code(response)
+    status_code = boto_get_status_code(response)
     if status_code == 200:
         fut = TaskFuture(graph_id, TaskType.START, polling_interval, max_attempts)
         await fut.wait_until_complete(na_client)
@@ -401,7 +411,7 @@ async def stop_na_instance(
         await status_exception  # This will raise the exception
 
     response = na_client.stop_graph(graphIdentifier=graph_id)
-    status_code = _get_status_code(response)
+    status_code = boto_get_status_code(response)
     if status_code == 200:
         fut = TaskFuture(graph_id, TaskType.STOP, polling_interval, max_attempts)
         await fut.wait_until_complete(na_client)
@@ -449,7 +459,7 @@ async def delete_na_instance(
     iam_client.has_delete_na_permissions()
 
     response = _delete_na_instance_task(na_client, graph_id)
-    status_code = _get_status_code(response)
+    status_code = boto_get_status_code(response)
     if status_code == 200:
         fut = TaskFuture(graph_id, TaskType.DELETE, polling_interval, max_attempts)
         await fut.wait_until_complete(na_client)
@@ -505,8 +515,8 @@ async def create_graph_snapshot(
         kwargs["tags"] = tag
 
     response = na_client.create_graph_snapshot(**kwargs)
-    snapshot_id = response["id"]
-    status_code = _get_status_code(response)
+    snapshot_id = na_get_snapshot_id(response)
+    status_code = boto_get_status_code(response)
     if status_code == 201:
         await _get_status_check_future(
             na_client,
@@ -655,7 +665,7 @@ async def reset_graph(
         f"Perform reset_graph action on graph: [{graph_id}] with skip_snapshot: [{skip_snapshot}]"
     )
     response = na_client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
-    status_code = _get_status_code(response)
+    status_code = boto_get_status_code(response)
     if status_code == 200:
         fut = TaskFuture(graph_id, TaskType.RESET_GRAPH, polling_interval, max_attempts)
         await fut.wait_until_complete(na_client)
@@ -706,7 +716,7 @@ async def update_na_instance_size(
     response = na_client.update_graph(
         graphIdentifier=graph_id, provisionedMemory=prospect_size
     )
-    status_code = _get_status_code(response)
+    status_code = boto_get_status_code(response)
     if status_code == 200:
         fut = TaskFuture(graph_id, TaskType.UPDATE, polling_interval, max_attempts)
         await fut.wait_until_complete(na_client)
@@ -897,7 +907,7 @@ def _start_import_task(
             format=format_type,
             roleArn=role_arn,
         )
-        task_id = response.get("taskId")
+        task_id = na_get_task_id(response)
         return task_id
     except ClientError as e:
         raise e
@@ -962,7 +972,7 @@ def _start_export_task(
         response = client.start_export_task(  # type: ignore[attr-defined]
             **kwargs_export
         )
-        task_id = response.get("taskId")
+        task_id = na_get_task_id(response)
         return task_id
 
     except ClientError as e:
@@ -1027,32 +1037,6 @@ def _clean_s3_path(s3_path):
 
     # If there's no '/', return the bucket name
     return parts[0]
-
-
-def _get_status_code(response: dict):
-    """
-    Extract the HTTP status code from an AWS API response.
-
-    Args:
-        response (dict): The AWS API response dictionary
-
-    Returns:
-        int or None: The HTTP status code if available, None otherwise
-    """
-    return (response.get("ResponseMetadata") or {}).get("HTTPStatusCode")
-
-
-def _get_graph_id(response: dict):
-    """
-    Extract the graph ID from a Neptune Analytics API response.
-
-    Args:
-        response (dict): The Neptune Analytics API response dictionary
-
-    Returns:
-        str or None: The graph ID if available, None otherwise
-    """
-    return response.get("id")
 
 
 def _create_random_graph_name(graph_name_prefix: Optional[str] = None) -> str:
@@ -1210,7 +1194,7 @@ async def create_csv_table_from_s3(
     logger.debug(f"Inspecting files from {s3_bucket}")
 
     response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=bucket_prefix)
-    file_paths = response.get("Contents", [])
+    file_paths = s3_get_contents(response)
 
     logger.info(f"Moving 'Edge_*.csv' files to folder {s3_bucket}/Edge")
     edge_sql_statement = _build_sql_statement(
@@ -1590,8 +1574,8 @@ def _execute_athena_query(
 
     try:
         response = client.start_query_execution(**query_execution_params)
-        logger.info(f"Executing query: {response['QueryExecutionId']}")
-        query_execution_id = response["QueryExecutionId"]
+        logger.info(f"Executing query: {athena_get_query_execution_id(response)}")
+        query_execution_id = athena_get_query_execution_id(response)
     except ClientError as e:
         logger.error(f"Error creating table: {e}")
         raise
@@ -1677,7 +1661,7 @@ def empty_s3_bucket(
 
 def validate_permissions():
     factory = ClientFactory.default()
-    user_arn = factory.sts().get_caller_identity()["Arn"]
+    user_arn = sts_get_caller_arn(factory.sts().get_caller_identity())
     iam_client = IamClient(role_arn=user_arn, client=factory.iam())
 
     s3_import = os.getenv("NETWORKX_S3_IMPORT_BUCKET_PATH")
@@ -1856,7 +1840,7 @@ def _create_iam_wrapper(
     factory = ClientFactory.default()
     if sts_client is None:
         sts_client = factory.sts()
-    user_arn = sts_client.get_caller_identity()["Arn"]
+    user_arn = sts_get_caller_arn(sts_client.get_caller_identity())
     if iam_client is None:
         iam_client = factory.iam()
     return IamClient(role_arn=user_arn, client=iam_client)
@@ -1935,7 +1919,7 @@ def get_athena_query_results(
     rows = []
     try:
         status = client.get_query_execution(QueryExecutionId=query_execution_id)
-        state = status["QueryExecution"]["Status"]["State"]
+        state = athena_get_query_state(status)
         if state != "SUCCEEDED":
             raise RuntimeError(
                 f"Query {query_execution_id} is in state {state}, cannot fetch results"

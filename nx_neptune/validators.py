@@ -17,20 +17,20 @@ from botocore.exceptions import ClientError
 
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune.clients.response_utils import (
-    get_bucket_region,
-    get_caller_arn,
-    get_graph_names,
-    get_kms_key_id,
-    get_object_count,
-    get_query_failure_reason,
-    get_query_result_columns,
-    get_query_state,
-    get_table_columns,
-    is_access_denied,
-    is_entity_not_found,
-    is_kms_encrypted,
-    is_not_found,
-    is_versioning_enabled,
+    athena_get_query_failure_reason,
+    athena_get_query_result_columns,
+    athena_get_query_state,
+    athena_get_table_columns,
+    athena_is_entity_not_found,
+    boto_is_access_denied,
+    boto_is_not_found,
+    na_get_graph_names,
+    s3_get_bucket_region,
+    s3_get_kms_key_id,
+    s3_get_object_count,
+    s3_is_kms_encrypted,
+    s3_is_versioning_enabled,
+    sts_get_caller_arn,
 )
 from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
 
@@ -76,9 +76,9 @@ def check_bucket_exists(s3_uri: str) -> CheckResult:
         ClientFactory.default().s3().head_bucket(Bucket=bucket)
         return CheckResult.ok("s3_bucket_exists", f"Bucket '{bucket}' exists")
     except ClientError as e:
-        if is_not_found(e):
+        if boto_is_not_found(e):
             return CheckResult.fail("s3_bucket_exists", f"Bucket '{bucket}' not found")
-        if is_access_denied(e):
+        if boto_is_access_denied(e):
             return CheckResult.fail(
                 "s3_bucket_exists", f"Access denied to bucket '{bucket}'"
             )
@@ -90,7 +90,7 @@ def check_bucket_region(s3_uri: str, expected_region: str) -> CheckResult:
     bucket = _parse_bucket(s3_uri)
     try:
         resp = ClientFactory.default().s3().get_bucket_location(Bucket=bucket)
-        location = get_bucket_region(resp)
+        location = s3_get_bucket_region(resp)
         if location == expected_region:
             return CheckResult.ok(
                 "s3_bucket_region", f"Bucket '{bucket}' is in {expected_region}"
@@ -108,9 +108,9 @@ def check_bucket_encryption(s3_uri: str) -> CheckResult:
     bucket = _parse_bucket(s3_uri)
     try:
         resp = ClientFactory.default().s3().get_bucket_encryption(Bucket=bucket)
-        if is_kms_encrypted(resp):
+        if s3_is_kms_encrypted(resp):
             return CheckResult.ok(
-                "s3_bucket_encryption", f"KMS encryption: {get_kms_key_id(resp)}"
+                "s3_bucket_encryption", f"KMS encryption: {s3_get_kms_key_id(resp)}"
             )
         return CheckResult.fail(
             "s3_bucket_encryption", f"Bucket '{bucket}' does not use KMS encryption"
@@ -128,7 +128,7 @@ def check_bucket_versioning(s3_uri: str) -> CheckResult:
     bucket = _parse_bucket(s3_uri)
     try:
         resp = ClientFactory.default().s3().get_bucket_versioning(Bucket=bucket)
-        if is_versioning_enabled(resp):
+        if s3_is_versioning_enabled(resp):
             return CheckResult.ok(
                 "s3_bucket_versioning", f"Versioning enabled on '{bucket}'"
             )
@@ -149,7 +149,7 @@ def check_path_empty(s3_uri: str) -> CheckResult:
             .s3()
             .list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
         )
-        if get_object_count(resp) == 0:
+        if s3_get_object_count(resp) == 0:
             return CheckResult.ok("s3_path_empty", f"Path '{s3_uri}' is empty")
         return CheckResult.fail(
             "s3_path_empty",
@@ -174,7 +174,7 @@ def check_athena_database(
             "athena_database", f"Database '{database}' found in catalog '{catalog}'"
         )
     except ClientError as e:
-        if is_entity_not_found(e):
+        if athena_is_entity_not_found(e):
             return CheckResult.fail(
                 "athena_database",
                 f"Database '{database}' not found in catalog '{catalog}'",
@@ -194,13 +194,13 @@ def check_athena_table(
                 CatalogName=catalog, DatabaseName=database, TableName=table
             )
         )
-        col_names = get_table_columns(resp)
+        col_names = athena_get_table_columns(resp)
         return CheckResult.ok(
             "athena_table",
             f"Table '{table}' found with {len(col_names)} columns: {', '.join(col_names)}",
         )
     except ClientError as e:
-        if is_entity_not_found(e):
+        if athena_is_entity_not_found(e):
             return CheckResult.fail(
                 "athena_table", f"Table '{table}' not found in '{database}'"
             )
@@ -234,15 +234,15 @@ def check_athena_query(
             )
 
             resp = athena.get_query_execution(QueryExecutionId=exec_id)
-            state = get_query_state(resp)
+            state = athena_get_query_state(resp)
             if state != "SUCCEEDED":
                 return CheckResult.fail(
                     "athena_query",
-                    f"Query {i+1} failed: {get_query_failure_reason(resp)}",
+                    f"Query {i+1} failed: {athena_get_query_failure_reason(resp)}",
                 )
 
             results = athena.get_query_results(QueryExecutionId=exec_id, MaxResults=1)
-            all_columns.append(get_query_result_columns(results))
+            all_columns.append(athena_get_query_result_columns(results))
 
         for i, columns in enumerate(all_columns):
             if "~id" not in columns:
@@ -267,7 +267,7 @@ def check_graph_name_available(graph_name: str) -> CheckResult:
     """Check that no existing graph uses this name."""
     try:
         resp = ClientFactory.default().neptune().list_graphs()
-        for g in get_graph_names(resp):
+        for g in na_get_graph_names(resp):
             if g["name"] == graph_name:
                 return CheckResult.fail(
                     "graph_name_available",
@@ -287,7 +287,7 @@ def check_credentials() -> CheckResult:
     """Check that AWS credentials are valid."""
     try:
         resp = ClientFactory.default().sts().get_caller_identity()
-        return CheckResult.ok("credentials", f"Resolved as {get_caller_arn(resp)}")
+        return CheckResult.ok("credentials", f"Resolved as {sts_get_caller_arn(resp)}")
     except Exception as e:
         return CheckResult.fail("credentials", f"Cannot resolve credentials: {e}")
 

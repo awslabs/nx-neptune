@@ -19,13 +19,12 @@ from unittest.mock import patch, MagicMock
 import pytest
 from botocore.exceptions import ClientError
 
+from nx_neptune.clients.response_utils import boto_get_status_code, na_get_graph_id
 from nx_neptune.instance_management import (
     _clean_s3_path,
     _get_bucket_encryption_key_arn,
     TaskFuture,
     TaskType,
-    _get_status_code,
-    _get_graph_id,
     create_na_instance,
     import_csv_from_s3,
     export_csv_to_s3,
@@ -465,7 +464,7 @@ def test_get_bucket_encryption_key_arn_with_exception(mock_factory_cls):
 )
 def test_get_status_code(json_str, expected_status_code):
     test_response = json.loads(json_str)
-    assert expected_status_code == _get_status_code(test_response)
+    assert expected_status_code == boto_get_status_code(test_response)
 
 
 @pytest.mark.parametrize(
@@ -506,7 +505,7 @@ def test_get_status_code(json_str, expected_status_code):
 )
 def test_get_graph_id(json_str, expected_status_code):
     test_response = json.loads(json_str)
-    assert expected_status_code == _get_graph_id(test_response)
+    assert expected_status_code == na_get_graph_id(test_response)
 
 
 @pytest.mark.asyncio
