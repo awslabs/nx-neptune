@@ -26,9 +26,7 @@ from .clients import (
     PARAM_TRAVERSAL_DIRECTION_BOTH,
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
-    SERVICE_IAM,
-    SERVICE_NA,
-    SERVICE_STS,
+    ClientFactory,
     Edge,
     IamClientWrapper,
     NeptuneAnalyticsClient,
@@ -98,7 +96,7 @@ class NeptuneGraph:
             logger = logging.getLogger(__name__)
         s3_iam_role = config.s3_iam_role
         if s3_iam_role is None:
-            s3_iam_role = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
+            s3_iam_role = ClientFactory.default().sts().get_caller_identity()["Arn"]
 
         na_client = NeptuneAnalyticsClient(
             config.graph_id,
