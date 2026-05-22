@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import logging
 
@@ -9,6 +10,8 @@ from typing import Optional
 import asyncio
 
 from nx_neptune_proxy.state import graphs, GRAPH_PREFIX
+
+GRAPH_EXPLORER_URL = os.environ.get("GRAPH_EXPLORER_URL", "http://localhost:5173")
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("nx_neptune").setLevel(logging.DEBUG)
@@ -275,6 +278,116 @@ def get_athena_columns(region: str, database: str, table: str, catalog: str = "A
     resp = athena.get_table_metadata(CatalogName=catalog, DatabaseName=database, TableName=table)
     columns = resp["TableMetadata"].get("Columns", [])
     return [{"name": c["Name"], "type": c["Type"]} for c in columns]
+
+
+# --- Config ---
+
+
+@app.get("/api/v0/config")
+async def get_config():
+    return {"graphExplorerUrl": GRAPH_EXPLORER_URL}
+
+
+# --- Graph Explorer Data Source Interface stubs ---
+
+
+@app.post("/api/v0/search", status_code=501)
+def post_search():
+    return {"detail": "Not implemented"}
+
+
+@app.post("/api/v0/neighbors", status_code=501)
+def post_neighbors():
+    return {"detail": "Not implemented"}
+
+
+@app.post("/api/v0/neighbors/counts", status_code=501)
+def post_neighbors_counts():
+    return {"detail": "Not implemented"}
+
+
+@app.post("/api/v0/vertices", status_code=501)
+def post_vertices():
+    return {"detail": "Not implemented"}
+
+
+@app.post("/api/v0/edges", status_code=501)
+def post_edges():
+    return {"detail": "Not implemented"}
+
+
+@app.get("/api/v0/schema")
+def get_schema():
+    import boto3
+    import json
+
+    ready = [g for g in graphs.values() if g.status == "complete"]
+    if not ready:
+        raise HTTPException(status_code=503, detail="No graph ready")
+
+    graph_id = ready[-1].graph_id
+    client = boto3.client("neptune-graph")
+
+    # Fetch node labels and counts
+    resp = client.execute_query(
+        graphIdentifier=graph_id,
+        queryString="MATCH (v) RETURN labels(v) AS labels, count(v) AS count",
+        language="OPEN_CYPHER",
+    )
+    label_results = json.loads(resp["payload"].read()).get("results", [])
+
+    vertices = []
+    for row in label_results:
+        labels = row.get("labels", [])
+        label = labels[0] if labels else ""
+        if not label:
+            continue
+        # Sample one vertex for attributes
+        sample_resp = client.execute_query(
+            graphIdentifier=graph_id,
+            queryString=f"MATCH (v:`{label}`) RETURN v LIMIT 1",
+            language="OPEN_CYPHER",
+        )
+        sample_results = json.loads(sample_resp["payload"].read()).get("results", [])
+        attributes = []
+        if sample_results:
+            v = sample_results[0].get("v", {})
+            props = v.get("~properties", {})
+            for key, val in props.items():
+                data_type = type(val).__name__
+                attributes.append({"name": key, "dataType": data_type})
+        vertices.append({"type": label, "total": row.get("count", 0), "attributes": attributes})
+
+    # Fetch edge types and counts
+    resp = client.execute_query(
+        graphIdentifier=graph_id,
+        queryString="MATCH ()-[e]-() RETURN type(e) AS label, count(*) AS count",
+        language="OPEN_CYPHER",
+    )
+    edge_results = json.loads(resp["payload"].read()).get("results", [])
+
+    edges = []
+    for row in edge_results:
+        label = row.get("label", "")
+        if not label:
+            continue
+        # Sample one edge for attributes
+        sample_resp = client.execute_query(
+            graphIdentifier=graph_id,
+            queryString=f"MATCH ()-[e:`{label}`]-() RETURN e LIMIT 1",
+            language="OPEN_CYPHER",
+        )
+        sample_results = json.loads(sample_resp["payload"].read()).get("results", [])
+        attributes = []
+        if sample_results:
+            e = sample_results[0].get("e", {})
+            props = e.get("~properties", {})
+            for key, val in props.items():
+                data_type = type(val).__name__
+                attributes.append({"name": key, "dataType": data_type})
+        edges.append({"type": label, "total": row.get("count", 0), "attributes": attributes})
+
+    return {"vertices": vertices, "edges": edges}
 
 
 # --- Static UI (must be last) ---
