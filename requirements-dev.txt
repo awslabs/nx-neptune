@@ -14,14 +14,8 @@ botocore==1.43.17
     # via
     #   boto3
     #   s3transfer
-certifi==2026.5.20
-    # via
-    #   opensearch-py
-    #   requests
 cfgv==3.5.0
     # via pre-commit
-charset-normalizer==3.4.7
-    # via requests
 click==8.4.1
     # via black
 coverage==7.14.1
@@ -32,8 +26,6 @@ distlib==0.4.0
     # via virtualenv
 dotenv==0.9.9
     # via nx-neptune (pyproject.toml)
-events==0.5
-    # via opensearch-py
 filelock==3.29.0
     # via
     #   python-discovery
@@ -42,12 +34,8 @@ flake8==7.3.0
     # via flake8-pyproject
 flake8-pyproject==1.2.4
     # via nx-neptune (pyproject.toml)
-grpcio==1.80.0
-    # via opensearch-protobufs
 identify==2.6.19
     # via pre-commit
-idna==3.17
-    # via requests
 iniconfig==2.3.0
     # via pytest
 isort==8.0.1
@@ -75,10 +63,6 @@ numpy==2.4.6
     #   nx-neptune (pyproject.toml)
     #   pandas
     #   scipy
-opensearch-protobufs==1.2.0
-    # via opensearch-py
-opensearch-py==3.2.0
-    # via nx-neptune (pyproject.toml)
 packaging==26.2
     # via
     #   black
@@ -104,8 +88,6 @@ pre-commit==4.6.0
     # via nx-neptune (pyproject.toml)
 prettytable==3.17.0
     # via pip-licenses
-protobuf==7.35.0
-    # via opensearch-protobufs
 pycodestyle==2.14.0
     # via flake8
 pyflakes==3.4.0
@@ -127,7 +109,6 @@ pytest-order==1.4.0
 python-dateutil==2.9.0.post0
     # via
     #   botocore
-    #   opensearch-py
     #   pandas
 python-discovery==1.4.0
     # via virtualenv
@@ -137,8 +118,6 @@ pytokens==0.4.1
     # via black
 pyyaml==6.0.3
     # via pre-commit
-requests==2.34.2
-    # via opensearch-py
 s3transfer==0.18.0
     # via boto3
 scipy==1.17.1
@@ -149,14 +128,10 @@ sqlglot==30.8.0
     # via nx-neptune (pyproject.toml)
 typing-extensions==4.15.0
     # via
-    #   grpcio
     #   mypy
     #   pytest-asyncio
 urllib3==2.7.0
-    # via
-    #   botocore
-    #   opensearch-py
-    #   requests
+    # via botocore
 virtualenv==21.4.1
     # via pre-commit
 wcwidth==0.7.0
