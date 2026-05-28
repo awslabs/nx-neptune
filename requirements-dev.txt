@@ -75,7 +75,7 @@ numpy==2.4.6
     #   nx-neptune (pyproject.toml)
     #   pandas
     #   scipy
-opensearch-protobufs==1.2.0
+opensearch-protobufs==1.5.0
     # via opensearch-py
 opensearch-py==3.2.0
     # via nx-neptune (pyproject.toml)
