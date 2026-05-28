@@ -58,8 +58,7 @@ test = [
     'scipy>=1.9,!=1.11.0,!=1.11.1',
     "pytest-cov",
     "pandas",
-    "dotenv",
-    "opensearch-py"
+    "dotenv"
 ]
 jupyter = [
     "jupyter>=1.0.0",
