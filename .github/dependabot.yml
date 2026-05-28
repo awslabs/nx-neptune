@@ -8,10 +8,14 @@ updates:
     directory: "/connectors/athena-databricks-connector"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "org.junit.jupiter:*"
   - package-ecosystem: "maven"
     directory: "/connectors/athena-s3vector-connector"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "org.junit.jupiter:*"
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
