@@ -95,9 +95,8 @@ async def create_na_instance(
     Raises:
         Exception: If the Neptune Analytics instance creation fails
     """
-    iam_client = _create_iam_wrapper(sts_client, iam_client)
+    _create_iam_wrapper(sts_client, iam_client).has_create_na_permissions()
     na_client = na_client or ClientFactory.default().neptune()
-    iam_client.has_create_na_permissions()
 
     response = _create_na_instance_task(na_client, config, graph_name_prefix)
     prospective_graph_id = _get_graph_id(response)
@@ -441,12 +440,10 @@ async def delete_na_instance(
         Exception: If the deletion fails with an invalid status code
         ValueError: If the role lacks required permissions
     """
-
-    iam_client = _create_iam_wrapper(sts_client, iam_client)
+    # Permission check
+    _create_iam_wrapper(sts_client, iam_client).has_delete_na_permissions()
 
     na_client = na_client or ClientFactory.default().neptune()
-    # Permission check
-    iam_client.has_delete_na_permissions()
 
     response = _delete_na_instance_task(na_client, graph_id)
     status_code = _get_status_code(response)
@@ -493,9 +490,8 @@ async def create_graph_snapshot(
         ValueError: If the role lacks required permissions
     """
     # Permission check
-    iam_client = _create_iam_wrapper(sts_client, iam_client)
+    _create_iam_wrapper(sts_client, iam_client).has_create_na_snapshot_permissions()
     na_client = na_client or ClientFactory.default().neptune()
-    iam_client.has_create_na_snapshot_permissions()
 
     kwargs: dict[str, Any] = {
         "graphIdentifier": graph_id,
@@ -696,11 +692,10 @@ async def update_na_instance_size(
         Exception: If the resize operation fails
         ValueError: If the role lacks required permissions
     """
-    iam_client = _create_iam_wrapper(sts_client, iam_client)
     na_client = na_client or ClientFactory.default().neptune()
 
     # Permission check
-    iam_client.has_update_na_permissions()
+    _create_iam_wrapper(sts_client, iam_client).has_update_na_permissions()
 
     logger.info(f"Resizing graph: {graph_id} with size: {prospect_size}")
     response = na_client.update_graph(
@@ -1678,7 +1673,7 @@ def empty_s3_bucket(
 def validate_permissions():
     factory = ClientFactory.default()
     user_arn = factory.sts().get_caller_identity()["Arn"]
-    iam_client = IamClientWrapper(role_arn=user_arn, client=factory.iam())
+    iam_client_wrapper = IamClientWrapper(role_arn=user_arn, client=factory.iam())
 
     s3_import = os.getenv("NETWORKX_S3_IMPORT_BUCKET_PATH")
     s3_export = os.getenv("NETWORKX_S3_EXPORT_BUCKET_PATH")
@@ -1686,7 +1681,7 @@ def validate_permissions():
     kms_key_import = _get_bucket_encryption_key_arn(s3_import) if s3_import else None
     kms_key_export = _get_bucket_encryption_key_arn(s3_export) if s3_export else None
 
-    return iam_client.validate_permissions(
+    return iam_client_wrapper.validate_permissions(
         s3_import, kms_key_import, s3_export, kms_key_export
     )
 
