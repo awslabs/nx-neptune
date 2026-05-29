@@ -46,7 +46,7 @@ class SessionManager:
         """
         self.session_name = session_name
         self.cleanup_task = cleanup_task or CleanupTask.NONE
-        self._clients = ClientFactory.default()
+        self._clients = ClientFactory()
         self._neptune_client = self._clients.neptune()
         self._sts_client = self._clients.sts()
         self._s3_iam_role = self._sts_client.get_caller_identity()["Arn"]

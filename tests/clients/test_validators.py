@@ -25,7 +25,7 @@ from nx_neptune.validators import (
 def mock_factory():
     with patch("nx_neptune.validators.ClientFactory") as mock_cls:
         factory = MagicMock()
-        mock_cls.default.return_value = factory
+        mock_cls.return_value = factory
         yield factory
 
 

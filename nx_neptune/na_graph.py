@@ -95,15 +95,13 @@ class NeptuneGraph:
             logger = logging.getLogger(__name__)
         s3_iam_role = config.s3_iam_role
         if s3_iam_role is None:
-            s3_iam_role = ClientFactory.default().sts().get_caller_identity()["Arn"]
+            s3_iam_role = ClientFactory().sts().get_caller_identity()["Arn"]
 
         na_client = NeptuneAnalyticsClient(
             config.graph_id,
             logger=logger,
         )
-        iam_client = IamClientWrapper(
-            s3_iam_role, ClientFactory.default().iam(), logger
-        )
+        iam_client = IamClientWrapper(s3_iam_role, ClientFactory().iam(), logger)
         return cls(
             graph=graph,
             logger=logger,
