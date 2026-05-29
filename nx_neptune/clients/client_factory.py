@@ -34,7 +34,7 @@ class ClientFactory:
     Ensures consistent configuration (user agent, timeouts, region) across
     all AWS service clients used by the library.
 
-    When called with no arguments, returns a shared singleton instance.
+    When called with no arguments, returns the shared singleton default instance.
     When called with custom configuration, creates a new instance.
 
     Args:
