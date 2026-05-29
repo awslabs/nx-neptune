@@ -14,7 +14,6 @@ import logging
 from asyncio import Task
 from typing import Any, List, Optional
 
-import boto3
 import networkx
 from botocore.config import Config
 from networkx import DiGraph, Graph
@@ -102,7 +101,9 @@ class NeptuneGraph:
             config.graph_id,
             logger=logger,
         )
-        iam_client = IamClientWrapper(s3_iam_role, boto3.client(SERVICE_IAM), logger)
+        iam_client = IamClientWrapper(
+            s3_iam_role, ClientFactory.default().iam(), logger
+        )
         return cls(
             graph=graph,
             logger=logger,
