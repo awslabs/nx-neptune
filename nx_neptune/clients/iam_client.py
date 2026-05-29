@@ -19,12 +19,12 @@ from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 from botocore.utils import ArnParser
 
-__all__ = ["IamClient", "split_s3_arn_to_bucket_and_path"]
+__all__ = ["IamClientWrapper", "split_s3_arn_to_bucket_and_path"]
 
 from .neptune_constants import SERVICE_NA
 
 
-class IamClient:
+class IamClientWrapper:
     """
     IAM Client is used to interact with AWS IAM service for role-based operations
     related to Neptune Analytics permissions and access control.

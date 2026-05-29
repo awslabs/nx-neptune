@@ -13,7 +13,7 @@
 import pytest
 
 from nx_neptune.clients.iam_client import (
-    IamClient,
+    IamClientWrapper,
     _get_s3_in_arn,
     _convert_sts_to_iam_arn,
     split_s3_arn_to_bucket_and_path,
@@ -59,7 +59,7 @@ def test_get_s3_in_arn(s3_path, expected):
 )
 def test_validate_arns(arn):
     with pytest.raises(ValueError, match="Invalid ARN"):
-        IamClient._validate_arns(arn)
+        IamClientWrapper._validate_arns(arn)
 
 
 @pytest.mark.parametrize(
@@ -123,26 +123,26 @@ def test_split_s3_arn_to_bucket_and_path(s3_arn, expected_bucket, expected_path)
     assert path == expected_path
 
 
-class TestIamClient:
-    """Tests for IamClient class methods."""
+class TestIamClientWrapper:
+    """Tests for IamClientWrapper class methods."""
 
     @pytest.fixture
     def mock_iam_client(self):
-        """Create a mock IamClient for testing."""
+        """Create a mock IamClientWrapper for testing."""
         from unittest.mock import MagicMock
 
         mock_client = MagicMock()
-        iam_client = IamClient(
+        iam_client = IamClientWrapper(
             role_arn="arn:aws:iam::123456789012:role/test-role", client=mock_client
         )
         return iam_client, mock_client
 
     def test_iam_client_init(self):
-        """Test IamClient initialization."""
+        """Test IamClientWrapper initialization."""
         from unittest.mock import MagicMock
 
         mock_client = MagicMock()
-        iam_client = IamClient(
+        iam_client = IamClientWrapper(
             role_arn="arn:aws:iam::123456789012:role/test-role", client=mock_client
         )
         assert iam_client.role_arn == "arn:aws:iam::123456789012:role/test-role"

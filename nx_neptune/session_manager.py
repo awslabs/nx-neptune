@@ -11,15 +11,8 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from . import NeptuneGraph, instance_management
-from .clients import IamClient, NeptuneAnalyticsClient
-from .clients.neptune_constants import (
-    APP_ID_NX,
-    SERVICE_ATHENA,
-    SERVICE_IAM,
-    SERVICE_NA,
-    SERVICE_S3,
-    SERVICE_STS,
-)
+from .clients import IamClientWrapper, NeptuneAnalyticsClient
+from .clients.client_factory import ClientFactory
 
 logger = logging.getLogger(__name__)
 
@@ -53,14 +46,13 @@ class SessionManager:
         """
         self.session_name = session_name
         self.cleanup_task = cleanup_task or CleanupTask.NONE
-        self._neptune_client = boto3.client(
-            service_name=SERVICE_NA, config=Config(user_agent_appid=APP_ID_NX)
-        )
-        self._sts_client = boto3.client(SERVICE_STS)
+        self._clients = ClientFactory.default()
+        self._neptune_client = self._clients.neptune()
+        self._sts_client = self._clients.sts()
         self._s3_iam_role = self._sts_client.get_caller_identity()["Arn"]
-        self._iam_client = boto3.client(SERVICE_IAM)
-        self._s3_client = boto3.client(SERVICE_S3)
-        self._athena_client = boto3.client(SERVICE_ATHENA)
+        self._iam_client = self._clients.iam()
+        self._s3_client = self._clients.s3()
+        self._athena_client = self._clients.athena()
 
     @classmethod
     def session(cls, session_name=None, cleanup_task=None):
@@ -287,7 +279,7 @@ class SessionManager:
         return await instance_management.export_csv_to_s3(
             NeptuneGraph(
                 graph,
-                IamClient(self._s3_iam_role, self._iam_client),
+                IamClientWrapper(self._s3_iam_role, self._iam_client),
                 nx.Graph(),
             ),
             s3_location,
@@ -322,7 +314,7 @@ class SessionManager:
                 return await instance_management.import_csv_from_s3(
                     NeptuneGraph(
                         graph,
-                        IamClient(self._s3_iam_role, self._iam_client),
+                        IamClientWrapper(self._s3_iam_role, self._iam_client),
                         nx.Graph(),
                     ),
                     s3_location,
@@ -403,7 +395,7 @@ class SessionManager:
         task_id = await instance_management.import_csv_from_s3(
             NeptuneGraph(
                 graph,
-                IamClient(self._s3_iam_role, self._iam_client),
+                IamClientWrapper(self._s3_iam_role, self._iam_client),
                 nx.Graph(),
             ),
             s3_location,
@@ -462,7 +454,7 @@ class SessionManager:
         task_id = await instance_management.export_csv_to_s3(
             NeptuneGraph(
                 graph,
-                IamClient(self._s3_iam_role, self._iam_client),
+                IamClientWrapper(self._s3_iam_role, self._iam_client),
                 nx.Graph(),
             ),
             s3_location,

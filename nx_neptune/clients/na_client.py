@@ -18,6 +18,7 @@ import boto3
 from botocore.client import BaseClient
 from botocore.config import Config
 
+from .client_factory import ClientFactory
 from .neptune_constants import APP_ID_NX, SERVICE_NA
 
 
@@ -57,12 +58,7 @@ class NeptuneAnalyticsClient:
         if client:
             self.client = client
         else:
-            config_kwargs: dict[str, Any] = {"user_agent_appid": APP_ID_NX}
-            if timeout_seconds:
-                config_kwargs["read_timeout"] = timeout_seconds
-            self.client = boto3.client(
-                service_name=SERVICE_NA, config=Config(**config_kwargs)
-            )
+            self.client = ClientFactory(timeout_seconds=timeout_seconds).neptune()
         self.logger = logger or logging.getLogger(__name__)
         self.name = name or ""
         self.status = status or ""

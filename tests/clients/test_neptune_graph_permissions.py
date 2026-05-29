@@ -13,7 +13,7 @@
 import pytest
 from unittest.mock import MagicMock
 
-from nx_neptune.clients import IamClient
+from nx_neptune.clients import IamClientWrapper
 
 
 @pytest.mark.parametrize(
@@ -32,11 +32,11 @@ def test_aws_permission_check_invalid_arn(role_arn, resource_arn):
     # Create a mock IAM client
     mock_iam_client = MagicMock()
     logger = MagicMock()
-    iam_client = IamClient(role_arn, mock_iam_client, logger)
+    iam_client = IamClientWrapper(role_arn, mock_iam_client, logger)
 
     # Test with the parametrized ARNs
     with pytest.raises(ValueError, match="Invalid ARN format"):
-        iam_client = IamClient(role_arn, mock_iam_client, logger)
+        iam_client = IamClientWrapper(role_arn, mock_iam_client, logger)
         iam_client.check_aws_permission(
             "Test operation", ["neptune-graph:ReadDataViaQuery"], resource_arn
         )
@@ -70,7 +70,7 @@ def test_aws_permission_check_malformed_response(mock_response):
     logger = MagicMock()
 
     with pytest.raises(ValueError, match="Unexpected result structure"):
-        iam_client = IamClient(
+        iam_client = IamClientWrapper(
             "arn:aws:iam::123456789012:role/test-role", mock_iam_client, logger
         )
         iam_client.check_aws_permission(

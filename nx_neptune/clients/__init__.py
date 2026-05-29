@@ -11,7 +11,8 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 # clients
-from .iam_client import IamClient
+from .client_factory import ClientFactory
+from .iam_client import IamClientWrapper
 from .na_client import NeptuneAnalyticsClient
 from .na_models import Edge, Node
 from .neptune_constants import (
