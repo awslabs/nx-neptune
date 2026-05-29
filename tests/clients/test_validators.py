@@ -55,23 +55,23 @@ class TestCheckBucketExists:
 
 class TestCheckBucketRegion:
     def test_correct_region(self, mock_factory):
-        mock_factory.s3.return_value.get_bucket_location.return_value = {
-            "LocationConstraint": "us-west-2"
+        mock_factory.s3.return_value.head_bucket.return_value = {
+            "BucketRegion": "us-west-2"
         }
         result = check_bucket_region("s3://my-bucket/", "us-west-2")
         assert result.passed is True
 
     def test_wrong_region(self, mock_factory):
-        mock_factory.s3.return_value.get_bucket_location.return_value = {
-            "LocationConstraint": "eu-west-1"
+        mock_factory.s3.return_value.head_bucket.return_value = {
+            "BucketRegion": "eu-west-1"
         }
         result = check_bucket_region("s3://my-bucket/", "us-west-2")
         assert result.passed is False
         assert "eu-west-1" in result.message
 
-    def test_us_east_1_null(self, mock_factory):
-        mock_factory.s3.return_value.get_bucket_location.return_value = {
-            "LocationConstraint": None
+    def test_us_east_1(self, mock_factory):
+        mock_factory.s3.return_value.head_bucket.return_value = {
+            "BucketRegion": "us-east-1"
         }
         result = check_bucket_region("s3://my-bucket/", "us-east-1")
         assert result.passed is True
@@ -238,9 +238,8 @@ class TestValidateResources:
         mock_factory.sts.return_value.get_caller_identity.return_value = {
             "Arn": "arn:aws:iam::123:user/dev"
         }
-        mock_factory.s3.return_value.head_bucket.return_value = {}
-        mock_factory.s3.return_value.get_bucket_location.return_value = {
-            "LocationConstraint": "us-west-2"
+        mock_factory.s3.return_value.head_bucket.return_value = {
+            "BucketRegion": "us-west-2"
         }
         mock_factory.s3.return_value.get_bucket_versioning.return_value = {
             "Status": "Enabled"

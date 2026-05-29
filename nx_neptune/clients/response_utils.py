@@ -33,12 +33,6 @@ def is_entity_not_found(e: ClientError) -> bool:
 # --- S3 ---
 
 
-def get_bucket_region(resp: dict) -> str:
-    """Get bucket region from get_bucket_location response."""
-    # S3 API returns None for us-east-1
-    return resp.get("LocationConstraint") or "us-east-1"
-
-
 def is_kms_encrypted(resp: dict) -> bool:
     """Check if get_bucket_encryption response uses KMS."""
     for rule in resp.get("ServerSideEncryptionConfiguration", {}).get("Rules", []):

@@ -17,7 +17,6 @@ from botocore.exceptions import ClientError
 
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune.clients.response_utils import (
-    get_bucket_region,
     get_caller_arn,
     get_graph_names,
     get_kms_key_id,
@@ -39,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CheckResult:
-    check: str
+    check_name: str
     passed: bool
     message: str
 
@@ -52,7 +51,11 @@ class CheckResult:
         return cls(check, False, msg)
 
     def to_dict(self) -> dict:
-        return {"check": self.check, "passed": self.passed, "message": self.message}
+        return {
+            "check": self.check_name,
+            "passed": self.passed,
+            "message": self.message,
+        }
 
 
 def _parse_bucket(s3_uri: str) -> str:
@@ -89,8 +92,8 @@ def check_bucket_region(s3_uri: str, expected_region: str) -> CheckResult:
     """Check that the bucket is in the expected region."""
     bucket = _parse_bucket(s3_uri)
     try:
-        resp = ClientFactory.default().s3().get_bucket_location(Bucket=bucket)
-        location = get_bucket_region(resp)
+        resp = ClientFactory.default().s3().head_bucket(Bucket=bucket)
+        location = resp["BucketRegion"]
         if location == expected_region:
             return CheckResult.ok(
                 "s3_bucket_region", f"Bucket '{bucket}' is in {expected_region}"
