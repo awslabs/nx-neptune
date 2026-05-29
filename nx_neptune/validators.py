@@ -93,17 +93,18 @@ def check_bucket_region(s3_uri: str, expected_region: str) -> CheckResult:
     bucket = _parse_bucket(s3_uri)
     try:
         resp = ClientFactory.default().s3().head_bucket(Bucket=bucket)
-        location = resp["BucketRegion"]
-        if location == expected_region:
-            return CheckResult.ok(
-                "s3_bucket_region", f"Bucket '{bucket}' is in {expected_region}"
-            )
-        return CheckResult.fail(
-            "s3_bucket_region",
-            f"Bucket '{bucket}' is in {location}, expected {expected_region}",
-        )
     except ClientError as e:
         return CheckResult.fail("s3_bucket_region", str(e))
+
+    location = resp["BucketRegion"]
+    if location == expected_region:
+        return CheckResult.ok(
+            "s3_bucket_region", f"Bucket '{bucket}' is in {expected_region}"
+        )
+    return CheckResult.fail(
+        "s3_bucket_region",
+        f"Bucket '{bucket}' is in {location}, expected {expected_region}",
+    )
 
 
 def check_bucket_encryption(s3_uri: str) -> CheckResult:
@@ -111,13 +112,6 @@ def check_bucket_encryption(s3_uri: str) -> CheckResult:
     bucket = _parse_bucket(s3_uri)
     try:
         resp = ClientFactory.default().s3().get_bucket_encryption(Bucket=bucket)
-        if is_kms_encrypted(resp):
-            return CheckResult.ok(
-                "s3_bucket_encryption", f"KMS encryption: {get_kms_key_id(resp)}"
-            )
-        return CheckResult.fail(
-            "s3_bucket_encryption", f"Bucket '{bucket}' does not use KMS encryption"
-        )
     except ClientError as e:
         if "ServerSideEncryptionConfigurationNotFoundError" in str(e):
             return CheckResult.fail(
@@ -125,21 +119,30 @@ def check_bucket_encryption(s3_uri: str) -> CheckResult:
             )
         return CheckResult.fail("s3_bucket_encryption", str(e))
 
+    if is_kms_encrypted(resp):
+        return CheckResult.ok(
+            "s3_bucket_encryption", f"KMS encryption: {get_kms_key_id(resp)}"
+        )
+    return CheckResult.fail(
+        "s3_bucket_encryption", f"Bucket '{bucket}' does not use KMS encryption"
+    )
+
 
 def check_bucket_versioning(s3_uri: str) -> CheckResult:
     """Check that the bucket has versioning enabled."""
     bucket = _parse_bucket(s3_uri)
     try:
         resp = ClientFactory.default().s3().get_bucket_versioning(Bucket=bucket)
-        if is_versioning_enabled(resp):
-            return CheckResult.ok(
-                "s3_bucket_versioning", f"Versioning enabled on '{bucket}'"
-            )
-        return CheckResult.fail(
-            "s3_bucket_versioning", f"Versioning not enabled on '{bucket}'"
-        )
     except ClientError as e:
         return CheckResult.fail("s3_bucket_versioning", str(e))
+
+    if is_versioning_enabled(resp):
+        return CheckResult.ok(
+            "s3_bucket_versioning", f"Versioning enabled on '{bucket}'"
+        )
+    return CheckResult.fail(
+        "s3_bucket_versioning", f"Versioning not enabled on '{bucket}'"
+    )
 
 
 def check_path_empty(s3_uri: str) -> CheckResult:
@@ -152,14 +155,15 @@ def check_path_empty(s3_uri: str) -> CheckResult:
             .s3()
             .list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
         )
-        if get_object_count(resp) == 0:
-            return CheckResult.ok("s3_path_empty", f"Path '{s3_uri}' is empty")
-        return CheckResult.fail(
-            "s3_path_empty",
-            f"Path '{s3_uri}' is not empty — leftover files may cause issues",
-        )
     except ClientError as e:
         return CheckResult.fail("s3_path_empty", str(e))
+
+    if get_object_count(resp) == 0:
+        return CheckResult.ok("s3_path_empty", f"Path '{s3_uri}' is empty")
+    return CheckResult.fail(
+        "s3_path_empty",
+        f"Path '{s3_uri}' is not empty — leftover files may cause issues",
+    )
 
 
 # --- Athena checks ---
@@ -197,17 +201,18 @@ def check_athena_table(
                 CatalogName=catalog, DatabaseName=database, TableName=table
             )
         )
-        col_names = get_table_columns(resp)
-        return CheckResult.ok(
-            "athena_table",
-            f"Table '{table}' found with {len(col_names)} columns: {', '.join(col_names)}",
-        )
     except ClientError as e:
         if is_entity_not_found(e):
             return CheckResult.fail(
                 "athena_table", f"Table '{table}' not found in '{database}'"
             )
         return CheckResult.fail("athena_table", str(e))
+
+    col_names = get_table_columns(resp)
+    return CheckResult.ok(
+        "athena_table",
+        f"Table '{table}' found with {len(col_names)} columns: {', '.join(col_names)}",
+    )
 
 
 def check_athena_query(
