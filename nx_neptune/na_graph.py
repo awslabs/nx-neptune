@@ -30,7 +30,7 @@ from .clients import (
     SERVICE_NA,
     SERVICE_STS,
     Edge,
-    IamClient,
+    IamClientWrapper,
     NeptuneAnalyticsClient,
     Node,
     clear_query,
@@ -69,7 +69,7 @@ class NeptuneGraph:
     def __init__(
         self,
         na_client: NeptuneAnalyticsClient,
-        iam_client: IamClient,
+        iam_client: IamClientWrapper,
         graph: Graph,
         logger: Optional[logging.Logger] = None,
     ):
@@ -104,7 +104,7 @@ class NeptuneGraph:
             config.graph_id,
             logger=logger,
         )
-        iam_client = IamClient(s3_iam_role, boto3.client(SERVICE_IAM), logger)
+        iam_client = IamClientWrapper(s3_iam_role, boto3.client(SERVICE_IAM), logger)
         return cls(
             graph=graph,
             logger=logger,

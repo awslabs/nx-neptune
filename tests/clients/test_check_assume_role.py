@@ -12,7 +12,7 @@
 # language governing permissions and limitations under the License.
 import pytest
 from unittest.mock import MagicMock
-from nx_neptune.clients import IamClient
+from nx_neptune.clients import IamClientWrapper
 
 
 @pytest.mark.parametrize(
@@ -63,7 +63,7 @@ def test_check_assume_role_content(mock_response, expected_result):
     mock_iam_client.get_role.return_value = mock_response
     logger = MagicMock()
 
-    iam_client = IamClient(
+    iam_client = IamClientWrapper(
         "arn:aws:iam::123456789012:role/test-role", mock_iam_client, logger
     )
     result = iam_client.check_assume_role("neptune-graph")
@@ -100,7 +100,7 @@ def test_check_assume_role_invalid_json(mock_response, error_message):
 
     # Test with invalid JSON structure
     with pytest.raises(ValueError, match=error_message):
-        iam_client = IamClient(
+        iam_client = IamClientWrapper(
             "arn:aws:iam::123456789012:role/test-role", mock_iam_client, logger
         )
         iam_client.check_assume_role("neptune-graph")
@@ -114,5 +114,5 @@ def test_check_assume_role_invalid_arn():
 
     # Test with the parametrized ARNs
     with pytest.raises(ValueError, match="Invalid ARN format"):
-        iam_client = IamClient("invalid_ar", None, mock_iam_client)
+        iam_client = IamClientWrapper("invalid_ar", None, mock_iam_client)
         iam_client.check_assume_role("neptune-graph")

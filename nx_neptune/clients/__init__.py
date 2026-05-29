@@ -12,7 +12,7 @@
 # language governing permissions and limitations under the License.
 # clients
 from .client_factory import ClientFactory
-from .iam_client import IamClient
+from .iam_client import IamClientWrapper
 from .na_client import NeptuneAnalyticsClient
 from .na_models import Edge, Node
 from .neptune_constants import (

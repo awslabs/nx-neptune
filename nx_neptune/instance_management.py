@@ -24,7 +24,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from sqlglot import exp, parse_one
 
-from .clients import IamClient
+from .clients import IamClientWrapper
 from .clients.client_factory import ClientFactory
 from .clients.iam_client import split_s3_arn_to_bucket_and_path
 from .na_graph import NeptuneGraph
@@ -146,9 +146,9 @@ async def create_na_instance_with_s3_import(
             Reference:
             https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/neptune-graph/client/create_graph_using_import_task.html
         graph_name_prefix (Optional[str]): Optional prefix for the generated graph name
-        sts_client (Optional[IamClient]): Optional StsClient instance. If not provided,
+        sts_client (Optional[IamClientWrapper]): Optional StsClient instance. If not provided,
             a new one will be created using the current user's credentials.
-        iam_client (Optional[IamClient]): Optional IamClient instance. If not provided,
+        iam_client (Optional[IamClientWrapper]): Optional IamClientWrapper instance. If not provided,
             a new one will be created using the current user's credentials.
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided,
             a new one will be created.
@@ -1678,7 +1678,7 @@ def empty_s3_bucket(
 def validate_permissions():
     factory = ClientFactory.default()
     user_arn = factory.sts().get_caller_identity()["Arn"]
-    iam_client = IamClient(role_arn=user_arn, client=factory.iam())
+    iam_client = IamClientWrapper(role_arn=user_arn, client=factory.iam())
 
     s3_import = os.getenv("NETWORKX_S3_IMPORT_BUCKET_PATH")
     s3_export = os.getenv("NETWORKX_S3_EXPORT_BUCKET_PATH")
@@ -1842,16 +1842,16 @@ def _get_status_check_future(
 def _create_iam_wrapper(
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
-) -> IamClient:
+) -> IamClientWrapper:
     """
-    Resolve the caller identity and return an IamClient wrapper.
+    Resolve the caller identity and return an IamClientWrapper wrapper.
 
     Args:
         sts_client (Optional[BaseClient]): Optional STS boto3 client
         iam_client (Optional[BaseClient]): Optional IAM boto3 client
 
     Returns:
-        IamClient: Wrapper with the caller's role ARN
+        IamClientWrapper: Wrapper with the caller's role ARN
     """
     factory = ClientFactory.default()
     if sts_client is None:
@@ -1859,7 +1859,7 @@ def _create_iam_wrapper(
     user_arn = sts_client.get_caller_identity()["Arn"]
     if iam_client is None:
         iam_client = factory.iam()
-    return IamClient(role_arn=user_arn, client=iam_client)
+    return IamClientWrapper(role_arn=user_arn, client=iam_client)
 
 
 def execute_athena_query(

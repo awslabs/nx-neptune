@@ -11,7 +11,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from . import NeptuneGraph, instance_management
-from .clients import IamClient, NeptuneAnalyticsClient
+from .clients import IamClientWrapper, NeptuneAnalyticsClient
 from .clients.client_factory import ClientFactory
 
 logger = logging.getLogger(__name__)
@@ -279,7 +279,7 @@ class SessionManager:
         return await instance_management.export_csv_to_s3(
             NeptuneGraph(
                 graph,
-                IamClient(self._s3_iam_role, self._iam_client),
+                IamClientWrapper(self._s3_iam_role, self._iam_client),
                 nx.Graph(),
             ),
             s3_location,
@@ -314,7 +314,7 @@ class SessionManager:
                 return await instance_management.import_csv_from_s3(
                     NeptuneGraph(
                         graph,
-                        IamClient(self._s3_iam_role, self._iam_client),
+                        IamClientWrapper(self._s3_iam_role, self._iam_client),
                         nx.Graph(),
                     ),
                     s3_location,
@@ -395,7 +395,7 @@ class SessionManager:
         task_id = await instance_management.import_csv_from_s3(
             NeptuneGraph(
                 graph,
-                IamClient(self._s3_iam_role, self._iam_client),
+                IamClientWrapper(self._s3_iam_role, self._iam_client),
                 nx.Graph(),
             ),
             s3_location,
@@ -454,7 +454,7 @@ class SessionManager:
         task_id = await instance_management.export_csv_to_s3(
             NeptuneGraph(
                 graph,
-                IamClient(self._s3_iam_role, self._iam_client),
+                IamClientWrapper(self._s3_iam_role, self._iam_client),
                 nx.Graph(),
             ),
             s3_location,
