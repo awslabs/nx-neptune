@@ -57,10 +57,8 @@ class NeptuneAnalyticsClient:
         self.graph_id = graph_id
         if client:
             self.client = client
-        elif timeout_seconds:
-            self.client = ClientFactory(timeout_seconds=timeout_seconds).neptune()
         else:
-            self.client = ClientFactory().neptune()
+            self.client = ClientFactory(timeout_seconds=timeout_seconds).neptune()
         self.logger = logger or logging.getLogger(__name__)
         self.name = name or ""
         self.status = status or ""

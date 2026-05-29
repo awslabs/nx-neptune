@@ -53,7 +53,6 @@ class ClientFactory:
         if region is None and timeout_seconds is None:
             if cls._default is None:
                 cls._default = super().__new__(cls)
-                cls._default._initialized = False
             return cls._default
         return super().__new__(cls)
 
@@ -62,12 +61,11 @@ class ClientFactory:
         region: Optional[str] = None,
         timeout_seconds: Optional[int] = None,
     ):
-        if getattr(self, "_initialized", False):
+        if hasattr(self, "_clients"):
             return
         self._region = region
         self._timeout_seconds = timeout_seconds
         self._clients: dict[str, BaseClient] = {}
-        self._initialized = True
 
     def _base_kwargs(self) -> dict[str, Any]:
         kwargs: dict[str, Any] = {}
