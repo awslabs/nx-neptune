@@ -13,7 +13,6 @@
 import logging
 from typing import Optional, Union
 
-import boto3
 import jmespath
 from botocore.client import BaseClient
 from botocore.exceptions import ClientError
@@ -21,6 +20,7 @@ from botocore.utils import ArnParser
 
 __all__ = ["IamClientWrapper", "split_s3_arn_to_bucket_and_path"]
 
+from .client_factory import ClientFactory
 from .neptune_constants import SERVICE_NA
 
 
@@ -200,7 +200,7 @@ class IamClientWrapper:
             ValueError: If versioning is not enabled or status cannot be determined
         """
         if s3_client is None:
-            s3_client = boto3.client("s3")
+            s3_client = ClientFactory().s3()
         bucket_name, _ = split_s3_arn_to_bucket_and_path(bucket_arn)
         try:
             response = s3_client.get_bucket_versioning(Bucket=bucket_name)

@@ -14,7 +14,6 @@ import logging
 from asyncio import Task
 from typing import Any, List, Optional
 
-import boto3
 import networkx
 from botocore.config import Config
 from networkx import DiGraph, Graph
@@ -26,9 +25,7 @@ from .clients import (
     PARAM_TRAVERSAL_DIRECTION_BOTH,
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
-    SERVICE_IAM,
-    SERVICE_NA,
-    SERVICE_STS,
+    ClientFactory,
     Edge,
     IamClientWrapper,
     NeptuneAnalyticsClient,
@@ -98,13 +95,13 @@ class NeptuneGraph:
             logger = logging.getLogger(__name__)
         s3_iam_role = config.s3_iam_role
         if s3_iam_role is None:
-            s3_iam_role = boto3.client(SERVICE_STS).get_caller_identity()["Arn"]
+            s3_iam_role = ClientFactory().sts().get_caller_identity()["Arn"]
 
         na_client = NeptuneAnalyticsClient(
             config.graph_id,
             logger=logger,
         )
-        iam_client = IamClientWrapper(s3_iam_role, boto3.client(SERVICE_IAM), logger)
+        iam_client = IamClientWrapper(s3_iam_role, ClientFactory().iam(), logger)
         return cls(
             graph=graph,
             logger=logger,

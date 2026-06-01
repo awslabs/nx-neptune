@@ -76,7 +76,7 @@ def check_bucket_exists(s3_uri: str) -> CheckResult:
     """Check that the S3 bucket exists and is accessible."""
     bucket = _parse_bucket(s3_uri)
     try:
-        ClientFactory.default().s3().head_bucket(Bucket=bucket)
+        ClientFactory().s3().head_bucket(Bucket=bucket)
         return CheckResult.ok("s3_bucket_exists", f"Bucket '{bucket}' exists")
     except ClientError as e:
         if is_not_found(e):
@@ -92,7 +92,7 @@ def check_bucket_region(s3_uri: str, expected_region: str) -> CheckResult:
     """Check that the bucket is in the expected region."""
     bucket = _parse_bucket(s3_uri)
     try:
-        resp = ClientFactory.default().s3().head_bucket(Bucket=bucket)
+        resp = ClientFactory().s3().head_bucket(Bucket=bucket)
     except ClientError as e:
         return CheckResult.fail("s3_bucket_region", str(e))
 
@@ -111,7 +111,7 @@ def check_bucket_encryption(s3_uri: str) -> CheckResult:
     """Check that the bucket has KMS encryption configured."""
     bucket = _parse_bucket(s3_uri)
     try:
-        resp = ClientFactory.default().s3().get_bucket_encryption(Bucket=bucket)
+        resp = ClientFactory().s3().get_bucket_encryption(Bucket=bucket)
     except ClientError as e:
         if "ServerSideEncryptionConfigurationNotFoundError" in str(e):
             return CheckResult.fail(
@@ -132,7 +132,7 @@ def check_bucket_versioning(s3_uri: str) -> CheckResult:
     """Check that the bucket has versioning enabled."""
     bucket = _parse_bucket(s3_uri)
     try:
-        resp = ClientFactory.default().s3().get_bucket_versioning(Bucket=bucket)
+        resp = ClientFactory().s3().get_bucket_versioning(Bucket=bucket)
     except ClientError as e:
         return CheckResult.fail("s3_bucket_versioning", str(e))
 
@@ -151,7 +151,7 @@ def check_path_empty(s3_uri: str) -> CheckResult:
     prefix = _parse_prefix(s3_uri)
     try:
         resp = (
-            ClientFactory.default()
+            ClientFactory()
             .s3()
             .list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
         )
@@ -174,7 +174,7 @@ def check_athena_database(
 ) -> CheckResult:
     """Check that the Athena database exists."""
     try:
-        ClientFactory.default().athena().get_database(
+        ClientFactory().athena().get_database(
             CatalogName=catalog, DatabaseName=database
         )
         return CheckResult.ok(
@@ -195,7 +195,7 @@ def check_athena_table(
     """Check that the Athena table exists and return its columns."""
     try:
         resp = (
-            ClientFactory.default()
+            ClientFactory()
             .athena()
             .get_table_metadata(
                 CatalogName=catalog, DatabaseName=database, TableName=table
@@ -223,7 +223,7 @@ def check_athena_query(
     all_columns: list[list[str]] = []
 
     try:
-        athena = ClientFactory.default().athena()
+        athena = ClientFactory().athena()
 
         for i, q in enumerate(queries):
             stripped = re.sub(
@@ -274,7 +274,7 @@ def check_athena_query(
 def check_graph_name_available(graph_name: str) -> CheckResult:
     """Check that no existing graph uses this name."""
     try:
-        resp = ClientFactory.default().neptune().list_graphs()
+        resp = ClientFactory().neptune().list_graphs()
         for g in get_graph_names(resp):
             if g["name"] == graph_name:
                 return CheckResult.fail(
@@ -294,7 +294,7 @@ def check_graph_name_available(graph_name: str) -> CheckResult:
 def check_credentials() -> CheckResult:
     """Check that AWS credentials are valid."""
     try:
-        resp = ClientFactory.default().sts().get_caller_identity()
+        resp = ClientFactory().sts().get_caller_identity()
         return CheckResult.ok("credentials", f"Resolved as {get_caller_arn(resp)}")
     except Exception as e:
         return CheckResult.fail("credentials", f"Cannot resolve credentials: {e}")

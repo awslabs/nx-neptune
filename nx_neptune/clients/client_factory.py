@@ -34,8 +34,8 @@ class ClientFactory:
     Ensures consistent configuration (user agent, timeouts, region) across
     all AWS service clients used by the library.
 
-    Use ``ClientFactory.default()`` for a shared singleton, or create an
-    instance for custom configuration.
+    When called with no arguments, returns the shared singleton default instance.
+    When called with custom configuration, creates a new instance.
 
     Args:
         region: AWS region name. If None, uses boto3 default.
@@ -45,18 +45,24 @@ class ClientFactory:
 
     _default: Optional["ClientFactory"] = None
 
-    @classmethod
-    def default(cls) -> "ClientFactory":
-        """Return the shared default factory (lazy-initialized)."""
-        if cls._default is None:
-            cls._default = cls()
-        return cls._default
+    def __new__(
+        cls,
+        region: Optional[str] = None,
+        timeout_seconds: Optional[int] = None,
+    ):
+        if region is None and timeout_seconds is None:
+            if cls._default is None:
+                cls._default = super().__new__(cls)
+            return cls._default
+        return super().__new__(cls)
 
     def __init__(
         self,
         region: Optional[str] = None,
         timeout_seconds: Optional[int] = None,
     ):
+        if hasattr(self, "_clients"):
+            return
         self._region = region
         self._timeout_seconds = timeout_seconds
         self._clients: dict[str, BaseClient] = {}
