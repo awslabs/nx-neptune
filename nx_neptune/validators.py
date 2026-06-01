@@ -238,7 +238,7 @@ def check_athena_query(
             exec_id = _execute_athena_query(athena, wrapped, output_location, catalog=catalog, database=database)
 
             asyncio.run(
-                wait_until_all_complete([exec_id], TaskType.EXPORT_ATHENA_TABLE, athena, polling_interval=1)
+                wait_until_all_complete([exec_id], TaskType.EXPORT_ATHENA_TABLE, athena, polling_interval=3)
             )
 
             resp = athena.get_query_execution(QueryExecutionId=exec_id)
