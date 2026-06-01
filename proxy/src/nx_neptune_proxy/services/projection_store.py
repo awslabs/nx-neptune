@@ -55,6 +55,9 @@ class ProjectionStore:
     def get(self, projection_id: str) -> Optional[Projection]:
         return self._projections.get(projection_id)
 
+    def list(self) -> list[Projection]:
+        return list(self._projections.values())
+
     def update(self, projection_id: str, **kwargs) -> Optional[Projection]:
         projection = self._projections.get(projection_id)
         if projection is None:

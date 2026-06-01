@@ -36,6 +36,17 @@
 <body>
 <h1>nx-neptune proxy</h1>
 
+<div style="margin-bottom:1.5rem;">
+  <label style="margin-top:0;">Session
+    <div style="display:flex; gap:0.5rem; margin-top:0.25rem;">
+      <select id="projection-select" style="flex:1; padding:0.5rem; border:1px solid #ccc; border-radius:4px;">
+        <option value="">+ New session</option>
+      </select>
+      <button type="button" id="refresh-sessions-btn" style="margin-top:0; padding:0.5rem 0.75rem; background:#e5e7eb; color:#333; font-size:0.85rem;">↻</button>
+    </div>
+  </label>
+</div>
+
 <form id="setup-form">
   <label>Athena Database
     <select name="database" id="database-select" required>
@@ -127,6 +138,41 @@ async function loadBuckets() {
 loadDatabases();
 loadBuckets();
 
+// --- Load and switch projections ---
+
+async function loadProjections() {
+  const select = document.getElementById('projection-select');
+  try {
+    const res = await fetch('/api/v0/projection');
+    const projections = await res.json();
+    const options = '<option value="">+ New session</option>' +
+      projections.map(p => `<option value="${p.id}">${p.graph_name || p.id.slice(0,8)} (${p.status})</option>`).join('');
+    select.innerHTML = options;
+    if (projectionId) select.value = projectionId;
+  } catch (e) {}
+}
+
+document.getElementById('projection-select').addEventListener('change', async (e) => {
+  const id = e.target.value;
+  if (!id) {
+    projectionId = null;
+    form.reset();
+    return;
+  }
+  const res = await fetch(`/api/v0/projection/${id}`);
+  const p = await res.json();
+  projectionId = p.id;
+  if (p.database) document.getElementById('database-select').value = p.database;
+  if (p.sql_query) form.sql_query.value = p.sql_query;
+  if (p.s3_staging_bucket) document.getElementById('bucket-select').value = p.s3_staging_bucket;
+  if (p.graph_name) form.graph_name.value = p.graph_name;
+  if (p.graph_memory_gb) form.graph_memory_gb.value = p.graph_memory_gb;
+});
+
+document.getElementById('refresh-sessions-btn').addEventListener('click', loadProjections);
+
+loadProjections();
+
 function getFormData() {
   const data = Object.fromEntries(new FormData(form));
   data.graph_memory_gb = parseInt(data.graph_memory_gb);
@@ -149,6 +195,7 @@ async function ensureProjection() {
     });
     const result = await res.json();
     projectionId = result.id;
+    await loadProjections();
   }
   return projectionId;
 }

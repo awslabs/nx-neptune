@@ -40,6 +40,12 @@ def create_projection(body: ProjectionCreate):
     return asdict(projection)
 
 
+@router.get("", summary="List all projections", response_model=list[ProjectionResponse])
+def list_projections():
+    """List all projections."""
+    return [asdict(p) for p in store.list()]
+
+
 @router.get("/{projection_id}", summary="Get projection state", response_model=ProjectionResponse)
 def get_projection(projection_id: str):
     """Get full projection state including progress."""
