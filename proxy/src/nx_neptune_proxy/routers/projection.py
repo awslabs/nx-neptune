@@ -2,13 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
-import re
 
 from dataclasses import asdict
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from nx_neptune.clients.client_factory import ClientFactory
-from nx_neptune.validators import check_athena_query, validate_resources
+from nx_neptune.clients.response_utils import get_query_failure_reason, get_query_state
+from nx_neptune.instance_management import _execute_athena_query, get_athena_query_results
+from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
+from nx_neptune.validators import check_athena_query, validate_resources, wrap_with_limit
 from nx_neptune_proxy.routers.schemas import (
     PreviewResponse,
     ProjectionCreate,
@@ -19,6 +21,7 @@ from nx_neptune_proxy.routers.schemas import (
 )
 from nx_neptune_proxy.services.pipeline import run_pipeline
 from nx_neptune_proxy.services.projection_store import store
+from nx_neptune_proxy.utils import unpack_query_results
 
 router = APIRouter(prefix="/api/v0/projection", tags=["projection"])
 
@@ -99,40 +102,21 @@ def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le=1000)
     all_results = []
 
     for q in queries:
-        stripped = re.sub(r"\s+LIMIT\s+\d+\s*$", "", q.rstrip(), flags=re.IGNORECASE)
-        limited = f"{stripped} LIMIT {limit}"
+        limited = wrap_with_limit(q, limit)
 
-        rows, columns = _run_athena_preview(client, limited, p.catalog, p.database, p.s3_staging_bucket)
-        if columns is None:
-            return {"error": rows, "results": all_results}
-        all_results.append({"columns": columns, "rows": rows})
+        exec_id = _execute_athena_query(client, limited, p.s3_staging_bucket, catalog=p.catalog, database=p.database)
+
+        asyncio.run(wait_until_all_complete([exec_id], TaskType.EXPORT_ATHENA_TABLE, client, polling_interval=5))
+
+        resp = client.get_query_execution(QueryExecutionId=exec_id)
+        state = get_query_state(resp)
+        if state != "SUCCEEDED":
+            return {"error": get_query_failure_reason(resp), "results": all_results}
+
+        rows = get_athena_query_results(query_execution_id=exec_id, client=client)
+        all_results.append(unpack_query_results(rows))
 
     return {"error": None, "results": all_results}
-
-
-def _run_athena_preview(client, query: str, catalog: str, database: str, output_location: str):
-    """Run a query and return (rows, columns) or (error_string, None)."""
-    import time
-
-    exec_id = client.start_query_execution(
-        QueryString=query,
-        QueryExecutionContext={"Catalog": catalog, "Database": database},
-        ResultConfiguration={"OutputLocation": output_location},
-    )["QueryExecutionId"]
-
-    while True:
-        resp = client.get_query_execution(QueryExecutionId=exec_id)
-        state = resp["QueryExecution"]["Status"]["State"]
-        if state == "SUCCEEDED":
-            break
-        if state in ("FAILED", "CANCELLED"):
-            return resp["QueryExecution"]["Status"].get("StateChangeReason", "Unknown error"), None
-        time.sleep(1)
-
-    results = client.get_query_results(QueryExecutionId=exec_id)
-    columns = [c["Name"] for c in results["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]]
-    rows = [[d.get("VarCharValue", "") for d in row["Data"]] for row in results["ResultSet"]["Rows"][1:]]
-    return rows, columns
 
 
 @router.post("/{projection_id}/execute", summary="Start import pipeline", status_code=202)

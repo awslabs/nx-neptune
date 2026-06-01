@@ -155,23 +155,17 @@ async def test_validate_query(mock_check, client):
 
 
 @pytest.mark.asyncio
+@patch("nx_neptune_proxy.routers.projection.get_athena_query_results")
+@patch("nx_neptune_proxy.routers.projection.wait_until_all_complete")
 @patch("nx_neptune_proxy.routers.projection.ClientFactory")
-async def test_preview(mock_cf, client):
+async def test_preview(mock_cf, mock_wait, mock_results, client):
     mock_athena = MagicMock()
     mock_athena.start_query_execution.return_value = {"QueryExecutionId": "exec-1"}
     mock_athena.get_query_execution.return_value = {
         "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
     }
-    mock_athena.get_query_results.return_value = {
-        "ResultSet": {
-            "ResultSetMetadata": {"ColumnInfo": [{"Name": "id"}, {"Name": "name"}]},
-            "Rows": [
-                {"Data": [{"VarCharValue": "id"}, {"VarCharValue": "name"}]},
-                {"Data": [{"VarCharValue": "1"}, {"VarCharValue": "Alice"}]},
-            ],
-        }
-    }
     mock_cf.return_value.athena.return_value = mock_athena
+    mock_results.return_value = [["id", "name"], ["1", "Alice"]]
 
     create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
     pid = create_resp.json()["id"]

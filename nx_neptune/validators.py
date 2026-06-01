@@ -16,6 +16,7 @@ from typing import Optional
 from botocore.exceptions import ClientError
 
 from nx_neptune.clients.client_factory import ClientFactory
+from nx_neptune.instance_management import _execute_athena_query
 from nx_neptune.clients.response_utils import (
     get_caller_arn,
     get_graph_names,
@@ -215,6 +216,12 @@ def check_athena_table(
     )
 
 
+def wrap_with_limit(query: str, limit: int) -> str:
+    """Strip any existing LIMIT clause and append a new one."""
+    stripped = re.sub(r"\s+LIMIT\s+\d+\s*$", "", query.rstrip(), flags=re.IGNORECASE)
+    return f"{stripped} LIMIT {limit}"
+
+
 def check_athena_query(
     sql_query: str, database: str, output_location: str, catalog: str = "AwsDataCatalog"
 ) -> CheckResult:
@@ -226,19 +233,12 @@ def check_athena_query(
         athena = ClientFactory().athena()
 
         for i, q in enumerate(queries):
-            stripped = re.sub(
-                r"\s+LIMIT\s+\d+\s*$", "", q.rstrip(), flags=re.IGNORECASE
-            )
-            wrapped = f"{stripped} LIMIT 0"
+            wrapped = wrap_with_limit(q, 0)
 
-            exec_id = athena.start_query_execution(
-                QueryString=wrapped,
-                QueryExecutionContext={"Catalog": catalog, "Database": database},
-                ResultConfiguration={"OutputLocation": output_location},
-            )["QueryExecutionId"]
+            exec_id = _execute_athena_query(athena, wrapped, output_location, catalog=catalog, database=database)
 
             asyncio.run(
-                wait_until_all_complete([exec_id], TaskType.EXPORT_ATHENA_TABLE, athena, polling_interval=5)
+                wait_until_all_complete([exec_id], TaskType.EXPORT_ATHENA_TABLE, athena, polling_interval=1)
             )
 
             resp = athena.get_query_execution(QueryExecutionId=exec_id)
