@@ -247,7 +247,7 @@ async function pollStatus(id) {
 
   if (status.status === 'complete') {
     resultDiv.style.display = 'block';
-    resultDiv.innerHTML = '<strong>✓ Graph ready</strong>';
+    resultDiv.innerHTML = `<strong>✓ Graph ready</strong><br>Endpoint: <code>${status.graph_endpoint}</code>`;
     document.getElementById('run-btn').disabled = false;
     return;
   }

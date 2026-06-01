@@ -64,6 +64,7 @@ def get_projection_status(projection_id: str):
         "step_label": p.step_label,
         "progress": p.progress,
         "error": p.error,
+        "graph_endpoint": p.graph_endpoint,
     }
 
 
