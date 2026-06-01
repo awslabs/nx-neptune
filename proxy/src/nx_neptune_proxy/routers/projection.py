@@ -8,7 +8,6 @@ from dataclasses import asdict
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from nx_neptune.clients.client_factory import ClientFactory
-from nx_neptune.instance_management import execute_athena_query, get_athena_query_results
 from nx_neptune.validators import check_athena_query, validate_resources
 from nx_neptune_proxy.routers.schemas import (
     PreviewResponse,
@@ -72,8 +71,7 @@ def validate_projection(projection_id: str):
     checks = validate_resources(
         s3_staging_bucket=p.s3_staging_bucket,
         athena_catalog=p.catalog,
-        athena_database=p.database,
-        sql_query=p.sql_query,
+        athena_database=p.database
     )
     return {"valid": all(c["passed"] for c in checks), "checks": checks}
 
@@ -104,21 +102,37 @@ def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le=1000)
         stripped = re.sub(r"\s+LIMIT\s+\d+\s*$", "", q.rstrip(), flags=re.IGNORECASE)
         limited = f"{stripped} LIMIT {limit}"
 
-        exec_ids = execute_athena_query(
-            sql_statement=limited,
-            output_location=p.s3_staging_bucket,
-            catalog=p.catalog,
-            database=p.database,
-            client=client,
-        )
-        exec_id = exec_ids[0] if isinstance(exec_ids, list) else exec_ids
-
-        rows = get_athena_query_results(query_execution_id=exec_id, client=client)
-        columns = rows[0] if rows else []
-        data_rows = rows[1:] if len(rows) > 1 else []
-        all_results.append({"columns": columns, "rows": data_rows})
+        rows, columns = _run_athena_preview(client, limited, p.catalog, p.database, p.s3_staging_bucket)
+        if columns is None:
+            return {"error": rows, "results": all_results}
+        all_results.append({"columns": columns, "rows": rows})
 
     return {"error": None, "results": all_results}
+
+
+def _run_athena_preview(client, query: str, catalog: str, database: str, output_location: str):
+    """Run a query and return (rows, columns) or (error_string, None)."""
+    import time
+
+    exec_id = client.start_query_execution(
+        QueryString=query,
+        QueryExecutionContext={"Catalog": catalog, "Database": database},
+        ResultConfiguration={"OutputLocation": output_location},
+    )["QueryExecutionId"]
+
+    while True:
+        resp = client.get_query_execution(QueryExecutionId=exec_id)
+        state = resp["QueryExecution"]["Status"]["State"]
+        if state == "SUCCEEDED":
+            break
+        if state in ("FAILED", "CANCELLED"):
+            return resp["QueryExecution"]["Status"].get("StateChangeReason", "Unknown error"), None
+        time.sleep(1)
+
+    results = client.get_query_results(QueryExecutionId=exec_id)
+    columns = [c["Name"] for c in results["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]]
+    rows = [[d.get("VarCharValue", "") for d in row["Data"]] for row in results["ResultSet"]["Rows"][1:]]
+    return rows, columns
 
 
 @router.post("/{projection_id}/execute", summary="Start import pipeline", status_code=202)
