@@ -76,5 +76,7 @@ def health():
 # --- Static UI (must be last — catch-all) ---
 
 UI_DIR = Path(__file__).parent.parent.parent / "ui"
+if not UI_DIR.exists():
+    UI_DIR = Path("/app/proxy/ui")
 if UI_DIR.exists():
     app.mount("/", StaticFiles(directory=UI_DIR, html=True), name="ui")
