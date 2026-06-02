@@ -76,6 +76,10 @@
 
   <form id="setup-form">
     <div class="form-group">
+      <label>AWS Region</label>
+      <input name="region" value="us-east-1" required>
+    </div>
+    <div class="form-group">
       <label>AWS Catalog</label>
       <input name="athenaCatalog" value="AwsDataCatalog" placeholder="AwsDataCatalog">
     </div>
@@ -83,9 +87,34 @@
       <label>Athena Database</label>
       <input name="athenaDatabase" required>
     </div>
+
+    <!-- LLM Generation Panel -->
+    <div class="section" id="llm-section">
+      <div class="section-title" style="cursor:pointer;" onclick="document.getElementById('llm-body').classList.toggle('hidden')">▶ Generate SQL with AI</div>
+      <div id="llm-body" class="hidden">
+        <div class="form-group">
+          <label>Model ID</label>
+          <input id="llm-model" value="us.anthropic.claude-sonnet-4-5-20250929-v1:0">
+        </div>
+        <div class="form-group">
+          <label>Describe what graph you want</label>
+          <textarea id="llm-intent" placeholder="e.g. I want to model fraud rings between accounts and transactions"></textarea>
+        </div>
+        <button type="button" id="llm-submit" class="btn btn-primary">Generate</button>
+        <div id="llm-response" class="hidden" style="margin-top:1rem;">
+          <div id="llm-message" style="padding:0.75rem;background:var(--gray-100);border-radius:var(--radius);font-size:0.85rem;white-space:pre-wrap;"></div>
+          <button type="button" id="llm-use-sql" class="btn btn-success hidden" style="margin-top:0.5rem;">Use this SQL</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top:1.5rem;">
+      <label>Vertex SQL Projection</label>
+      <textarea name="vertexSqlQuery" required placeholder="SELECT col AS &quot;~id&quot;, 'Label' AS &quot;~label&quot;, ... FROM my_table"></textarea>
+    </div>
     <div class="form-group">
-      <label>SQL Projection</label>
-      <textarea name="sqlQuery" required placeholder="SELECT ~id, ~label, col1, col2 FROM my_table"></textarea>
+      <label>Edge SQL Projection</label>
+      <textarea name="edgeSqlQuery" required placeholder="SELECT col AS &quot;~id&quot;, src AS &quot;~from&quot;, dst AS &quot;~to&quot;, 'REL' AS &quot;~label&quot;, ... FROM my_table"></textarea>
     </div>
     <div class="form-group">
       <label>S3 Staging Bucket</label>
@@ -94,10 +123,6 @@
     <div class="form-group">
       <label>Graph Name</label>
       <input name="graphName" required placeholder="my-graph">
-    </div>
-    <div class="form-group">
-      <label>AWS Region</label>
-      <input name="region" value="us-east-1" required>
     </div>
     <div class="form-group">
       <label>Graph Memory (GB)</label>
@@ -144,6 +169,9 @@ const graphEndpointInput = document.getElementById('graph-endpoint');
 function getFormData() {
   const data = Object.fromEntries(new FormData(form));
   data.graphMemoryGb = parseInt(data.graphMemoryGb);
+  data.sqlQuery = [data.vertexSqlQuery, data.edgeSqlQuery].filter(Boolean).join(';\n');
+  delete data.vertexSqlQuery;
+  delete data.edgeSqlQuery;
   return data;
 }
 
@@ -244,6 +272,71 @@ async function pollStatus() {
     runBtn.disabled = false;
   }
 }
+
+// --- LLM Generation ---
+const llmSubmit = document.getElementById('llm-submit');
+const llmIntent = document.getElementById('llm-intent');
+const llmModel = document.getElementById('llm-model');
+const llmResponse = document.getElementById('llm-response');
+const llmMessage = document.getElementById('llm-message');
+const llmUseSql = document.getElementById('llm-use-sql');
+let llmHistory = [];
+let llmLastSql = null;
+
+llmSubmit.addEventListener('click', async () => {
+  const intent = llmIntent.value.trim();
+  if (!intent) return;
+  const region = form.querySelector('[name="region"]').value;
+  const catalog = form.querySelector('[name="athenaCatalog"]').value || 'AwsDataCatalog';
+  const database = form.querySelector('[name="athenaDatabase"]').value;
+  if (!database) { alert('Please fill in Athena Database first.'); return; }
+
+  llmSubmit.disabled = true;
+  llmSubmit.textContent = 'Generating...';
+  llmResponse.classList.remove('hidden');
+  llmMessage.textContent = 'Thinking...';
+  llmUseSql.classList.add('hidden');
+
+  try {
+    const res = await fetch('/api/v0/llm/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        region, athenaCatalog: catalog, athenaDatabase: database,
+        modelId: llmModel.value, userMessage: intent, conversationHistory: llmHistory,
+      }),
+    });
+    const data = await res.json();
+
+    // Update conversation history
+    llmHistory.push({role: 'user', content: intent});
+
+    if (data.type === 'sql') {
+      const sqlText = data.vertexSql + ';\n' + data.edgeSql;
+      llmMessage.textContent = sqlText;
+      llmLastSql = sqlText;
+      llmUseSql.classList.remove('hidden');
+      llmHistory.push({role: 'assistant', content: JSON.stringify(data)});
+    } else {
+      llmMessage.textContent = data.message || 'No response from model.';
+      llmLastSql = null;
+      llmHistory.push({role: 'assistant', content: data.message || ''});
+    }
+  } catch (e) {
+    llmMessage.textContent = '✗ Error: ' + e.message;
+  }
+  llmSubmit.disabled = false;
+  llmSubmit.textContent = 'Generate';
+  llmIntent.value = '';
+});
+
+llmUseSql.addEventListener('click', () => {
+  if (llmLastSql) {
+    const parts = llmLastSql.split(';\n');
+    form.querySelector('[name="vertexSqlQuery"]').value = parts[0] || '';
+    form.querySelector('[name="edgeSqlQuery"]').value = parts[1] || '';
+  }
+});
 </script>
 </body>
 </html>

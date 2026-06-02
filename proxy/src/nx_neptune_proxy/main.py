@@ -280,6 +280,32 @@ def get_athena_columns(region: str, database: str, table: str, catalog: str = "A
     return [{"name": c["Name"], "type": c["Type"]} for c in columns]
 
 
+# --- LLM SQL Generation ---
+
+
+class LLMGenerateRequest(BaseModel):
+    region: str
+    athenaCatalog: str = "AwsDataCatalog"
+    athenaDatabase: str
+    modelId: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    userMessage: str
+    conversationHistory: list[dict] = []
+
+
+@app.post("/api/v0/llm/generate")
+def post_llm_generate(req: LLMGenerateRequest):
+    from nx_neptune_proxy.llm_generator import generate_sql
+
+    return generate_sql(
+        region=req.region,
+        catalog=req.athenaCatalog,
+        database=req.athenaDatabase,
+        model_id=req.modelId,
+        user_message=req.userMessage,
+        conversation_history=req.conversationHistory or None,
+    )
+
+
 # --- Config ---
 
 
