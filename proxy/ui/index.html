@@ -48,6 +48,11 @@
 </div>
 
 <form id="setup-form">
+  <label>Athena Catalog
+    <select name="catalog" id="catalog-select" required>
+      <option value="">Loading...</option>
+    </select>
+  </label>
   <label>Athena Database
     <select name="database" id="database-select" required>
       <option value="">Loading...</option>
@@ -111,16 +116,34 @@ let projectionId = null;
 
 // --- Load metadata dropdowns ---
 
+async function loadCatalogs() {
+  const select = document.getElementById('catalog-select');
+  try {
+    const res = await fetch('/api/v0/metadata/athena/catalogs');
+    const data = await res.json();
+    select.innerHTML = data.catalogs.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+    loadDatabases();
+  } catch (e) {
+    select.innerHTML = '<option value="">Failed to load</option>';
+  }
+}
+
+document.getElementById('catalog-select').addEventListener('change', loadDatabases);
+
 async function loadDatabases() {
   const select = document.getElementById('database-select');
+  select.disabled = true;
+  select.innerHTML = '<option value="">Loading...</option>';
+  const catalog = document.getElementById('catalog-select').value;
   try {
-    const res = await fetch('/api/v0/metadata/athena/databases');
+    const res = await fetch(`/api/v0/metadata/athena/databases?catalog=${encodeURIComponent(catalog)}`);
     const data = await res.json();
     select.innerHTML = '<option value="">Select database...</option>' +
       data.databases.map(db => `<option value="${db}">${db}</option>`).join('');
   } catch (e) {
     select.innerHTML = '<option value="">Failed to load</option>';
   }
+  select.disabled = false;
 }
 
 async function loadBuckets() {
@@ -135,7 +158,7 @@ async function loadBuckets() {
   }
 }
 
-loadDatabases();
+loadCatalogs();
 loadBuckets();
 
 // --- Load and switch projections ---
@@ -162,11 +185,21 @@ document.getElementById('projection-select').addEventListener('change', async (e
   const res = await fetch(`/api/v0/projection/${id}`);
   const p = await res.json();
   projectionId = p.id;
+  if (p.catalog) document.getElementById('catalog-select').value = p.catalog;
   if (p.database) document.getElementById('database-select').value = p.database;
   if (p.sql_query) form.sql_query.value = p.sql_query;
   if (p.s3_staging_bucket) document.getElementById('bucket-select').value = p.s3_staging_bucket;
   if (p.graph_name) form.graph_name.value = p.graph_name;
   if (p.graph_memory_gb) form.graph_memory_gb.value = p.graph_memory_gb;
+  if (p.status === 'executing') {
+    document.getElementById('progress-section').style.display = 'block';
+    pollStatus(p.id);
+  } else if (p.status === 'complete') {
+    document.getElementById('progress-section').style.display = 'block';
+    document.getElementById('result').style.display = 'block';
+    document.getElementById('result').innerHTML = `<strong>✓ Graph ready</strong><br>Endpoint: <code>${p.graph_endpoint}</code>`;
+    document.getElementById('progress-fill').style.width = '100%';
+  }
 });
 
 document.getElementById('refresh-sessions-btn').addEventListener('click', loadProjections);
