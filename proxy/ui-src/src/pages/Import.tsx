@@ -28,6 +28,7 @@ export function Import() {
   const [checks, setChecks] = useState<{ check: string; passed: boolean; message?: string }[]>([]);
   const [preview, setPreview] = useState<{ columns: string[]; rows: string[][] }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState<string | null>(null);
 
   // --- Load metadata ---
   useEffect(() => {
@@ -83,24 +84,33 @@ export function Import() {
   // --- Actions ---
   async function handleValidate() {
     setError(null);
-    const id = await ensureSession();
-    const res = await projection.validate(id);
-    setChecks(res.checks);
+    setLoading("validate");
+    try {
+      const id = await ensureSession();
+      const res = await projection.validate(id);
+      setChecks(res.checks);
+    } finally { setLoading(null); }
   }
 
   async function handleValidateQuery() {
     setError(null);
-    const id = await ensureSession();
-    const res = await projection.validateQuery(id);
-    setChecks(res.checks);
+    setLoading("validate-query");
+    try {
+      const id = await ensureSession();
+      const res = await projection.validateQuery(id);
+      setChecks(res.checks);
+    } finally { setLoading(null); }
   }
 
   async function handlePreview() {
     setError(null);
-    const id = await ensureSession();
-    const res = await projection.preview(id);
-    if (res.error) setError(res.error);
-    else setPreview(res.results);
+    setLoading("preview");
+    try {
+      const id = await ensureSession();
+      const res = await projection.preview(id);
+      if (res.error) setError(res.error);
+      else setPreview(res.results);
+    } finally { setLoading(null); }
   }
 
   async function handleExecute() {
@@ -214,10 +224,10 @@ export function Import() {
 
       {/* Actions */}
       <div className="flex gap-2">
-        <Button variant="secondary" onClick={handleValidate}><CheckCircle className="h-4 w-4" /> Validate</Button>
-        <Button variant="secondary" onClick={handleValidateQuery}><CheckCircle className="h-4 w-4" /> Validate Query</Button>
-        <Button variant="secondary" onClick={handlePreview}><Eye className="h-4 w-4" /> Preview</Button>
-        <Button onClick={handleExecute} disabled={polling}><Play className="h-4 w-4" /> Execute</Button>
+        <Button variant="secondary" onClick={handleValidate} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate" ? "Validating..." : "Validate"}</Button>
+        <Button variant="secondary" onClick={handleValidateQuery} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate-query" ? "Validating..." : "Validate Query"}</Button>
+        <Button variant="secondary" onClick={handlePreview} disabled={!!loading}><Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview"}</Button>
+        <Button onClick={handleExecute} disabled={polling || !!loading}><Play className="h-4 w-4" /> Execute</Button>
       </div>
 
       {/* Validation checks */}

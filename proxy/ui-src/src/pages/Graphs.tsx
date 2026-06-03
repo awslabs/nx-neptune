@@ -25,7 +25,10 @@ export function Graphs() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Neptune Analytics Graphs</h1>
+        <div>
+          <h1 className="text-lg font-semibold">Neptune Analytics Graphs</h1>
+          <p className="text-sm text-gray-500">Showing graphs with <code className="rounded bg-gray-100 px-1">nxp-</code> prefix</p>
+        </div>
         <Button variant="ghost" onClick={load}><RefreshCw className="h-4 w-4" /></Button>
       </div>
 

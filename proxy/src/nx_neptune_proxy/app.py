@@ -114,4 +114,17 @@ UI_DIR = Path(__file__).parent.parent.parent / "ui"
 if not UI_DIR.exists():
     UI_DIR = Path("/app/proxy/ui")
 if UI_DIR.exists():
-    app.mount("/", StaticFiles(directory=UI_DIR, html=True), name="ui")
+    app.mount("/assets", StaticFiles(directory=UI_DIR / "assets"), name="assets")
+
+    @app.get("/{path:path}")
+    async def spa_fallback(path: str):
+        from fastapi.responses import FileResponse
+
+        if path.startswith("api/"):
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404)
+        file_path = UI_DIR / path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(UI_DIR / "index.html")

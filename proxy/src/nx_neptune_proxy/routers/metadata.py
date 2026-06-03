@@ -69,9 +69,13 @@ def list_s3_buckets():
     return {"buckets": buckets}
 
 
+GRAPH_PREFIX = "nxp-"
+
+
 @router.get("/neptune/graph-analytics", summary="List Neptune Analytics graphs", response_model=NeptuneAnalyticsGraphsResponse)
 def list_neptune_graphs():
-    """List all Neptune Analytics graphs in the configured region"""
+    """List Neptune Analytics graphs managed by nx-neptune"""
     client = ClientFactory().neptune()
     items = paginate_aws(client.list_graphs, "graphs")
-    return {"graphs": [{"id": g["id"], "name": g["name"], "status": g["status"]} for g in items]}
+    filtered = [g for g in items if g.get("name", "").startswith(GRAPH_PREFIX)]
+    return {"graphs": [{"id": g["id"], "name": g["name"], "status": g["status"]} for g in filtered]}
