@@ -3,6 +3,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Import } from "./pages/Import";
 import { Sessions } from "./pages/Sessions";
 import { Graphs } from "./pages/Graphs";
+import { QueryBuilder } from "./pages/QueryBuilder";
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
           <Route path="/import" element={<Import />} />
           <Route path="/sessions" element={<Sessions />} />
           <Route path="/graphs" element={<Graphs />} />
+          <Route path="/query-builder" element={<QueryBuilder />} />
         </Routes>
       </main>
     </div>

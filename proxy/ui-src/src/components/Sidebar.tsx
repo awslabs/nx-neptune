@@ -1,10 +1,11 @@
 import { NavLink } from "react-router";
-import { Upload, ListTodo, Network, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Upload, ListTodo, Network, PanelLeftClose, PanelLeftOpen, Wrench } from "lucide-react";
 import { clsx } from "clsx";
 import { useState } from "react";
 
 const links = [
   { to: "/import", label: "Import", icon: Upload },
+  { to: "/query-builder", label: "Query Builder", icon: Wrench },
   { to: "/sessions", label: "Sessions", icon: ListTodo },
   { to: "/graphs", label: "Graphs", icon: Network },
 ];

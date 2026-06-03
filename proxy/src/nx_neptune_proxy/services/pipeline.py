@@ -30,7 +30,7 @@ async def run_pipeline(projection: Projection) -> None:
 
         # Step 1b: Reset graph to ensure it's empty
         _update(projection, step="graph_reset", label="Resetting graph data", progress=25)
-        await sm.reset_graph(graph_name)
+        await sm.reset_graph(graph.name)
         _update(projection, step="graph_reset", label="Graph ready for import", progress=40)
 
         # Step 2: Athena query + CSV import
