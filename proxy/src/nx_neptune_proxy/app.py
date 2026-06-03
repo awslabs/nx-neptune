@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.routers.metadata import router as metadata_router
+from nx_neptune_proxy.routers.projection import router as projection_router
 
 settings = Settings.from_env()
 
@@ -96,9 +97,15 @@ def health():
     return {"status": "healthy"}
 
 
+@app.get("/api/v0/info", summary="Service info")
+def info():
+    return {"name": "nx-neptune-proxy", "version": "0.1.0"}
+
+
 # --- Routers ---
 
 app.include_router(metadata_router)
+app.include_router(projection_router)
 
 
 # --- Static UI (must be last — catch-all) ---
