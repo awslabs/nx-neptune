@@ -25,11 +25,15 @@ class BucketsResponse(BaseModel):
     buckets: list[str]
 
 
-class Graph(BaseModel):
+class CatalogsResponse(BaseModel):
+    catalogs: list[str]
+
+
+class NeptuneAnalyticsGraph(BaseModel):
     id: str
     name: str
     status: str
 
 
-class GraphsResponse(BaseModel):
-    graphs: list[Graph]
+class NeptuneAnalyticsGraphsResponse(BaseModel):
+    graphs: list[NeptuneAnalyticsGraph]

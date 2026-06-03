@@ -167,7 +167,7 @@ async def test_list_neptune_graphs(mock_cf, client):
     }
     mock_cf.return_value.neptune.return_value = mock_neptune
 
-    resp = await client.get("/api/v0/metadata/neptune/graphs")
+    resp = await client.get("/api/v0/metadata/neptune/graph-analytics")
     assert resp.status_code == 200
     assert resp.json() == {
         "graphs": [
@@ -184,7 +184,7 @@ async def test_list_neptune_graphs_empty(mock_cf, client):
     mock_neptune.list_graphs.return_value = {"graphs": []}
     mock_cf.return_value.neptune.return_value = mock_neptune
 
-    resp = await client.get("/api/v0/metadata/neptune/graphs")
+    resp = await client.get("/api/v0/metadata/neptune/graph-analytics")
     assert resp.status_code == 200
     assert resp.json() == {"graphs": []}
 
@@ -201,6 +201,6 @@ async def test_unknown_aws_error_returns_502(mock_cf, client):
     )
     mock_cf.return_value.neptune.return_value = mock_neptune
 
-    resp = await client.get("/api/v0/metadata/neptune/graphs")
+    resp = await client.get("/api/v0/metadata/neptune/graph-analytics")
     assert resp.status_code == 502
     assert resp.json()["error"] == "InternalServerError"
