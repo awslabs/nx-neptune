@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { projection, type Projection } from "../api";
 import { Card, Button } from "../components/ui";
-import { RefreshCw, X } from "lucide-react";
+import { RefreshCw, X, Copy } from "lucide-react";
 import { useNavigate } from "react-router";
 
 export function Sessions() {
   const [sessions, setSessions] = useState<Projection[]>([]);
   const [selected, setSelected] = useState<Projection | null>(null);
+  const [copied, setCopied] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => { load(); }, []);
@@ -91,6 +92,28 @@ export function Sessions() {
           <Button variant="secondary" className="w-full" onClick={() => navigate(`/import?session=${selected.id}`)}>
             Open in Import
           </Button>
+          {selected.graph_id && selected.status === "complete" && (
+            <Button variant="ghost" className="w-full" onClick={() => {
+              const config = {
+                id: selected.graph_id,
+                displayLabel: selected.graph_name || selected.graph_id,
+                connection: {
+                  url: `https://${selected.graph_id}.neptune-graph.amazonaws.com`,
+                  queryEngine: "openCypher",
+                  proxyConnection: true,
+                  graphDbUrl: `https://${selected.graph_id}.neptune-graph.amazonaws.com`,
+                  awsAuthEnabled: true,
+                  serviceType: "neptune-graph",
+                },
+                schema: { vertices: [], edges: [] },
+              };
+              navigator.clipboard.writeText(JSON.stringify(config, null, 2));
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }}>
+              <Copy className="h-3 w-3" /> {copied ? "Copied!" : "Copy for Graph Explorer"}
+            </Button>
+          )}
         </Card>
       )}
     </div>
