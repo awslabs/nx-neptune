@@ -24,13 +24,19 @@ def client():
 async def test_list_catalogs(mock_cf, client):
     mock_athena = MagicMock()
     mock_athena.list_data_catalogs.return_value = {
-        "DataCatalogsSummary": [{"CatalogName": "AwsDataCatalog"}, {"CatalogName": "MyCatalog"}]
+        "DataCatalogsSummary": [
+            {"CatalogName": "AwsDataCatalog", "Status": "CREATE_COMPLETE"},
+            {"CatalogName": "MyCatalog", "Status": "CREATE_COMPLETE"},
+        ]
     }
     mock_cf.return_value.athena.return_value = mock_athena
 
     resp = await client.get("/api/v0/metadata/athena/catalogs")
     assert resp.status_code == 200
-    assert resp.json() == {"catalogs": ["AwsDataCatalog", "MyCatalog"]}
+    assert resp.json() == {"catalogs": [
+        {"name": "AwsDataCatalog", "status": "CREATE_COMPLETE"},
+        {"name": "MyCatalog", "status": "CREATE_COMPLETE"},
+    ]}
 
 
 @pytest.mark.asyncio

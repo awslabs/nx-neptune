@@ -23,7 +23,7 @@ def list_athena_catalogs():
     """List all Athena data catalogs"""
     client = ClientFactory().athena()
     items = paginate_aws(client.list_data_catalogs, "DataCatalogsSummary")
-    return {"catalogs": [c["CatalogName"] for c in items]}
+    return {"catalogs": [{"name": c["CatalogName"], "status": c.get("Status", "")} for c in items]}
 
 
 @router.get("/athena/databases", summary="List Athena databases", response_model=DatabasesResponse)
