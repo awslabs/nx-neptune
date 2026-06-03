@@ -12,6 +12,7 @@ class Settings:
     log_level: str = "INFO"
     allowed_origins: list[str] = None  # type: ignore[assignment]
     port: int = 8080
+    region: str = ""
 
     def __post_init__(self) -> None:
         if self.allowed_origins is None:
@@ -25,4 +26,5 @@ class Settings:
             log_level=os.environ.get("LOG_LEVEL", "INFO").upper(),
             allowed_origins=origins,
             port=int(os.environ.get("PORT", "8080")),
+            region=os.environ.get("AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "")),
         )
