@@ -1,6 +1,9 @@
-.PHONY: dev install test build run stop clean
+.PHONY: dev install test build run stop clean ui
 
 RUNTIME ?= finch
+
+ui:               ## Build frontend into ui/ directory.
+	cd ui-src && npm install && npm run build
 
 dev:              ## Run with auto-reload for development.
 	uvicorn nx_neptune_proxy.app:app --reload --port 8080
