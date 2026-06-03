@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from nx_neptune_proxy.config import Settings
+from nx_neptune_proxy.routers.metadata import router as metadata_router
 
 settings = Settings.from_env()
 
@@ -93,6 +94,11 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+# --- Routers ---
+
+app.include_router(metadata_router)
 
 
 # --- Static UI (must be last — catch-all) ---
