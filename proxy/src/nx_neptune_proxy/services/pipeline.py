@@ -26,7 +26,12 @@ async def run_pipeline(projection: Projection) -> None:
         )
         projection.graph_id = graph.graph_id
         projection.graph_endpoint = f"https://{graph.graph_id}.neptune-graph.amazonaws.com"
-        _update(projection, step="graph_creation", label="Graph available", progress=40)
+        _update(projection, step="graph_creation", label="Graph available", progress=20)
+
+        # Step 1b: Reset graph to ensure it's empty
+        _update(projection, step="graph_reset", label="Resetting graph data", progress=25)
+        await sm.reset_graph(graph_name)
+        _update(projection, step="graph_reset", label="Graph ready for import", progress=40)
 
         # Step 2: Athena query + CSV import
         _update(projection, step="athena_import", label="Running Athena query and importing data", progress=45)
@@ -38,7 +43,6 @@ async def run_pipeline(projection: Projection) -> None:
             catalog=projection.catalog,
             database=projection.database,
             remove_buckets=True,
-            reset_graph_ahead=True,
         )
         _update(projection, step="athena_import", label="Import complete", progress=90)
 
