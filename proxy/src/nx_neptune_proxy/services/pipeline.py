@@ -48,7 +48,12 @@ async def run_pipeline(projection: Projection) -> None:
     except Exception as e:
         logger.exception("Pipeline failed")
         projection.status = "failed"
-        projection.error = str(e)
+        # ClientError wraps the real reason in the response dict
+        if hasattr(e, "response"):
+            err = e.response.get("Error", {})
+            projection.error = f"{err.get('Code', 'Error')}: {err.get('Message', str(e))}"
+        else:
+            projection.error = str(e)
 
 
 def _update(projection: Projection, step: str, label: str, progress: float) -> None:

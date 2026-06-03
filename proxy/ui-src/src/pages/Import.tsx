@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "react-router";
 import { metadata, projection, type Projection, type ProjectionStatus } from "../api";
 import { Button, Select, ProgressBar, Card } from "../components/ui";
 import { Play, CheckCircle, Eye, RefreshCw } from "lucide-react";
 
 export function Import() {
+  const [searchParams] = useSearchParams();
+
   // --- Metadata state ---
   const [catalogs, setCatalogs] = useState<{ name: string; status: string }[]>([]);
   const [databases, setDatabases] = useState<string[]>([]);
@@ -34,7 +37,12 @@ export function Import() {
   useEffect(() => {
     metadata.catalogs().then((d) => setCatalogs(d.catalogs));
     metadata.buckets().then((d) => setBuckets(d.buckets));
-    loadSessions();
+    loadSessions().then(() => {
+      const sessionId = searchParams.get("session");
+      if (sessionId) {
+        projection.get(sessionId).then(loadSession);
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -89,7 +97,7 @@ export function Import() {
       const id = await ensureSession();
       const res = await projection.validate(id);
       setChecks(res.checks);
-    } finally { setLoading(null); }
+    } catch (e: any) { setError(e.message); } finally { setLoading(null); }
   }
 
   async function handleValidateQuery() {
@@ -99,7 +107,7 @@ export function Import() {
       const id = await ensureSession();
       const res = await projection.validateQuery(id);
       setChecks(res.checks);
-    } finally { setLoading(null); }
+    } catch (e: any) { setError(e.message); } finally { setLoading(null); }
   }
 
   async function handlePreview() {
@@ -110,14 +118,19 @@ export function Import() {
       const res = await projection.preview(id);
       if (res.error) setError(res.error);
       else setPreview(res.results);
-    } finally { setLoading(null); }
+    } catch (e: any) { setError(e.message); } finally { setLoading(null); }
   }
 
   async function handleExecute() {
     setError(null);
-    const id = await ensureSession();
-    await projection.execute(id);
-    startPolling(id);
+    setLoading("execute");
+    try {
+      const id = await ensureSession();
+      await projection.execute(id);
+      startPolling(id);
+    } catch (e: any) {
+      setError(e.message);
+    } finally { setLoading(null); }
   }
 
   // --- Polling ---

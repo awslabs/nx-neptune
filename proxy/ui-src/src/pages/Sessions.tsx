@@ -34,6 +34,7 @@ export function Sessions() {
                 <th className="px-4 py-3 font-medium">Database</th>
                 <th className="px-4 py-3 font-medium">Progress</th>
                 <th className="px-4 py-3 font-medium">Created</th>
+                <th className="px-4 py-3 font-medium">Error</th>
               </tr>
             </thead>
             <tbody>
@@ -41,7 +42,7 @@ export function Sessions() {
                 <tr
                   key={s.id}
                   className="cursor-pointer border-b last:border-0 hover:bg-gray-50"
-                  onClick={() => navigate(`/import`)}
+                  onClick={() => navigate(`/import?session=${s.id}`)}
                 >
                   <td className="px-4 py-3 font-medium">{s.graph_name || s.id.slice(0, 8)}</td>
                   <td className="px-4 py-3">
@@ -55,6 +56,7 @@ export function Sessions() {
                   <td className="px-4 py-3 text-gray-600">{s.database || "—"}</td>
                   <td className="px-4 py-3">{Math.round(s.progress)}%</td>
                   <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-sm text-red-600 max-w-xs whitespace-normal" title={s.error || ""}>{s.error || "—"}</td>
                 </tr>
               ))}
             </tbody>
