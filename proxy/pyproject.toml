@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
     "fastapi==0.115.12",
     "uvicorn[standard]==0.34.2",
+    "nx-neptune",
 ]
 
 [project.urls]
