@@ -21,6 +21,20 @@ def client():
 
 @pytest.mark.asyncio
 @patch("nx_neptune_proxy.routers.metadata.ClientFactory")
+async def test_list_catalogs(mock_cf, client):
+    mock_athena = MagicMock()
+    mock_athena.list_data_catalogs.return_value = {
+        "DataCatalogsSummary": [{"CatalogName": "AwsDataCatalog"}, {"CatalogName": "MyCatalog"}]
+    }
+    mock_cf.return_value.athena.return_value = mock_athena
+
+    resp = await client.get("/api/v0/metadata/athena/catalogs")
+    assert resp.status_code == 200
+    assert resp.json() == {"catalogs": ["AwsDataCatalog", "MyCatalog"]}
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune_proxy.routers.metadata.ClientFactory")
 async def test_list_databases(mock_cf, client):
     mock_athena = MagicMock()
     mock_athena.list_databases.return_value = {
@@ -142,14 +156,11 @@ async def test_list_s3_buckets(mock_cf, mock_settings, client):
 @patch("nx_neptune_proxy.routers.metadata.Settings")
 @patch("nx_neptune_proxy.routers.metadata.ClientFactory")
 async def test_list_s3_buckets_no_region(mock_cf, mock_settings, client):
-    mock_s3 = MagicMock()
-    mock_s3.list_buckets.return_value = {"Buckets": [{"Name": "b1"}]}
-    mock_cf.return_value.s3.return_value = mock_s3
     mock_settings.from_env.return_value.region = ""
 
     resp = await client.get("/api/v0/metadata/s3/buckets")
     assert resp.status_code == 200
-    mock_s3.list_buckets.assert_called_with()
+    assert resp.json() == {"buckets": []}
 
 
 # --- Neptune graphs ---

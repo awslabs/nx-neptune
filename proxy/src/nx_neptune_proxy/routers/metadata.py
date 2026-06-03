@@ -61,12 +61,11 @@ def list_athena_columns(
 @router.get("/s3/buckets", summary="List S3 buckets", response_model=BucketsResponse)
 def list_s3_buckets():
     """List S3 buckets in the configured region"""
-    client = ClientFactory().s3()
     filter_region = Settings.from_env().region
-    kwargs = {}
-    if filter_region:
-        kwargs["BucketRegion"] = filter_region
-    buckets = [b["Name"] for b in client.list_buckets(**kwargs).get("Buckets", [])]
+    if not filter_region:
+        return {"buckets": []}
+    client = ClientFactory().s3()
+    buckets = [b["Name"] for b in client.list_buckets(BucketRegion=filter_region).get("Buckets", [])]
     return {"buckets": buckets}
 
 
