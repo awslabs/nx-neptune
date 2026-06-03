@@ -133,6 +133,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install proxy with test deps
-        run: pip install -e "./proxy[test]"
+        run: pip install -e ".[test]"
+        working-directory: proxy
       - name: Run proxy tests
-        run: pytest proxy/tests/ -v
+        run: pytest tests/ -v
+        working-directory: proxy
