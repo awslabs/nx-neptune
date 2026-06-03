@@ -1,7 +1,10 @@
 FROM python:3.11-slim
 WORKDIR /app
+COPY nx_neptune/ ./nx_neptune_src/nx_neptune/
+COPY nx_plugin/ ./nx_neptune_src/nx_plugin/
+COPY pyproject.toml ./nx_neptune_src/
 COPY proxy/ ./proxy/
-RUN pip install --no-cache-dir ./proxy && useradd --create-home appuser
+RUN pip install --no-cache-dir ./nx_neptune_src ./proxy && useradd --create-home appuser
 USER appuser
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
