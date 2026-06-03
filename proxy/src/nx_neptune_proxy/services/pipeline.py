@@ -38,6 +38,7 @@ async def run_pipeline(projection: Projection) -> None:
             catalog=projection.catalog,
             database=projection.database,
             remove_buckets=True,
+            reset_graph_ahead=True,
         )
         _update(projection, step="athena_import", label="Import complete", progress=90)
 

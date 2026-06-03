@@ -1,6 +1,7 @@
 import { NavLink } from "react-router";
-import { Upload, ListTodo, Network } from "lucide-react";
+import { Upload, ListTodo, Network, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { clsx } from "clsx";
+import { useState } from "react";
 
 const links = [
   { to: "/import", label: "Import", icon: Upload },
@@ -9,28 +10,39 @@ const links = [
 ];
 
 export function Sidebar() {
+  const [collapsed, setCollapsed] = useState(false);
+
   return (
-    <aside className="flex w-60 flex-col border-r border-gray-200 bg-white">
-      <div className="flex h-14 items-center gap-2 border-b border-gray-200 px-4">
-        <Network className="h-5 w-5 text-blue-600" />
-        <span className="text-sm font-semibold">nx-neptune</span>
+    <aside className={clsx("flex flex-col border-r border-gray-200 bg-white transition-all", collapsed ? "w-14" : "w-60")}>
+      <div className="flex h-14 items-center justify-between border-b border-gray-200 px-3">
+        {!collapsed && (
+          <div className="flex items-center gap-2">
+            <Network className="h-5 w-5 text-blue-600" />
+            <span className="text-sm font-semibold">nx-neptune</span>
+          </div>
+        )}
+        <button onClick={() => setCollapsed(!collapsed)} className="rounded p-1 text-gray-500 hover:bg-gray-100">
+          {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+        </button>
       </div>
-      <nav className="flex-1 space-y-1 p-3">
+      <nav className="flex-1 space-y-1 p-2">
         {links.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
+            title={label}
             className={({ isActive }) =>
               clsx(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                "flex items-center rounded-md px-3 py-2 text-sm transition-colors",
+                collapsed ? "justify-center" : "gap-3",
                 isActive
                   ? "bg-blue-50 text-blue-700 font-medium"
                   : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
               )
             }
           >
-            <Icon className="h-4 w-4" />
-            {label}
+            <Icon className="h-4 w-4 shrink-0" />
+            {!collapsed && label}
           </NavLink>
         ))}
       </nav>
