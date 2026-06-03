@@ -6,12 +6,14 @@ import time
 import uuid
 from pathlib import Path
 
+from botocore.exceptions import ClientError
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from nx_neptune_proxy.config import Settings
+from nx_neptune_proxy.routers.metadata import router as metadata_router
 
 settings = Settings.from_env()
 
@@ -53,7 +55,28 @@ async def request_logging(request: Request, call_next):
     return response
 
 
-# --- Global error handler ---
+# --- Error handlers ---
+
+_AWS_STATUS_MAP = {
+    "AccessDeniedException": 403,
+    "UnauthorizedAccess": 403,
+    "ResourceNotFoundException": 404,
+    "MetadataException": 400,
+    "InvalidRequestException": 400,
+    "ThrottlingException": 503,
+}
+
+
+@app.exception_handler(ClientError)
+async def aws_exception_handler(request: Request, exc: ClientError):
+    code = exc.response["Error"]["Code"]
+    message = exc.response["Error"]["Message"]
+    status = _AWS_STATUS_MAP.get(code, 502)
+    logger.warning(f"AWS {code} on {request.method} {request.url.path}: {message}")
+    return JSONResponse(
+        status_code=status,
+        content={"error": code, "message": message},
+    )
 
 
 @app.exception_handler(Exception)
@@ -71,6 +94,11 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+# --- Routers ---
+
+app.include_router(metadata_router)
 
 
 # --- Static UI (must be last — catch-all) ---
