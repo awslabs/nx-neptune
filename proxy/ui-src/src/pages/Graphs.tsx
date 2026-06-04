@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { metadata } from "../api";
 import { Card, RefreshButton } from "../components/ui";
+import { Trash2 } from "lucide-react";
 
 interface Graph {
   id: string;
@@ -8,9 +9,17 @@ interface Graph {
   status: string;
 }
 
+interface Summary {
+  numNodes: number;
+  numEdges: number;
+  nodeLabels: string[];
+  edgeLabels: string[];
+}
+
 export function Graphs() {
   const [graphs, setGraphs] = useState<Graph[]>([]);
   const [loading, setLoading] = useState(true);
+  const [summaries, setSummaries] = useState<Record<string, Summary>>({});
 
   useEffect(() => { load(); }, []);
 
@@ -19,6 +28,12 @@ export function Graphs() {
     const data = await metadata.graphs();
     setGraphs(data.graphs);
     setLoading(false);
+    // Fetch summaries for available graphs
+    for (const g of data.graphs) {
+      if (g.status === "AVAILABLE") {
+        metadata.graphSummary(g.id).then(s => setSummaries(prev => ({ ...prev, [g.id]: s }))).catch(() => {});
+      }
+    }
   }
 
   return (
@@ -42,24 +57,39 @@ export function Graphs() {
               <tr>
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">ID</th>
+                <th className="px-4 py-3 font-medium">Nodes</th>
+                <th className="px-4 py-3 font-medium">Edges</th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
-              {graphs.map((g) => (
-                <tr key={g.id} className="border-b last:border-0">
-                  <td className="px-4 py-3 font-medium">{g.name}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-600">{g.id}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                      g.status === "AVAILABLE" ? "bg-green-100 text-green-700" :
-                      g.status === "CREATING" ? "bg-blue-100 text-blue-700" :
-                      g.status === "DELETING" ? "bg-red-100 text-red-700" :
-                      "bg-gray-100 text-gray-700"
-                    }`}>{g.status}</span>
-                  </td>
-                </tr>
-              ))}
+              {graphs.map((g) => {
+                const s = summaries[g.id];
+                return (
+                  <tr key={g.id} className="border-b last:border-0">
+                    <td className="px-4 py-3 font-medium">{g.name}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{g.id}</td>
+                    <td className="px-4 py-3">{s ? s.numNodes.toLocaleString() : "—"}</td>
+                    <td className="px-4 py-3">{s ? s.numEdges.toLocaleString() : "—"}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                        g.status === "AVAILABLE" ? "bg-green-100 text-green-700" :
+                        g.status === "CREATING" ? "bg-blue-100 text-blue-700" :
+                        g.status === "DELETING" ? "bg-red-100 text-red-700" :
+                        "bg-gray-100 text-gray-700"
+                      }`}>{g.status}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        className="text-gray-400 hover:text-red-600 disabled:opacity-30"
+                        disabled={g.status === "DELETING"}
+                        onClick={async () => { if (confirm(`Delete graph ${g.name}?`)) { await metadata.deleteGraph(g.id); load(); } }}
+                      ><Trash2 className="h-4 w-4" /></button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </Card>

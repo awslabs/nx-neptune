@@ -79,3 +79,25 @@ def list_neptune_graphs():
     items = paginate_aws(client.list_graphs, "graphs")
     filtered = [g for g in items if g.get("name", "").startswith(GRAPH_PREFIX)]
     return {"graphs": [{"id": g["id"], "name": g["name"], "status": g["status"]} for g in filtered]}
+
+
+@router.delete("/neptune/graph-analytics/{graph_id}", summary="Delete a Neptune Analytics graph", status_code=202)
+def delete_neptune_graph(graph_id: str):
+    """Delete a Neptune Analytics graph"""
+    client = ClientFactory().neptune()
+    client.delete_graph(graphIdentifier=graph_id, skipSnapshot=True)
+    return {"id": graph_id, "status": "DELETING"}
+
+
+@router.get("/neptune/graph-analytics/{graph_id}/summary", summary="Get graph node/edge counts")
+def get_graph_summary(graph_id: str):
+    """Get node and edge counts for a Neptune Analytics graph"""
+    client = ClientFactory().neptune()
+    resp = client.get_graph_summary(graphIdentifier=graph_id, mode="BASIC")
+    s = resp.get("graphSummary", {})
+    return {
+        "numNodes": s.get("numNodes", 0),
+        "numEdges": s.get("numEdges", 0),
+        "nodeLabels": s.get("nodeLabels", []),
+        "edgeLabels": s.get("edgeLabels", []),
+    }
