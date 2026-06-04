@@ -21,14 +21,16 @@ services:
   graph-explorer:
     image: public.ecr.aws/neptune/graph-explorer:latest
     ports:
-      - "6373:443"
+      - "443:443"
+      - "80:80"
     environment:
       - HOST=localhost
-      - PUBLIC_OR_PROXY_ENDPOINT=https://localhost:6373
-      - GRAPH_CONNECTION_URL=http://proxy:8080
-      - USING_PROXY_SERVER=true
-      - IAM=false
-      - GRAPH_TYPE=neptune-graph
+      - AWS_REGION=${AWS_DEFAULT_REGION:-us-west-2}
+      - IAM=true
+      - SERVICE_TYPE=neptune-graph
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
     depends_on:
       proxy:
         condition: service_healthy
