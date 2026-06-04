@@ -16,7 +16,6 @@ from typing import Optional
 from botocore.exceptions import ClientError
 
 from nx_neptune.clients.client_factory import ClientFactory
-from nx_neptune.instance_management import _execute_athena_query
 from nx_neptune.clients.response_utils import (
     get_caller_arn,
     get_graph_names,
@@ -32,6 +31,7 @@ from nx_neptune.clients.response_utils import (
     is_not_found,
     is_versioning_enabled,
 )
+from nx_neptune.instance_management import _execute_athena_query
 from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
 
 logger = logging.getLogger(__name__)
@@ -235,10 +235,14 @@ def check_athena_query(
         for i, q in enumerate(queries):
             wrapped = wrap_with_limit(q, 0)
 
-            exec_id = _execute_athena_query(athena, wrapped, output_location, catalog=catalog, database=database)
+            exec_id = _execute_athena_query(
+                athena, wrapped, output_location, catalog=catalog, database=database
+            )
 
             asyncio.run(
-                wait_until_all_complete([exec_id], TaskType.EXPORT_ATHENA_TABLE, athena, polling_interval=3)
+                wait_until_all_complete(
+                    [exec_id], TaskType.EXPORT_ATHENA_TABLE, athena, polling_interval=3
+                )
             )
 
             resp = athena.get_query_execution(QueryExecutionId=exec_id)
