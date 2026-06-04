@@ -7,7 +7,6 @@ import { useNavigate } from "react-router";
 export function Sessions() {
   const [sessions, setSessions] = useState<Projection[]>([]);
   const [selected, setSelected] = useState<Projection | null>(null);
-  const [copied, setCopied] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => { load(); }, []);
@@ -98,12 +97,13 @@ export function Sessions() {
                 id: selected.graph_id,
                 displayLabel: selected.graph_name || selected.graph_id,
                 connection: {
-                  url: `https://${selected.graph_id}.neptune-graph.amazonaws.com`,
+                  url: "https://localhost",
                   queryEngine: "openCypher",
                   proxyConnection: true,
-                  graphDbUrl: `https://${selected.graph_id}.neptune-graph.amazonaws.com`,
+                  graphDbUrl: `https://${selected.graph_id}.us-west-2.neptune-graph.amazonaws.com`,
                   awsAuthEnabled: true,
                   serviceType: "neptune-graph",
+                  awsRegion: "us-west-2",
                 },
                 schema: { vertices: [], edges: [] },
               };

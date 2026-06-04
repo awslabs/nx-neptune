@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { metadata } from "../api";
 import { Card, RefreshButton } from "../components/ui";
-import { Trash2 } from "lucide-react";
+import { Trash2, Download } from "lucide-react";
 
 interface Graph {
   id: string;
@@ -80,7 +80,35 @@ export function Graphs() {
                         "bg-gray-100 text-gray-700"
                       }`}>{g.status}</span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 flex gap-2">
+                      <button
+                        className="text-gray-400 hover:text-blue-600 disabled:opacity-30"
+                        disabled={g.status !== "AVAILABLE"}
+                        title="Export for Graph Explorer"
+                        onClick={() => {
+                          const config = {
+                            id: g.id,
+                            displayLabel: g.name,
+                            connection: {
+                              url: "https://localhost",
+                              queryEngine: "openCypher",
+                              proxyConnection: true,
+                              graphDbUrl: `https://${g.id}.us-west-2.neptune-graph.amazonaws.com`,
+                              awsAuthEnabled: true,
+                              serviceType: "neptune-graph",
+                              awsRegion: "us-west-2",
+                            },
+                            schema: { vertices: [], edges: [] },
+                          };
+                          const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `${g.name}.json`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                      ><Download className="h-4 w-4" /></button>
                       <button
                         className="text-gray-400 hover:text-red-600 disabled:opacity-30"
                         disabled={g.status === "DELETING"}
