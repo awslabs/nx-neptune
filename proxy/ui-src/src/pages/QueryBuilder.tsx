@@ -10,6 +10,7 @@ export function QueryBuilder() {
   const [catalogs, setCatalogs] = useState<{ name: string; status: string }[]>([]);
   const [catalog, setCatalog] = useState("AwsDataCatalog");
   const [databases, setDatabases] = useState<string[]>([]);
+  const [dbLoading, setDbLoading] = useState(false);
   const [database, setDatabase] = useState("");
   const [tables, setTables] = useState<string[]>([]);
   const [primaryTable, setPrimaryTable] = useState("");
@@ -24,7 +25,8 @@ export function QueryBuilder() {
 
   useEffect(() => {
     if (!catalog) return;
-    metadata.databases(catalog).then(d => setDatabases(d.databases));
+    setDbLoading(true);
+    metadata.databases(catalog).then(d => { setDatabases(d.databases); setDbLoading(false); });
   }, [catalog]);
 
   useEffect(() => {
@@ -125,8 +127,8 @@ export function QueryBuilder() {
           </label>
           <label className="space-y-1">
             <span className="text-sm font-medium text-gray-700">Database</span>
-            <Select value={database} onChange={e => setDatabase(e.target.value)}>
-              <option value="">— select —</option>
+            <Select value={database} onChange={e => setDatabase(e.target.value)} disabled={dbLoading}>
+              <option value="">{dbLoading ? "Loading..." : "— select —"}</option>
               {databases.map(db => <option key={db} value={db}>{db}</option>)}
             </Select>
           </label>

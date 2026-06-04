@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router";
 import { metadata, projection, type Projection, type ProjectionStatus } from "../api";
-import { Button, Select, ProgressBar, Card } from "../components/ui";
-import { Play, CheckCircle, Eye, RefreshCw } from "lucide-react";
+import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
+import { Play, CheckCircle, Eye } from "lucide-react";
 
 export function Import() {
   const [searchParams] = useSearchParams();
@@ -167,9 +167,7 @@ export function Import() {
               <option key={s.id} value={s.id}>{s.graph_name || s.id.slice(0, 8)} ({s.status})</option>
             ))}
           </Select>
-          <Button variant="ghost" onClick={loadSessions} title="Refresh sessions">
-            <RefreshCw className="h-4 w-4" />
-          </Button>
+          <RefreshButton onClick={loadSessions} />
         </div>
       </div>
 

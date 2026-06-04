@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
-import { type ComponentProps } from "react";
+import { type ComponentProps, useState } from "react";
+import { RefreshCw } from "lucide-react";
 
 export function Button({
   variant = "primary",
@@ -52,5 +53,17 @@ export function Card({ className, ...props }: ComponentProps<"div">) {
       className={clsx("rounded-lg border border-gray-200 bg-white p-6 shadow-sm", className)}
       {...props}
     />
+  );
+}
+
+export function RefreshButton({ onClick }: { onClick: () => void }) {
+  const [spinning, setSpinning] = useState(false);
+  return (
+    <button
+      onClick={() => { setSpinning(true); onClick(); setTimeout(() => setSpinning(false), 500); }}
+      className="rounded p-2 text-gray-500 hover:bg-gray-100"
+    >
+      <RefreshCw className={`h-4 w-4 transition-transform duration-500 ${spinning ? "rotate-180" : ""}`} />
+    </button>
   );
 }

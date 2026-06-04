@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { projection, type Projection } from "../api";
-import { Card, Button } from "../components/ui";
-import { RefreshCw, X, Copy } from "lucide-react";
+import { Card, Button, RefreshButton } from "../components/ui";
+import { X, Copy } from "lucide-react";
 import { useNavigate } from "react-router";
 
 export function Sessions() {
@@ -22,7 +22,7 @@ export function Sessions() {
       <div className="flex-1 space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold">Sessions</h1>
-          <Button variant="ghost" onClick={load}><RefreshCw className="h-4 w-4" /></Button>
+          <RefreshButton onClick={load} />
         </div>
 
         {sessions.length === 0 ? (
