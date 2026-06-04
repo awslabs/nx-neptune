@@ -16,7 +16,8 @@ export function Import() {
   // --- Form state ---
   const [catalog, setCatalog] = useState("AwsDataCatalog");
   const [database, setDatabase] = useState("");
-  const [sqlQuery, setSqlQuery] = useState("");
+  const [nodeQuery, setNodeQuery] = useState("");
+  const [edgeQuery, setEdgeQuery] = useState("");
   const [bucket, setBucket] = useState("");
   const [graphName, setGraphName] = useState("");
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
@@ -57,7 +58,7 @@ export function Import() {
 
   // --- Session management ---
   async function ensureSession(): Promise<string> {
-    const data = { catalog, database, sql_query: sqlQuery, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb };
+    const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb };
     if (currentId) {
       await projection.update(currentId, data);
       return currentId;
@@ -72,7 +73,8 @@ export function Import() {
     setCurrentId(p.id);
     if (p.catalog) setCatalog(p.catalog);
     if (p.database) setDatabase(p.database);
-    if (p.sql_query) setSqlQuery(p.sql_query);
+    if (p.node_query) setNodeQuery(p.node_query);
+    if (p.edge_query) setEdgeQuery(p.edge_query);
     if (p.s3_staging_bucket) setBucket(p.s3_staging_bucket);
     if (p.graph_name) setGraphName(p.graph_name);
     if (p.graph_memory_gb) setGraphMemoryGb(p.graph_memory_gb);
@@ -190,13 +192,24 @@ export function Import() {
           </div>
 
           <label className="block space-y-1">
-            <span className="text-sm font-medium text-gray-700">SQL Query</span>
+            <span className="text-sm font-medium text-gray-700">Node Query</span>
             <textarea
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              rows={4}
-              placeholder="SELECT ~id, ~label, col1, col2 FROM my_table"
-              value={sqlQuery}
-              onChange={(e) => setSqlQuery(e.target.value)}
+              rows={3}
+              placeholder="SELECT ~id, ~label, col1, col2 FROM nodes_table"
+              value={nodeQuery}
+              onChange={(e) => setNodeQuery(e.target.value)}
+            />
+          </label>
+
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-gray-700">Edge Query</span>
+            <textarea
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              rows={3}
+              placeholder="SELECT ~id, ~from, ~to, ~label FROM edges_table"
+              value={edgeQuery}
+              onChange={(e) => setEdgeQuery(e.target.value)}
             />
           </label>
 
@@ -259,25 +272,27 @@ export function Import() {
 
       {/* Preview */}
       {preview && (
-        <Card>
-          <h2 className="mb-2 text-sm font-medium">Preview</h2>
+        <div className="space-y-4">
           {preview.map((result, i) => (
-            <div key={i} className="overflow-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b bg-gray-50">
-                  <tr>{result.columns.map((col) => <th key={col} className="px-3 py-2 font-medium">{col}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {result.rows.map((row, ri) => (
-                    <tr key={ri} className="border-b last:border-0">
-                      {row.map((cell, ci) => <td key={ci} className="px-3 py-2">{cell}</td>)}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Card key={i}>
+              <h2 className="mb-2 text-sm font-medium">{i === 0 ? "Node Preview" : "Edge Preview"}</h2>
+              <div className="overflow-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b bg-gray-50">
+                    <tr>{result.columns.map((col) => <th key={col} className="px-3 py-2 font-medium">{col}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {result.rows.map((row, ri) => (
+                      <tr key={ri} className="border-b last:border-0">
+                        {row.map((cell, ci) => <td key={ci} className="px-3 py-2">{cell}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
           ))}
-        </Card>
+        </div>
       )}
 
       {/* Progress */}

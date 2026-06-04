@@ -88,15 +88,21 @@ def validate_projection(projection_id: str):
 
 @router.post("/{projection_id}/validate-query", summary="Validate query only", response_model=ValidateResponse)
 def validate_query(projection_id: str):
-    """Validate only the Athena query."""
+    """Validate node and edge queries individually"""
     p = _get_projection_or_404(projection_id)
-    result = check_athena_query(
-        sql_query=p.sql_query,
-        catalog=p.catalog,
-        database=p.database,
-        output_location=p.s3_staging_bucket,
-    )
-    return {"valid": result.passed, "checks": [result.to_dict()]}
+    checks = []
+    for label, query in [("node_query", p.node_query), ("edge_query", p.edge_query)]:
+        if not query:
+            continue
+        result = check_athena_query(
+            sql_query=query,
+            catalog=p.catalog,
+            database=p.database,
+            output_location=p.s3_staging_bucket,
+        )
+        checks.append({"check": label, "passed": result.passed, "message": result.message})
+    valid = all(c["passed"] for c in checks) if checks else False
+    return {"valid": valid, "checks": checks}
 
 
 @router.post("/{projection_id}/preview", summary="Preview first N rows", response_model=PreviewResponse)
@@ -105,7 +111,9 @@ def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le=1000)
     p = _get_projection_or_404(projection_id)
     client = ClientFactory().athena()
 
-    queries = [q.strip() for q in p.sql_query.split(";") if q.strip()]
+    queries = [q for q in [p.node_query, p.edge_query] if q]
+    if not queries and p.sql_query:
+        queries = [q.strip() for q in p.sql_query.split(";") if q.strip()]
     all_results = []
 
     for q in queries:

@@ -35,7 +35,7 @@ async def run_pipeline(projection: Projection) -> None:
 
         # Step 2: Athena query + CSV import
         _update(projection, step="athena_import", label="Running Athena query and importing data", progress=45)
-        sql_queries = [q.strip() for q in projection.sql_query.split(";") if q.strip()]
+        sql_queries = [q for q in [projection.node_query, projection.edge_query] if q]
         await sm.import_from_table(
             graph=graph,
             s3_location=s3_location,
