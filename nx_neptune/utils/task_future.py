@@ -233,7 +233,9 @@ class TaskFuture(Future):
 
         response = _get_task_action_map(client, self.task_id)[self.task_type]()
         self.current_status = response.get("status")
-        self.status_reason = response.get("statusReason") or response.get("failureReason") or ""
+        self.status_reason = (
+            response.get("statusReason") or response.get("failureReason") or ""
+        )
 
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         logger.info(

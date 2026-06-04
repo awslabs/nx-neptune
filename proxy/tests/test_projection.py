@@ -201,3 +201,54 @@ async def test_execute_conflict_if_already_running(client):
 
     resp = await client.post(f"/api/v0/projection/{pid}/execute")
     assert resp.status_code == 409
+
+
+# --- List projections ---
+
+
+@pytest.mark.asyncio
+async def test_list_projections(client):
+    await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    await client.post("/api/v0/projection", json=SAMPLE_BODY)
+
+    resp = await client.get("/api/v0/projection")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 2
+
+
+# --- Malformed body (422) ---
+
+
+@pytest.mark.asyncio
+async def test_create_projection_invalid_body(client):
+    resp = await client.post("/api/v0/projection", json={"graph_memory_gb": "not_a_number"})
+    assert resp.status_code == 422
+
+
+# --- Execute → poll lifecycle ---
+
+
+@pytest.mark.asyncio
+async def test_execute_poll_lifecycle(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    pid = create_resp.json()["id"]
+
+    with patch("nx_neptune_proxy.routers.projection.run_pipeline"):
+        resp = await client.post(f"/api/v0/projection/{pid}/execute")
+    assert resp.status_code == 202
+
+    # Status should be executing (set by background task, but we simulate)
+    store.get(pid).status = "executing"
+    store.get(pid).progress = 50
+    resp = await client.get(f"/api/v0/projection/{pid}/status")
+    assert resp.json()["status"] == "executing"
+    assert resp.json()["progress"] == 50
+
+    # Simulate completion
+    store.get(pid).status = "complete"
+    store.get(pid).progress = 100
+    store.get(pid).graph_endpoint = "https://g-123.neptune-graph.amazonaws.com"
+    resp = await client.get(f"/api/v0/projection/{pid}/status")
+    assert resp.json()["status"] == "complete"
+    assert resp.json()["progress"] == 100
+    assert resp.json()["graph_endpoint"] == "https://g-123.neptune-graph.amazonaws.com"
