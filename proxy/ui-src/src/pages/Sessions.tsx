@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { projection, type Projection } from "../api";
+import { projection, metadata, type Projection } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
 import { X, Download } from "lucide-react";
 import { useNavigate } from "react-router";
@@ -7,9 +7,10 @@ import { useNavigate } from "react-router";
 export function Sessions() {
   const [sessions, setSessions] = useState<Projection[]>([]);
   const [selected, setSelected] = useState<Projection | null>(null);
+  const [region, setRegion] = useState("");
   const navigate = useNavigate();
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); metadata.config().then(c => setRegion(c.region)); }, []);
 
   async function load() {
     const list = await projection.list();
@@ -100,10 +101,10 @@ export function Sessions() {
                   url: "https://localhost",
                   queryEngine: "openCypher",
                   proxyConnection: true,
-                  graphDbUrl: `https://${selected.graph_id}.us-west-2.neptune-graph.amazonaws.com`,
+                  graphDbUrl: `https://${selected.graph_id}.${region}.neptune-graph.amazonaws.com`,
                   awsAuthEnabled: true,
                   serviceType: "neptune-graph",
-                  awsRegion: "us-west-2",
+                  awsRegion: region,
                 },
                 schema: { vertices: [], edges: [] },
               };

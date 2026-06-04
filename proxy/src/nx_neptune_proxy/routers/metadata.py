@@ -18,6 +18,12 @@ from nx_neptune_proxy.utils import paginate_aws
 router = APIRouter(prefix="/api/v0/metadata", tags=["metadata"])
 
 
+@router.get("/config", summary="Get server configuration")
+def get_config():
+    """Get server-side configuration"""
+    return {"region": Settings.from_env().region or ""}
+
+
 @router.get("/athena/catalogs", summary="List Athena data catalogs", response_model=CatalogsResponse)
 def list_athena_catalogs():
     """List all Athena data catalogs"""

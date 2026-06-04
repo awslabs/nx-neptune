@@ -20,8 +20,12 @@ export function Graphs() {
   const [graphs, setGraphs] = useState<Graph[]>([]);
   const [loading, setLoading] = useState(true);
   const [summaries, setSummaries] = useState<Record<string, Summary>>({});
+  const [region, setRegion] = useState("");
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    metadata.config().then(c => setRegion(c.region));
+    load();
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -93,10 +97,10 @@ export function Graphs() {
                               url: "https://localhost",
                               queryEngine: "openCypher",
                               proxyConnection: true,
-                              graphDbUrl: `https://${g.id}.us-west-2.neptune-graph.amazonaws.com`,
+                              graphDbUrl: `https://${g.id}.${region}.neptune-graph.amazonaws.com`,
                               awsAuthEnabled: true,
                               serviceType: "neptune-graph",
-                              awsRegion: "us-west-2",
+                              awsRegion: region,
                             },
                             schema: { vertices: [], edges: [] },
                           };
