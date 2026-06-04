@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { metadata } from "../api";
-import { Button, Select, Card } from "../components/ui";
-import { Plus, Copy, Trash2 } from "lucide-react";
+import { Button, Select, Card, CopyButton } from "../components/ui";
+import { Plus, Trash2 } from "lucide-react";
 
 interface Column { name: string; type: string }
 interface Join { table: string; leftCol: string; rightCol: string }
@@ -230,9 +230,7 @@ export function QueryBuilder() {
               <Button variant="secondary" onClick={() => { setSavedQueries([...savedQueries, sql]); }}>
                 <Plus className="h-3 w-3" /> Save
               </Button>
-              <Button variant="ghost" onClick={() => navigator.clipboard.writeText(sql)}>
-                <Copy className="h-3 w-3" /> Copy
-              </Button>
+              <CopyButton text={sql} />
             </div>
           </div>
           <pre className="overflow-auto rounded bg-gray-50 p-3 font-mono text-xs">{sql}</pre>
@@ -244,9 +242,7 @@ export function QueryBuilder() {
         <Card>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold">Saved Queries</h2>
-            <Button variant="ghost" onClick={() => navigator.clipboard.writeText(savedQueries.join(";\n"))}>
-              <Copy className="h-3 w-3" /> Copy All
-            </Button>
+            <CopyButton text={savedQueries.join(";\n")} label="Copy All" />
           </div>
           {savedQueries.map((q, i) => (
             <div key={i} className="relative mt-2 rounded bg-gray-50 p-3">

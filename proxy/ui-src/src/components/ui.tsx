@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { type ComponentProps, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Copy } from "lucide-react";
 
 export function Button({
   variant = "primary",
@@ -65,5 +65,14 @@ export function RefreshButton({ onClick }: { onClick: () => void }) {
     >
       <RefreshCw className={`h-4 w-4 transition-transform duration-500 ${spinning ? "rotate-180" : ""}`} />
     </button>
+  );
+}
+
+export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button variant="ghost" onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
+      <Copy className="h-3 w-3" /> {copied ? "Copied!" : label}
+    </Button>
   );
 }
