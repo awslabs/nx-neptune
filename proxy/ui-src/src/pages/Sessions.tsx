@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { projection, type Projection } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
-import { X, Copy } from "lucide-react";
+import { X, Download } from "lucide-react";
 import { useNavigate } from "react-router";
 
 export function Sessions() {
@@ -107,11 +107,15 @@ export function Sessions() {
                 },
                 schema: { vertices: [], edges: [] },
               };
-              navigator.clipboard.writeText(JSON.stringify(config, null, 2));
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
+              const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${selected.graph_name || selected.graph_id}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
             }}>
-              <Copy className="h-3 w-3" /> {copied ? "Copied!" : "Copy for Graph Explorer"}
+              <Download className="h-3 w-3" /> Export for Graph Explorer
             </Button>
           )}
         </Card>

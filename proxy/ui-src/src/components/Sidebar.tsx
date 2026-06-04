@@ -1,7 +1,6 @@
 import { NavLink } from "react-router";
 import { Upload, ListTodo, Network, PanelLeftClose, PanelLeftOpen, Wrench } from "lucide-react";
 import { clsx } from "clsx";
-import { useState } from "react";
 
 const links = [
   { to: "/import", label: "Import", icon: Upload },
@@ -10,9 +9,7 @@ const links = [
   { to: "/graphs", label: "Graphs", icon: Network },
 ];
 
-export function Sidebar() {
-  const [collapsed, setCollapsed] = useState(false);
-
+export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   return (
     <aside className={clsx("flex flex-col border-r border-gray-200 bg-white transition-all", collapsed ? "w-14" : "w-60")}>
       <div className="flex h-14 items-center justify-between border-b border-gray-200 px-3">
@@ -22,7 +19,7 @@ export function Sidebar() {
             <span className="text-sm font-semibold">nx-neptune</span>
           </div>
         )}
-        <button onClick={() => setCollapsed(!collapsed)} className="rounded p-1 text-gray-500 hover:bg-gray-100">
+        <button onClick={onToggle} className="rounded p-1 text-gray-500 hover:bg-gray-100">
           {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
         </button>
       </div>

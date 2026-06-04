@@ -1,14 +1,26 @@
-import { Routes, Route, Navigate } from "react-router";
+import { useState, useMemo } from "react";
+import { Routes, Route, Navigate, useNavigate } from "react-router";
 import { Sidebar } from "./components/Sidebar";
 import { Import } from "./pages/Import";
 import { Sessions } from "./pages/Sessions";
 import { Graphs } from "./pages/Graphs";
 import { QueryBuilder } from "./pages/QueryBuilder";
+import { useKeyboard } from "./hooks/useKeyboard";
 
 export default function App() {
+  const [collapsed, setCollapsed] = useState(false);
+  const navigate = useNavigate();
+
+  const handlers = useMemo(() => ({
+    "[": () => setCollapsed(c => !c),
+    "r": () => navigate(0),
+  }), [navigate]);
+
+  useKeyboard(handlers);
+
   return (
     <div className="flex h-screen">
-      <Sidebar />
+      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(c => !c)} />
       <main className="flex-1 overflow-auto p-6">
         <Routes>
           <Route path="/" element={<Navigate to="/import" replace />} />
