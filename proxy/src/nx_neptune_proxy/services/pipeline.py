@@ -26,11 +26,16 @@ async def run_pipeline(projection: Projection) -> None:
         )
         projection.graph_id = graph.graph_id
         projection.graph_endpoint = f"https://{graph.graph_id}.neptune-graph.amazonaws.com"
-        _update(projection, step="graph_creation", label="Graph available", progress=40)
+        _update(projection, step="graph_creation", label="Graph available", progress=20)
+
+        # Step 1b: Reset graph to ensure it's empty
+        _update(projection, step="graph_reset", label="Resetting graph data", progress=25)
+        await sm.reset_graph(graph.name)
+        _update(projection, step="graph_reset", label="Graph ready for import", progress=40)
 
         # Step 2: Athena query + CSV import
         _update(projection, step="athena_import", label="Running Athena query and importing data", progress=45)
-        sql_queries = [q.strip() for q in projection.sql_query.split(";") if q.strip()]
+        sql_queries = [q for q in [projection.node_query, projection.edge_query] if q]
         await sm.import_from_table(
             graph=graph,
             s3_location=s3_location,
@@ -48,7 +53,12 @@ async def run_pipeline(projection: Projection) -> None:
     except Exception as e:
         logger.exception("Pipeline failed")
         projection.status = "failed"
-        projection.error = str(e)
+        # ClientError wraps the real reason in the response dict
+        if hasattr(e, "response"):
+            err = e.response.get("Error", {})
+            projection.error = f"{err.get('Code', 'Error')}: {err.get('Message', str(e))}"
+        else:
+            projection.error = str(e)
 
 
 def _update(projection: Projection, step: str, label: str, progress: float) -> None:

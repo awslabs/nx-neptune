@@ -26,6 +26,7 @@ def clear_store():
 SAMPLE_BODY = {
     "database": "mydb",
     "sql_query": "SELECT * FROM t",
+    "node_query": "SELECT * FROM t",
     "graph_name": "test-graph",
     "s3_staging_bucket": "s3://my-bucket/staging/",
 }
@@ -140,7 +141,7 @@ async def test_validate_projection_fails(mock_validate, client):
 async def test_validate_query(mock_check, client):
     mock_result = MagicMock()
     mock_result.passed = True
-    mock_result.to_dict.return_value = {"check": "athena_query", "passed": True, "error": None}
+    mock_result.message = ""
     mock_check.return_value = mock_result
 
     create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)

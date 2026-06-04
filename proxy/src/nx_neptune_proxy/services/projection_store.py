@@ -18,6 +18,8 @@ class Projection:
     catalog: str = "AwsDataCatalog"
     database: Optional[str] = None
     sql_query: Optional[str] = None
+    node_query: Optional[str] = None
+    edge_query: Optional[str] = None
     graph_name: Optional[str] = None
     graph_memory_gb: int = 16
     s3_staging_bucket: Optional[str] = None
@@ -37,7 +39,8 @@ class ProjectionStore:
         self._projections: dict[str, Projection] = {}
 
     def create(self, catalog: str = "AwsDataCatalog", database: str = None,
-               sql_query: str = None, graph_name: str = None,
+               sql_query: str = None, node_query: str = None,
+               edge_query: str = None, graph_name: str = None,
                graph_memory_gb: int = 16, s3_staging_bucket: str = None) -> Projection:
         projection = Projection(
             id=str(uuid.uuid4()),
@@ -45,6 +48,8 @@ class ProjectionStore:
             catalog=catalog,
             database=database,
             sql_query=sql_query,
+            node_query=node_query,
+            edge_query=edge_query,
             graph_name=graph_name,
             graph_memory_gb=graph_memory_gb,
             s3_staging_bucket=s3_staging_bucket,

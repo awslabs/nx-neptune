@@ -57,6 +57,8 @@ class ProjectionCreate(BaseModel):
     catalog: str = "AwsDataCatalog"
     database: Optional[str] = None
     sql_query: Optional[str] = None
+    node_query: Optional[str] = None
+    edge_query: Optional[str] = None
     graph_name: Optional[str] = None
     graph_memory_gb: int = 16
     s3_staging_bucket: Optional[str] = None
@@ -66,6 +68,8 @@ class ProjectionUpdate(BaseModel):
     catalog: Optional[str] = None
     database: Optional[str] = None
     sql_query: Optional[str] = None
+    node_query: Optional[str] = None
+    edge_query: Optional[str] = None
     graph_name: Optional[str] = None
     graph_memory_gb: Optional[int] = None
     s3_staging_bucket: Optional[str] = None
@@ -108,6 +112,8 @@ class ProjectionResponse(BaseModel):
     catalog: str
     database: Optional[str] = None
     sql_query: Optional[str] = None
+    node_query: Optional[str] = None
+    edge_query: Optional[str] = None
     graph_name: Optional[str] = None
     graph_id: Optional[str] = None
     graph_endpoint: Optional[str] = None
