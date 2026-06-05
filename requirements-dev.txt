@@ -26,7 +26,7 @@ distlib==0.4.0
     # via virtualenv
 dotenv==0.9.9
     # via nx-neptune (pyproject.toml)
-filelock==3.29.0
+filelock==3.29.1
     # via
     #   python-discovery
     #   virtualenv
