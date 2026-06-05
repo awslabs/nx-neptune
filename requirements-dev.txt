@@ -132,7 +132,7 @@ typing-extensions==4.15.0
     #   pytest-asyncio
 urllib3==2.7.0
     # via botocore
-virtualenv==21.4.1
+virtualenv==21.4.2
     # via pre-commit
 wcwidth==0.7.0
     # via prettytable
