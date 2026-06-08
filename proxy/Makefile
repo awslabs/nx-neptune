@@ -35,7 +35,7 @@ clean:            ## Remove container and image.
 	@$(RUNTIME) rmi nx-neptune-proxy 2>/dev/null || true
 
 up:               ## Start proxy + Graph Explorer with compose.
-	$(RUNTIME) compose up --build -d
+	$(RUNTIME) compose up --build --force-recreate -d
 
 down:             ## Stop compose services.
 	$(RUNTIME) compose down
