@@ -16,7 +16,7 @@ async def run_pipeline(projection: Projection) -> None:
     s3_location = projection.s3_staging_bucket.rstrip("/") + f"/{projection.id}/"
 
     try:
-        projection.status = "executing"
+        projection.status = "importing"
 
         # Step 1: Create graph
         _update(projection, step="graph_creation", label="Creating Neptune Analytics graph", progress=5)
