@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { metadata } from "../api";
 import { Card, RefreshButton } from "../components/ui";
-import { Trash2, Download } from "lucide-react";
+import { Trash2, ExternalLink } from "lucide-react";
 
 interface Graph {
   id: string;
@@ -88,31 +88,20 @@ export function Graphs() {
                       <button
                         className="text-gray-400 hover:text-blue-600 disabled:opacity-30"
                         disabled={g.status !== "AVAILABLE"}
-                        title="Export for Graph Explorer"
+                        title="Open in Graph Explorer"
                         onClick={() => {
-                          const config = {
-                            id: g.id,
-                            displayLabel: g.name,
-                            connection: {
-                              url: "https://localhost",
-                              queryEngine: "openCypher",
-                              proxyConnection: true,
-                              graphDbUrl: `https://${g.id}.${region}.neptune-graph.amazonaws.com`,
-                              awsAuthEnabled: true,
-                              serviceType: "neptune-graph",
-                              awsRegion: region,
-                            },
-                            schema: { vertices: [], edges: [] },
-                          };
-                          const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement("a");
-                          a.href = url;
-                          a.download = `${g.name}.json`;
-                          a.click();
-                          URL.revokeObjectURL(url);
+                          const graphDbUrl = `https://${g.id}.${region}.neptune-graph.amazonaws.com`;
+                          const params = new URLSearchParams({
+                            graphDbUrl,
+                            queryEngine: "openCypher",
+                            awsRegion: region,
+                            serviceType: "neptune-graph",
+                            name: g.name,
+                          });
+                          const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost";
+                          window.open(`${geBase}?${params}`, "_blank");
                         }}
-                      ><Download className="h-4 w-4" /></button>
+                      ><ExternalLink className="h-4 w-4" /></button>
                       <button
                         className="text-gray-400 hover:text-red-600 disabled:opacity-30"
                         disabled={g.status === "DELETING"}
