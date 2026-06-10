@@ -33,3 +33,12 @@ stop:             ## Stop running container.
 clean:            ## Remove container and image.
 	@$(RUNTIME) rm nx-neptune-proxy 2>/dev/null || true
 	@$(RUNTIME) rmi nx-neptune-proxy 2>/dev/null || true
+
+up:               ## Start proxy + Graph Explorer with compose.
+	$(RUNTIME) compose up --build --force-recreate -d
+
+down:             ## Stop compose services.
+	$(RUNTIME) compose down
+
+logs:             ## Tail compose logs.
+	$(RUNTIME) compose logs -f
