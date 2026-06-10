@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { projection, metadata, type Projection } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
-import { X, Download } from "lucide-react";
+import { X, ExternalLink } from "lucide-react";
 import { useNavigate } from "react-router";
 
 export function Sessions() {
@@ -98,29 +98,18 @@ export function Sessions() {
           </Button>
           {selected.graph_id && selected.status === "complete" && (
             <Button variant="ghost" className="w-full" onClick={() => {
-              const config = {
-                id: selected.graph_id,
-                displayLabel: selected.graph_name || selected.graph_id,
-                connection: {
-                  url: "https://localhost",
-                  queryEngine: "openCypher",
-                  proxyConnection: true,
-                  graphDbUrl: `https://${selected.graph_id}.${region}.neptune-graph.amazonaws.com`,
-                  awsAuthEnabled: true,
-                  serviceType: "neptune-graph",
-                  awsRegion: region,
-                },
-                schema: { vertices: [], edges: [] },
-              };
-              const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `${selected.graph_name || selected.graph_id}.json`;
-              a.click();
-              URL.revokeObjectURL(url);
+              const graphDbUrl = `https://${selected.graph_id}.${region}.neptune-graph.amazonaws.com`;
+              const params = new URLSearchParams({
+                graphDbUrl,
+                queryEngine: "openCypher",
+                awsRegion: region,
+                serviceType: "neptune-graph",
+                name: selected.graph_name || selected.graph_id || "",
+              } as Record<string, string>);
+              const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost";
+              window.open(`${geBase}?${params}`, "_blank");
             }}>
-              <Download className="h-3 w-3" /> Export for Graph Explorer
+              <ExternalLink className="h-3 w-3" /> Open in Graph Explorer
             </Button>
           )}
         </Card>
