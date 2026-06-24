@@ -175,6 +175,27 @@ export function Import() {
 
       <Card>
         <div className="space-y-4">
+          <label className="block space-y-1">
+              <span className="text-sm font-medium text-gray-700">Copy config from</span>
+              <Select
+                value=""
+                onChange={(e) => {
+                  const s = sessions.find((s) => s.id === e.target.value);
+                  if (!s) return;
+                  if (s.catalog) setCatalog(s.catalog);
+                  if (s.database) setDatabase(s.database);
+                  if (s.node_query) setNodeQuery(s.node_query);
+                  if (s.edge_query) setEdgeQuery(s.edge_query);
+                  if (s.s3_staging_bucket) setBucket(s.s3_staging_bucket);
+                  if (s.graph_memory_gb) setGraphMemoryGb(s.graph_memory_gb);
+                }}
+              >
+                <option value="">Select a projection...</option>
+                {sessions.map((s) => (
+                  <option key={s.id} value={s.id}>{s.graph_name || s.id.slice(0, 8)}</option>
+                ))}
+              </Select>
+            </label>
           <div className="grid grid-cols-2 gap-4">
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">Catalog</span>
