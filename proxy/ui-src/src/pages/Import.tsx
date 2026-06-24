@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router";
 import { metadata, projection, type Projection, type ProjectionStatus } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
 import { Play, CheckCircle, Eye } from "lucide-react";
+import { getProjections, type SavedProjection } from "../data/projections";
 
 export function Import() {
   const [searchParams] = useSearchParams();
@@ -13,13 +14,26 @@ export function Import() {
   const [buckets, setBuckets] = useState<string[]>([]);
   const [dbLoading, setDbLoading] = useState(false);
 
+  // --- Saved projections ---
+  const savedProjections = getProjections();
+
   // --- Form state ---
   const [catalog, setCatalog] = useState("AwsDataCatalog");
-  const [database, setDatabase] = useState("");
-  const [nodeQuery, setNodeQuery] = useState("");
-  const [edgeQuery, setEdgeQuery] = useState("");
-  const [bucket, setBucket] = useState("");
-  const [graphName, setGraphName] = useState("");
+  const [database, setDatabase] = useState("nx_neptune_styles");
+  const [nodeQuery, setNodeQuery] = useState('SELECT id AS "~id", article_type AS "~label", master_category, subcategory, base_color, seasons, product_display_name FROM styles;');
+  const [edgeQuery, setEdgeQuery] = useState('SELECT purchase_id AS "~id", \'PURCHASED\' AS "~label", customer_id AS "~to", product_id AS "~from", amount, purchase_date FROM purchases;');
+  const [bucket, setBucket] = useState("s3://my-bucket/");
+  const [graphName, setGraphName] = useState("purchases");
+
+  function applyProjection(id: string) {
+    const p = savedProjections.find(sp => sp.id === id);
+    if (!p) return;
+    setCatalog(p.catalog);
+    setDatabase(p.database);
+    setNodeQuery(p.nodeQuery);
+    setEdgeQuery(p.edgeQuery);
+    setBucket(p.s3Bucket);
+  }
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
 
   // --- Session state ---
@@ -152,7 +166,7 @@ export function Import() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Import</h1>
+        <h1 className="text-lg font-semibold">Add Graph</h1>
         <div className="flex items-center gap-2">
           <Select
             className="w-56"
@@ -172,6 +186,22 @@ export function Import() {
           <RefreshButton onClick={loadSessions} />
         </div>
       </div>
+
+      {/* Saved Projection selector */}
+      <Card>
+        <label className="space-y-1">
+          <span className="text-sm font-medium text-gray-700">Load from Saved Projection</span>
+          <Select
+            onChange={(e) => { if (e.target.value) applyProjection(e.target.value); e.target.value = ""; }}
+            defaultValue=""
+          >
+            <option value="">Select a saved projection...</option>
+            {savedProjections.map(p => (
+              <option key={p.id} value={p.id}>{p.name} ({p.database})</option>
+            ))}
+          </Select>
+        </label>
+      </Card>
 
       <Card>
         <div className="space-y-4">
