@@ -38,6 +38,7 @@ export interface Projection {
   graph_endpoint?: string;
   graph_memory_gb: number;
   s3_staging_bucket?: string;
+  workspace_id?: string;
   step?: string;
   step_label?: string;
   progress: number;
@@ -65,4 +66,18 @@ export const projection = {
   validateQuery: (id: string) => request<{ valid: boolean; checks: { check: string; passed: boolean; message?: string }[] }>(`/projection/${id}/validate-query`, { method: "POST" }),
   preview: (id: string, limit = 10) => request<{ error?: string; results: { columns: string[]; rows: string[][] }[] }>(`/projection/${id}/preview?limit=${limit}`, { method: "POST" }),
   execute: (id: string) => request<{ message: string }>(`/projection/${id}/execute`, { method: "POST" }),
+};
+
+// --- Workspace ---
+
+export interface Workspace {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export const workspaceApi = {
+  list: () => request<Workspace[]>("/workspace"),
+  create: (name: string) => request<Workspace>("/workspace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }),
+  delete: (id: string) => request<void>(`/workspace/${id}`, { method: "DELETE" }),
 };

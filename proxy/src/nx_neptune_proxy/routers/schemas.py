@@ -62,6 +62,7 @@ class ProjectionCreate(BaseModel):
     graph_name: Optional[str] = None
     graph_memory_gb: int = 16
     s3_staging_bucket: Optional[str] = None
+    workspace_id: Optional[str] = None
 
 
 class ProjectionUpdate(BaseModel):
@@ -119,6 +120,7 @@ class ProjectionResponse(BaseModel):
     graph_endpoint: Optional[str] = None
     graph_memory_gb: int
     s3_staging_bucket: Optional[str] = None
+    workspace_id: Optional[str] = None
     step: Optional[str] = None
     step_label: Optional[str] = None
     progress: float = 0

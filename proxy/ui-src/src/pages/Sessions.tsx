@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { projection, metadata, type Projection } from "../api";
+import { projection, metadata, workspaceApi, type Projection, type Workspace } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
 import { X, ExternalLink } from "lucide-react";
 import { useNavigate } from "react-router";
@@ -8,9 +8,14 @@ export function Sessions() {
   const [sessions, setSessions] = useState<Projection[]>([]);
   const [selected, setSelected] = useState<Projection | null>(null);
   const [region, setRegion] = useState("");
+  const [workspaces, setWorkspaces] = useState<Map<string, Workspace>>(new Map());
   const navigate = useNavigate();
 
-  useEffect(() => { load(); metadata.config().then(c => setRegion(c.region)); }, []);
+  useEffect(() => {
+    load();
+    metadata.config().then(c => setRegion(c.region));
+    workspaceApi.list().then(list => setWorkspaces(new Map(list.map(ws => [ws.id, ws]))));
+  }, []);
 
   async function load() {
     const list = await projection.list();
@@ -33,6 +38,7 @@ export function Sessions() {
               <thead className="border-b bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 font-medium">Name</th>
+                  <th className="px-4 py-3 font-medium">Workspace</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Database</th>
                   <th className="px-4 py-3 font-medium">Progress</th>
@@ -48,6 +54,7 @@ export function Sessions() {
                     onDoubleClick={() => navigate(`/import?session=${s.id}`)}
                   >
                     <td className="px-4 py-3 font-medium">{s.graph_name || s.id.slice(0, 8)}</td>
+                    <td className="px-4 py-3 text-gray-600">{s.workspace_id ? workspaces.get(s.workspace_id)?.name || "—" : "—"}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                         s.status === "complete" ? "bg-green-100 text-green-700" :
@@ -74,6 +81,7 @@ export function Sessions() {
             <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
           </div>
           <div className="space-y-2 text-sm">
+            {selected.workspace_id && <div><span className="text-gray-500">Workspace:</span> {workspaces.get(selected.workspace_id)?.name || selected.workspace_id}</div>}
             <div><span className="text-gray-500">Catalog:</span> {selected.catalog || "—"}</div>
             <div><span className="text-gray-500">Database:</span> {selected.database || "—"}</div>
             <div>

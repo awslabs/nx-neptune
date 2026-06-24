@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router";
-import { metadata, projection, type Projection, type ProjectionStatus } from "../api";
+import { metadata, projection, workspaceApi, type Projection, type ProjectionStatus, type Workspace } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
 import { Play, CheckCircle, Eye } from "lucide-react";
 
@@ -12,6 +12,10 @@ export function Import() {
   const [databases, setDatabases] = useState<string[]>([]);
   const [buckets, setBuckets] = useState<string[]>([]);
   const [dbLoading, setDbLoading] = useState(false);
+
+  // --- Workspace state ---
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspaceId, setWorkspaceId] = useState<string>("");
 
   // --- Form state ---
   const [catalog, setCatalog] = useState("AwsDataCatalog");
@@ -38,6 +42,7 @@ export function Import() {
   useEffect(() => {
     metadata.catalogs().then((d) => setCatalogs(d.catalogs));
     metadata.buckets().then((d) => setBuckets(d.buckets));
+    workspaceApi.list().then(setWorkspaces);
     loadSessions().then(() => {
       const sessionId = searchParams.get("session");
       if (sessionId) {
@@ -58,7 +63,7 @@ export function Import() {
 
   // --- Session management ---
   async function ensureSession(): Promise<string> {
-    const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb };
+    const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb, workspace_id: workspaceId || undefined };
     if (currentId) {
       await projection.update(currentId, data);
       return currentId;
@@ -175,6 +180,28 @@ export function Import() {
 
       <Card>
         <div className="space-y-4">
+          <label className="block space-y-1">
+              <span className="text-sm font-medium text-gray-700">Workspace</span>
+              <div className="flex gap-2">
+                <Select
+                  className="flex-1"
+                  value={workspaceId}
+                  onChange={(e) => setWorkspaceId(e.target.value)}
+                >
+                  <option value="">No workspace</option>
+                  {workspaces.map((ws) => (
+                    <option key={ws.id} value={ws.id}>{ws.name}</option>
+                  ))}
+                </Select>
+                <Button variant="secondary" onClick={async () => {
+                  const name = prompt("Workspace name:");
+                  if (!name) return;
+                  const ws = await workspaceApi.create(name);
+                  setWorkspaces(prev => [...prev, ws]);
+                  setWorkspaceId(ws.id);
+                }}>+</Button>
+              </div>
+            </label>
           <label className="block space-y-1">
               <span className="text-sm font-medium text-gray-700">Copy config from</span>
               <Select
