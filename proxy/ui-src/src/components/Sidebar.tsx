@@ -93,14 +93,16 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                 const isOpen = expanded.has(ws.id);
                 return (
                   <div key={ws.id}>
-                    <button
-                      onClick={() => toggle(ws.id)}
-                      className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
-                    >
-                      {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                      <span className="truncate font-medium">{ws.name}</span>
-                      {projs.length > 0 && <span className="ml-auto text-xs text-gray-400">{projs.length}</span>}
-                    </button>
+                    <div className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
+                      <button onClick={() => toggle(ws.id)} className="shrink-0 p-0.5">
+                        {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                      </button>
+                      <NavLink
+                        to={`/sessions?workspace=${ws.id}`}
+                        className="flex-1 truncate font-medium hover:text-blue-600"
+                      >{ws.name}</NavLink>
+                      {projs.length > 0 && <span className="text-xs text-gray-400">{projs.length}</span>}
+                    </div>
                     {isOpen && (
                       <div className="ml-5 space-y-0.5">
                         {projs.map(p => (

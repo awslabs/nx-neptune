@@ -62,6 +62,10 @@ export function Import() {
       setChecks([]);
       setPreview(null);
     }
+    const sessionId = searchParams.get("session");
+    if (sessionId) {
+      projection.get(sessionId).then(loadSession);
+    }
   }, [searchParams]);
 
   useEffect(() => {

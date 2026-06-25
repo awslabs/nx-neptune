@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import { projection, metadata, workspaceApi, type Projection, type Workspace } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
 import { X, ExternalLink } from "lucide-react";
 import { useNavigate } from "react-router";
 
 export function Sessions() {
+  const [searchParams] = useSearchParams();
   const [sessions, setSessions] = useState<Projection[]>([]);
   const [selected, setSelected] = useState<Projection | null>(null);
   const [region, setRegion] = useState("");
   const [workspaces, setWorkspaces] = useState<Map<string, Workspace>>(new Map());
   const navigate = useNavigate();
+  const filterWorkspaceId = searchParams.get("workspace");
 
   useEffect(() => {
     load();
@@ -22,15 +25,20 @@ export function Sessions() {
     setSessions(list);
   }
 
+  const filtered = filterWorkspaceId
+    ? sessions.filter(s => s.workspace_id === filterWorkspaceId)
+    : sessions;
+  const workspaceName = filterWorkspaceId ? workspaces.get(filterWorkspaceId)?.name : null;
+
   return (
     <div className="flex gap-4">
       <div className="flex-1 space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">Sessions</h1>
+          <h1 className="text-lg font-semibold">{workspaceName ? `${workspaceName} — Sessions` : "Sessions"}</h1>
           <RefreshButton onClick={load} />
         </div>
 
-        {sessions.length === 0 ? (
+        {filtered.length === 0 ? (
           <p className="text-sm text-gray-500">No sessions yet. Create one from the Import page.</p>
         ) : (
           <Card className="overflow-hidden p-0">
@@ -46,7 +54,7 @@ export function Sessions() {
                 </tr>
               </thead>
               <tbody>
-                {sessions.map((s) => (
+                {filtered.map((s) => (
                   <tr
                     key={s.id}
                     className={`cursor-pointer border-b last:border-0 hover:bg-gray-50 ${selected?.id === s.id ? "bg-blue-50" : ""}`}
