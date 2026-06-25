@@ -49,7 +49,20 @@ export function Import() {
         projection.get(sessionId).then(loadSession);
       }
     });
+    const wsParam = searchParams.get("workspace");
+    if (wsParam) setWorkspaceId(wsParam);
   }, []);
+
+  useEffect(() => {
+    const wsParam = searchParams.get("workspace");
+    if (wsParam) {
+      setWorkspaceId(wsParam);
+      setCurrentId(null);
+      setStatus(null);
+      setChecks([]);
+      setPreview(null);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     setDbLoading(true);

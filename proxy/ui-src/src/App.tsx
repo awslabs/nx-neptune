@@ -5,6 +5,7 @@ import { Import } from "./pages/Import";
 import { Sessions } from "./pages/Sessions";
 import { Graphs } from "./pages/Graphs";
 import { QueryBuilder } from "./pages/QueryBuilder";
+import { Workspaces } from "./pages/Workspaces";
 import { useKeyboard } from "./hooks/useKeyboard";
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="/sessions" element={<Sessions />} />
           <Route path="/graphs" element={<Graphs />} />
           <Route path="/query-builder" element={<QueryBuilder />} />
+          <Route path="/workspaces" element={<Workspaces />} />
         </Routes>
       </main>
     </div>
