@@ -1,24 +1,15 @@
-import { useEffect, useState } from "react";
-import { workspaceApi, type Workspace } from "../api";
+import { useState } from "react";
+import { workspaceApi } from "../api";
 import { Card, Button } from "../components/ui";
-import { Trash2 } from "lucide-react";
 
 export function Workspaces() {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [name, setName] = useState("");
-
-  useEffect(() => { workspaceApi.list().then(setWorkspaces); }, []);
 
   async function handleCreate() {
     if (!name.trim()) return;
-    const ws = await workspaceApi.create(name.trim());
-    setWorkspaces(prev => [...prev, ws]);
+    await workspaceApi.create(name.trim());
     setName("");
-  }
-
-  async function handleDelete(id: string) {
-    await workspaceApi.delete(id);
-    setWorkspaces(prev => prev.filter(ws => ws.id !== id));
+    window.dispatchEvent(new Event("workspaces-changed"));
   }
 
   return (
@@ -41,33 +32,6 @@ export function Workspaces() {
           <Button onClick={handleCreate} disabled={!name.trim()}>Create</Button>
         </div>
       </Card>
-
-      {workspaces.length > 0 && (
-        <Card className="overflow-hidden p-0">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Created</th>
-                <th className="px-4 py-3 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {workspaces.map((ws) => (
-                <tr key={ws.id} className="border-b last:border-0">
-                  <td className="px-4 py-3 font-medium">{ws.name}</td>
-                  <td className="px-4 py-3 text-gray-500">{new Date(ws.created_at).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => handleDelete(ws.id)} className="text-gray-400 hover:text-red-600">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
     </div>
   );
 }

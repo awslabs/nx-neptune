@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router";
-import { Upload, ListTodo, Network, PanelLeftClose, PanelLeftOpen, Wrench, FolderPlus, ChevronDown, ChevronRight, Circle, RefreshCw } from "lucide-react";
+import { Upload, ListTodo, Network, PanelLeftClose, PanelLeftOpen, Wrench, FolderPlus, ChevronDown, ChevronRight, Circle, Plus, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { workspaceApi, projection, type Workspace, type Projection } from "../api";
 
@@ -26,6 +26,9 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
   useEffect(() => {
     loadWorkspaces();
+    const handler = () => loadWorkspaces();
+    window.addEventListener("workspaces-changed", handler);
+    return () => window.removeEventListener("workspaces-changed", handler);
   }, []);
 
   function loadWorkspaces() {
@@ -83,9 +86,9 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           <div className="mt-4 border-t border-gray-200 pt-3">
             <div className="flex items-center justify-between px-3">
               <span className="text-xs font-semibold uppercase text-gray-400">Workspaces</span>
-              <button onClick={loadWorkspaces} className="rounded p-0.5 text-gray-400 hover:text-gray-600" title="Refresh">
-                <RefreshCw className="h-3 w-3" />
-              </button>
+              <NavLink to="/workspaces" className="rounded p-0.5 text-gray-400 hover:text-gray-600" title="Manage Workspaces">
+                <Plus className="h-3 w-3" />
+              </NavLink>
             </div>
             <div className="mt-2 space-y-0.5">
               {workspaces.map(ws => {
@@ -93,7 +96,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                 const isOpen = expanded.has(ws.id);
                 return (
                   <div key={ws.id}>
-                    <div className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
+                    <div className="group flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
                       <button onClick={() => toggle(ws.id)} className="shrink-0 p-0.5">
                         {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                       </button>
@@ -101,7 +104,19 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                         to={`/sessions?workspace=${ws.id}`}
                         className="flex-1 truncate font-medium hover:text-blue-600"
                       >{ws.name}</NavLink>
-                      {projs.length > 0 && <span className="text-xs text-gray-400">{projs.length}</span>}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm(`Delete workspace "${ws.name}"?`)) return;
+                          await workspaceApi.delete(ws.id);
+                          loadWorkspaces();
+                        }}
+                        className="hidden shrink-0 rounded p-0.5 text-gray-400 hover:text-red-600 group-hover:block"
+                        title="Delete workspace"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                      {projs.length > 0 && <span className="text-xs text-gray-400 group-hover:hidden">{projs.length}</span>}
                     </div>
                     {isOpen && (
                       <div className="ml-5 space-y-0.5">

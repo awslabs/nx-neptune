@@ -79,5 +79,5 @@ export interface Workspace {
 export const workspaceApi = {
   list: () => request<Workspace[]>("/workspace"),
   create: (name: string) => request<Workspace>("/workspace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }),
-  delete: (id: string) => request<void>(`/workspace/${id}`, { method: "DELETE" }),
+  delete: (id: string) => fetch(`${BASE}/workspace/${id}`, { method: "DELETE" }).then(r => { if (!r.ok) throw new Error("Delete failed"); }),
 };
