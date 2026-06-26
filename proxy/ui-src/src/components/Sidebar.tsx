@@ -135,7 +135,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                           </NavLink>
                         ))}
                         <NavLink
-                          to={`/import?workspace=${ws.id}`}
+                          to={`/import?workspace=${ws.id}&t=${Date.now()}`}
                           className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700"
                         >
                           <span>+ Add Graph</span>

@@ -55,14 +55,24 @@ export function Import() {
 
   useEffect(() => {
     const wsParam = searchParams.get("workspace");
+    const sessionId = searchParams.get("session");
     if (wsParam) {
       setWorkspaceId(wsParam);
-      setCurrentId(null);
-      setStatus(null);
-      setChecks([]);
-      setPreview(null);
+      if (!sessionId) {
+        setCurrentId(null);
+        setStatus(null);
+        setChecks([]);
+        setPreview(null);
+        setError(null);
+        setCatalog("AwsDataCatalog");
+        setDatabase("");
+        setNodeQuery("");
+        setEdgeQuery("");
+        setBucket("");
+        setGraphName("");
+        setGraphMemoryGb(16);
+      }
     }
-    const sessionId = searchParams.get("session");
     if (sessionId) {
       projection.get(sessionId).then(loadSession);
     }
