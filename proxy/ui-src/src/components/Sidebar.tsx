@@ -1,15 +1,12 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router";
-import { Upload, ListTodo, Network, PanelLeftClose, PanelLeftOpen, Wrench, FolderPlus, ChevronDown, ChevronRight, Circle, Plus, Trash2 } from "lucide-react";
+import { ListTodo, Network, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronRight, Circle, Plus, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { workspaceApi, projection, type Workspace, type Projection } from "../api";
 
 const links = [
-  { to: "/import", label: "Import", icon: Upload },
-  { to: "/query-builder", label: "Query Builder", icon: Wrench },
   { to: "/sessions", label: "Sessions", icon: ListTodo },
   { to: "/graphs", label: "Graphs", icon: Network },
-  { to: "/workspaces", label: "Workspaces", icon: FolderPlus },
 ];
 
 const statusColor: Record<string, string> = {
