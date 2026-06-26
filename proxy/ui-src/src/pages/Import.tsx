@@ -88,6 +88,7 @@ export function Import() {
     const p = await projection.create(data);
     setCurrentId(p.id);
     await loadSessions();
+    window.dispatchEvent(new Event("workspaces-changed"));
     return p.id;
   }
 
