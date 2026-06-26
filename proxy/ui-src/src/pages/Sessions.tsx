@@ -12,6 +12,7 @@ export function Sessions() {
   const [region, setRegion] = useState("");
   const [workspaces, setWorkspaces] = useState<Map<string, Workspace>>(new Map());
   const [summaries, setSummaries] = useState<Map<string, { numNodes: number; numEdges: number }>>(new Map());
+  const [graphStatuses, setGraphStatuses] = useState<Map<string, string>>(new Map());
   const navigate = useNavigate();
   const filterWorkspaceId = searchParams.get("workspace");
 
@@ -24,6 +25,10 @@ export function Sessions() {
   async function load() {
     const list = await projection.list();
     setSessions(list);
+    // Fetch graph statuses
+    metadata.graphs().then(({ graphs }) => {
+      setGraphStatuses(new Map(graphs.map(g => [g.id, g.status])));
+    }).catch(() => {});
     // Fetch graph summaries for completed projections
     const entries: [string, { numNodes: number; numEdges: number }][] = [];
     await Promise.all(
@@ -60,7 +65,6 @@ export function Sessions() {
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Workspace</th>
                   <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Database</th>
                   <th className="px-4 py-3 font-medium">Progress</th>
                   <th className="px-4 py-3 font-medium">Created</th>
                   <th className="px-4 py-3 font-medium"></th>
@@ -84,7 +88,6 @@ export function Sessions() {
                         "bg-gray-100 text-gray-700"
                       }`}>{s.status}</span>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{s.database || "—"}</td>
                     <td className="px-4 py-3">{Math.round(s.progress)}%</td>
                     <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
                     <td className="px-4 py-3">
@@ -107,19 +110,6 @@ export function Sessions() {
                             window.open(`${geBase}?${params}`, "_blank");
                           }}
                         ><ExternalLink className="h-4 w-4" /></button>
-                        <button
-                          className="text-gray-400 hover:text-red-600 disabled:opacity-30"
-                          disabled={!s.graph_id}
-                          title="Delete graph"
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            if (!s.graph_id) return;
-                            if (confirm(`Delete graph ${s.graph_name || s.graph_id}?`)) {
-                              await metadata.deleteGraph(s.graph_id);
-                              load();
-                            }
-                          }}
-                        ><Trash2 className="h-4 w-4" /></button>
                       </div>
                     </td>
                   </tr>
@@ -150,6 +140,15 @@ export function Sessions() {
             </div>
             <div><span className="text-gray-500">S3 Bucket:</span> {selected.s3_staging_bucket || "—"}</div>
             <div><span className="text-gray-500">Graph ID:</span> {selected.graph_id || "—"}</div>
+            {selected.graph_id && graphStatuses.get(selected.graph_id) && (
+              <div><span className="text-gray-500">Graph Status:</span>{" "}
+                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                  graphStatuses.get(selected.graph_id) === "AVAILABLE" ? "bg-green-100 text-green-700" :
+                  graphStatuses.get(selected.graph_id) === "DELETING" ? "bg-red-100 text-red-700" :
+                  "bg-blue-100 text-blue-700"
+                }`}>{graphStatuses.get(selected.graph_id)}</span>
+              </div>
+            )}
             {summaries.get(selected.id) && (
               <>
                 <div><span className="text-gray-500">Nodes:</span> {summaries.get(selected.id)!.numNodes.toLocaleString()}</div>
@@ -180,6 +179,18 @@ export function Sessions() {
               window.open(`${geBase}?${params}`, "_blank");
             }}>
               <ExternalLink className="h-3 w-3" /> Open in Graph Explorer
+            </Button>
+          )}
+          {selected.graph_id && (
+            <Button variant="ghost" className="w-full text-red-600 hover:text-red-700" onClick={async () => {
+              if (confirm(`Delete graph ${selected.graph_name || selected.graph_id}?`)) {
+                await projection.delete(selected.id);
+                setSelected(null);
+                load();
+                window.dispatchEvent(new Event("workspaces-changed"));
+              }
+            }}>
+              <Trash2 className="h-3 w-3" /> Delete Graph
             </Button>
           )}
         </Card>

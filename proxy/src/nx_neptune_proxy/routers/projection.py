@@ -142,3 +142,36 @@ def execute_projection(projection_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=409, detail="Pipeline already running")
     background_tasks.add_task(asyncio.run, run_pipeline(p))
     return {"id": p.id, "status": "accepted"}
+
+
+@router.delete("/{projection_id}", summary="Delete projection and its graph", status_code=202)
+def delete_projection(projection_id: str, background_tasks: BackgroundTasks):
+    """Set status to deleting, delete graph in background, then remove record."""
+    p = _get_projection_or_404(projection_id)
+    if p.status == "deleting":
+        raise HTTPException(status_code=409, detail="Already deleting")
+    store.update(projection_id, status="deleting", step="graph_delete", step_label="Deleting graph")
+
+    async def _delete():
+        from botocore.exceptions import ClientError
+        from nx_neptune.clients.client_factory import ClientFactory
+        import time
+        if p.graph_id:
+            client = ClientFactory().neptune()
+            try:
+                client.delete_graph(graphIdentifier=p.graph_id, skipSnapshot=True)
+            except ClientError as e:
+                if e.response["Error"]["Code"] != "ResourceNotFoundException":
+                    store.update(projection_id, status="failed", error=str(e))
+                    return
+            # Poll until gone
+            for _ in range(60):
+                await asyncio.sleep(10)
+                try:
+                    client.get_graph(graphIdentifier=p.graph_id)
+                except ClientError:
+                    break
+        store.delete(projection_id)
+
+    background_tasks.add_task(asyncio.run, _delete())
+    return {"id": p.id, "status": "deleting"}

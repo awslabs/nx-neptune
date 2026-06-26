@@ -52,6 +52,22 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         </button>
       </div>
       <nav className="flex-1 overflow-y-auto p-2">
+        <NavLink
+          to="/graphs"
+          title="Graphs"
+          className={({ isActive }) =>
+            clsx(
+              "flex items-center rounded-md px-3 py-2 text-sm transition-colors",
+              collapsed ? "justify-center" : "gap-3",
+              isActive
+                ? "bg-blue-50 text-blue-700 font-medium"
+                : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
+            )
+          }
+        >
+          <Network className="h-4 w-4 shrink-0" />
+          {!collapsed && "Graphs"}
+        </NavLink>
         {!collapsed && (
           <div>
             <div className="flex items-center justify-between px-3">
