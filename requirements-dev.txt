@@ -8,25 +8,25 @@ ast-serialize==0.5.0
     # via mypy
 black==26.5.1
     # via nx-neptune (pyproject.toml)
-boto3==1.43.24
+boto3==1.43.36
     # via nx-neptune (pyproject.toml)
-botocore==1.43.24
+botocore==1.43.36
     # via
     #   boto3
     #   s3transfer
 cfgv==3.5.0
     # via pre-commit
-click==8.4.1
+click==8.4.2
     # via black
-coverage==7.14.1
+coverage==7.14.3
     # via pytest-cov
 cymple==0.12.0
     # via nx-neptune (pyproject.toml)
-distlib==0.4.1
+distlib==0.4.3
     # via virtualenv
 dotenv==0.9.9
     # via nx-neptune (pyproject.toml)
-filelock==3.29.1
+filelock==3.29.4
     # via
     #   python-discovery
     #   virtualenv
@@ -86,7 +86,7 @@ pluggy==1.6.0
     #   pytest-cov
 pre-commit==4.6.0
     # via nx-neptune (pyproject.toml)
-prettytable==3.17.0
+prettytable==3.18.0
     # via pip-licenses
 pycodestyle==2.14.0
     # via flake8
@@ -94,7 +94,7 @@ pyflakes==3.4.0
     # via flake8
 pygments==2.20.0
     # via pytest
-pytest==9.0.3
+pytest==9.1.1
     # via
     #   nx-neptune (pyproject.toml)
     #   pytest-asyncio
@@ -104,13 +104,13 @@ pytest-asyncio==1.4.0
     # via nx-neptune (pyproject.toml)
 pytest-cov==7.1.0
     # via nx-neptune (pyproject.toml)
-pytest-order==1.4.0
+pytest-order==1.5.0
     # via nx-neptune (pyproject.toml)
 python-dateutil==2.9.0.post0
     # via
     #   botocore
     #   pandas
-python-discovery==1.4.0
+python-discovery==1.4.2
     # via virtualenv
 python-dotenv==1.2.2
     # via dotenv
@@ -118,13 +118,13 @@ pytokens==0.4.1
     # via black
 pyyaml==6.0.3
     # via pre-commit
-s3transfer==0.18.0
+s3transfer==0.19.0
     # via boto3
 scipy==1.17.1
     # via nx-neptune (pyproject.toml)
 six==1.17.0
     # via python-dateutil
-sqlglot==30.9.0
+sqlglot==30.12.0
     # via nx-neptune (pyproject.toml)
 typing-extensions==4.15.0
     # via
@@ -132,7 +132,7 @@ typing-extensions==4.15.0
     #   pytest-asyncio
 urllib3==2.7.0
     # via botocore
-virtualenv==21.4.2
+virtualenv==21.5.1
     # via pre-commit
-wcwidth==0.8.0
+wcwidth==0.8.1
     # via prettytable
