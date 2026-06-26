@@ -82,7 +82,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           ))}
         </div>
 
-        {!collapsed && workspaces.length > 0 && (
+        {!collapsed && (
           <div className="mt-4 border-t border-gray-200 pt-3">
             <div className="flex items-center justify-between px-3">
               <span className="text-xs font-semibold uppercase text-gray-400">Workspaces</span>
@@ -94,29 +94,36 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
               {workspaces.map(ws => {
                 const projs = projByWorkspace(ws.id);
                 const isOpen = expanded.has(ws.id);
+                const isDeleting = ws.status === "deleting";
                 return (
                   <div key={ws.id}>
-                    <div className="group flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
-                      <button onClick={() => toggle(ws.id)} className="shrink-0 p-0.5">
+                    <div className={clsx("group flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-sm hover:bg-gray-100", isDeleting ? "text-gray-400 italic" : "text-gray-700")}>
+                      <button onClick={() => !isDeleting && toggle(ws.id)} className="shrink-0 p-0.5" disabled={isDeleting}>
                         {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                       </button>
-                      <NavLink
-                        to={`/sessions?workspace=${ws.id}`}
-                        className="flex-1 truncate font-medium hover:text-blue-600"
-                      >{ws.name}</NavLink>
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (!confirm(`Delete workspace "${ws.name}"?`)) return;
-                          await workspaceApi.delete(ws.id);
-                          loadWorkspaces();
-                        }}
-                        className="hidden shrink-0 rounded p-0.5 text-gray-400 hover:text-red-600 group-hover:block"
-                        title="Delete workspace"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                      {projs.length > 0 && <span className="text-xs text-gray-400 group-hover:hidden">{projs.length}</span>}
+                      {isDeleting ? (
+                        <span className="flex-1 truncate">{ws.name} (deleting...)</span>
+                      ) : (
+                        <NavLink
+                          to={`/sessions?workspace=${ws.id}`}
+                          className="flex-1 truncate font-medium hover:text-blue-600"
+                        >{ws.name}</NavLink>
+                      )}
+                      {!isDeleting && (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!confirm(`Delete workspace "${ws.name}"?`)) return;
+                            await workspaceApi.delete(ws.id);
+                            loadWorkspaces();
+                          }}
+                          className="hidden shrink-0 rounded p-0.5 text-gray-400 hover:text-red-600 group-hover:block"
+                          title="Delete workspace"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                      {!isDeleting && projs.length > 0 && <span className="text-xs text-gray-400 group-hover:hidden">{projs.length}</span>}
                     </div>
                     {isOpen && (
                       <div className="ml-5 space-y-0.5">

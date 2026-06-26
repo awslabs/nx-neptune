@@ -1,13 +1,15 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import asyncio
 from dataclasses import asdict
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
+from nx_neptune_proxy.services.workspace_deletion import delete_workspace
 from nx_neptune_proxy.services.workspace_store import store
 
 router = APIRouter(prefix="/api/v0/workspace", tags=["workspace"])
@@ -24,6 +26,7 @@ class WorkspaceUpdate(BaseModel):
 class WorkspaceResponse(BaseModel):
     id: str
     name: str
+    status: str
     created_at: datetime
 
 
@@ -53,7 +56,13 @@ def update_workspace(workspace_id: str, body: WorkspaceUpdate):
     return asdict(ws)
 
 
-@router.delete("/{workspace_id}", status_code=204)
-def delete_workspace(workspace_id: str):
-    if not store.delete(workspace_id):
+@router.delete("/{workspace_id}", status_code=202)
+def delete_workspace_endpoint(workspace_id: str, background_tasks: BackgroundTasks):
+    ws = store.get(workspace_id)
+    if ws is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
+    if ws.status == "deleting":
+        raise HTTPException(status_code=409, detail="Already deleting")
+    ws.status = "deleting"
+    background_tasks.add_task(asyncio.run, delete_workspace(workspace_id))
+    return {"id": ws.id, "status": "deleting"}

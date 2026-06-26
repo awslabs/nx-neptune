@@ -13,6 +13,7 @@ from typing import Optional
 class Workspace:
     id: str
     name: str
+    status: str = "active"  # active | deleting
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
