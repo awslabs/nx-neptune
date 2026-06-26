@@ -1,13 +1,8 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router";
-import { ListTodo, Network, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronRight, Circle, Plus, Trash2 } from "lucide-react";
+import { Network, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronRight, Circle, Plus, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { workspaceApi, projection, type Workspace, type Projection } from "../api";
-
-const links = [
-  { to: "/sessions", label: "Sessions", icon: ListTodo },
-  { to: "/graphs", label: "Graphs", icon: Network },
-];
 
 const statusColor: Record<string, string> = {
   complete: "text-green-500",
@@ -57,33 +52,11 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         </button>
       </div>
       <nav className="flex-1 overflow-y-auto p-2">
-        <div className="space-y-1">
-          {links.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              title={label}
-              className={({ isActive }) =>
-                clsx(
-                  "flex items-center rounded-md px-3 py-2 text-sm transition-colors",
-                  collapsed ? "justify-center" : "gap-3",
-                  isActive
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
-                )
-              }
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {!collapsed && label}
-            </NavLink>
-          ))}
-        </div>
-
         {!collapsed && (
-          <div className="mt-4 border-t border-gray-200 pt-3">
+          <div>
             <div className="flex items-center justify-between px-3">
               <span className="text-xs font-semibold uppercase text-gray-400">Workspaces</span>
-              <NavLink to="/workspaces" className="rounded p-0.5 text-gray-400 hover:text-gray-600" title="Manage Workspaces">
+              <NavLink to="/workspaces" className="rounded p-0.5 text-gray-400 hover:text-gray-600" title="Add Workspace">
                 <Plus className="h-3 w-3" />
               </NavLink>
             </div>

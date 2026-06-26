@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { projection, metadata, workspaceApi, type Projection, type Workspace } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
-import { X, ExternalLink } from "lucide-react";
+import { X, ExternalLink, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 
 export function Sessions() {
@@ -11,6 +11,7 @@ export function Sessions() {
   const [selected, setSelected] = useState<Projection | null>(null);
   const [region, setRegion] = useState("");
   const [workspaces, setWorkspaces] = useState<Map<string, Workspace>>(new Map());
+  const [summaries, setSummaries] = useState<Map<string, { numNodes: number; numEdges: number }>>(new Map());
   const navigate = useNavigate();
   const filterWorkspaceId = searchParams.get("workspace");
 
@@ -23,6 +24,17 @@ export function Sessions() {
   async function load() {
     const list = await projection.list();
     setSessions(list);
+    // Fetch graph summaries for completed projections
+    const entries: [string, { numNodes: number; numEdges: number }][] = [];
+    await Promise.all(
+      list.filter(p => p.graph_id && (p.status === "complete" || p.status === "importing")).map(async (p) => {
+        try {
+          const s = await metadata.graphSummary(p.graph_id!);
+          entries.push([p.id, { numNodes: s.numNodes, numEdges: s.numEdges }]);
+        } catch {}
+      })
+    );
+    setSummaries(new Map(entries));
   }
 
   const filtered = filterWorkspaceId
@@ -51,6 +63,7 @@ export function Sessions() {
                   <th className="px-4 py-3 font-medium">Database</th>
                   <th className="px-4 py-3 font-medium">Progress</th>
                   <th className="px-4 py-3 font-medium">Created</th>
+                  <th className="px-4 py-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody>
@@ -74,6 +87,41 @@ export function Sessions() {
                     <td className="px-4 py-3 text-gray-600">{s.database || "—"}</td>
                     <td className="px-4 py-3">{Math.round(s.progress)}%</td>
                     <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        <button
+                          className="text-gray-400 hover:text-blue-600 disabled:opacity-30"
+                          disabled={!s.graph_id || s.status !== "complete"}
+                          title="Open in Graph Explorer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const graphDbUrl = `https://${s.graph_id}.${region}.neptune-graph.amazonaws.com`;
+                            const params = new URLSearchParams({
+                              graphDbUrl,
+                              queryEngine: "openCypher",
+                              awsRegion: region,
+                              serviceType: "neptune-graph",
+                              name: s.graph_name || s.graph_id || "",
+                            });
+                            const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost";
+                            window.open(`${geBase}?${params}`, "_blank");
+                          }}
+                        ><ExternalLink className="h-4 w-4" /></button>
+                        <button
+                          className="text-gray-400 hover:text-red-600 disabled:opacity-30"
+                          disabled={!s.graph_id}
+                          title="Delete graph"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!s.graph_id) return;
+                            if (confirm(`Delete graph ${s.graph_name || s.graph_id}?`)) {
+                              await metadata.deleteGraph(s.graph_id);
+                              load();
+                            }
+                          }}
+                        ><Trash2 className="h-4 w-4" /></button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -102,6 +150,12 @@ export function Sessions() {
             </div>
             <div><span className="text-gray-500">S3 Bucket:</span> {selected.s3_staging_bucket || "—"}</div>
             <div><span className="text-gray-500">Graph ID:</span> {selected.graph_id || "—"}</div>
+            {summaries.get(selected.id) && (
+              <>
+                <div><span className="text-gray-500">Nodes:</span> {summaries.get(selected.id)!.numNodes.toLocaleString()}</div>
+                <div><span className="text-gray-500">Edges:</span> {summaries.get(selected.id)!.numEdges.toLocaleString()}</div>
+              </>
+            )}
             {selected.error && (
               <div>
                 <span className="text-gray-500">Error:</span>
