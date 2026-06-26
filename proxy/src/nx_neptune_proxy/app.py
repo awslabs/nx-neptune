@@ -17,8 +17,12 @@ from nx_neptune_proxy.routers.metadata import router as metadata_router
 from nx_neptune_proxy.routers.preview import router as preview_router
 from nx_neptune_proxy.routers.projection import router as projection_router
 from nx_neptune_proxy.routers.workspace import router as workspace_router
+from nx_neptune_proxy.services.db import init_db
 
 settings = Settings.from_env()
+
+# --- Database ---
+init_db()
 
 # --- Structured logging ---
 
