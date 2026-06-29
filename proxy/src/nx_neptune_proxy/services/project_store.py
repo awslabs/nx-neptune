@@ -8,41 +8,67 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
+from .db import get_connection
+
 
 @dataclass
 class Project:
     id: str
     name: str
-    status: str = "active"  # active | deleting
+    status: str = "active"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ProjectStore:
-    def __init__(self) -> None:
-        self._projects: dict[str, Project] = {}
-
     def create(self, name: str) -> Project:
         p = Project(id=str(uuid.uuid4()), name=name)
-        self._projects[p.id] = p
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO projects (id, name, status, created_at) VALUES (?, ?, ?, ?)",
+            (p.id, p.name, p.status, p.created_at.isoformat()),
+        )
+        conn.commit()
+        conn.close()
         return p
 
     def get(self, project_id: str) -> Optional[Project]:
-        return self._projects.get(project_id)
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        conn.close()
+        return self._row_to_project(row) if row else None
 
     def list(self) -> list[Project]:
-        return list(self._projects.values())
+        conn = get_connection()
+        rows = conn.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
+        conn.close()
+        return [self._row_to_project(r) for r in rows]
 
     def update(self, project_id: str, **kwargs) -> Optional[Project]:
-        p = self._projects.get(project_id)
-        if p is None:
-            return None
-        for key, value in kwargs.items():
-            if hasattr(p, key):
-                setattr(p, key, value)
-        return p
+        if not kwargs:
+            return self.get(project_id)
+        sets = ", ".join(f"{k} = ?" for k in kwargs)
+        vals = list(kwargs.values()) + [project_id]
+        conn = get_connection()
+        conn.execute(f"UPDATE projects SET {sets} WHERE id = ?", vals)
+        conn.commit()
+        conn.close()
+        return self.get(project_id)
 
     def delete(self, project_id: str) -> bool:
-        return self._projects.pop(project_id, None) is not None
+        conn = get_connection()
+        cur = conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        conn.commit()
+        conn.close()
+        return cur.rowcount > 0
+
+    @staticmethod
+    def _row_to_project(row) -> Project:
+        return Project(
+            id=row["id"],
+            name=row["name"],
+            status=row["status"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
 
 
 store = ProjectStore()

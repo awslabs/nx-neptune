@@ -19,7 +19,7 @@ def get_connection() -> sqlite3.Connection:
 def init_db() -> None:
     conn = get_connection()
     conn.executescript("""
-        CREATE TABLE IF NOT EXISTS workspaces (
+        CREATE TABLE IF NOT EXISTS projects (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'active',
@@ -38,13 +38,13 @@ def init_db() -> None:
             s3_staging_bucket TEXT,
             graph_id TEXT,
             graph_endpoint TEXT,
-            workspace_id TEXT,
+            project_id TEXT,
             step TEXT,
             step_label TEXT,
             progress REAL DEFAULT 0,
             error TEXT,
             created_at TEXT NOT NULL,
-            FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+            FOREIGN KEY (project_id) REFERENCES projects(id)
         );
     """)
     conn.commit()

@@ -13,7 +13,7 @@ GRAPH_PREFIX = "nxp-"
 _FIELDS = [
     "id", "status", "catalog", "database", "sql_query", "node_query", "edge_query",
     "graph_name", "graph_memory_gb", "s3_staging_bucket", "graph_id", "graph_endpoint",
-    "workspace_id", "step", "step_label", "progress", "error", "created_at",
+    "project_id", "step", "step_label", "progress", "error", "created_at",
 ]
 
 
@@ -114,7 +114,7 @@ class ProjectionStore:
             s3_staging_bucket=row["s3_staging_bucket"],
             graph_id=row["graph_id"],
             graph_endpoint=row["graph_endpoint"],
-            workspace_id=row["workspace_id"],
+            project_id=row["project_id"],
             step=row["step"],
             step_label=row["step_label"],
             progress=row["progress"] or 0,
