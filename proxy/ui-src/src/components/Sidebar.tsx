@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink } from "react-router";
+import { NavLink, useLocation } from "react-router";
 import { Network, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronRight, Circle, Plus, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { projectApi, projection, type Project, type Projection } from "../api";
@@ -15,6 +15,27 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const [projects, setProjects] = useState<Project[]>([]);
   const [projections, setProjections] = useState<Projection[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const location = useLocation();
+
+  // Auto-expand the active project from URL
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const activeProject = params.get("project");
+    const sessionId = params.get("session");
+    let projectToExpand = activeProject;
+    if (!projectToExpand && sessionId) {
+      const match = projections.find(p => p.id === sessionId);
+      if (match?.project_id) projectToExpand = match.project_id;
+    }
+    if (projectToExpand) {
+      setExpanded(prev => {
+        if (prev.has(projectToExpand)) return prev;
+        const next = new Set(prev);
+        next.add(projectToExpand);
+        return next;
+      });
+    }
+  }, [location.search, projections]);
 
   useEffect(() => {
     loadProjects();
