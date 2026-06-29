@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useSearchParams, NavLink } from "react-router";
 import { projection, metadata, projectApi, type Projection, type Project } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
 import { X, ExternalLink, Trash2 } from "lucide-react";
@@ -55,19 +55,22 @@ export function Sessions() {
           <RefreshButton onClick={load} />
         </div>
 
-        {filtered.length === 0 ? (
-          <p className="text-sm text-gray-500">No sessions yet. Create one from the Import page.</p>
-        ) : (
-          <Card className="overflow-hidden p-0">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Name</th>
-                  <th className="px-4 py-3 font-medium">Project</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Progress</th>
-                  <th className="px-4 py-3 font-medium">Created</th>
-                  <th className="px-4 py-3 font-medium"></th>
+        <Card className="overflow-hidden p-0">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Project</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Progress</th>
+                <th className="px-4 py-3 font-medium">Created</th>
+                  <th className="px-4 py-3 text-right">
+                    <NavLink
+                      to={filterProjectId ? `/import?project=${filterProjectId}&t=${Date.now()}` : "/import"}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700"
+                      title="Add Graph"
+                    >+</NavLink>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -117,7 +120,6 @@ export function Sessions() {
               </tbody>
             </table>
           </Card>
-        )}
       </div>
 
       {selected && (

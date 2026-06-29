@@ -5,6 +5,7 @@ import { Import } from "./pages/Import";
 import { Sessions } from "./pages/Sessions";
 import { Graphs } from "./pages/Graphs";
 import { Projects } from "./pages/Projects";
+import { Landing } from "./pages/Landing";
 import { useKeyboard } from "./hooks/useKeyboard";
 
 export default function App() {
@@ -23,7 +24,7 @@ export default function App() {
       <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(c => !c)} />
       <main className="flex-1 overflow-auto p-6">
         <Routes>
-          <Route path="/" element={<Navigate to="/import" replace />} />
+          <Route path="/" element={<Landing />} />
           <Route path="/import" element={<Import />} />
           <Route path="/sessions" element={<Sessions />} />
           <Route path="/graphs" element={<Graphs />} />
