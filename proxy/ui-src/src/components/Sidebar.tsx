@@ -42,10 +42,10 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     <aside className={clsx("flex flex-col border-r border-gray-200 bg-white transition-all", collapsed ? "w-14" : "w-60")}>
       <div className="flex h-14 items-center justify-between border-b border-gray-200 px-3">
         {!collapsed && (
-          <div className="flex items-center gap-2">
+          <NavLink to="/" className="flex items-center gap-2 hover:opacity-80">
             <Network className="h-5 w-5 text-blue-600" />
             <span className="text-sm font-semibold">nx-neptune</span>
-          </div>
+          </NavLink>
         )}
         <button onClick={onToggle} className="rounded p-1 text-gray-500 hover:bg-gray-100">
           {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
