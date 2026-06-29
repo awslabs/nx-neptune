@@ -121,7 +121,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                         <button
                           onClick={async (e) => {
                             e.stopPropagation();
-                            if (!confirm(`Delete project "${proj.name}"?`)) return;
+                            if (!confirm(`Delete project "${proj.name}" and all its graphs? This cannot be undone.`)) return;
                             await projectApi.delete(proj.id);
                             loadProjects();
                             if (location.search.includes(proj.id)) navigate("/");
