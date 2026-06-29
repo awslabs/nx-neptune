@@ -1,15 +1,18 @@
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import { projectApi } from "../api";
 import { Card, Button } from "../components/ui";
 
 export function Projects() {
   const [name, setName] = useState("");
+  const navigate = useNavigate();
 
   async function handleCreate() {
     if (!name.trim()) return;
-    await projectApi.create(name.trim());
+    const project = await projectApi.create(name.trim());
     setName("");
     window.dispatchEvent(new Event("projects-changed"));
+    navigate(`/sessions?project=${project.id}`);
   }
 
   return (

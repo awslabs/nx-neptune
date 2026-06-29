@@ -7,10 +7,12 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from nx_neptune_proxy.services.project_deletion import delete_project
 from nx_neptune_proxy.services.project_store import store
+from nx_neptune_proxy.services.projection_store import store as projection_store
 
 router = APIRouter(prefix="/api/v0/project", tags=["project"])
 
@@ -63,6 +65,18 @@ def delete_project_endpoint(project_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=404, detail="Project not found")
     if p.status == "deleting":
         raise HTTPException(status_code=409, detail="Already deleting")
-    p.status = "deleting"
+
+    # If no graphs to delete, do it immediately
+    projections = [pr for pr in projection_store.list() if pr.project_id == project_id]
+    has_graphs = any(pr.graph_id for pr in projections)
+
+    if not has_graphs:
+        for pr in projections:
+            projection_store.delete(pr.id)
+        store.delete(project_id)
+        return Response(status_code=204)
+
+    # Has graphs — async deletion
+    store.update(project_id, status="deleting")
     background_tasks.add_task(asyncio.run, delete_project(project_id))
     return {"id": p.id, "status": "deleting"}

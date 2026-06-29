@@ -61,6 +61,7 @@ export function Import() {
       if (!sessionId) {
         setCurrentId(null);
         setStatus(null);
+        setPolling(false);
         setChecks([]);
         setPreview(null);
         setError(null);

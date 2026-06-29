@@ -11,7 +11,7 @@ export function Landing() {
       if (projects.length === 0) {
         navigate("/projects", { replace: true });
       } else {
-        navigate(`/sessions?project=${projects[0].id}`, { replace: true });
+        navigate("/sessions", { replace: true });
       }
     });
   }, [navigate]);

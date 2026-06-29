@@ -39,7 +39,7 @@ class ProjectStore:
 
     def list(self) -> list[Project]:
         conn = get_connection()
-        rows = conn.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
+        rows = conn.execute("SELECT * FROM projects ORDER BY created_at ASC").fetchall()
         conn.close()
         return [self._row_to_project(r) for r in rows]
 
