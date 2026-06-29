@@ -4,7 +4,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Import } from "./pages/Import";
 import { Sessions } from "./pages/Sessions";
 import { Graphs } from "./pages/Graphs";
-import { Workspaces } from "./pages/Workspaces";
+import { Projects } from "./pages/Projects";
 import { useKeyboard } from "./hooks/useKeyboard";
 
 export default function App() {
@@ -27,7 +27,7 @@ export default function App() {
           <Route path="/import" element={<Import />} />
           <Route path="/sessions" element={<Sessions />} />
           <Route path="/graphs" element={<Graphs />} />
-          <Route path="/workspaces" element={<Workspaces />} />
+          <Route path="/projects" element={<Projects />} />
         </Routes>
       </main>
     </div>

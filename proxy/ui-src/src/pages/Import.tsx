@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router";
-import { metadata, projection, workspaceApi, type Projection, type ProjectionStatus, type Workspace } from "../api";
+import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
 import { Play, CheckCircle, Eye } from "lucide-react";
 
@@ -13,9 +13,9 @@ export function Import() {
   const [buckets, setBuckets] = useState<string[]>([]);
   const [dbLoading, setDbLoading] = useState(false);
 
-  // --- Workspace state ---
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [workspaceId, setWorkspaceId] = useState<string>("");
+  // --- Project state ---
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectId, setProjectId] = useState<string>("");
 
   // --- Form state ---
   const [catalog, setCatalog] = useState("AwsDataCatalog");
@@ -42,22 +42,22 @@ export function Import() {
   useEffect(() => {
     metadata.catalogs().then((d) => setCatalogs(d.catalogs));
     metadata.buckets().then((d) => setBuckets(d.buckets));
-    workspaceApi.list().then(setWorkspaces);
+    projectApi.list().then(setProjects);
     loadSessions().then(() => {
       const sessionId = searchParams.get("session");
       if (sessionId) {
         projection.get(sessionId).then(loadSession);
       }
     });
-    const wsParam = searchParams.get("workspace");
-    if (wsParam) setWorkspaceId(wsParam);
+    const wsParam = searchParams.get("project");
+    if (wsParam) setProjectId(wsParam);
   }, []);
 
   useEffect(() => {
-    const wsParam = searchParams.get("workspace");
+    const wsParam = searchParams.get("project");
     const sessionId = searchParams.get("session");
     if (wsParam) {
-      setWorkspaceId(wsParam);
+      setProjectId(wsParam);
       if (!sessionId) {
         setCurrentId(null);
         setStatus(null);
@@ -90,7 +90,7 @@ export function Import() {
 
   // --- Session management ---
   async function ensureSession(): Promise<string> {
-    const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb, workspace_id: workspaceId || undefined };
+    const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb, project_id: projectId || undefined };
     if (currentId) {
       await projection.update(currentId, data);
       return currentId;
@@ -98,7 +98,7 @@ export function Import() {
     const p = await projection.create(data);
     setCurrentId(p.id);
     await loadSessions();
-    window.dispatchEvent(new Event("workspaces-changed"));
+    window.dispatchEvent(new Event("projects-changed"));
     return p.id;
   }
 
@@ -209,24 +209,24 @@ export function Import() {
       <Card>
         <div className="space-y-4">
           <label className="block space-y-1">
-              <span className="text-sm font-medium text-gray-700">Workspace</span>
+              <span className="text-sm font-medium text-gray-700">Project</span>
               <div className="flex gap-2">
                 <Select
                   className="flex-1"
-                  value={workspaceId}
-                  onChange={(e) => setWorkspaceId(e.target.value)}
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
                 >
-                  <option value="">No workspace</option>
-                  {workspaces.map((ws) => (
+                  <option value="">No project</option>
+                  {projects.map((ws) => (
                     <option key={ws.id} value={ws.id}>{ws.name}</option>
                   ))}
                 </Select>
                 <Button variant="secondary" onClick={async () => {
-                  const name = prompt("Workspace name:");
+                  const name = prompt("Project name:");
                   if (!name) return;
-                  const ws = await workspaceApi.create(name);
-                  setWorkspaces(prev => [...prev, ws]);
-                  setWorkspaceId(ws.id);
+                  const ws = await projectApi.create(name);
+                  setProjects(prev => [...prev, ws]);
+                  setProjectId(ws.id);
                 }}>+</Button>
               </div>
             </label>

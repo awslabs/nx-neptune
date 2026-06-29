@@ -25,7 +25,7 @@ class Projection:
     s3_staging_bucket: Optional[str] = None
     graph_id: Optional[str] = None
     graph_endpoint: Optional[str] = None
-    workspace_id: Optional[str] = None
+    project_id: Optional[str] = None
     step: Optional[str] = None
     step_label: Optional[str] = None
     progress: float = 0
@@ -43,7 +43,7 @@ class ProjectionStore:
                sql_query: str = None, node_query: str = None,
                edge_query: str = None, graph_name: str = None,
                graph_memory_gb: int = 16, s3_staging_bucket: str = None,
-               workspace_id: str = None) -> Projection:
+               project_id: str = None) -> Projection:
         projection = Projection(
             id=str(uuid.uuid4()),
             status="draft",
@@ -55,7 +55,7 @@ class ProjectionStore:
             graph_name=graph_name,
             graph_memory_gb=graph_memory_gb,
             s3_staging_bucket=s3_staging_bucket,
-            workspace_id=workspace_id,
+            project_id=project_id,
         )
         self._projections[projection.id] = projection
         return projection

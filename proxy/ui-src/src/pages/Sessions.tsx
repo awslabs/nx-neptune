@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
-import { projection, metadata, workspaceApi, type Projection, type Workspace } from "../api";
+import { projection, metadata, projectApi, type Projection, type Project } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
 import { X, ExternalLink, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
@@ -10,16 +10,16 @@ export function Sessions() {
   const [sessions, setSessions] = useState<Projection[]>([]);
   const [selected, setSelected] = useState<Projection | null>(null);
   const [region, setRegion] = useState("");
-  const [workspaces, setWorkspaces] = useState<Map<string, Workspace>>(new Map());
+  const [projects, setProjects] = useState<Map<string, Project>>(new Map());
   const [summaries, setSummaries] = useState<Map<string, { numNodes: number; numEdges: number }>>(new Map());
   const [graphStatuses, setGraphStatuses] = useState<Map<string, string>>(new Map());
   const navigate = useNavigate();
-  const filterWorkspaceId = searchParams.get("workspace");
+  const filterProjectId = searchParams.get("project");
 
   useEffect(() => {
     load();
     metadata.config().then(c => setRegion(c.region));
-    workspaceApi.list().then(list => setWorkspaces(new Map(list.map(ws => [ws.id, ws]))));
+    projectApi.list().then(list => setProjects(new Map(list.map(p => [p.id, p]))));
   }, []);
 
   async function load() {
@@ -42,16 +42,16 @@ export function Sessions() {
     setSummaries(new Map(entries));
   }
 
-  const filtered = filterWorkspaceId
-    ? sessions.filter(s => s.workspace_id === filterWorkspaceId)
+  const filtered = filterProjectId
+    ? sessions.filter(s => s.project_id === filterProjectId)
     : sessions;
-  const workspaceName = filterWorkspaceId ? workspaces.get(filterWorkspaceId)?.name : null;
+  const projectName = filterProjectId ? projects.get(filterProjectId)?.name : null;
 
   return (
     <div className="flex gap-4">
       <div className="flex-1 space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">{workspaceName ? `${workspaceName} — Sessions` : "Sessions"}</h1>
+          <h1 className="text-lg font-semibold">{projectName ? `${projectName} — Sessions` : "Sessions"}</h1>
           <RefreshButton onClick={load} />
         </div>
 
@@ -63,7 +63,7 @@ export function Sessions() {
               <thead className="border-b bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 font-medium">Name</th>
-                  <th className="px-4 py-3 font-medium">Workspace</th>
+                  <th className="px-4 py-3 font-medium">Project</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Progress</th>
                   <th className="px-4 py-3 font-medium">Created</th>
@@ -79,7 +79,7 @@ export function Sessions() {
                     onDoubleClick={() => navigate(`/import?session=${s.id}`)}
                   >
                     <td className="px-4 py-3 font-medium">{s.graph_name || s.id.slice(0, 8)}</td>
-                    <td className="px-4 py-3 text-gray-600">{s.workspace_id ? workspaces.get(s.workspace_id)?.name || "—" : "—"}</td>
+                    <td className="px-4 py-3 text-gray-600">{s.project_id ? projects.get(s.project_id)?.name || "—" : "—"}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                         s.status === "complete" ? "bg-green-100 text-green-700" :
@@ -127,7 +127,7 @@ export function Sessions() {
             <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
           </div>
           <div className="space-y-2 text-sm">
-            {selected.workspace_id && <div><span className="text-gray-500">Workspace:</span> {workspaces.get(selected.workspace_id)?.name || selected.workspace_id}</div>}
+            {selected.project_id && <div><span className="text-gray-500">Project:</span> {projects.get(selected.project_id)?.name || selected.project_id}</div>}
             <div><span className="text-gray-500">Catalog:</span> {selected.catalog || "—"}</div>
             <div><span className="text-gray-500">Database:</span> {selected.database || "—"}</div>
             <div>
@@ -187,7 +187,7 @@ export function Sessions() {
                 await projection.delete(selected.id);
                 setSelected(null);
                 load();
-                window.dispatchEvent(new Event("workspaces-changed"));
+                window.dispatchEvent(new Event("projects-changed"));
               }
             }}>
               <Trash2 className="h-3 w-3" /> Delete Graph

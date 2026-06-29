@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink } from "react-router";
 import { Network, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronRight, Circle, Plus, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
-import { workspaceApi, projection, type Workspace, type Projection } from "../api";
+import { projectApi, projection, type Project, type Projection } from "../api";
 
 const statusColor: Record<string, string> = {
   complete: "text-green-500",
@@ -12,19 +12,19 @@ const statusColor: Record<string, string> = {
 };
 
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [projections, setProjections] = useState<Projection[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    loadWorkspaces();
-    const handler = () => loadWorkspaces();
-    window.addEventListener("workspaces-changed", handler);
-    return () => window.removeEventListener("workspaces-changed", handler);
+    loadProjects();
+    const handler = () => loadProjects();
+    window.addEventListener("projects-changed", handler);
+    return () => window.removeEventListener("projects-changed", handler);
   }, []);
 
-  function loadWorkspaces() {
-    workspaceApi.list().then(setWorkspaces);
+  function loadProjects() {
+    projectApi.list().then(setProjects);
     projection.list().then(setProjections);
   }
 
@@ -36,7 +36,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     });
   }
 
-  const projByWorkspace = (wsId: string) => projections.filter(p => p.workspace_id === wsId);
+  const projByProject = (projectId: string) => projections.filter(p => p.project_id === projectId);
 
   return (
     <aside className={clsx("flex flex-col border-r border-gray-200 bg-white transition-all", collapsed ? "w-14" : "w-60")}>
@@ -71,40 +71,40 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         {!collapsed && (
           <div>
             <div className="flex items-center justify-between px-3">
-              <span className="text-xs font-semibold uppercase text-gray-400">Workspaces</span>
-              <NavLink to="/workspaces" className="rounded p-0.5 text-gray-400 hover:text-gray-600" title="Add Workspace">
+              <span className="text-xs font-semibold uppercase text-gray-400">Projects</span>
+              <NavLink to="/projects" className="rounded p-0.5 text-gray-400 hover:text-gray-600" title="Add Project">
                 <Plus className="h-3 w-3" />
               </NavLink>
             </div>
             <div className="mt-2 space-y-0.5">
-              {workspaces.map(ws => {
-                const projs = projByWorkspace(ws.id);
-                const isOpen = expanded.has(ws.id);
-                const isDeleting = ws.status === "deleting";
+              {projects.map(proj => {
+                const projs = projByProject(proj.id);
+                const isOpen = expanded.has(proj.id);
+                const isDeleting = proj.status === "deleting";
                 return (
-                  <div key={ws.id}>
+                  <div key={proj.id}>
                     <div className={clsx("group flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-sm hover:bg-gray-100", isDeleting ? "text-gray-400 italic" : "text-gray-700")}>
-                      <button onClick={() => !isDeleting && toggle(ws.id)} className="shrink-0 p-0.5" disabled={isDeleting}>
+                      <button onClick={() => !isDeleting && toggle(proj.id)} className="shrink-0 p-0.5" disabled={isDeleting}>
                         {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                       </button>
                       {isDeleting ? (
-                        <span className="flex-1 truncate">{ws.name} (deleting...)</span>
+                        <span className="flex-1 truncate">{proj.name} (deleting...)</span>
                       ) : (
                         <NavLink
-                          to={`/sessions?workspace=${ws.id}`}
+                          to={`/sessions?project=${proj.id}`}
                           className="flex-1 truncate font-medium hover:text-blue-600"
-                        >{ws.name}</NavLink>
+                        >{proj.name}</NavLink>
                       )}
                       {!isDeleting && (
                         <button
                           onClick={async (e) => {
                             e.stopPropagation();
-                            if (!confirm(`Delete workspace "${ws.name}"?`)) return;
-                            await workspaceApi.delete(ws.id);
-                            loadWorkspaces();
+                            if (!confirm(`Delete project "${proj.name}"?`)) return;
+                            await projectApi.delete(proj.id);
+                            loadProjects();
                           }}
                           className="hidden shrink-0 rounded p-0.5 text-gray-400 hover:text-red-600 group-hover:block"
-                          title="Delete workspace"
+                          title="Delete project"
                         >
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -124,7 +124,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                           </NavLink>
                         ))}
                         <NavLink
-                          to={`/import?workspace=${ws.id}&t=${Date.now()}`}
+                          to={`/import?project=${proj.id}&t=${Date.now()}`}
                           className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700"
                         >
                           <span>+ Add Graph</span>

@@ -38,7 +38,7 @@ export interface Projection {
   graph_endpoint?: string;
   graph_memory_gb: number;
   s3_staging_bucket?: string;
-  workspace_id?: string;
+  project_id?: string;
   step?: string;
   step_label?: string;
   progress: number;
@@ -69,17 +69,17 @@ export const projection = {
   delete: (id: string) => request<{ id: string; status: string }>(`/projection/${id}`, { method: "DELETE" }),
 };
 
-// --- Workspace ---
+// --- Project ---
 
-export interface Workspace {
+export interface Project {
   id: string;
   name: string;
   status: string;
   created_at: string;
 }
 
-export const workspaceApi = {
-  list: () => request<Workspace[]>("/workspace"),
-  create: (name: string) => request<Workspace>("/workspace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }),
-  delete: (id: string) => request<{ id: string; status: string }>(`/workspace/${id}`, { method: "DELETE" }),
+export const projectApi = {
+  list: () => request<Project[]>("/project"),
+  create: (name: string) => request<Project>("/project", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }),
+  delete: (id: string) => request<{ id: string; status: string }>(`/project/${id}`, { method: "DELETE" }),
 };
