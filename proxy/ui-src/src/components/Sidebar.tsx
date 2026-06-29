@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, useLocation } from "react-router";
+import { NavLink, useLocation, useNavigate } from "react-router";
 import { Network, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronRight, Circle, Plus, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { projectApi, projection, type Project, type Projection } from "../api";
@@ -16,6 +16,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const [projections, setProjections] = useState<Projection[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Auto-expand the active project from URL
   useEffect(() => {
@@ -123,6 +124,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                             if (!confirm(`Delete project "${proj.name}"?`)) return;
                             await projectApi.delete(proj.id);
                             loadProjects();
+                            if (location.search.includes(proj.id)) navigate("/");
                           }}
                           className="hidden shrink-0 rounded p-0.5 text-gray-400 hover:text-red-600 group-hover:block"
                           title="Delete project"

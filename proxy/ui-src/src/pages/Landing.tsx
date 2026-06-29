@@ -6,7 +6,8 @@ export function Landing() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    projectApi.list().then(projects => {
+    projectApi.list().then(all => {
+      const projects = all.filter(p => p.status !== "deleting");
       if (projects.length === 0) {
         navigate("/projects", { replace: true });
       } else {
