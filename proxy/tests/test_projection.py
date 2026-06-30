@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 
 from nx_neptune_proxy.app import app
 from nx_neptune_proxy.services.projection_store import store
+from nx_neptune_proxy.services.db import get_connection
 
 
 @pytest.fixture
@@ -18,9 +19,17 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clear_store():
-    store._projections.clear()
+    conn = get_connection()
+    conn.execute("DELETE FROM projections")
+    conn.execute("DELETE FROM projects")
+    conn.commit()
+    conn.close()
     yield
-    store._projections.clear()
+    conn = get_connection()
+    conn.execute("DELETE FROM projections")
+    conn.execute("DELETE FROM projects")
+    conn.commit()
+    conn.close()
 
 
 SAMPLE_BODY = {
@@ -197,7 +206,7 @@ async def test_execute_returns_202(client):
 async def test_execute_conflict_if_already_running(client):
     create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
     pid = create_resp.json()["id"]
-    store.get(pid).status = "executing"
+    store.update(pid, status="executing")
 
     resp = await client.post(f"/api/v0/projection/{pid}/execute")
     assert resp.status_code == 409
@@ -238,16 +247,13 @@ async def test_execute_poll_lifecycle(client):
     assert resp.status_code == 202
 
     # Status should be executing (set by background task, but we simulate)
-    store.get(pid).status = "executing"
-    store.get(pid).progress = 50
+    store.update(pid, status="executing", progress=50)
     resp = await client.get(f"/api/v0/projection/{pid}/status")
     assert resp.json()["status"] == "executing"
     assert resp.json()["progress"] == 50
 
     # Simulate completion
-    store.get(pid).status = "complete"
-    store.get(pid).progress = 100
-    store.get(pid).graph_endpoint = "https://g-123.neptune-graph.amazonaws.com"
+    store.update(pid, status="complete", progress=100, graph_endpoint="https://g-123.neptune-graph.amazonaws.com")
     resp = await client.get(f"/api/v0/projection/{pid}/status")
     assert resp.json()["status"] == "complete"
     assert resp.json()["progress"] == 100
