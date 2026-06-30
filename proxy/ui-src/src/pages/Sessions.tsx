@@ -1,0 +1,202 @@
+import { useEffect, useState } from "react";
+import { useSearchParams, NavLink } from "react-router";
+import { projection, metadata, projectApi, type Projection, type Project } from "../api";
+import { Card, Button, RefreshButton } from "../components/ui";
+import { X, ExternalLink, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router";
+
+export function Sessions() {
+  const [searchParams] = useSearchParams();
+  const [sessions, setSessions] = useState<Projection[]>([]);
+  const [selected, setSelected] = useState<Projection | null>(null);
+  const [region, setRegion] = useState("");
+  const [projects, setProjects] = useState<Map<string, Project>>(new Map());
+  const [summaries, setSummaries] = useState<Map<string, { numNodes: number; numEdges: number }>>(new Map());
+  const [graphStatuses, setGraphStatuses] = useState<Map<string, string>>(new Map());
+  const navigate = useNavigate();
+  const filterProjectId = searchParams.get("project");
+
+  useEffect(() => {
+    load();
+    metadata.config().then(c => setRegion(c.region));
+    projectApi.list().then(list => setProjects(new Map(list.map(p => [p.id, p]))));
+  }, []);
+
+  async function load() {
+    const list = await projection.list();
+    setSessions(list);
+    // Fetch graph statuses
+    metadata.graphs().then(({ graphs }) => {
+      setGraphStatuses(new Map(graphs.map(g => [g.id, g.status])));
+    }).catch(() => {});
+    // Fetch graph summaries for completed projections
+    const entries: [string, { numNodes: number; numEdges: number }][] = [];
+    await Promise.all(
+      list.filter(p => p.graph_id && (p.status === "complete" || p.status === "importing")).map(async (p) => {
+        try {
+          const s = await metadata.graphSummary(p.graph_id!);
+          entries.push([p.id, { numNodes: s.numNodes, numEdges: s.numEdges }]);
+        } catch {}
+      })
+    );
+    setSummaries(new Map(entries));
+  }
+
+  const filtered = filterProjectId
+    ? sessions.filter(s => s.project_id === filterProjectId)
+    : sessions;
+  const projectName = filterProjectId ? projects.get(filterProjectId)?.name : null;
+
+  return (
+    <div className="flex gap-4">
+      <div className="flex-1 space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-lg font-semibold">{projectName ? `${projectName} — Sessions` : "Sessions"}</h1>
+          <RefreshButton onClick={load} />
+        </div>
+
+        <Card className="overflow-hidden p-0">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Project</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Progress</th>
+                <th className="px-4 py-3 font-medium">Created</th>
+                  <th className="px-4 py-3 text-right">
+                    <NavLink
+                      to={filterProjectId ? `/import?project=${filterProjectId}&t=${Date.now()}` : "/import"}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700"
+                      title="Add Graph"
+                    >+</NavLink>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((s) => (
+                  <tr
+                    key={s.id}
+                    className={`cursor-pointer border-b last:border-0 hover:bg-gray-50 ${selected?.id === s.id ? "bg-blue-50" : ""}`}
+                    onClick={() => setSelected(s)}
+                    onDoubleClick={() => navigate(`/import?session=${s.id}`)}
+                  >
+                    <td className="px-4 py-3 font-medium">{s.graph_name || s.id.slice(0, 8)}</td>
+                    <td className="px-4 py-3 text-gray-600">{s.project_id ? projects.get(s.project_id)?.name || "—" : "—"}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                        s.status === "complete" ? "bg-green-100 text-green-700" :
+                        s.status === "failed" ? "bg-red-100 text-red-700" :
+                        s.status === "executing" ? "bg-blue-100 text-blue-700" :
+                        "bg-gray-100 text-gray-700"
+                      }`}>{s.status}</span>
+                    </td>
+                    <td className="px-4 py-3">{Math.round(s.progress)}%</td>
+                    <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        <button
+                          className="text-gray-400 hover:text-blue-600 disabled:opacity-30"
+                          disabled={!s.graph_id || s.status !== "complete"}
+                          title="Open in Graph Explorer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const graphDbUrl = `https://${s.graph_id}.${region}.neptune-graph.amazonaws.com`;
+                            const params = new URLSearchParams({
+                              graphDbUrl,
+                              queryEngine: "openCypher",
+                              awsRegion: region,
+                              serviceType: "neptune-graph",
+                              name: s.graph_name || s.graph_id || "",
+                            });
+                            const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost";
+                            window.open(`${geBase}/#/connect?${params}`, "_blank");
+                          }}
+                        ><ExternalLink className="h-4 w-4" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+      </div>
+
+      {selected && (
+        <Card className="w-80 shrink-0 space-y-3 self-start">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">{selected.graph_name || selected.id.slice(0, 8)}</h2>
+            <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="space-y-2 text-sm">
+            {selected.project_id && <div><span className="text-gray-500">Project:</span> {projects.get(selected.project_id)?.name || selected.project_id}</div>}
+            <div><span className="text-gray-500">Catalog:</span> {selected.catalog || "—"}</div>
+            <div><span className="text-gray-500">Database:</span> {selected.database || "—"}</div>
+            <div>
+              <span className="text-gray-500">Node Query:</span>
+              <pre className="mt-1 overflow-auto rounded bg-gray-50 p-2 font-mono text-xs">{selected.node_query || "—"}</pre>
+            </div>
+            <div>
+              <span className="text-gray-500">Edge Query:</span>
+              <pre className="mt-1 overflow-auto rounded bg-gray-50 p-2 font-mono text-xs">{selected.edge_query || "—"}</pre>
+            </div>
+            <div><span className="text-gray-500">S3 Bucket:</span> {selected.s3_staging_bucket || "—"}</div>
+            <div><span className="text-gray-500">Graph ID:</span> {selected.graph_id || "—"}</div>
+            {selected.graph_id && graphStatuses.get(selected.graph_id) && (
+              <div><span className="text-gray-500">Graph Status:</span>{" "}
+                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                  graphStatuses.get(selected.graph_id) === "AVAILABLE" ? "bg-green-100 text-green-700" :
+                  graphStatuses.get(selected.graph_id) === "DELETING" ? "bg-red-100 text-red-700" :
+                  "bg-blue-100 text-blue-700"
+                }`}>{graphStatuses.get(selected.graph_id)}</span>
+              </div>
+            )}
+            {summaries.get(selected.id) && (
+              <>
+                <div><span className="text-gray-500">Nodes:</span> {summaries.get(selected.id)!.numNodes.toLocaleString()}</div>
+                <div><span className="text-gray-500">Edges:</span> {summaries.get(selected.id)!.numEdges.toLocaleString()}</div>
+              </>
+            )}
+            {selected.error && (
+              <div>
+                <span className="text-gray-500">Error:</span>
+                <p className="mt-1 rounded bg-red-50 p-2 text-xs text-red-700">{selected.error}</p>
+              </div>
+            )}
+          </div>
+          <Button variant="secondary" className="w-full" onClick={() => navigate(`/import?session=${selected.id}`)}>
+            Open in Import
+          </Button>
+          {selected.graph_id && selected.status === "complete" && (
+            <Button variant="ghost" className="w-full" onClick={() => {
+              const graphDbUrl = `https://${selected.graph_id}.${region}.neptune-graph.amazonaws.com`;
+              const params = new URLSearchParams({
+                graphDbUrl,
+                queryEngine: "openCypher",
+                awsRegion: region,
+                serviceType: "neptune-graph",
+                name: selected.graph_name || selected.graph_id || "",
+              } as Record<string, string>);
+              const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost";
+              window.open(`${geBase}/#/connect?${params}`, "_blank");
+            }}>
+              <ExternalLink className="h-3 w-3" /> Open in Graph Explorer
+            </Button>
+          )}
+          {selected.graph_id && (
+            <Button variant="ghost" className="w-full text-red-600 hover:text-red-700" onClick={async () => {
+              if (confirm(`Delete graph ${selected.graph_name || selected.graph_id}?`)) {
+                await projection.delete(selected.id);
+                setSelected(null);
+                load();
+                window.dispatchEvent(new Event("projects-changed"));
+              }
+            }}>
+              <Trash2 className="h-3 w-3" /> Delete Graph
+            </Button>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
