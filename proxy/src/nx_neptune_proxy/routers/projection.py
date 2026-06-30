@@ -2,8 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
+import time
 
 from dataclasses import asdict
+from botocore.exceptions import ClientError
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from nx_neptune.clients.client_factory import ClientFactory
@@ -153,9 +155,6 @@ def delete_projection(projection_id: str, background_tasks: BackgroundTasks):
     store.update(projection_id, status="deleting", step="graph_delete", step_label="Deleting graph")
 
     async def _delete():
-        from botocore.exceptions import ClientError
-        from nx_neptune.clients.client_factory import ClientFactory
-        import time
         if p.graph_id:
             client = ClientFactory().neptune()
             try:

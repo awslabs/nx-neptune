@@ -1,15 +1,16 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import asyncio
 import logging
 import time
 import uuid
 from pathlib import Path
 
 from botocore.exceptions import ClientError
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from nx_neptune_proxy.config import Settings
@@ -18,6 +19,8 @@ from nx_neptune_proxy.routers.preview import router as preview_router
 from nx_neptune_proxy.routers.projection import router as projection_router
 from nx_neptune_proxy.routers.project import router as project_router
 from nx_neptune_proxy.services.db import init_db
+from nx_neptune_proxy.services.project_store import store as project_store
+from nx_neptune_proxy.services.project_deletion import delete_project
 
 settings = Settings.from_env()
 
@@ -120,10 +123,6 @@ app.include_router(project_router)
 
 @app.on_event("startup")
 async def resume_pending_deletions():
-    from nx_neptune_proxy.services.project_store import store as project_store
-    from nx_neptune_proxy.services.project_deletion import delete_project
-    import asyncio
-
     for p in project_store.list():
         if p.status == "deleting":
             logger.info(f"Resuming deletion of project {p.id} ({p.name})")
@@ -140,11 +139,7 @@ if UI_DIR.exists():
 
     @app.get("/{path:path}")
     async def spa_fallback(path: str):
-        from fastapi.responses import FileResponse
-
         if path.startswith("api/"):
-            from fastapi import HTTPException
-
             raise HTTPException(status_code=404)
         file_path = UI_DIR / path
         if file_path.is_file():
