@@ -23,3 +23,10 @@ def paginate_aws(method: Callable, result_key: str, **kwargs: Any) -> list:
             break
         kwargs["NextToken"] = resp.get("NextToken") or resp.get("nextToken")
     return items
+
+
+def unpack_query_results(rows: list) -> dict:
+    """Convert raw query rows (header + data) into {columns, rows} dict."""
+    columns = rows[0] if rows else []
+    data_rows = rows[1:] if len(rows) > 1 else []
+    return {"columns": columns, "rows": data_rows}
