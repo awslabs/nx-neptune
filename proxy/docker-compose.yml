@@ -19,7 +19,7 @@ services:
       retries: 3
 
   graph-explorer:
-    image: test-ge
+    image: public.ecr.aws/neptune/graph-explorer:latest-SNAPSHOT
     ports:
       - "443:443"
       - "80:80"
