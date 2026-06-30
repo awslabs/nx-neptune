@@ -1,31 +1,21 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import asyncio
 import logging
 import time
 import uuid
 from pathlib import Path
 
 from botocore.exceptions import ClientError
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.routers.metadata import router as metadata_router
-from nx_neptune_proxy.routers.preview import router as preview_router
-from nx_neptune_proxy.routers.projection import router as projection_router
-from nx_neptune_proxy.routers.project import router as project_router
-from nx_neptune_proxy.services.db import init_db
-from nx_neptune_proxy.services.project_store import store as project_store
-from nx_neptune_proxy.services.project_deletion import delete_project
 
 settings = Settings.from_env()
-
-# --- Database ---
-init_db()
 
 # --- Structured logging ---
 
@@ -106,27 +96,9 @@ def health():
     return {"status": "healthy"}
 
 
-@app.get("/api/v0/info", summary="Service info")
-def info():
-    return {"name": "nx-neptune-proxy", "version": "0.1.0"}
-
-
 # --- Routers ---
 
 app.include_router(metadata_router)
-app.include_router(projection_router)
-app.include_router(preview_router)
-app.include_router(project_router)
-
-
-# --- Startup: resume stuck deletions ---
-
-@app.on_event("startup")
-async def resume_pending_deletions():
-    for p in project_store.list():
-        if p.status == "deleting":
-            logger.info(f"Resuming deletion of project {p.id} ({p.name})")
-            asyncio.create_task(delete_project(p.id))
 
 
 # --- Static UI (must be last — catch-all) ---
@@ -135,13 +107,4 @@ UI_DIR = Path(__file__).parent.parent.parent / "ui"
 if not UI_DIR.exists():
     UI_DIR = Path("/app/proxy/ui")
 if UI_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=UI_DIR / "assets"), name="assets")
-
-    @app.get("/{path:path}")
-    async def spa_fallback(path: str):
-        if path.startswith("api/"):
-            raise HTTPException(status_code=404)
-        file_path = UI_DIR / path
-        if file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(UI_DIR / "index.html")
+    app.mount("/", StaticFiles(directory=UI_DIR, html=True), name="ui")

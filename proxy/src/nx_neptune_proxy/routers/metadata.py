@@ -18,12 +18,6 @@ from nx_neptune_proxy.utils import paginate_aws
 router = APIRouter(prefix="/api/v0/metadata", tags=["metadata"])
 
 
-@router.get("/config", summary="Get server configuration")
-def get_config():
-    """Get server-side configuration"""
-    return {"region": Settings.from_env().region or ""}
-
-
 @router.get("/athena/catalogs", summary="List Athena data catalogs", response_model=CatalogsResponse)
 def list_athena_catalogs():
     """List all Athena data catalogs"""
@@ -75,35 +69,9 @@ def list_s3_buckets():
     return {"buckets": buckets}
 
 
-GRAPH_PREFIX = "nxp-"
-
-
 @router.get("/neptune/graph-analytics", summary="List Neptune Analytics graphs", response_model=NeptuneAnalyticsGraphsResponse)
 def list_neptune_graphs():
-    """List Neptune Analytics graphs managed by nx-neptune"""
+    """List all Neptune Analytics graphs in the configured region"""
     client = ClientFactory().neptune()
     items = paginate_aws(client.list_graphs, "graphs")
-    filtered = [g for g in items if g.get("name", "").startswith(GRAPH_PREFIX)]
-    return {"graphs": [{"id": g["id"], "name": g["name"], "status": g["status"]} for g in filtered]}
-
-
-@router.delete("/neptune/graph-analytics/{graph_id}", summary="Delete a Neptune Analytics graph", status_code=202)
-def delete_neptune_graph(graph_id: str):
-    """Delete a Neptune Analytics graph"""
-    client = ClientFactory().neptune()
-    client.delete_graph(graphIdentifier=graph_id, skipSnapshot=True)
-    return {"id": graph_id, "status": "DELETING"}
-
-
-@router.get("/neptune/graph-analytics/{graph_id}/summary", summary="Get graph node/edge counts")
-def get_graph_summary(graph_id: str):
-    """Get node and edge counts for a Neptune Analytics graph"""
-    client = ClientFactory().neptune()
-    resp = client.get_graph_summary(graphIdentifier=graph_id, mode="BASIC")
-    s = resp.get("graphSummary", {})
-    return {
-        "numNodes": s.get("numNodes", 0),
-        "numEdges": s.get("numEdges", 0),
-        "nodeLabels": s.get("nodeLabels", []),
-        "edgeLabels": s.get("edgeLabels", []),
-    }
+    return {"graphs": [{"id": g["id"], "name": g["name"], "status": g["status"]} for g in items]}

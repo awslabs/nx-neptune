@@ -178,7 +178,7 @@ async def test_list_neptune_graphs(mock_cf, client):
     mock_neptune = MagicMock()
     mock_neptune.list_graphs.return_value = {
         "graphs": [
-            {"id": "g-123", "name": "nxp-my-graph", "status": "AVAILABLE"},
+            {"id": "g-123", "name": "my-graph", "status": "AVAILABLE"},
             {"id": "g-456", "name": "other", "status": "CREATING"},
         ]
     }
@@ -188,7 +188,8 @@ async def test_list_neptune_graphs(mock_cf, client):
     assert resp.status_code == 200
     assert resp.json() == {
         "graphs": [
-            {"id": "g-123", "name": "nxp-my-graph", "status": "AVAILABLE"},
+            {"id": "g-123", "name": "my-graph", "status": "AVAILABLE"},
+            {"id": "g-456", "name": "other", "status": "CREATING"},
         ]
     }
 

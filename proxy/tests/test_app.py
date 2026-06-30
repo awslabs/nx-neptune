@@ -34,7 +34,7 @@ async def test_custom_request_id_echoed(client):
 
 @pytest.mark.asyncio
 async def test_not_found_returns_404(client):
-    resp = await client.get("/api/v0/nonexistent")
+    resp = await client.get("/nonexistent")
     assert resp.status_code == 404
 
 

@@ -1,9 +1,6 @@
-.PHONY: dev install test build run stop clean ui
+.PHONY: dev install test build run stop clean
 
 RUNTIME ?= finch
-
-ui:               ## Build frontend into ui/ directory.
-	cd ui-src && npm install && npm run build
 
 dev:              ## Run with auto-reload for development.
 	uvicorn nx_neptune_proxy.app:app --reload --port 8080
@@ -33,12 +30,3 @@ stop:             ## Stop running container.
 clean:            ## Remove container and image.
 	@$(RUNTIME) rm nx-neptune-proxy 2>/dev/null || true
 	@$(RUNTIME) rmi nx-neptune-proxy 2>/dev/null || true
-
-up:               ## Start proxy + Graph Explorer with compose.
-	$(RUNTIME) compose up --build --force-recreate -d
-
-down:             ## Stop compose services.
-	$(RUNTIME) compose down
-
-logs:             ## Tail compose logs.
-	$(RUNTIME) compose logs -f

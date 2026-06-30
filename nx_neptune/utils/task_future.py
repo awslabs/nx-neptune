@@ -219,7 +219,6 @@ class TaskFuture(Future):
         self.task_id = task_id
         self.task_type = task_type
         self.current_status = None
-        self.status_reason = ""
         self.polling_interval = (
             polling_interval
             if polling_interval is not None
@@ -233,9 +232,6 @@ class TaskFuture(Future):
 
         response = _get_task_action_map(client, self.task_id)[self.task_type]()
         self.current_status = response.get("status")
-        self.status_reason = (
-            response.get("statusReason") or response.get("failureReason") or ""
-        )
 
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         logger.info(
@@ -286,7 +282,6 @@ class TaskFuture(Future):
             return True
 
         if self.current_status not in self.task_type.permitted_statuses:
-            reason = self.status_reason or self.current_status
             logger.error(
                 f"Unexpected status: {self.current_status} on type: {self.task_type}"
             )
@@ -295,7 +290,7 @@ class TaskFuture(Future):
                     {
                         "Error": {
                             "Code": "UnexpectedStatus",
-                            "Message": f"Unexpected status: {self.current_status}. {reason}",
+                            "Message": "Unexpected status",
                         }
                     },
                     "wait_until_complete",
