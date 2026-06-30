@@ -116,6 +116,20 @@ app.include_router(preview_router)
 app.include_router(project_router)
 
 
+# --- Startup: resume stuck deletions ---
+
+@app.on_event("startup")
+async def resume_pending_deletions():
+    from nx_neptune_proxy.services.project_store import store as project_store
+    from nx_neptune_proxy.services.project_deletion import delete_project
+    import asyncio
+
+    for p in project_store.list():
+        if p.status == "deleting":
+            logger.info(f"Resuming deletion of project {p.id} ({p.name})")
+            asyncio.create_task(delete_project(p.id))
+
+
 # --- Static UI (must be last — catch-all) ---
 
 UI_DIR = Path(__file__).parent.parent.parent / "ui"
