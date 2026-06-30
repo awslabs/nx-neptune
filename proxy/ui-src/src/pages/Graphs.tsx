@@ -99,7 +99,7 @@ export function Graphs() {
                             name: g.name,
                           });
                           const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost";
-                          window.open(`${geBase}?${params}`, "_blank");
+                          window.open(`${geBase}/#/connect?${params}`, "_blank");
                         }}
                       ><ExternalLink className="h-4 w-4" /></button>
                       <button

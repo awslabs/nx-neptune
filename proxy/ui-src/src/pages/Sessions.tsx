@@ -110,7 +110,7 @@ export function Sessions() {
                               name: s.graph_name || s.graph_id || "",
                             });
                             const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost";
-                            window.open(`${geBase}?${params}`, "_blank");
+                            window.open(`${geBase}/#/connect?${params}`, "_blank");
                           }}
                         ><ExternalLink className="h-4 w-4" /></button>
                       </div>
@@ -178,7 +178,7 @@ export function Sessions() {
                 name: selected.graph_name || selected.graph_id || "",
               } as Record<string, string>);
               const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost";
-              window.open(`${geBase}?${params}`, "_blank");
+              window.open(`${geBase}/#/connect?${params}`, "_blank");
             }}>
               <ExternalLink className="h-3 w-3" /> Open in Graph Explorer
             </Button>
