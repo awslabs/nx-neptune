@@ -142,7 +142,7 @@ def execute_projection(projection_id: str, background_tasks: BackgroundTasks):
     p = _get_projection_or_404(projection_id)
     if p.status == "executing":
         raise HTTPException(status_code=409, detail="Pipeline already running")
-    background_tasks.add_task(asyncio.run, run_pipeline(p))
+    background_tasks.add_task(run_pipeline, p)
     return {"id": p.id, "status": "accepted"}
 
 
@@ -170,7 +170,11 @@ def delete_projection(projection_id: str, background_tasks: BackgroundTasks):
                     client.get_graph(graphIdentifier=p.graph_id)
                 except ClientError:
                     break
+            else:
+                # Timeout — graph may still exist
+                store.update(projection_id, status="failed", error="Timeout waiting for graph deletion")
+                return
         store.delete(projection_id)
 
-    background_tasks.add_task(asyncio.run, _delete())
+    background_tasks.add_task(_delete)
     return {"id": p.id, "status": "deleting"}

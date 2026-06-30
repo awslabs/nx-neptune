@@ -1,14 +1,13 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import asyncio
 from dataclasses import asdict
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from nx_neptune_proxy.services.project_deletion import delete_project
 from nx_neptune_proxy.services.project_store import store
@@ -18,14 +17,20 @@ router = APIRouter(prefix="/api/v0/project", tags=["project"])
 
 
 class ProjectCreate(BaseModel):
-    name: str
+    """Request body for creating a new project."""
+
+    name: str = Field(min_length=1, max_length=255, description="Display name for the project")
 
 
 class ProjectUpdate(BaseModel):
-    name: Optional[str] = None
+    """Request body for updating an existing project."""
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255, description="New display name")
 
 
 class ProjectResponse(BaseModel):
+    """Response model representing a project."""
+
     id: str
     name: str
     status: str
@@ -78,5 +83,5 @@ def delete_project_endpoint(project_id: str, background_tasks: BackgroundTasks):
 
     # Has graphs — async deletion
     store.update(project_id, status="deleting")
-    background_tasks.add_task(asyncio.run, delete_project(project_id))
+    background_tasks.add_task(delete_project, project_id)
     return {"id": p.id, "status": "deleting"}
