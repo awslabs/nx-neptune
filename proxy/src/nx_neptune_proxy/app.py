@@ -141,7 +141,9 @@ if UI_DIR.exists():
     async def spa_fallback(path: str):
         if path.startswith("api/"):
             raise HTTPException(status_code=404)
-        file_path = UI_DIR / path
+        file_path = (UI_DIR / path).resolve()
+        if not str(file_path).startswith(str(UI_DIR.resolve())):
+            raise HTTPException(status_code=403)
         if file_path.is_file():
             return FileResponse(file_path)
         return FileResponse(UI_DIR / "index.html")
