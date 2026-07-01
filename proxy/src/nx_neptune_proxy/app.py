@@ -141,15 +141,19 @@ if UI_DIR.exists():
     async def spa_fallback(path: str):
         if path.startswith("api/"):
             raise HTTPException(status_code=404)
-        requested_path = Path(path)
-        if requested_path.is_absolute() or ".." in requested_path.parts:
-            raise HTTPException(status_code=403)
+
         ui_root = UI_DIR.resolve()
-        file_path = (ui_root / requested_path).resolve()
+        try:
+            normalized_relative = Path("/", path).resolve().relative_to("/")
+        except ValueError:
+            raise HTTPException(status_code=403)
+
+        file_path = (ui_root / normalized_relative).resolve()
         try:
             file_path.relative_to(ui_root)
         except ValueError:
             raise HTTPException(status_code=403)
+
         if file_path.is_file():
             return FileResponse(file_path)
         return FileResponse(ui_root / "index.html")
