@@ -68,14 +68,14 @@ export function Graphs() {
     load({ withActions: true, withSummaries: true });
   }, [load]);
 
-  // Poll: 5s during transient states, 30s otherwise
+  // Poll every 30s when any graph is in a transient state
   const hasTransient = graphs.some(g =>
     ["STOPPING", "STARTING", "DELETING", "CREATING"].includes(g.status)
   );
 
   useEffect(() => {
     if (!hasTransient) return;
-    const interval = setInterval(() => load({ withActions: true }), 5000);
+    const interval = setInterval(() => load({ withActions: true }), 30000);
     return () => clearInterval(interval);
   }, [hasTransient, load]);
 
