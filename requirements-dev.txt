@@ -18,7 +18,7 @@ cfgv==3.5.0
     # via pre-commit
 click==8.4.2
     # via black
-coverage==7.14.3
+coverage==7.15.0
     # via pytest-cov
 cymple==0.12.0
     # via nx-neptune (pyproject.toml)
