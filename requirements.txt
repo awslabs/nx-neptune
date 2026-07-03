@@ -4,7 +4,7 @@
 #
 #    pip-compile --output-file=requirements.txt --strip-extras pyproject.toml
 #
-boto3==1.43.36
+boto3==1.43.40
     # via nx-neptune (pyproject.toml)
 botocore==1.43.36
     # via
