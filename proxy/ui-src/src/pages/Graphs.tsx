@@ -43,16 +43,18 @@ export function Graphs() {
     }
   }, []);
 
-  const load = useCallback(async (opts?: { withActions?: boolean }) => {
+  const load = useCallback(async (opts?: { withActions?: boolean; withSummaries?: boolean }) => {
     setLoading(true);
     const data = await metadata.graphs();
     setGraphs(data.graphs);
     setLoading(false);
 
-    // Fetch summaries for available graphs
-    for (const g of data.graphs) {
-      if (g.status === "AVAILABLE") {
-        metadata.graphSummary(g.id).then(s => setSummaries(prev => ({ ...prev, [g.id]: s }))).catch(() => {});
+    // Fetch summaries only on initial load or explicit request
+    if (opts?.withSummaries) {
+      for (const g of data.graphs) {
+        if (g.status === "AVAILABLE") {
+          metadata.graphSummary(g.id).then(s => setSummaries(prev => ({ ...prev, [g.id]: s }))).catch(() => {});
+        }
       }
     }
 
@@ -63,7 +65,7 @@ export function Graphs() {
 
   useEffect(() => {
     metadata.config().then(c => setRegion(c.region));
-    load({ withActions: true });
+    load({ withActions: true, withSummaries: true });
   }, [load]);
 
   // Poll: 5s during transient states, 30s otherwise
@@ -113,7 +115,7 @@ export function Graphs() {
           <h1 className="text-lg font-semibold">Neptune Analytics Graphs</h1>
           <p className="text-sm text-gray-500">Showing graphs with <code className="rounded bg-gray-100 px-1">nxp-</code> prefix</p>
         </div>
-        <RefreshButton onClick={load} />
+        <RefreshButton onClick={() => load({ withActions: true, withSummaries: true })} />
       </div>
 
       {/* Error Alerts */}
