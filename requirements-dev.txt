@@ -44,7 +44,7 @@ jmespath==1.1.0
     # via
     #   boto3
     #   botocore
-librt==0.11.0
+librt==0.12.0
     # via mypy
 mccabe==0.7.0
     # via flake8
