@@ -19,7 +19,7 @@ services:
       retries: 3
 
   graph-explorer:
-    image: public.ecr.aws/neptune/graph-explorer:latest-SNAPSHOT
+    image: ${GRAPH_EXPLORER_IMAGE:-public.ecr.aws/neptune/graph-explorer:latest}
     ports:
       - "443:443"
       - "80:80"
@@ -31,6 +31,3 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
-    depends_on:
-      proxy:
-        condition: service_healthy
