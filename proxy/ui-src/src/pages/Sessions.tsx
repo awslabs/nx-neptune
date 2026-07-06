@@ -83,18 +83,6 @@ export function Sessions() {
     }
   }
 
-  async function deleteSession(sessionId: string, name: string) {
-    if (!confirm(`Delete session "${name}"? This will also delete the associated graph.`)) return;
-    try {
-      await projection.delete(sessionId);
-      setSelected(null);
-      load();
-      window.dispatchEvent(new Event("projects-changed"));
-    } catch (e: any) {
-      setAlerts(prev => [...prev, { graphId: sessionId, graphName: name, message: e.message || "Failed to delete" }]);
-    }
-  }
-
   function dismissAlert(graphId: string) {
     setAlerts(prev => prev.filter(a => a.graphId !== graphId));
     graphActions.dismissInflight(graphId).catch(() => {});
@@ -206,7 +194,7 @@ export function Sessions() {
                               serviceType: "neptune-graph",
                               name: s.graph_name || s.graph_id || "",
                             });
-                            const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost/explorer";
+                            const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "http://localhost/explorer";
                             window.open(`${geBase}/#/connect?${params}`, "_blank");
                           }}
                         >
@@ -233,12 +221,12 @@ export function Sessions() {
                           <Play className="h-4 w-4" />
                         </button>
 
-                        {/* Delete session + graph */}
+                        {/* Delete */}
                         <button
                           className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
-                          disabled={isTransient}
-                          title="Delete session and graph"
-                          onClick={(e) => { e.stopPropagation(); deleteSession(s.id, s.graph_name || s.id.slice(0, 8)); }}
+                          disabled={!actions.includes("delete") || isTransient}
+                          title="Delete graph"
+                          onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "delete", s.graph_name || s.graph_id!); }}
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -307,7 +295,7 @@ export function Sessions() {
                 serviceType: "neptune-graph",
                 name: selected.graph_name || selected.graph_id || "",
               } as Record<string, string>);
-              const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost/explorer";
+              const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "http://localhost/explorer";
               window.open(`${geBase}/#/connect?${params}`, "_blank");
             }}>
               <ExternalLink className="h-3 w-3" /> Open in Graph Explorer
@@ -334,7 +322,8 @@ export function Sessions() {
               <Button
                 variant="ghost"
                 className="flex-1 text-red-600 hover:text-red-700"
-                onClick={() => deleteSession(selected.id, selected.graph_name || selected.id.slice(0, 8))}
+                disabled={!actionStates[selected.graph_id]?.actions.includes("delete")}
+                onClick={() => performGraphAction(selected.graph_id!, "delete", selected.graph_name || selected.graph_id!)}
               >
                 <Trash2 className="h-3 w-3" /> Delete
               </Button>
