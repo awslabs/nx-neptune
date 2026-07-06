@@ -4,13 +4,13 @@
 #
 #    pip-compile --extra=developer --extra=test --output-file=requirements-dev.txt --strip-extras pyproject.toml
 #
-ast-serialize==0.5.0
+ast-serialize==0.6.0
     # via mypy
 black==26.5.1
     # via nx-neptune (pyproject.toml)
-boto3==1.43.36
+boto3==1.43.40
     # via nx-neptune (pyproject.toml)
-botocore==1.43.36
+botocore==1.43.40
     # via
     #   boto3
     #   s3transfer
@@ -18,7 +18,7 @@ cfgv==3.5.0
     # via pre-commit
 click==8.4.2
     # via black
-coverage==7.14.3
+coverage==7.15.0
     # via pytest-cov
 cymple==0.12.0
     # via nx-neptune (pyproject.toml)
@@ -26,7 +26,7 @@ distlib==0.4.3
     # via virtualenv
 dotenv==0.9.9
     # via nx-neptune (pyproject.toml)
-filelock==3.29.4
+filelock==3.29.5
     # via
     #   python-discovery
     #   virtualenv
@@ -44,7 +44,7 @@ jmespath==1.1.0
     # via
     #   boto3
     #   botocore
-librt==0.11.0
+librt==0.12.0
     # via mypy
 mccabe==0.7.0
     # via flake8
@@ -110,7 +110,7 @@ python-dateutil==2.9.0.post0
     # via
     #   botocore
     #   pandas
-python-discovery==1.4.2
+python-discovery==1.4.3
     # via virtualenv
 python-dotenv==1.2.2
     # via dotenv
@@ -126,13 +126,13 @@ six==1.17.0
     # via python-dateutil
 sqlglot==30.12.0
     # via nx-neptune (pyproject.toml)
-typing-extensions==4.15.0
+typing-extensions==4.16.0
     # via
     #   mypy
     #   pytest-asyncio
 urllib3==2.7.0
     # via botocore
-virtualenv==21.5.1
+virtualenv==21.5.2
     # via pre-commit
-wcwidth==0.8.1
+wcwidth==0.8.2
     # via prettytable
