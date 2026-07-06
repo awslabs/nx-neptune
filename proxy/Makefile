@@ -37,6 +37,9 @@ clean:            ## Remove container and image.
 up:               ## Start proxy + Graph Explorer with compose.
 	$(RUNTIME) compose up --build --force-recreate -d
 
+up-ge:            ## Start only Graph Explorer.
+	$(RUNTIME) compose up graph-explorer -d
+
 down:             ## Stop compose services.
 	$(RUNTIME) compose down
 
