@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, NavLink } from "react-router";
-import { projection, metadata, projectApi, type Projection, type Project } from "../api";
+import { projection, metadata, projectApi, graphActions, type Projection, type Project, type Inflight } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
-import { X, ExternalLink, Trash2 } from "lucide-react";
+import { X, ExternalLink, Trash2, Square, Play, AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router";
 
 export function Sessions() {
@@ -13,6 +13,8 @@ export function Sessions() {
   const [projects, setProjects] = useState<Map<string, Project>>(new Map());
   const [summaries, setSummaries] = useState<Map<string, { numNodes: number; numEdges: number }>>(new Map());
   const [graphStatuses, setGraphStatuses] = useState<Map<string, string>>(new Map());
+  const [actionStates, setActionStates] = useState<Record<string, { actions: string[]; inflight: Inflight | null }>>({});
+  const [alerts, setAlerts] = useState<{ graphId: string; graphName: string; message: string }[]>([]);
   const navigate = useNavigate();
   const filterProjectId = searchParams.get("project");
 
@@ -25,10 +27,24 @@ export function Sessions() {
   async function load() {
     const list = await projection.list();
     setSessions(list);
-    // Fetch graph statuses
+    // Fetch graph statuses and actions
     metadata.graphs().then(({ graphs }) => {
       setGraphStatuses(new Map(graphs.map(g => [g.id, g.status])));
     }).catch(() => {});
+    // Fetch actions for sessions with graphs
+    for (const s of list) {
+      if (s.graph_id) {
+        graphActions.getActions(s.graph_id).then(r => {
+          setActionStates(prev => ({ ...prev, [s.graph_id!]: { actions: r.actions, inflight: r.inflight } }));
+          if (r.inflight?.error) {
+            setAlerts(prev => {
+              if (prev.some(a => a.graphId === s.graph_id)) return prev;
+              return [...prev, { graphId: s.graph_id!, graphName: s.graph_name || s.graph_id!, message: r.inflight!.error! }];
+            });
+          }
+        }).catch(() => {});
+      }
+    }
     // Fetch graph summaries for completed projections
     const entries: [string, { numNodes: number; numEdges: number }][] = [];
     await Promise.all(
@@ -47,13 +63,69 @@ export function Sessions() {
     : sessions;
   const projectName = filterProjectId ? projects.get(filterProjectId)?.name : null;
 
+  // Fetch graph actions when selecting a session that has a graph
+  useEffect(() => {
+    if (selected?.graph_id) {
+      graphActions.getActions(selected.graph_id).then(r => {
+        setActionStates(prev => ({ ...prev, [selected.graph_id!]: { actions: r.actions, inflight: r.inflight } }));
+      }).catch(() => {});
+    }
+  }, [selected?.graph_id, graphStatuses]);
+
+  async function performGraphAction(graphId: string, action: string, graphName: string) {
+    if (action === "delete" && !confirm(`Delete graph ${graphName}? This cannot be undone.`)) return;
+    if (action === "stop" && !confirm(`Stop graph ${graphName}? It will become unavailable until restarted.`)) return;
+    try {
+      await graphActions.perform(graphId, action);
+      load();
+    } catch (e: any) {
+      setAlerts(prev => [...prev, { graphId, graphName, message: e.message || `Failed to ${action}` }]);
+    }
+  }
+
+  function dismissAlert(graphId: string) {
+    setAlerts(prev => prev.filter(a => a.graphId !== graphId));
+    graphActions.dismissInflight(graphId).catch(() => {});
+  }
+
+  // Poll every 30s when any graph is in a transient state
+  const hasTransient = [...graphStatuses.values()].some(s =>
+    ["STOPPING", "STARTING", "DELETING", "CREATING"].includes(s)
+  );
+
+  useEffect(() => {
+    if (!hasTransient) return;
+    const interval = setInterval(() => load(), 30000);
+    return () => clearInterval(interval);
+  }, [hasTransient]);
+
   return (
     <div className="flex gap-4">
       <div className="flex-1 space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold">{projectName ? `${projectName} — Sessions` : "Sessions"}</h1>
-          <RefreshButton onClick={load} />
+          <div className="flex items-center gap-2">
+            <NavLink
+              to={filterProjectId ? `/import?project=${filterProjectId}&t=${Date.now()}` : "/import"}
+              className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >+ New</NavLink>
+            <RefreshButton onClick={load} />
+          </div>
         </div>
+
+      {/* Error Alerts */}
+      {alerts.map((alert) => (
+        <div key={alert.graphId} className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" />
+          <div className="flex-1 text-sm">
+            <p className="font-medium text-red-800">Action failed on {alert.graphName}</p>
+            <p className="text-red-700">{alert.message}</p>
+          </div>
+          <button onClick={() => dismissAlert(alert.graphId)} className="text-red-400 hover:text-red-600">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
 
         <Card className="overflow-hidden p-0">
           <table className="w-full text-left text-sm">
@@ -61,20 +133,21 @@ export function Sessions() {
               <tr>
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Project</th>
-                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Import Status</th>
                 <th className="px-4 py-3 font-medium">Progress</th>
                 <th className="px-4 py-3 font-medium">Created</th>
-                  <th className="px-4 py-3 text-right">
-                    <NavLink
-                      to={filterProjectId ? `/import?project=${filterProjectId}&t=${Date.now()}` : "/import"}
-                      className="inline-flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700"
-                      title="Add Graph"
-                    >+</NavLink>
-                  </th>
+                <th className="px-4 py-3 font-medium">Graph Status</th>
+                <th className="px-4 py-3 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((s) => (
+                {filtered.map((s) => {
+                  const graphStatus = s.graph_id ? graphStatuses.get(s.graph_id) : undefined;
+                  const state = s.graph_id ? actionStates[s.graph_id] : undefined;
+                  const actions = state?.actions || [];
+                  const isTransient = graphStatus ? ["STOPPING", "STARTING", "DELETING", "CREATING"].includes(graphStatus) : false;
+
+                  return (
                   <tr
                     key={s.id}
                     className={`cursor-pointer border-b last:border-0 hover:bg-gray-50 ${selected?.id === s.id ? "bg-blue-50" : ""}`}
@@ -94,10 +167,22 @@ export function Sessions() {
                     <td className="px-4 py-3">{Math.round(s.progress)}%</td>
                     <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
                     <td className="px-4 py-3">
-                      <div className="flex gap-2">
+                      {graphStatus ? (
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                          graphStatus === "AVAILABLE" ? "bg-green-100 text-green-700" :
+                          graphStatus === "STOPPED" ? "bg-yellow-100 text-yellow-700" :
+                          ["STOPPING", "DELETING"].includes(graphStatus) ? "bg-red-100 text-red-700" :
+                          ["CREATING", "STARTING"].includes(graphStatus) ? "bg-blue-100 text-blue-700" :
+                          "bg-gray-100 text-gray-700"
+                        }`}>{graphStatus}</span>
+                      ) : <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1">
+                        {/* Graph Explorer */}
                         <button
-                          className="text-gray-400 hover:text-blue-600 disabled:opacity-30"
-                          disabled={!s.graph_id || s.status !== "complete"}
+                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-blue-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                          disabled={!s.graph_id || graphStatus !== "AVAILABLE"}
                           title="Open in Graph Explorer"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -109,14 +194,47 @@ export function Sessions() {
                               serviceType: "neptune-graph",
                               name: s.graph_name || s.graph_id || "",
                             });
-                            const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost";
+                            const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "http://localhost/explorer";
                             window.open(`${geBase}/#/connect?${params}`, "_blank");
                           }}
-                        ><ExternalLink className="h-4 w-4" /></button>
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </button>
+
+                        {/* Stop */}
+                        <button
+                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-amber-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                          disabled={!actions.includes("stop") || isTransient}
+                          title="Stop graph"
+                          onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "stop", s.graph_name || s.graph_id!); }}
+                        >
+                          <Square className="h-4 w-4" />
+                        </button>
+
+                        {/* Start */}
+                        <button
+                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-green-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                          disabled={!actions.includes("start") || isTransient}
+                          title="Start graph"
+                          onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "start", s.graph_name || s.graph_id!); }}
+                        >
+                          <Play className="h-4 w-4" />
+                        </button>
+
+                        {/* Delete */}
+                        <button
+                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                          disabled={!actions.includes("delete") || isTransient}
+                          title="Delete graph"
+                          onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "delete", s.graph_name || s.graph_id!); }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </Card>
@@ -177,23 +295,45 @@ export function Sessions() {
                 serviceType: "neptune-graph",
                 name: selected.graph_name || selected.graph_id || "",
               } as Record<string, string>);
-              const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost";
+              const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "http://localhost/explorer";
               window.open(`${geBase}/#/connect?${params}`, "_blank");
             }}>
               <ExternalLink className="h-3 w-3" /> Open in Graph Explorer
             </Button>
           )}
           {selected.graph_id && (
-            <Button variant="ghost" className="w-full text-red-600 hover:text-red-700" onClick={async () => {
-              if (confirm(`Delete graph ${selected.graph_name || selected.graph_id}?`)) {
-                await projection.delete(selected.id);
-                setSelected(null);
-                load();
-                window.dispatchEvent(new Event("projects-changed"));
-              }
-            }}>
-              <Trash2 className="h-3 w-3" /> Delete Graph
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                disabled={!actionStates[selected.graph_id]?.actions.includes("stop")}
+                onClick={() => performGraphAction(selected.graph_id!, "stop", selected.graph_name || selected.graph_id!)}
+              >
+                <Square className="h-3 w-3" /> Stop
+              </Button>
+              <Button
+                variant="secondary"
+                className="flex-1"
+                disabled={!actionStates[selected.graph_id]?.actions.includes("start")}
+                onClick={() => performGraphAction(selected.graph_id!, "start", selected.graph_name || selected.graph_id!)}
+              >
+                <Play className="h-3 w-3" /> Start
+              </Button>
+              <Button
+                variant="ghost"
+                className="flex-1 text-red-600 hover:text-red-700"
+                disabled={!actionStates[selected.graph_id]?.actions.includes("delete")}
+                onClick={() => performGraphAction(selected.graph_id!, "delete", selected.graph_name || selected.graph_id!)}
+              >
+                <Trash2 className="h-3 w-3" /> Delete
+              </Button>
+            </div>
+          )}
+          {selected.graph_id && actionStates[selected.graph_id]?.inflight?.error && (
+            <div className="flex items-start gap-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+              <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0" />
+              <span>{actionStates[selected.graph_id]!.inflight!.error}</span>
+            </div>
           )}
         </Card>
       )}

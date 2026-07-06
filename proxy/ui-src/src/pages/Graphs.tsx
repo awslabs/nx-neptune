@@ -183,7 +183,7 @@ export function Graphs() {
                               serviceType: "neptune-graph",
                               name: g.name,
                             });
-                            const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost";
+                            const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "http://localhost/explorer";
                             window.open(`${geBase}/#/connect?${params}`, "_blank");
                           }}
                         >
