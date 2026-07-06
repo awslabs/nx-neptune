@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams, NavLink } from "react-router";
 import { projection, metadata, projectApi, graphActions, type Projection, type Project, type Inflight } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
-import { X, ExternalLink, Trash2, Square, Play, AlertTriangle } from "lucide-react";
+import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router";
 
 export function Sessions() {
@@ -15,6 +15,7 @@ export function Sessions() {
   const [graphStatuses, setGraphStatuses] = useState<Map<string, string>>(new Map());
   const [actionStates, setActionStates] = useState<Record<string, { actions: string[]; inflight: Inflight | null }>>({});
   const [alerts, setAlerts] = useState<{ graphId: string; graphName: string; message: string }[]>([]);
+  const [archivedOpen, setArchivedOpen] = useState(false);
   const navigate = useNavigate();
   const filterProjectId = searchParams.get("project");
 
@@ -58,9 +59,11 @@ export function Sessions() {
     setSummaries(new Map(entries));
   }
 
-  const filtered = filterProjectId
+  const allFiltered = filterProjectId
     ? sessions.filter(s => s.project_id === filterProjectId)
     : sessions;
+  const active = allFiltered.filter(s => s.status !== "archived");
+  const archived = allFiltered.filter(s => s.status === "archived");
   const projectName = filterProjectId ? projects.get(filterProjectId)?.name : null;
 
   // Fetch graph actions when selecting a session that has a graph
@@ -73,7 +76,6 @@ export function Sessions() {
   }, [selected?.graph_id, graphStatuses]);
 
   async function performGraphAction(graphId: string, action: string, graphName: string) {
-    if (action === "delete" && !confirm(`Delete graph ${graphName}? This cannot be undone.`)) return;
     if (action === "stop" && !confirm(`Stop graph ${graphName}? It will become unavailable until restarted.`)) return;
     try {
       await graphActions.perform(graphId, action);
@@ -83,11 +85,22 @@ export function Sessions() {
     }
   }
 
-  async function deleteSession(sessionId: string, name: string) {
-    if (!confirm(`Delete session "${name}"? This will also delete the associated graph.`)) return;
+  async function archiveSession(sessionId: string, name: string) {
+    if (!confirm(`Delete graph for "${name}"? The session config will be preserved.`)) return;
+    try {
+      await projection.deleteGraph(sessionId);
+      load();
+      window.dispatchEvent(new Event("projects-changed"));
+    } catch (e: any) {
+      setAlerts(prev => [...prev, { graphId: sessionId, graphName: name, message: e.message || "Failed to delete graph" }]);
+    }
+  }
+
+  async function purgeSession(sessionId: string, name: string) {
+    if (!confirm(`Permanently delete projection job "${name}"? This cannot be undone.`)) return;
     try {
       await projection.delete(sessionId);
-      setSelected(null);
+      if (selected?.id === sessionId) setSelected(null);
       load();
       window.dispatchEvent(new Event("projects-changed"));
     } catch (e: any) {
@@ -110,6 +123,26 @@ export function Sessions() {
     const interval = setInterval(() => load(), 30000);
     return () => clearInterval(interval);
   }, [hasTransient]);
+
+  const statusStyle = (status: string) => {
+    switch (status) {
+      case "complete": return "bg-green-100 text-green-700";
+      case "failed": return "bg-red-100 text-red-700";
+      case "executing": case "deleting": return "bg-blue-100 text-blue-700";
+      case "archived": return "bg-gray-100 text-gray-600";
+      default: return "bg-gray-100 text-gray-700";
+    }
+  };
+
+  const graphStatusStyle = (status: string) => {
+    switch (status) {
+      case "AVAILABLE": return "bg-green-100 text-green-700";
+      case "STOPPED": return "bg-yellow-100 text-yellow-700";
+      case "STOPPING": case "DELETING": return "bg-red-100 text-red-700";
+      case "CREATING": case "STARTING": return "bg-blue-100 text-blue-700";
+      default: return "bg-gray-100 text-gray-700";
+    }
+  };
 
   return (
     <div className="flex gap-4">
@@ -139,6 +172,7 @@ export function Sessions() {
         </div>
       ))}
 
+        {/* Active Sessions */}
         <Card className="overflow-hidden p-0">
           <table className="w-full text-left text-sm">
             <thead className="border-b bg-gray-50">
@@ -150,108 +184,158 @@ export function Sessions() {
                 <th className="px-4 py-3 font-medium">Created</th>
                 <th className="px-4 py-3 font-medium">Graph Status</th>
                 <th className="px-4 py-3 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {active.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-500">No active sessions</td></tr>
+              ) : active.map((s) => {
+                const graphStatus = s.graph_id ? graphStatuses.get(s.graph_id) : undefined;
+                const state = s.graph_id ? actionStates[s.graph_id] : undefined;
+                const actions = state?.actions || [];
+                const isTransient = graphStatus ? ["STOPPING", "STARTING", "DELETING", "CREATING"].includes(graphStatus) : false;
+
+                return (
+                <tr
+                  key={s.id}
+                  className={`cursor-pointer border-b last:border-0 hover:bg-gray-50 ${selected?.id === s.id ? "bg-blue-50" : ""}`}
+                  onClick={() => setSelected(s)}
+                  onDoubleClick={() => navigate(`/import?session=${s.id}`)}
+                >
+                  <td className="px-4 py-3 font-medium">{s.graph_name || s.id.slice(0, 8)}</td>
+                  <td className="px-4 py-3 text-gray-600">{s.project_id ? projects.get(s.project_id)?.name || "—" : "—"}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle(s.status)}`}>{s.status}</span>
+                  </td>
+                  <td className="px-4 py-3">{Math.round(s.progress)}%</td>
+                  <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
+                  <td className="px-4 py-3">
+                    {graphStatus ? (
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${graphStatusStyle(graphStatus)}`}>{graphStatus}</span>
+                    ) : <span className="text-gray-400">—</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-1">
+                      {/* Graph Explorer */}
+                      <button
+                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-blue-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                        disabled={!s.graph_id || graphStatus !== "AVAILABLE"}
+                        title="Open in Graph Explorer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const graphDbUrl = `https://${s.graph_id}.${region}.neptune-graph.amazonaws.com`;
+                          const params = new URLSearchParams({
+                            graphDbUrl,
+                            queryEngine: "openCypher",
+                            awsRegion: region,
+                            serviceType: "neptune-graph",
+                            name: s.graph_name || s.graph_id || "",
+                          });
+                          const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "http://localhost/explorer";
+                          window.open(`${geBase}/#/connect?${params}`, "_blank");
+                        }}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </button>
+
+                      {/* Stop */}
+                      <button
+                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-amber-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                        disabled={!actions.includes("stop") || isTransient}
+                        title="Stop graph"
+                        onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "stop", s.graph_name || s.graph_id!); }}
+                      >
+                        <Square className="h-4 w-4" />
+                      </button>
+
+                      {/* Start */}
+                      <button
+                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-green-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                        disabled={!actions.includes("start") || isTransient}
+                        title="Start graph"
+                        onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "start", s.graph_name || s.graph_id!); }}
+                      >
+                        <Play className="h-4 w-4" />
+                      </button>
+
+                      {/* Archive (delete graph, keep session) */}
+                      <button
+                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                        disabled={!s.graph_id || isTransient}
+                        title="Delete graph (archive session)"
+                        onClick={(e) => { e.stopPropagation(); archiveSession(s.id, s.graph_name || s.id.slice(0, 8)); }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {filtered.map((s) => {
-                  const graphStatus = s.graph_id ? graphStatuses.get(s.graph_id) : undefined;
-                  const state = s.graph_id ? actionStates[s.graph_id] : undefined;
-                  const actions = state?.actions || [];
-                  const isTransient = graphStatus ? ["STOPPING", "STARTING", "DELETING", "CREATING"].includes(graphStatus) : false;
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
 
-                  return (
-                  <tr
-                    key={s.id}
-                    className={`cursor-pointer border-b last:border-0 hover:bg-gray-50 ${selected?.id === s.id ? "bg-blue-50" : ""}`}
-                    onClick={() => setSelected(s)}
-                    onDoubleClick={() => navigate(`/import?session=${s.id}`)}
-                  >
-                    <td className="px-4 py-3 font-medium">{s.graph_name || s.id.slice(0, 8)}</td>
-                    <td className="px-4 py-3 text-gray-600">{s.project_id ? projects.get(s.project_id)?.name || "—" : "—"}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        s.status === "complete" ? "bg-green-100 text-green-700" :
-                        s.status === "failed" ? "bg-red-100 text-red-700" :
-                        s.status === "executing" ? "bg-blue-100 text-blue-700" :
-                        "bg-gray-100 text-gray-700"
-                      }`}>{s.status}</span>
-                    </td>
-                    <td className="px-4 py-3">{Math.round(s.progress)}%</td>
-                    <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
-                    <td className="px-4 py-3">
-                      {graphStatus ? (
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                          graphStatus === "AVAILABLE" ? "bg-green-100 text-green-700" :
-                          graphStatus === "STOPPED" ? "bg-yellow-100 text-yellow-700" :
-                          ["STOPPING", "DELETING"].includes(graphStatus) ? "bg-red-100 text-red-700" :
-                          ["CREATING", "STARTING"].includes(graphStatus) ? "bg-blue-100 text-blue-700" :
-                          "bg-gray-100 text-gray-700"
-                        }`}>{graphStatus}</span>
-                      ) : <span className="text-gray-400">—</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1">
-                        {/* Graph Explorer */}
-                        <button
-                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-blue-600 disabled:opacity-30 disabled:hover:bg-transparent"
-                          disabled={!s.graph_id || graphStatus !== "AVAILABLE"}
-                          title="Open in Graph Explorer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const graphDbUrl = `https://${s.graph_id}.${region}.neptune-graph.amazonaws.com`;
-                            const params = new URLSearchParams({
-                              graphDbUrl,
-                              queryEngine: "openCypher",
-                              awsRegion: region,
-                              serviceType: "neptune-graph",
-                              name: s.graph_name || s.graph_id || "",
-                            });
-                            const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "http://localhost/explorer";
-                            window.open(`${geBase}/#/connect?${params}`, "_blank");
-                          }}
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </button>
+        {/* Archived Sessions (collapsible) */}
+        {archived.length > 0 && (
+          <div>
+            <button
+              className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-gray-900"
+              onClick={() => setArchivedOpen(!archivedOpen)}
+            >
+              {archivedOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              Archived ({archived.length})
+            </button>
 
-                        {/* Stop */}
-                        <button
-                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-amber-600 disabled:opacity-30 disabled:hover:bg-transparent"
-                          disabled={!actions.includes("stop") || isTransient}
-                          title="Stop graph"
-                          onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "stop", s.graph_name || s.graph_id!); }}
-                        >
-                          <Square className="h-4 w-4" />
-                        </button>
-
-                        {/* Start */}
-                        <button
-                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-green-600 disabled:opacity-30 disabled:hover:bg-transparent"
-                          disabled={!actions.includes("start") || isTransient}
-                          title="Start graph"
-                          onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "start", s.graph_name || s.graph_id!); }}
-                        >
-                          <Play className="h-4 w-4" />
-                        </button>
-
-                        {/* Delete session + graph */}
-                        <button
-                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
-                          disabled={isTransient}
-                          title="Delete session and graph"
-                          onClick={(e) => { e.stopPropagation(); deleteSession(s.id, s.graph_name || s.id.slice(0, 8)); }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </Card>
+            {archivedOpen && (
+              <Card className="mt-2 overflow-hidden p-0">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Name</th>
+                      <th className="px-4 py-3 font-medium">Project</th>
+                      <th className="px-4 py-3 font-medium">Import Status</th>
+                      <th className="px-4 py-3 font-medium">Progress</th>
+                      <th className="px-4 py-3 font-medium">Created</th>
+                      <th className="px-4 py-3 font-medium">Graph Status</th>
+                      <th className="px-4 py-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {archived.map((s) => (
+                      <tr
+                        key={s.id}
+                        className={`cursor-pointer border-b last:border-0 hover:bg-gray-50 ${selected?.id === s.id ? "bg-blue-50" : ""}`}
+                        onClick={() => setSelected(s)}
+                        onDoubleClick={() => navigate(`/import?session=${s.id}`)}
+                      >
+                        <td className="px-4 py-3 font-medium text-gray-500">{s.graph_name || s.id.slice(0, 8)}</td>
+                        <td className="px-4 py-3 text-gray-500">{s.project_id ? projects.get(s.project_id)?.name || "—" : "—"}</td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">archived</span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-400">—</td>
+                        <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
+                        <td className="px-4 py-3"><span className="text-gray-400">—</span></td>
+                        <td className="px-4 py-3">
+                          <button
+                            className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                            onClick={(e) => { e.stopPropagation(); purgeSession(s.id, s.graph_name || s.id.slice(0, 8)); }}
+                          >
+                            Delete projection job
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            )}
+          </div>
+        )}
       </div>
 
+      {/* Detail Panel */}
       {selected && (
         <Card className="w-80 shrink-0 space-y-3 self-start">
           <div className="flex items-center justify-between">
@@ -274,11 +358,9 @@ export function Sessions() {
             <div><span className="text-gray-500">Graph ID:</span> {selected.graph_id || "—"}</div>
             {selected.graph_id && graphStatuses.get(selected.graph_id) && (
               <div><span className="text-gray-500">Graph Status:</span>{" "}
-                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                  graphStatuses.get(selected.graph_id) === "AVAILABLE" ? "bg-green-100 text-green-700" :
-                  graphStatuses.get(selected.graph_id) === "DELETING" ? "bg-red-100 text-red-700" :
-                  "bg-blue-100 text-blue-700"
-                }`}>{graphStatuses.get(selected.graph_id)}</span>
+                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${graphStatusStyle(graphStatuses.get(selected.graph_id)!)}`}>
+                  {graphStatuses.get(selected.graph_id)}
+                </span>
               </div>
             )}
             {summaries.get(selected.id) && (
@@ -297,48 +379,57 @@ export function Sessions() {
           <Button variant="secondary" className="w-full" onClick={() => navigate(`/import?session=${selected.id}`)}>
             Open in Import
           </Button>
-          {selected.graph_id && selected.status === "complete" && (
-            <Button variant="ghost" className="w-full" onClick={() => {
-              const graphDbUrl = `https://${selected.graph_id}.${region}.neptune-graph.amazonaws.com`;
-              const params = new URLSearchParams({
-                graphDbUrl,
-                queryEngine: "openCypher",
-                awsRegion: region,
-                serviceType: "neptune-graph",
-                name: selected.graph_name || selected.graph_id || "",
-              } as Record<string, string>);
-              const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "http://localhost/explorer";
-              window.open(`${geBase}/#/connect?${params}`, "_blank");
-            }}>
-              <ExternalLink className="h-3 w-3" /> Open in Graph Explorer
-            </Button>
+          {selected.graph_id && selected.status !== "archived" && (
+            <>
+              <Button variant="ghost" className="w-full" onClick={() => {
+                const graphDbUrl = `https://${selected.graph_id}.${region}.neptune-graph.amazonaws.com`;
+                const params = new URLSearchParams({
+                  graphDbUrl,
+                  queryEngine: "openCypher",
+                  awsRegion: region,
+                  serviceType: "neptune-graph",
+                  name: selected.graph_name || selected.graph_id || "",
+                } as Record<string, string>);
+                const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "http://localhost/explorer";
+                window.open(`${geBase}/#/connect?${params}`, "_blank");
+              }}>
+                <ExternalLink className="h-3 w-3" /> Open in Graph Explorer
+              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  disabled={!actionStates[selected.graph_id]?.actions.includes("stop")}
+                  onClick={() => performGraphAction(selected.graph_id!, "stop", selected.graph_name || selected.graph_id!)}
+                >
+                  <Square className="h-3 w-3" /> Stop
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  disabled={!actionStates[selected.graph_id]?.actions.includes("start")}
+                  onClick={() => performGraphAction(selected.graph_id!, "start", selected.graph_name || selected.graph_id!)}
+                >
+                  <Play className="h-3 w-3" /> Start
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="flex-1 text-red-600 hover:text-red-700"
+                  onClick={() => archiveSession(selected.id, selected.graph_name || selected.id.slice(0, 8))}
+                >
+                  <Trash2 className="h-3 w-3" /> Delete
+                </Button>
+              </div>
+            </>
           )}
-          {selected.graph_id && (
-            <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                className="flex-1"
-                disabled={!actionStates[selected.graph_id]?.actions.includes("stop")}
-                onClick={() => performGraphAction(selected.graph_id!, "stop", selected.graph_name || selected.graph_id!)}
-              >
-                <Square className="h-3 w-3" /> Stop
-              </Button>
-              <Button
-                variant="secondary"
-                className="flex-1"
-                disabled={!actionStates[selected.graph_id]?.actions.includes("start")}
-                onClick={() => performGraphAction(selected.graph_id!, "start", selected.graph_name || selected.graph_id!)}
-              >
-                <Play className="h-3 w-3" /> Start
-              </Button>
-              <Button
-                variant="ghost"
-                className="flex-1 text-red-600 hover:text-red-700"
-                onClick={() => deleteSession(selected.id, selected.graph_name || selected.id.slice(0, 8))}
-              >
-                <Trash2 className="h-3 w-3" /> Delete
-              </Button>
-            </div>
+          {selected.status === "archived" && (
+            <Button
+              variant="ghost"
+              className="w-full text-red-600 hover:text-red-700"
+              onClick={() => purgeSession(selected.id, selected.graph_name || selected.id.slice(0, 8))}
+            >
+              Delete projection job
+            </Button>
           )}
           {selected.graph_id && actionStates[selected.graph_id]?.inflight?.error && (
             <div className="flex items-start gap-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">
