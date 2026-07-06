@@ -277,62 +277,62 @@ export function Sessions() {
         </Card>
 
         {/* Archived Sessions (collapsible) */}
-        {archived.length > 0 && (
-          <div>
-            <button
-              className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-gray-900"
-              onClick={() => setArchivedOpen(!archivedOpen)}
-            >
-              {archivedOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-              Archived ({archived.length})
-            </button>
+        <div>
+          <button
+            className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-gray-900"
+            onClick={() => setArchivedOpen(!archivedOpen)}
+          >
+            {archivedOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            Archived ({archived.length})
+          </button>
 
-            {archivedOpen && (
-              <Card className="mt-2 overflow-hidden p-0">
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 font-medium">Name</th>
-                      <th className="px-4 py-3 font-medium">Project</th>
-                      <th className="px-4 py-3 font-medium">Import Status</th>
-                      <th className="px-4 py-3 font-medium">Progress</th>
-                      <th className="px-4 py-3 font-medium">Created</th>
-                      <th className="px-4 py-3 font-medium">Graph Status</th>
-                      <th className="px-4 py-3 font-medium">Actions</th>
+          {archivedOpen && (
+            <Card className="mt-2 overflow-hidden p-0">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Name</th>
+                    <th className="px-4 py-3 font-medium">Project</th>
+                    <th className="px-4 py-3 font-medium">Import Status</th>
+                    <th className="px-4 py-3 font-medium">Progress</th>
+                    <th className="px-4 py-3 font-medium">Created</th>
+                    <th className="px-4 py-3 font-medium">Graph Status</th>
+                    <th className="px-4 py-3 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {archived.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-500">No archived sessions</td></tr>
+                  ) : archived.map((s) => (
+                    <tr
+                      key={s.id}
+                      className={`cursor-pointer border-b last:border-0 hover:bg-gray-50 ${selected?.id === s.id ? "bg-blue-50" : ""}`}
+                      onClick={() => setSelected(s)}
+                      onDoubleClick={() => navigate(`/import?session=${s.id}`)}
+                    >
+                      <td className="px-4 py-3 font-medium text-gray-500">{s.graph_name || s.id.slice(0, 8)}</td>
+                      <td className="px-4 py-3 text-gray-500">{s.project_id ? projects.get(s.project_id)?.name || "—" : "—"}</td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">archived</span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-400">—</td>
+                      <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
+                      <td className="px-4 py-3"><span className="text-gray-400">—</span></td>
+                      <td className="px-4 py-3">
+                        <button
+                          className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 hover:border-red-300"
+                          onClick={(e) => { e.stopPropagation(); purgeSession(s.id, s.graph_name || s.id.slice(0, 8)); }}
+                        >
+                          Delete projection job
+                        </button>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {archived.map((s) => (
-                      <tr
-                        key={s.id}
-                        className={`cursor-pointer border-b last:border-0 hover:bg-gray-50 ${selected?.id === s.id ? "bg-blue-50" : ""}`}
-                        onClick={() => setSelected(s)}
-                        onDoubleClick={() => navigate(`/import?session=${s.id}`)}
-                      >
-                        <td className="px-4 py-3 font-medium text-gray-500">{s.graph_name || s.id.slice(0, 8)}</td>
-                        <td className="px-4 py-3 text-gray-500">{s.project_id ? projects.get(s.project_id)?.name || "—" : "—"}</td>
-                        <td className="px-4 py-3">
-                          <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">archived</span>
-                        </td>
-                        <td className="px-4 py-3 text-gray-400">—</td>
-                        <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
-                        <td className="px-4 py-3"><span className="text-gray-400">—</span></td>
-                        <td className="px-4 py-3">
-                          <button
-                            className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
-                            onClick={(e) => { e.stopPropagation(); purgeSession(s.id, s.graph_name || s.id.slice(0, 8)); }}
-                          >
-                            Delete projection job
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </Card>
-            )}
-          </div>
-        )}
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          )}
+        </div>
       </div>
 
       {/* Detail Panel */}
