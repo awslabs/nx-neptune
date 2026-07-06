@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from nx_neptune.clients.client_factory import ClientFactory
@@ -17,6 +19,8 @@ from nx_neptune_proxy.services.graph_state_machine import (
 )
 import nx_neptune_proxy.services.graph_ops  # noqa: F401 — registers transitions
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v0/graphs", tags=["graphs"])
 
 
@@ -25,7 +29,10 @@ def get_available_actions(graph_id: str):
     """Return valid actions based on the graph's current Neptune status."""
     client = ClientFactory().neptune()
     resp = client.get_graph(graphIdentifier=graph_id)
-    status = resp.get("status", "")
+    status = resp.get("status")
+    if not status:
+        logger.warning(f"Graph {graph_id} returned empty status: {resp}")
+        raise HTTPException(status_code=502, detail="Graph returned no status")
     actions = available_actions(status)
     inflight = get_inflight(graph_id)
     return {
@@ -41,7 +48,10 @@ def perform_action(graph_id: str, action: str, background_tasks: BackgroundTasks
     """Initiate a state transition (stop, start, delete) as a background task."""
     client = ClientFactory().neptune()
     resp = client.get_graph(graphIdentifier=graph_id)
-    current_status = resp.get("status", "")
+    current_status = resp.get("status")
+    if not current_status:
+        logger.warning(f"Graph {graph_id} returned empty status: {resp}")
+        raise HTTPException(status_code=502, detail="Graph returned no status")
 
     try:
         # Validate early (execute_transition also validates, but fail fast for the user)
