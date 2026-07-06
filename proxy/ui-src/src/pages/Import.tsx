@@ -290,12 +290,20 @@ export function Import() {
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">S3 Staging Bucket</span>
               <Select value={bucket} onChange={(e) => setBucket(e.target.value)}>
                 <option value="">Select bucket...</option>
                 {buckets.map((b) => <option key={b} value={`s3://${b}/`}>s3://{b}/</option>)}
+              </Select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-gray-700">Memory (m-NCU)</span>
+              <Select value={graphMemoryGb} onChange={(e) => setGraphMemoryGb(Number(e.target.value))}>
+                {[16, 32, 64, 128, 256, 512, 1024, 2048, 4096].map((size) => (
+                  <option key={size} value={size}>{size} GB</option>
+                ))}
               </Select>
             </label>
             <label className="space-y-1">
@@ -308,18 +316,6 @@ export function Import() {
               />
             </label>
           </div>
-
-          <label className="block space-y-1">
-            <span className="text-sm font-medium text-gray-700">Graph Memory (GB)</span>
-            <input
-              type="number"
-              className="w-32 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              value={graphMemoryGb}
-              onChange={(e) => setGraphMemoryGb(Number(e.target.value))}
-              min={16}
-              step={16}
-            />
-          </label>
         </div>
       </Card>
 
