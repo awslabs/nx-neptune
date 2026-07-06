@@ -10,12 +10,14 @@ updates:
       interval: "weekly"
     ignore:
       - dependency-name: "org.junit.jupiter:*"
+      - dependency-name: "org.junit.vintage:*"
   - package-ecosystem: "maven"
     directory: "/connectors/athena-s3vector-connector"
     schedule:
       interval: "weekly"
     ignore:
       - dependency-name: "org.junit.jupiter:*"
+      - dependency-name: "org.junit.vintage:*"
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
