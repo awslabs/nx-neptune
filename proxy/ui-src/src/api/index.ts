@@ -24,6 +24,20 @@ export const metadata = {
   graphSummary: (id: string) => request<{ numNodes: number; numEdges: number; nodeLabels: string[]; edgeLabels: string[] }>(`/metadata/neptune/graph-analytics/${id}/summary`),
 };
 
+// --- Graph Actions ---
+
+export interface Inflight {
+  action: string;
+  error: string | null;
+}
+
+export const graphActions = {
+  getActions: (graphId: string) => request<{ graph_id: string; status: string; actions: string[]; inflight: Inflight | null }>(`/graphs/${graphId}/actions`),
+  perform: (graphId: string, action: string) => request<{ graph_id: string; action: string; status: string }>(`/graphs/${graphId}/${action}`, { method: "POST" }),
+  getInflight: (graphId: string) => request<{ graph_id: string; inflight: Inflight | null }>(`/graphs/${graphId}/inflight`),
+  dismissInflight: (graphId: string) => request<{ graph_id: string; cleared: boolean }>(`/graphs/${graphId}/inflight`, { method: "DELETE" }),
+};;
+
 // --- Projection ---
 
 export interface Projection {
