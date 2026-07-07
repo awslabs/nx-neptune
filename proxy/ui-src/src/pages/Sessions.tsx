@@ -231,7 +231,7 @@ export function Sessions() {
                             serviceType: "neptune-graph",
                             name: s.graph_name || s.graph_id || "",
                           });
-                          const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "http://localhost/explorer";
+                          const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost/explorer";
                           window.open(`${geBase}/#/connect?${params}`, "_blank");
                         }}
                       >
@@ -390,7 +390,7 @@ export function Sessions() {
                   serviceType: "neptune-graph",
                   name: selected.graph_name || selected.graph_id || "",
                 } as Record<string, string>);
-                const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "http://localhost/explorer";
+                const geBase = (import.meta as any).env?.VITE_GRAPH_EXPLORER_URL || "https://localhost/explorer";
                 window.open(`${geBase}/#/connect?${params}`, "_blank");
               }}>
                 <ExternalLink className="h-3 w-3" /> Open in Graph Explorer
