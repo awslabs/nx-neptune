@@ -146,35 +146,46 @@ def execute_projection(projection_id: str, background_tasks: BackgroundTasks):
     return {"id": p.id, "status": "accepted"}
 
 
-@router.delete("/{projection_id}", summary="Delete projection and its graph", status_code=202)
-def delete_projection(projection_id: str, background_tasks: BackgroundTasks):
-    """Set status to deleting, delete graph in background, then remove record."""
+@router.delete("/{projection_id}", summary="Delete projection record", status_code=200)
+def delete_projection(projection_id: str):
+    """Permanently remove the projection record from the database."""
     p = _get_projection_or_404(projection_id)
+    if p.status == "deleting":
+        raise HTTPException(status_code=409, detail="Graph deletion in progress, cannot purge yet")
+    store.delete(projection_id)
+    return {"id": p.id, "status": "deleted"}
+
+
+@router.post("/{projection_id}/delete-graph", summary="Delete associated graph and archive projection", status_code=202)
+def delete_projection_graph(projection_id: str, background_tasks: BackgroundTasks):
+    """Delete the Neptune graph in background, then mark projection as archived."""
+    p = _get_projection_or_404(projection_id)
+    if not p.graph_id:
+        raise HTTPException(status_code=409, detail="No graph associated with this projection")
     if p.status == "deleting":
         raise HTTPException(status_code=409, detail="Already deleting")
     store.update(projection_id, status="deleting", step="graph_delete", step_label="Deleting graph")
 
-    async def _delete():
-        if p.graph_id:
-            client = ClientFactory().neptune()
-            try:
-                client.delete_graph(graphIdentifier=p.graph_id, skipSnapshot=True)
-            except ClientError as e:
-                if e.response["Error"]["Code"] != "ResourceNotFoundException":
-                    store.update(projection_id, status="failed", error=str(e))
-                    return
-            # Poll until gone
-            for _ in range(60):
-                await asyncio.sleep(10)
-                try:
-                    client.get_graph(graphIdentifier=p.graph_id)
-                except ClientError:
-                    break
-            else:
-                # Timeout — graph may still exist
-                store.update(projection_id, status="failed", error="Timeout waiting for graph deletion")
+    async def _delete_graph():
+        client = ClientFactory().neptune()
+        try:
+            client.delete_graph(graphIdentifier=p.graph_id, skipSnapshot=True)
+        except ClientError as e:
+            if e.response["Error"]["Code"] != "ResourceNotFoundException":
+                store.update(projection_id, status="failed", error=str(e))
                 return
-        store.delete(projection_id)
+        # Poll until gone
+        for _ in range(60):
+            await asyncio.sleep(10)
+            try:
+                client.get_graph(graphIdentifier=p.graph_id)
+            except ClientError:
+                break
+        else:
+            store.update(projection_id, status="failed", error="Timeout waiting for graph deletion")
+            return
+        store.update(projection_id, status="archived", graph_id=None, graph_endpoint=None,
+                     step=None, step_label=None, progress=0)
 
-    background_tasks.add_task(_delete)
+    background_tasks.add_task(_delete_graph)
     return {"id": p.id, "status": "deleting"}
