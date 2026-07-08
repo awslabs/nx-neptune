@@ -28,5 +28,5 @@ def paginate_aws(method: Callable, result_key: str, **kwargs: Any) -> list:
 def unpack_query_results(rows: list) -> dict:
     """Convert raw query rows (header + data) into {columns, rows} dict."""
     columns = rows[0] if rows else []
-    data_rows = rows[1:] if len(rows) > 1 else []
+    data_rows = [[cell if cell is not None else "" for cell in row] for row in rows[1:]] if len(rows) > 1 else []
     return {"columns": columns, "rows": data_rows}
