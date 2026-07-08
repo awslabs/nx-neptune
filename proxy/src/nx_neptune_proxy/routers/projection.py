@@ -101,6 +101,7 @@ def validate_query(projection_id: str):
             catalog=p.catalog,
             database=p.database,
             output_location=p.s3_staging_bucket,
+            query_type="edge" if label == "edge_query" else "node",
         )
         checks.append({"check": label, "passed": result.passed, "message": result.message})
     valid = all(c["passed"] for c in checks) if checks else False

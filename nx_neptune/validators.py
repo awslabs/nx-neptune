@@ -223,7 +223,11 @@ def wrap_with_limit(query: str, limit: int) -> str:
 
 
 def check_athena_query(
-    sql_query: str, database: str, output_location: str, catalog: str = "AwsDataCatalog"
+    sql_query: str,
+    database: str,
+    output_location: str,
+    catalog: str = "AwsDataCatalog",
+    query_type: str = "node",
 ) -> CheckResult:
     """Validate SQL query by running with LIMIT 0 and checking required columns."""
     queries = [q.strip() for q in sql_query.split(";") if q.strip()]
@@ -257,11 +261,20 @@ def check_athena_query(
             all_columns.append(get_query_result_columns(results))
 
         for i, columns in enumerate(all_columns):
-            if "~id" not in columns:
-                return CheckResult.fail(
-                    "athena_query",
-                    f"Query {i+1} missing required '~id' column. Got: {', '.join(columns)}",
-                )
+            if query_type == "edge":
+                missing = {"~from", "~to"} - set(columns)
+                if missing:
+                    return CheckResult.fail(
+                        "athena_query",
+                        f"Query {i+1} missing required edge column(s): "
+                        f"{', '.join(sorted(missing))}. Got: {', '.join(columns)}",
+                    )
+            else:
+                if "~id" not in columns:
+                    return CheckResult.fail(
+                        "athena_query",
+                        f"Query {i+1} missing required '~id' column. Got: {', '.join(columns)}",
+                    )
 
         combined = [c for cols in all_columns for c in cols]
         return CheckResult.ok(
