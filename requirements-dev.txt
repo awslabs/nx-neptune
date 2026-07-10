@@ -8,7 +8,7 @@ ast-serialize==0.6.0
     # via mypy
 black==26.5.1
     # via nx-neptune (pyproject.toml)
-boto3==1.43.41
+boto3==1.43.46
     # via nx-neptune (pyproject.toml)
 botocore==1.43.41
     # via
