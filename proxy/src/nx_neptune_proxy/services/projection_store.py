@@ -81,9 +81,18 @@ class ProjectionStore:
         conn.close()
         return [self._row_to_projection(r) for r in rows]
 
+    _ALLOWED_UPDATE_COLUMNS = {
+        "status", "catalog", "database", "sql_query", "node_query", "edge_query",
+        "graph_name", "graph_memory_gb", "s3_staging_bucket", "graph_id", "graph_endpoint",
+        "project_id", "step", "step_label", "progress", "error",
+    }
+
     def update(self, projection_id: str, **kwargs) -> Optional[Projection]:
         if not kwargs:
             return self.get(projection_id)
+        invalid = set(kwargs.keys()) - self._ALLOWED_UPDATE_COLUMNS
+        if invalid:
+            raise ValueError(f"Invalid column(s): {invalid}")
         sets = ", ".join(f"{k} = ?" for k in kwargs)
         vals = list(kwargs.values()) + [projection_id]
         conn = get_connection()
