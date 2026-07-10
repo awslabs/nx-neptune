@@ -219,7 +219,7 @@ class TaskFuture(Future):
         self.task_id = task_id
         self.task_type = task_type
         self.current_status = None
-        self.status_reason = ""
+        self.status_reason = None
         self.polling_interval = (
             polling_interval
             if polling_interval is not None
