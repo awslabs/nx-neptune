@@ -9,6 +9,8 @@ DB_PATH = os.environ.get("NX_NEPTUNE_DB_PATH", str(Path.home() / ".nx-neptune" /
 
 
 def get_connection() -> sqlite3.Connection:
+    # TODO: Consider a connection pool or a singleton connection with thread-safety
+    #       for improved performance under concurrent requests.
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row

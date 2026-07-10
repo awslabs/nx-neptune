@@ -43,9 +43,14 @@ class ProjectStore:
         conn.close()
         return [self._row_to_project(r) for r in rows]
 
+    _ALLOWED_UPDATE_COLUMNS = {"name", "status"}
+
     def update(self, project_id: str, **kwargs) -> Optional[Project]:
         if not kwargs:
             return self.get(project_id)
+        invalid = set(kwargs.keys()) - self._ALLOWED_UPDATE_COLUMNS
+        if invalid:
+            raise ValueError(f"Invalid column(s): {invalid}")
         sets = ", ".join(f"{k} = ?" for k in kwargs)
         vals = list(kwargs.values()) + [project_id]
         conn = get_connection()
