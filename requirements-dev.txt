@@ -110,7 +110,7 @@ python-dateutil==2.9.0.post0
     # via
     #   botocore
     #   pandas
-python-discovery==1.4.3
+python-discovery==1.4.4
     # via virtualenv
 python-dotenv==1.2.2
     # via dotenv
