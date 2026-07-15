@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router";
-import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project } from "../api";
+import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type QueryResult } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
-import { Play, CheckCircle, Eye } from "lucide-react";
+import { Play, CheckCircle, Eye, ChevronDown, ChevronRight, RotateCcw } from "lucide-react";
 
 export function Import() {
   const [searchParams] = useSearchParams();
@@ -25,12 +25,17 @@ export function Import() {
   const [bucket, setBucket] = useState("");
   const [graphName, setGraphName] = useState("");
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
+  const [postImportQuery, setPostImportQuery] = useState("");
 
   // --- Session state ---
   const [sessions, setSessions] = useState<Projection[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [status, setStatus] = useState<ProjectionStatus | null>(null);
   const [polling, setPolling] = useState(false);
+
+  // --- Post-import query UI state ---
+  const [queryExpanded, setQueryExpanded] = useState(false);
+  const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
 
   // --- Validation/Preview ---
   const [checks, setChecks] = useState<{ check: string; passed: boolean; message?: string }[]>([]);
@@ -72,6 +77,9 @@ export function Import() {
         setBucket("");
         setGraphName("");
         setGraphMemoryGb(16);
+        setPostImportQuery("");
+        setQueryExpanded(false);
+        setQueryResult(null);
       }
     }
     if (sessionId) {
@@ -91,7 +99,7 @@ export function Import() {
 
   // --- Session management ---
   async function ensureSession(): Promise<string> {
-    const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb, project_id: projectId || undefined };
+    const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb, project_id: projectId || undefined, post_import_query: postImportQuery || undefined };
     if (currentId) {
       await projection.update(currentId, data);
       return currentId;
@@ -112,6 +120,9 @@ export function Import() {
     if (p.s3_staging_bucket) setBucket(p.s3_staging_bucket);
     if (p.graph_name) setGraphName(p.graph_name);
     if (p.graph_memory_gb) setGraphMemoryGb(p.graph_memory_gb);
+    setPostImportQuery(p.post_import_query || "");
+    setQueryExpanded(!!p.post_import_query);
+    setQueryResult(null);
     setChecks([]);
     setPreview(null);
     setError(null);
@@ -316,6 +327,33 @@ export function Import() {
               />
             </label>
           </div>
+
+          {/* Post-Import Query (collapsible) */}
+          <div className="border-t border-gray-200 pt-4">
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+              onClick={() => setQueryExpanded(!queryExpanded)}
+            >
+              {queryExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              Post-Import Query (OpenCypher)
+              {!queryExpanded && postImportQuery && <span className="ml-2 text-xs text-gray-400">configured</span>}
+            </button>
+            {queryExpanded && (
+              <div className="mt-2 space-y-2">
+                <p className="text-xs text-gray-500">
+                  This query runs against the graph after a successful import. Use it for index creation, property computation, or sanity checks.
+                </p>
+                <textarea
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  rows={4}
+                  placeholder="MATCH (n) RETURN count(n) AS nodeCount"
+                  value={postImportQuery}
+                  onChange={(e) => setPostImportQuery(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </Card>
 
@@ -381,6 +419,49 @@ export function Import() {
               <ProgressBar value={status.progress} label={status.step_label || status.step || "Running..."} />
             </div>
           )}
+        </Card>
+      )}
+
+      {/* Post-import query result */}
+      {status?.status === "complete" && postImportQuery && (
+        <Card>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium">Post-Import Query</h2>
+              <Button
+                variant="secondary"
+                disabled={loading === "run-query"}
+                onClick={async () => {
+                  if (!currentId) return;
+                  setLoading("run-query");
+                  try {
+                    const res = await projection.runQuery(currentId);
+                    setQueryResult(res);
+                  } catch (e: any) {
+                    setQueryResult({ success: false, error: e.message });
+                  } finally {
+                    setLoading(null);
+                  }
+                }}
+              >
+                <RotateCcw className="h-3 w-3" />
+                {loading === "run-query" ? "Running..." : queryResult ? "Retry" : "Run"}
+              </Button>
+            </div>
+            {queryResult && (
+              queryResult.success ? (
+                <p className="text-sm text-green-700">✓ Query returned {queryResult.row_count} result{queryResult.row_count !== 1 ? "s" : ""}</p>
+              ) : (
+                <p className="text-sm text-red-700">✗ {queryResult.error}</p>
+              )
+            )}
+            {!queryResult && status?.status === "complete" && (() => {
+              const session = sessions.find(s => s.id === currentId);
+              if (session?.post_import_error) return <p className="text-sm text-red-700">✗ {session.post_import_error}</p>;
+              if (session?.post_import_query) return <p className="text-sm text-green-700">✓ Query executed during import</p>;
+              return null;
+            })()}
+          </div>
         </Card>
       )}
 

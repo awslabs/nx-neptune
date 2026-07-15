@@ -19,9 +19,10 @@ from nx_neptune_proxy.routers.schemas import (
     ProjectionResponse,
     ProjectionStatus,
     ProjectionUpdate,
+    QueryResultResponse,
     ValidateResponse,
 )
-from nx_neptune_proxy.services.pipeline import run_pipeline
+from nx_neptune_proxy.services.pipeline import execute_opencypher_query, run_pipeline
 from nx_neptune_proxy.services.projection_store import store
 from nx_neptune_proxy.utils import unpack_query_results
 
@@ -144,6 +145,24 @@ def execute_projection(projection_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=409, detail="Pipeline already running")
     background_tasks.add_task(run_pipeline, p)
     return {"id": p.id, "status": "accepted"}
+
+
+@router.post("/{projection_id}/run-query", summary="Run post-import query", response_model=QueryResultResponse)
+def run_post_import_query(projection_id: str):
+    """Execute the post-import OpenCypher query against the projection's graph."""
+    p = _get_projection_or_404(projection_id)
+    if not p.graph_id:
+        raise HTTPException(status_code=409, detail="No graph associated with this projection")
+    if not p.post_import_query:
+        raise HTTPException(status_code=400, detail="No post-import query configured")
+    try:
+        results = execute_opencypher_query(p.graph_id, p.post_import_query)
+        store.update(projection_id, post_import_error=None)
+        return {"success": True, "row_count": len(results), "results": results}
+    except Exception as e:
+        error_msg = str(e)
+        store.update(projection_id, post_import_error=error_msg)
+        return {"success": False, "error": error_msg}
 
 
 @router.delete("/{projection_id}", summary="Delete projection record", status_code=200)

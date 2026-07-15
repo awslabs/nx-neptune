@@ -258,3 +258,80 @@ async def test_execute_poll_lifecycle(client):
     assert resp.json()["status"] == "complete"
     assert resp.json()["progress"] == 100
     assert resp.json()["graph_endpoint"] == "https://g-123.neptune-graph.amazonaws.com"
+
+
+# --- Post-import query ---
+
+
+@pytest.mark.asyncio
+async def test_create_projection_with_post_import_query(client):
+    body = {**SAMPLE_BODY, "post_import_query": "MATCH (n) RETURN count(n)"}
+    resp = await client.post("/api/v0/projection", json=body)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["post_import_query"] == "MATCH (n) RETURN count(n)"
+
+
+@pytest.mark.asyncio
+async def test_update_post_import_query(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    pid = create_resp.json()["id"]
+
+    resp = await client.put(f"/api/v0/projection/{pid}", json={"post_import_query": "MATCH (n) RETURN n LIMIT 5"})
+    assert resp.status_code == 200
+    assert resp.json()["post_import_query"] == "MATCH (n) RETURN n LIMIT 5"
+
+
+@pytest.mark.asyncio
+async def test_run_query_no_graph(client):
+    create_resp = await client.post("/api/v0/projection", json={**SAMPLE_BODY, "post_import_query": "MATCH (n) RETURN n"})
+    pid = create_resp.json()["id"]
+
+    resp = await client.post(f"/api/v0/projection/{pid}/run-query")
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_run_query_no_query_configured(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    pid = create_resp.json()["id"]
+    store.update(pid, graph_id="g-123")
+
+    resp = await client.post(f"/api/v0/projection/{pid}/run-query")
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_run_query_success(client):
+    body = {**SAMPLE_BODY, "post_import_query": "MATCH (n) RETURN count(n)"}
+    create_resp = await client.post("/api/v0/projection", json=body)
+    pid = create_resp.json()["id"]
+    store.update(pid, graph_id="g-123")
+
+    mock_results = [{"count(n)": 42}]
+    with patch("nx_neptune_proxy.routers.projection.execute_opencypher_query", return_value=mock_results):
+        resp = await client.post(f"/api/v0/projection/{pid}/run-query")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is True
+    assert data["row_count"] == 1
+    assert data["results"] == mock_results
+
+
+@pytest.mark.asyncio
+async def test_run_query_failure(client):
+    body = {**SAMPLE_BODY, "post_import_query": "INVALID CYPHER"}
+    create_resp = await client.post("/api/v0/projection", json=body)
+    pid = create_resp.json()["id"]
+    store.update(pid, graph_id="g-123")
+
+    with patch("nx_neptune_proxy.routers.projection.execute_opencypher_query", side_effect=Exception("Syntax error")):
+        resp = await client.post(f"/api/v0/projection/{pid}/run-query")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is False
+    assert "Syntax error" in data["error"]
+
+    # Verify post_import_error was stored
+    proj = store.get(pid)
+    assert "Syntax error" in proj.post_import_error

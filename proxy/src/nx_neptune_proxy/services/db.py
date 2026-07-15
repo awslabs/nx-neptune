@@ -45,9 +45,17 @@ def init_db() -> None:
             step_label TEXT,
             progress REAL DEFAULT 0,
             error TEXT,
+            post_import_query TEXT,
+            post_import_error TEXT,
             created_at TEXT NOT NULL,
             FOREIGN KEY (project_id) REFERENCES projects(id)
         );
     """)
+    # Migration: add post_import columns if missing (for existing databases)
+    cursor = conn.execute("PRAGMA table_info(projections)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+    for col in ["post_import_query", "post_import_error"]:
+        if col not in existing_columns:
+            conn.execute(f"ALTER TABLE projections ADD COLUMN {col} TEXT")
     conn.commit()
     conn.close()

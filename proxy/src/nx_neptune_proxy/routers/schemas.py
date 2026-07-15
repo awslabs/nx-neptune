@@ -63,6 +63,7 @@ class ProjectionCreate(BaseModel):
     graph_memory_gb: int = 16
     s3_staging_bucket: Optional[str] = None
     project_id: Optional[str] = None
+    post_import_query: Optional[str] = None
 
 
 class ProjectionUpdate(BaseModel):
@@ -74,6 +75,7 @@ class ProjectionUpdate(BaseModel):
     graph_name: Optional[str] = None
     graph_memory_gb: Optional[int] = None
     s3_staging_bucket: Optional[str] = None
+    post_import_query: Optional[str] = None
 
 
 class CheckResult(BaseModel):
@@ -125,4 +127,13 @@ class ProjectionResponse(BaseModel):
     step_label: Optional[str] = None
     progress: float = 0
     error: Optional[str] = None
+    post_import_query: Optional[str] = None
+    post_import_error: Optional[str] = None
     created_at: datetime
+
+
+class QueryResultResponse(BaseModel):
+    success: bool
+    row_count: Optional[int] = None
+    error: Optional[str] = None
+    results: Optional[list[dict]] = None

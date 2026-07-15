@@ -58,7 +58,16 @@ export interface Projection {
   step_label?: string;
   progress: number;
   error?: string;
+  post_import_query?: string;
+  post_import_error?: string;
   created_at: string;
+}
+
+export interface QueryResult {
+  success: boolean;
+  row_count?: number;
+  error?: string;
+  results?: Record<string, unknown>[];
 }
 
 export interface ProjectionStatus {
@@ -81,6 +90,7 @@ export const projection = {
   validateQuery: (id: string) => request<{ valid: boolean; checks: { check: string; passed: boolean; message?: string }[] }>(`/projection/${id}/validate-query`, { method: "POST" }),
   preview: (id: string, limit = 10) => request<{ error?: string; results: { columns: string[]; rows: string[][] }[] }>(`/projection/${id}/preview?limit=${limit}`, { method: "POST" }),
   execute: (id: string) => request<{ message: string }>(`/projection/${id}/execute`, { method: "POST" }),
+  runQuery: (id: string) => request<QueryResult>(`/projection/${id}/run-query`, { method: "POST" }),
   delete: (id: string) => request<{ id: string; status: string }>(`/projection/${id}`, { method: "DELETE" }),
   deleteGraph: (id: string) => request<{ id: string; status: string }>(`/projection/${id}/delete-graph`, { method: "POST" }),
 };

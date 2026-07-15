@@ -3,6 +3,7 @@
 
 import logging
 
+from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune_proxy.services.projection_store import GRAPH_PREFIX, Projection, store
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,19 @@ async def run_pipeline(projection: Projection) -> None:
         )
         _update(projection.id, step="athena_import", label="Import complete", progress=90)
 
-        # Step 3: Done
+        # Step 3: Run post-import query (optional)
+        if projection.post_import_query:
+            _update(projection.id, step="post_import_query", label="Running post-import query", progress=92)
+            try:
+                result = execute_opencypher_query(graph.graph_id, projection.post_import_query)
+                store.update(projection.id, post_import_error=None)
+                logger.info(f"Post-import query returned {len(result)} results")
+            except Exception as e:
+                error_msg = str(e)
+                logger.warning(f"Post-import query failed (non-fatal): {error_msg}")
+                store.update(projection.id, post_import_error=error_msg)
+
+        # Step 4: Done
         _update(projection.id, step="ready", label="Graph ready", progress=100)
         store.update(projection.id, status="complete")
 
@@ -62,3 +75,20 @@ async def run_pipeline(projection: Projection) -> None:
 
 def _update(projection_id: str, step: str, label: str, progress: float) -> None:
     store.update(projection_id, step=step, step_label=label, progress=progress)
+
+
+def execute_opencypher_query(graph_id: str, query: str) -> list[dict]:
+    """Execute an OpenCypher query against a Neptune Analytics graph."""
+    import json
+
+    client = ClientFactory().neptune()
+    response = client.execute_query(
+        graphIdentifier=graph_id,
+        queryString=query,
+        language="OPEN_CYPHER",
+    )
+    payload = response.get("payload")
+    if payload is None:
+        return []
+    results = json.loads(payload.read())
+    return results.get("results", results) if isinstance(results, dict) else results

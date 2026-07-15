@@ -13,7 +13,8 @@ GRAPH_PREFIX = "nxp-"
 _FIELDS = [
     "id", "status", "catalog", "database", "sql_query", "node_query", "edge_query",
     "graph_name", "graph_memory_gb", "s3_staging_bucket", "graph_id", "graph_endpoint",
-    "project_id", "step", "step_label", "progress", "error", "created_at",
+    "project_id", "step", "step_label", "progress", "error",
+    "post_import_query", "post_import_error", "created_at",
 ]
 
 
@@ -38,6 +39,8 @@ class Projection:
     step_label: Optional[str] = None
     progress: float = 0
     error: Optional[str] = None
+    post_import_query: Optional[str] = None
+    post_import_error: Optional[str] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -46,7 +49,7 @@ class ProjectionStore:
                sql_query: str = None, node_query: str = None,
                edge_query: str = None, graph_name: str = None,
                graph_memory_gb: int = 16, s3_staging_bucket: str = None,
-               project_id: str = None) -> Projection:
+               project_id: str = None, post_import_query: str = None) -> Projection:
         p = Projection(
             id=str(uuid.uuid4()),
             status="draft",
@@ -59,6 +62,7 @@ class ProjectionStore:
             graph_memory_gb=graph_memory_gb,
             s3_staging_bucket=s3_staging_bucket,
             project_id=project_id,
+            post_import_query=post_import_query,
         )
         conn = get_connection()
         conn.execute(
@@ -128,6 +132,8 @@ class ProjectionStore:
             step_label=row["step_label"],
             progress=row["progress"] or 0,
             error=row["error"],
+            post_import_query=row["post_import_query"],
+            post_import_error=row["post_import_error"],
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 
