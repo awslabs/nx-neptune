@@ -22,12 +22,16 @@ async def delete_project(project_id: str) -> None:
     """Delete all graphs for a project's projections, then remove records."""
     projections = [p for p in projection_store.list() if p.project_id == project_id]
 
+    # Delete all graphs in parallel
+    results = await asyncio.gather(
+        *[_delete_graph(p.graph_id) for p in projections if p.graph_id],
+        return_exceptions=True,
+    )
+    for r in results:
+        if isinstance(r, Exception):
+            logger.warning(f"Failed to delete graph: {r}")
+
     for p in projections:
-        if p.graph_id:
-            try:
-                await _delete_graph(p.graph_id)
-            except Exception as e:
-                logger.warning(f"Failed to delete graph {p.graph_id} for projection {p.id}: {e}")
         projection_store.delete(p.id)
 
     project_store.delete(project_id)
