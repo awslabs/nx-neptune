@@ -22,10 +22,10 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const activeProject = params.get("project");
-    const sessionId = params.get("session");
+    const projectionId = params.get("projection");
     let projectToExpand = activeProject;
-    if (!projectToExpand && sessionId) {
-      const match = projections.find(p => p.id === sessionId);
+    if (!projectToExpand && projectionId) {
+      const match = projections.find(p => p.id === projectionId);
       if (match?.project_id) projectToExpand = match.project_id;
     }
     if (projectToExpand) {
@@ -113,7 +113,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                         <span className="flex-1 truncate">{proj.name} (deleting...)</span>
                       ) : (
                         <NavLink
-                          to={`/sessions?project=${proj.id}`}
+                          to={`/projections?project=${proj.id}`}
                           className="flex-1 truncate font-medium hover:text-blue-600"
                         >{proj.name}</NavLink>
                       )}
@@ -139,7 +139,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                         {projs.map(p => (
                           <NavLink
                             key={p.id}
-                            to={`/import?session=${p.id}`}
+                            to={`/import?projection=${p.id}`}
                             className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
                           >
                             <Circle className={clsx("h-2 w-2 fill-current", statusColor[p.status] || "text-gray-400")} />
