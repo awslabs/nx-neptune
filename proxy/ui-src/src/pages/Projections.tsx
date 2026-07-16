@@ -5,9 +5,9 @@ import { Card, Button, RefreshButton } from "../components/ui";
 import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router";
 
-export function Sessions() {
+export function Projections() {
   const [searchParams] = useSearchParams();
-  const [sessions, setSessions] = useState<Projection[]>([]);
+  const [projections, setProjections] = useState<Projection[]>([]);
   const [selected, setSelected] = useState<Projection | null>(null);
   const [region, setRegion] = useState("");
   const [projects, setProjects] = useState<Map<string, Project>>(new Map());
@@ -27,12 +27,12 @@ export function Sessions() {
 
   async function load() {
     const list = await projection.list();
-    setSessions(list);
+    setProjections(list);
     // Fetch graph statuses and actions
     metadata.graphs().then(({ graphs }) => {
       setGraphStatuses(new Map(graphs.map(g => [g.id, g.status])));
     }).catch(() => {});
-    // Fetch actions for sessions with graphs
+    // Fetch actions for projections with graphs
     for (const s of list) {
       if (s.graph_id) {
         graphActions.getActions(s.graph_id).then(r => {
@@ -60,13 +60,13 @@ export function Sessions() {
   }
 
   const allFiltered = filterProjectId
-    ? sessions.filter(s => s.project_id === filterProjectId)
-    : sessions;
+    ? projections.filter(s => s.project_id === filterProjectId)
+    : projections;
   const active = allFiltered.filter(s => s.status !== "archived");
   const archived = allFiltered.filter(s => s.status === "archived");
   const projectName = filterProjectId ? projects.get(filterProjectId)?.name : null;
 
-  // Fetch graph actions when selecting a session that has a graph
+  // Fetch graph actions when selecting a projection that has a graph
   useEffect(() => {
     if (selected?.graph_id) {
       graphActions.getActions(selected.graph_id).then(r => {
@@ -85,8 +85,8 @@ export function Sessions() {
     }
   }
 
-  async function archiveSession(sessionId: string, name: string) {
-    if (!confirm(`Delete graph for "${name}"? The session config will be preserved.`)) return;
+  async function archiveProjection(sessionId: string, name: string) {
+    if (!confirm(`Delete graph for "${name}"? The projection config will be preserved.`)) return;
     try {
       await projection.deleteGraph(sessionId);
       load();
@@ -96,7 +96,7 @@ export function Sessions() {
     }
   }
 
-  async function purgeSession(sessionId: string, name: string) {
+  async function purgeProjection(sessionId: string, name: string) {
     if (!confirm(`Permanently delete projection job "${name}"? This cannot be undone.`)) return;
     try {
       await projection.delete(sessionId);
@@ -148,7 +148,7 @@ export function Sessions() {
     <div className="flex gap-4">
       <div className="flex-1 space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">{projectName ? `${projectName} — Sessions` : "Sessions"}</h1>
+          <h1 className="text-lg font-semibold">{projectName ? `${projectName} — Projections` : "Projections"}</h1>
           <div className="flex items-center gap-2">
             <NavLink
               to={filterProjectId ? `/import?project=${filterProjectId}&t=${Date.now()}` : "/import"}
@@ -172,7 +172,7 @@ export function Sessions() {
         </div>
       ))}
 
-        {/* Active Sessions */}
+        {/* Active Projections */}
         <Card className="overflow-hidden p-0">
           <table className="w-full text-left text-sm">
             <thead className="border-b bg-gray-50">
@@ -188,7 +188,7 @@ export function Sessions() {
             </thead>
             <tbody>
               {active.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-500">No active sessions</td></tr>
+                <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-500">No active projections</td></tr>
               ) : active.map((s) => {
                 const graphStatus = s.graph_id ? graphStatuses.get(s.graph_id) : undefined;
                 const state = s.graph_id ? actionStates[s.graph_id] : undefined;
@@ -200,7 +200,7 @@ export function Sessions() {
                   key={s.id}
                   className={`cursor-pointer border-b last:border-0 hover:bg-gray-50 ${selected?.id === s.id ? "bg-blue-50" : ""}`}
                   onClick={() => setSelected(s)}
-                  onDoubleClick={() => navigate(`/import?session=${s.id}`)}
+                  onDoubleClick={() => navigate(`/import?projection=${s.id}`)}
                 >
                   <td className="px-4 py-3 font-medium">{s.graph_name || s.id.slice(0, 8)}</td>
                   <td className="px-4 py-3 text-gray-600">{s.project_id ? projects.get(s.project_id)?.name || "—" : "—"}</td>
@@ -258,12 +258,12 @@ export function Sessions() {
                         <Play className="h-4 w-4" />
                       </button>
 
-                      {/* Archive (delete graph, keep session) */}
+                      {/* Archive (delete graph, keep projection) */}
                       <button
                         className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
                         disabled={!s.graph_id || isTransient}
-                        title="Delete graph (archive session)"
-                        onClick={(e) => { e.stopPropagation(); archiveSession(s.id, s.graph_name || s.id.slice(0, 8)); }}
+                        title="Delete graph (archive projection)"
+                        onClick={(e) => { e.stopPropagation(); archiveProjection(s.id, s.graph_name || s.id.slice(0, 8)); }}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -276,7 +276,7 @@ export function Sessions() {
           </table>
         </Card>
 
-        {/* Archived Sessions (collapsible) */}
+        {/* Archived Projections (collapsible) */}
         <div>
           <button
             className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-gray-900"
@@ -302,13 +302,13 @@ export function Sessions() {
                 </thead>
                 <tbody>
                   {archived.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-500">No archived sessions</td></tr>
+                    <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-500">No archived projections</td></tr>
                   ) : archived.map((s) => (
                     <tr
                       key={s.id}
                       className={`cursor-pointer border-b last:border-0 hover:bg-gray-50 ${selected?.id === s.id ? "bg-blue-50" : ""}`}
                       onClick={() => setSelected(s)}
-                      onDoubleClick={() => navigate(`/import?session=${s.id}`)}
+                      onDoubleClick={() => navigate(`/import?projection=${s.id}`)}
                     >
                       <td className="px-4 py-3 font-medium text-gray-500">{s.graph_name || s.id.slice(0, 8)}</td>
                       <td className="px-4 py-3 text-gray-500">{s.project_id ? projects.get(s.project_id)?.name || "—" : "—"}</td>
@@ -321,7 +321,7 @@ export function Sessions() {
                       <td className="px-4 py-3">
                         <button
                           className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 hover:border-red-300"
-                          onClick={(e) => { e.stopPropagation(); purgeSession(s.id, s.graph_name || s.id.slice(0, 8)); }}
+                          onClick={(e) => { e.stopPropagation(); purgeProjection(s.id, s.graph_name || s.id.slice(0, 8)); }}
                         >
                           Delete projection job
                         </button>
@@ -376,7 +376,7 @@ export function Sessions() {
               </div>
             )}
           </div>
-          <Button variant="secondary" className="w-full" onClick={() => navigate(`/import?session=${selected.id}`)}>
+          <Button variant="secondary" className="w-full" onClick={() => navigate(`/import?projection=${selected.id}`)}>
             Open in Import
           </Button>
           {selected.graph_id && selected.status !== "archived" && (
@@ -415,7 +415,7 @@ export function Sessions() {
                 <Button
                   variant="ghost"
                   className="flex-1 text-red-600 hover:text-red-700"
-                  onClick={() => archiveSession(selected.id, selected.graph_name || selected.id.slice(0, 8))}
+                  onClick={() => archiveProjection(selected.id, selected.graph_name || selected.id.slice(0, 8))}
                 >
                   <Trash2 className="h-3 w-3" /> Delete
                 </Button>
@@ -426,7 +426,7 @@ export function Sessions() {
             <Button
               variant="ghost"
               className="w-full text-red-600 hover:text-red-700"
-              onClick={() => purgeSession(selected.id, selected.graph_name || selected.id.slice(0, 8))}
+              onClick={() => purgeProjection(selected.id, selected.graph_name || selected.id.slice(0, 8))}
             >
               Delete projection job
             </Button>
