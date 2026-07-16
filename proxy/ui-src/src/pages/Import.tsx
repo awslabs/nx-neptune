@@ -26,8 +26,8 @@ export function Import() {
   const [graphName, setGraphName] = useState("");
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
 
-  // --- Session state ---
-  const [sessions, setSessions] = useState<Projection[]>([]);
+  // --- Projection state ---
+  const [projectionsList, setProjectionsList] = useState<Projection[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [status, setStatus] = useState<ProjectionStatus | null>(null);
   const [polling, setPolling] = useState(false);
@@ -43,10 +43,10 @@ export function Import() {
     metadata.catalogs().then((d) => setCatalogs(d.catalogs));
     metadata.buckets().then((d) => setBuckets(d.buckets));
     projectApi.list().then(setProjects);
-    loadSessions().then(() => {
-      const sessionId = searchParams.get("session");
-      if (sessionId) {
-        projection.get(sessionId).then(loadSession);
+    loadProjections().then(() => {
+      const projectionId = searchParams.get("projection");
+      if (projectionId) {
+        projection.get(projectionId).then(loadProjection);
       }
     });
     const wsParam = searchParams.get("project");
@@ -55,10 +55,10 @@ export function Import() {
 
   useEffect(() => {
     const wsParam = searchParams.get("project");
-    const sessionId = searchParams.get("session");
+    const projectionId = searchParams.get("projection");
     if (wsParam) {
       setProjectId(wsParam);
-      if (!sessionId) {
+      if (!projectionId) {
         setCurrentId(null);
         setStatus(null);
         setPolling(false);
@@ -74,8 +74,8 @@ export function Import() {
         setGraphMemoryGb(16);
       }
     }
-    if (sessionId) {
-      projection.get(sessionId).then(loadSession);
+    if (projectionId) {
+      projection.get(projectionId).then(loadProjection);
     }
   }, [searchParams]);
 
@@ -84,13 +84,13 @@ export function Import() {
     metadata.databases(catalog).then((d) => { setDatabases(d.databases); setDbLoading(false); });
   }, [catalog]);
 
-  async function loadSessions() {
+  async function loadProjections() {
     const list = await projection.list();
-    setSessions(list);
+    setProjectionsList(list);
   }
 
-  // --- Session management ---
-  async function ensureSession(): Promise<string> {
+  // --- Projection management ---
+  async function ensureProjection(): Promise<string> {
     const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb, project_id: projectId || undefined };
     if (currentId) {
       await projection.update(currentId, data);
@@ -98,12 +98,12 @@ export function Import() {
     }
     const p = await projection.create(data);
     setCurrentId(p.id);
-    await loadSessions();
+    await loadProjections();
     window.dispatchEvent(new Event("projects-changed"));
     return p.id;
   }
 
-  function loadSession(p: Projection) {
+  function loadProjection(p: Projection) {
     setCurrentId(p.id);
     if (p.catalog) setCatalog(p.catalog);
     if (p.database) setDatabase(p.database);
@@ -130,7 +130,7 @@ export function Import() {
     setError(null);
     setLoading("validate");
     try {
-      const id = await ensureSession();
+      const id = await ensureProjection();
       const res = await projection.validate(id);
       setChecks(res.checks);
     } catch (e: any) { setError(e.message); } finally { setLoading(null); }
@@ -140,7 +140,7 @@ export function Import() {
     setError(null);
     setLoading("validate-query");
     try {
-      const id = await ensureSession();
+      const id = await ensureProjection();
       const res = await projection.validateQuery(id);
       setChecks(res.checks);
     } catch (e: any) { setError(e.message); } finally { setLoading(null); }
@@ -150,7 +150,7 @@ export function Import() {
     setError(null);
     setLoading("preview");
     try {
-      const id = await ensureSession();
+      const id = await ensureProjection();
       const res = await projection.preview(id);
       if (res.error) setError(res.error);
       else setPreview(res.results);
@@ -161,7 +161,7 @@ export function Import() {
     setError(null);
     setLoading("execute");
     try {
-      const id = await ensureSession();
+      const id = await ensureProjection();
       await projection.execute(id);
       startPolling(id);
     } catch (e: any) {
@@ -194,16 +194,16 @@ export function Import() {
             onChange={(e) => {
               const id = e.target.value;
               if (!id) { setCurrentId(null); setStatus(null); setChecks([]); setPreview(null); return; }
-              const s = sessions.find((s) => s.id === id);
-              if (s) loadSession(s);
+              const s = projectionsList.find((s) => s.id === id);
+              if (s) loadProjection(s);
             }}
           >
-            <option value="">+ New session</option>
-            {sessions.map((s) => (
+            <option value="">+ New projection</option>
+            {projectionsList.map((s) => (
               <option key={s.id} value={s.id}>{s.graph_name || s.id.slice(0, 8)} ({s.status})</option>
             ))}
           </Select>
-          <RefreshButton onClick={loadSessions} />
+          <RefreshButton onClick={loadProjections} />
         </div>
       </div>
 
@@ -236,7 +236,7 @@ export function Import() {
               <Select
                 value=""
                 onChange={(e) => {
-                  const s = sessions.find((s) => s.id === e.target.value);
+                  const s = projectionsList.find((s) => s.id === e.target.value);
                   if (!s) return;
                   if (s.catalog) setCatalog(s.catalog);
                   if (s.database) setDatabase(s.database);
@@ -247,7 +247,7 @@ export function Import() {
                 }}
               >
                 <option value="">Select a projection...</option>
-                {sessions.map((s) => (
+                {projectionsList.map((s) => (
                   <option key={s.id} value={s.id}>{s.graph_name || s.id.slice(0, 8)}</option>
                 ))}
               </Select>

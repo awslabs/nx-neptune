@@ -12,7 +12,7 @@ export function Projects() {
     const project = await projectApi.create(name.trim());
     setName("");
     window.dispatchEvent(new Event("projects-changed"));
-    navigate(`/sessions?project=${project.id}`);
+    navigate(`/projections?project=${project.id}`);
   }
 
   return (
