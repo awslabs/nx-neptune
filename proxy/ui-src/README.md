@@ -55,7 +55,7 @@ ui-src/
 │   │   └── ui.tsx          # Button, Select, ProgressBar, Card
 │   ├── pages/
 │   │   ├── Import.tsx      # Import wizard
-│   │   ├── Sessions.tsx    # Session list
+│   │   ├── Projections.tsx  # Projection list
 │   │   └── Graphs.tsx      # Neptune graphs
 │   ├── App.tsx             # Layout + routes
 │   ├── main.tsx            # Entry point
