@@ -127,6 +127,8 @@ export function Import() {
 
   // --- Actions ---
   async function handleValidate() {
+    setChecks([]);
+    setPreview(null);
     setError(null);
     setLoading("validate");
     try {
@@ -137,6 +139,8 @@ export function Import() {
   }
 
   async function handleValidateQuery() {
+    setChecks([]);
+    setPreview(null);
     setError(null);
     setLoading("validate-query");
     try {
@@ -147,6 +151,8 @@ export function Import() {
   }
 
   async function handlePreview() {
+    setChecks([]);
+    setPreview(null);
     setError(null);
     setLoading("preview");
     try {
