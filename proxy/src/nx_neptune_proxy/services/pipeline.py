@@ -18,20 +18,26 @@ async def run_pipeline(projection: Projection) -> None:
     try:
         store.update(projection.id, status="importing")
 
-        # Step 1: Create graph
+        # Step 1: Create or reuse graph
         _update(projection.id, step="graph_creation", label="Creating Neptune Analytics graph", progress=5)
         sm = SessionManager(session_name=graph_name)
-        graph = await sm.get_or_create_graph(
-            config={"provisionedMemory": projection.graph_memory_gb}
-        )
-        store.update(projection.id, graph_id=graph.graph_id,
-                     graph_endpoint=f"https://{graph.graph_id}.neptune-graph.amazonaws.com")
-        _update(projection.id, step="graph_creation", label="Graph available", progress=20)
+        graphs = sm.list_graphs()
+        existing = next((g for g in graphs if g.status == "AVAILABLE"), None)
 
-        # Step 1b: Reset graph to ensure it's empty
-        _update(projection.id, step="graph_reset", label="Resetting graph data", progress=25)
-        await sm.reset_graph(graph.name)
-        _update(projection.id, step="graph_reset", label="Graph ready for import", progress=40)
+        if existing:
+            # Reuse existing graph (retry scenario) — reset data
+            graph = existing
+            store.update(projection.id, graph_id=graph.graph_id,
+                         graph_endpoint=f"https://{graph.graph_id}.neptune-graph.amazonaws.com")
+            _update(projection.id, step="graph_reset", label="Resetting graph data", progress=25)
+            await sm.reset_graph(graph.name)
+        else:
+            # Brand new graph — no reset needed
+            graph = await sm.get_or_create_graph(
+                config={"provisionedMemory": projection.graph_memory_gb}
+            )
+            store.update(projection.id, graph_id=graph.graph_id,
+                         graph_endpoint=f"https://{graph.graph_id}.neptune-graph.amazonaws.com")
 
         # Step 2: Athena query + CSV import
         _update(projection.id, step="athena_import", label="Running Athena query and importing data", progress=45)
