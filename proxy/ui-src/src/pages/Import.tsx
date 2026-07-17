@@ -253,7 +253,7 @@ export function Import() {
                 }}
               >
                 <option value="">Select a projection...</option>
-                {projectionsList.map((s) => (
+                {(projectId ? projectionsList.filter(s => s.project_id === projectId) : projectionsList).map((s) => (
                   <option key={s.id} value={s.id}>{s.graph_name || s.id.slice(0, 8)}</option>
                 ))}
               </Select>
