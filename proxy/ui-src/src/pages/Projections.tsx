@@ -259,22 +259,22 @@ export function Projections() {
                       </button>
 
                       {/* Delete: X to discard draft, Trash2 to delete graph */}
-                      {s.graph_id ? (
-                        <button
-                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
-                          disabled={isTransient}
-                          title="Delete graph (archive projection)"
-                          onClick={(e) => { e.stopPropagation(); archiveProjection(s.id, s.graph_name || s.id.slice(0, 8)); }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      ) : (
+                      {s.status === "draft" ? (
                         <button
                           className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600"
                           title="Discard draft"
                           onClick={(e) => { e.stopPropagation(); purgeProjection(s.id, s.graph_name || s.id.slice(0, 8)); }}
                         >
                           <X className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <button
+                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                          disabled={!s.graph_id || isTransient}
+                          title="Delete graph (archive projection)"
+                          onClick={(e) => { e.stopPropagation(); archiveProjection(s.id, s.graph_name || s.id.slice(0, 8)); }}
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       )}
                     </div>
