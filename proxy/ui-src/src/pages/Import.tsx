@@ -437,8 +437,12 @@ export function Import() {
                   if (!currentId) return;
                   setLoading("run-query");
                   try {
-                    const res = await projection.runQuery(currentId);
+                    // Persist any edits to the query before running so the
+                    // backend executes the current text, not the saved copy.
+                    const id = await ensureSession();
+                    const res = await projection.runQuery(id);
                     setQueryResult(res);
+                    await loadSessions();
                   } catch (e: any) {
                     setQueryResult({ success: false, error: e.message });
                   } finally {
