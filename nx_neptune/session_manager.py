@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
 import logging
+import time
 from enum import Enum
 from typing import Callable, Optional, Union
 
@@ -351,6 +352,7 @@ class SessionManager:
         catalog=None,
         database=None,
         remove_buckets=True,
+        on_phase_complete: Optional[Callable[[str, float], None]] = None,
     ) -> str:
         """Import data from Athena table query results into a Neptune Analytics graph.
 
@@ -362,6 +364,10 @@ class SessionManager:
             catalog (str, optional): Athena catalog name. Defaults to None.
             database (str, optional): Athena database name. Defaults to None.
             remove_buckets (bool): After a successful import, delete the S3 bucket contents if True.
+            on_phase_complete (Callable[[str, float], None], optional): Invoked after each
+                internal phase with the phase name ("athena_export", "graph_import") and its
+                elapsed wall-clock time in seconds. Exceptions raised by the callback are
+                suppressed so timing never breaks the import.
 
         Returns:
             str: Graph ID of the target graph.
@@ -374,7 +380,16 @@ class SessionManager:
         if sql_parameters is None:
             sql_parameters = []
 
+        def _report(phase: str, elapsed: float) -> None:
+            if on_phase_complete is None:
+                return
+            try:
+                on_phase_complete(phase, elapsed)
+            except Exception:  # never let timing break the import
+                logger.warning(f"on_phase_complete callback failed for phase {phase}", exc_info=True)
+
         # export the datalake table to S3 as CSV projection data
+        _athena_start = time.monotonic()
         query_execution_ids = await instance_management.export_athena_table_to_s3(
             sql_queries,
             sql_parameters,
@@ -386,12 +401,14 @@ class SessionManager:
             iam_client=self._iam_client,
             sts_client=self._sts_client,
         )
+        _report("athena_export", time.monotonic() - _athena_start)
         if not query_execution_ids:
             raise Exception("Projections not created.")
 
         logger.info(f"Created projection data in {s3_location}")
 
         # import the S3 CSV files to Neptune
+        _import_start = time.monotonic()
         task_id = await instance_management.import_csv_from_s3(
             NeptuneGraph(
                 graph,
@@ -402,6 +419,7 @@ class SessionManager:
             reset_graph_ahead,
             skip_snapshot,
         )
+        _report("graph_import", time.monotonic() - _import_start)
 
         if remove_buckets:
             for query_execution_id in query_execution_ids:

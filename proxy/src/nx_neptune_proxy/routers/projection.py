@@ -163,11 +163,14 @@ def run_post_import_query(projection_id: str):
         raise HTTPException(status_code=409, detail="No graph associated with this projection")
     if not p.post_import_query:
         raise HTTPException(status_code=400, detail="No post-import query configured")
+    _t = time.monotonic()
     try:
         results = execute_opencypher_query(p.graph_id, p.post_import_query)
+        store.append_timing(projection_id, "post_import_query", time.monotonic() - _t)
         store.update(projection_id, post_import_error=None)
         return {"success": True, "row_count": len(results), "results": results}
     except Exception as e:
+        store.append_timing(projection_id, "post_import_query", time.monotonic() - _t)
         error_msg = str(e)
         store.update(projection_id, post_import_error=error_msg)
         return {"success": False, "error": error_msg}

@@ -335,3 +335,55 @@ async def test_run_query_failure(client):
     # Verify post_import_error was stored
     proj = store.get(pid)
     assert "Syntax error" in proj.post_import_error
+
+
+# --- Timings ---
+
+
+@pytest.mark.asyncio
+async def test_append_timing_accumulates_sequentially(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    pid = create_resp.json()["id"]
+
+    # Fresh projection starts with no timings
+    assert store.get(pid).timings == []
+
+    store.append_timing(pid, "graph_creation", 1.234)
+    store.append_timing(pid, "athena_export", 5.5)
+    store.append_timing(pid, "graph_import", 10.0)
+
+    proj = store.get(pid)
+    assert [t["phase"] for t in proj.timings] == ["graph_creation", "athena_export", "graph_import"]
+    assert proj.timings[0]["seconds"] == 1.234
+    assert all("at" in t for t in proj.timings)
+
+
+@pytest.mark.asyncio
+async def test_run_query_records_timing(client):
+    body = {**SAMPLE_BODY, "post_import_query": "MATCH (n) RETURN count(n)"}
+    create_resp = await client.post("/api/v0/projection", json=body)
+    pid = create_resp.json()["id"]
+    store.update(pid, graph_id="g-123")
+
+    with patch("nx_neptune_proxy.routers.projection.execute_opencypher_query", return_value=[{"count(n)": 1}]):
+        await client.post(f"/api/v0/projection/{pid}/run-query")
+        await client.post(f"/api/v0/projection/{pid}/run-query")
+
+    # Each re-run appends a new sequential post_import_query record
+    proj = store.get(pid)
+    phases = [t["phase"] for t in proj.timings]
+    assert phases == ["post_import_query", "post_import_query"]
+
+
+@pytest.mark.asyncio
+async def test_timings_exposed_in_response(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    pid = create_resp.json()["id"]
+    store.append_timing(pid, "graph_creation", 2.0)
+
+    resp = await client.get(f"/api/v0/projection/{pid}")
+    assert resp.status_code == 200
+    timings = resp.json()["timings"]
+    assert len(timings) == 1
+    assert timings[0]["phase"] == "graph_creation"
+    assert timings[0]["seconds"] == 2.0

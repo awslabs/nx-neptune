@@ -60,7 +60,14 @@ export interface Projection {
   error?: string;
   post_import_query?: string;
   post_import_error?: string;
+  timings?: TimingRecord[];
   created_at: string;
+}
+
+export interface TimingRecord {
+  phase: string;
+  seconds: number;
+  at: string;
 }
 
 export interface QueryResult {

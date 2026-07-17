@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+import time
 
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune_proxy.services.projection_store import GRAPH_PREFIX, Projection, store
@@ -22,19 +23,23 @@ async def run_pipeline(projection: Projection) -> None:
         # Step 1: Create graph
         _update(projection.id, step="graph_creation", label="Creating Neptune Analytics graph", progress=5)
         sm = SessionManager(session_name=graph_name)
+        _t = time.monotonic()
         graph = await sm.get_or_create_graph(
             config={"provisionedMemory": projection.graph_memory_gb}
         )
+        store.append_timing(projection.id, "graph_creation", time.monotonic() - _t)
         store.update(projection.id, graph_id=graph.graph_id,
                      graph_endpoint=f"https://{graph.graph_id}.neptune-graph.amazonaws.com")
         _update(projection.id, step="graph_creation", label="Graph available", progress=20)
 
         # Step 1b: Reset graph to ensure it's empty
         _update(projection.id, step="graph_reset", label="Resetting graph data", progress=25)
+        _t = time.monotonic()
         await sm.reset_graph(graph.name)
+        store.append_timing(projection.id, "graph_reset", time.monotonic() - _t)
         _update(projection.id, step="graph_reset", label="Graph ready for import", progress=40)
 
-        # Step 2: Athena query + CSV import
+        # Step 2: Athena query + CSV import (timed as two separate phases)
         _update(projection.id, step="athena_import", label="Running Athena query and importing data", progress=45)
         sql_queries = [q for q in [projection.node_query, projection.edge_query] if q]
         await sm.import_from_table(
@@ -44,17 +49,21 @@ async def run_pipeline(projection: Projection) -> None:
             catalog=projection.catalog,
             database=projection.database,
             remove_buckets=True,
+            on_phase_complete=lambda phase, seconds: store.append_timing(projection.id, phase, seconds),
         )
         _update(projection.id, step="athena_import", label="Import complete", progress=90)
 
         # Step 3: Run post-import query (optional)
         if projection.post_import_query:
             _update(projection.id, step="post_import_query", label="Running post-import query", progress=92)
+            _t = time.monotonic()
             try:
                 result = execute_opencypher_query(graph.graph_id, projection.post_import_query)
+                store.append_timing(projection.id, "post_import_query", time.monotonic() - _t)
                 store.update(projection.id, post_import_error=None)
                 logger.info(f"Post-import query returned {len(result)} results")
             except Exception as e:
+                store.append_timing(projection.id, "post_import_query", time.monotonic() - _t)
                 error_msg = str(e)
                 logger.warning(f"Post-import query failed (non-fatal): {error_msg}")
                 store.update(projection.id, post_import_error=error_msg)
