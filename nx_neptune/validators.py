@@ -31,7 +31,7 @@ from nx_neptune.clients.response_utils import (
     is_not_found,
     is_versioning_enabled,
 )
-from nx_neptune.instance_management import _execute_athena_query
+from nx_neptune.instance_management import _execute_athena_query, ProjectionType
 from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
 
 logger = logging.getLogger(__name__)
@@ -223,9 +223,23 @@ def wrap_with_limit(query: str, limit: int) -> str:
 
 
 def check_athena_query(
-    sql_query: str, database: str, output_location: str, catalog: str = "AwsDataCatalog"
+    sql_query: str,
+    database: str,
+    output_location: str,
+    catalog: str = "AwsDataCatalog",
+    projection_type: ProjectionType = ProjectionType.NODE,
 ) -> CheckResult:
-    """Validate SQL query by running with LIMIT 0 and checking required columns."""
+    """Validate SQL query by running with LIMIT 0 and checking required columns.
+
+    Required columns depend on ``projection_type``:
+    - NODE: must include ``~id``.
+    - EDGE: must include ``~from`` and ``~to`` (``~id`` is optional).
+    """
+    if projection_type == ProjectionType.EDGE:
+        required_columns = ["~from", "~to"]
+    else:
+        required_columns = ["~id"]
+
     queries = [q.strip() for q in sql_query.split(";") if q.strip()]
     all_columns: list[list[str]] = []
 
@@ -257,10 +271,13 @@ def check_athena_query(
             all_columns.append(get_query_result_columns(results))
 
         for i, columns in enumerate(all_columns):
-            if "~id" not in columns:
+            missing = [c for c in required_columns if c not in columns]
+            if missing:
+                missing_str = ", ".join(f"'{c}'" for c in missing)
                 return CheckResult.fail(
                     "athena_query",
-                    f"Query {i+1} missing required '~id' column. Got: {', '.join(columns)}",
+                    f"Query {i+1} missing required column(s): {missing_str}. "
+                    f"Got: {', '.join(columns)}",
                 )
 
         combined = [c for cols in all_columns for c in cols]

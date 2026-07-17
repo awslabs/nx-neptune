@@ -10,7 +10,11 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune.clients.response_utils import get_query_failure_reason, get_query_state
-from nx_neptune.instance_management import _execute_athena_query, get_athena_query_results
+from nx_neptune.instance_management import (
+    _execute_athena_query,
+    get_athena_query_results,
+    ProjectionType,
+)
 from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
 from nx_neptune.validators import check_athena_query, validate_resources, wrap_with_limit
 from nx_neptune_proxy.routers.schemas import (
@@ -94,7 +98,10 @@ def validate_query(projection_id: str):
     """Validate node and edge queries individually"""
     p = _get_projection_or_404(projection_id)
     checks = []
-    for label, query in [("node_query", p.node_query), ("edge_query", p.edge_query)]:
+    for label, query, projection_type in [
+        ("node_query", p.node_query, ProjectionType.NODE),
+        ("edge_query", p.edge_query, ProjectionType.EDGE),
+    ]:
         if not query:
             continue
         result = check_athena_query(
@@ -102,6 +109,7 @@ def validate_query(projection_id: str):
             catalog=p.catalog,
             database=p.database,
             output_location=p.s3_staging_bucket,
+            projection_type=projection_type,
         )
         checks.append({"check": label, "passed": result.passed, "message": result.message})
     valid = all(c["passed"] for c in checks) if checks else False

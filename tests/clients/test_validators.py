@@ -363,6 +363,59 @@ class TestCheckAthenaQuery:
         assert result.passed is False
         assert "~id" in result.message
 
+    @patch("nx_neptune.validators.wait_until_all_complete")
+    def test_edge_query_without_id_passes(self, mock_wait, mock_factory):
+        from nx_neptune.instance_management import ProjectionType
+
+        athena = mock_factory.athena.return_value
+        athena.start_query_execution.return_value = {"QueryExecutionId": "qid-1"}
+        mock_wait.return_value = None
+        athena.get_query_execution.return_value = {
+            "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
+        }
+        athena.get_query_results.return_value = {
+            "ResultSet": {
+                "ResultSetMetadata": {
+                    "ColumnInfo": [{"Name": "~from"}, {"Name": "~to"}, {"Name": "~label"}]
+                }
+            }
+        }
+        from nx_neptune.validators import check_athena_query
+
+        result = check_athena_query(
+            "SELECT * FROM t",
+            "mydb",
+            "s3://output/",
+            projection_type=ProjectionType.EDGE,
+        )
+        assert result.passed is True
+
+    @patch("nx_neptune.validators.wait_until_all_complete")
+    def test_edge_query_missing_from_to(self, mock_wait, mock_factory):
+        from nx_neptune.instance_management import ProjectionType
+
+        athena = mock_factory.athena.return_value
+        athena.start_query_execution.return_value = {"QueryExecutionId": "qid-1"}
+        mock_wait.return_value = None
+        athena.get_query_execution.return_value = {
+            "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
+        }
+        athena.get_query_results.return_value = {
+            "ResultSet": {
+                "ResultSetMetadata": {"ColumnInfo": [{"Name": "~from"}, {"Name": "name"}]}
+            }
+        }
+        from nx_neptune.validators import check_athena_query
+
+        result = check_athena_query(
+            "SELECT * FROM t",
+            "mydb",
+            "s3://output/",
+            projection_type=ProjectionType.EDGE,
+        )
+        assert result.passed is False
+        assert "~to" in result.message
+
 
 class TestCheckGraphNameAvailable:
     def test_name_available(self, mock_factory):

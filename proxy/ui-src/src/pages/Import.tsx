@@ -255,6 +255,8 @@ export function Import() {
                   if (s.edge_query) setEdgeQuery(s.edge_query);
                   if (s.s3_staging_bucket) setBucket(s.s3_staging_bucket);
                   if (s.graph_memory_gb) setGraphMemoryGb(s.graph_memory_gb);
+                  setPostImportQuery(s.post_import_query || "");
+                  if (s.post_import_query) setQueryExpanded(true);
                 }}
               >
                 <option value="">Select a projection...</option>
