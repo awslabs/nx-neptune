@@ -108,7 +108,7 @@ def validate_query(projection_id: str):
 
 
 @router.post("/{projection_id}/preview", summary="Preview first N rows", response_model=PreviewResponse)
-def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le=1000)):
+async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le=1000)):
     """Run the query with a LIMIT and return preview rows."""
     p = _get_projection_or_404(projection_id)
     client = ClientFactory().athena()
@@ -123,7 +123,7 @@ def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le=1000)
 
         exec_id = _execute_athena_query(client, limited, p.s3_staging_bucket, catalog=p.catalog, database=p.database)
 
-        asyncio.run(wait_until_all_complete([exec_id], TaskType.EXPORT_ATHENA_TABLE, client, polling_interval=5))
+        await wait_until_all_complete([exec_id], TaskType.EXPORT_ATHENA_TABLE, client, polling_interval=5)
 
         resp = client.get_query_execution(QueryExecutionId=exec_id)
         state = get_query_state(resp)
