@@ -1,9 +1,63 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, NavLink } from "react-router";
-import { projection, metadata, projectApi, graphActions, type Projection, type Project, type Inflight } from "../api";
+import { projection, metadata, projectApi, graphActions, type Projection, type Project, type Inflight, type TimingRecord } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
-import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown } from "lucide-react";
+import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown, Clock } from "lucide-react";
 import { useNavigate } from "react-router";
+
+const PHASE_LABELS: Record<string, string> = {
+  graph_creation: "Create graph",
+  graph_reset: "Reset graph",
+  athena_export: "Execute Athena statements",
+  graph_import: "Import graph data",
+  post_import_query: "Post-import query",
+};
+
+function formatDuration(seconds: number): string {
+  if (seconds < 1) return `${Math.round(seconds * 1000)} ms`;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 2 : 1)} s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${m}m ${s}s`;
+}
+
+function TimingsList({ timings }: { timings: TimingRecord[] }) {
+  const total = timings.reduce((sum, t) => sum + t.seconds, 0);
+  return (
+    <>
+      <ul className="space-y-1">
+        {timings.map((t, i) => (
+          <li key={i} className="flex items-baseline justify-between gap-3 text-xs">
+            <span className="text-gray-600">
+              {i + 1}. {PHASE_LABELS[t.phase] || t.phase}
+            </span>
+            <span className="whitespace-nowrap font-mono text-gray-800">{formatDuration(t.seconds)}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-gray-100 pt-1 text-xs font-medium">
+        <span className="text-gray-700">Total</span>
+        <span className="whitespace-nowrap font-mono text-gray-900">{formatDuration(total)}</span>
+      </div>
+    </>
+  );
+}
+
+function TimingsPopover({ timings, anchor }: { timings: TimingRecord[]; anchor: DOMRect }) {
+  // Rendered with position: fixed so an ancestor's overflow-hidden (the table
+  // Card) can't clip it. Anchored just below the status badge.
+  return (
+    <div
+      className="pointer-events-none fixed z-50 w-72 rounded-md border border-gray-200 bg-white p-3 text-left shadow-lg"
+      style={{ top: anchor.bottom + 4, left: anchor.left }}
+    >
+      <p className="mb-2 flex items-center gap-1 text-xs font-semibold text-gray-700">
+        <Clock className="h-3 w-3" /> Timing breakdown
+      </p>
+      <TimingsList timings={timings} />
+    </div>
+  );
+}
 
 export function Sessions() {
   const [searchParams] = useSearchParams();
@@ -16,6 +70,7 @@ export function Sessions() {
   const [actionStates, setActionStates] = useState<Record<string, { actions: string[]; inflight: Inflight | null }>>({});
   const [alerts, setAlerts] = useState<{ graphId: string; graphName: string; message: string }[]>([]);
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [timingHover, setTimingHover] = useState<{ id: string; anchor: DOMRect } | null>(null);
   const navigate = useNavigate();
   const filterProjectId = searchParams.get("project");
 
@@ -210,9 +265,21 @@ export function Sessions() {
                   <td className="px-4 py-3">{Math.round(s.progress)}%</td>
                   <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
                   <td className="px-4 py-3">
-                    {graphStatus ? (
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${graphStatusStyle(graphStatus)}`}>{graphStatus}</span>
-                    ) : <span className="text-gray-400">—</span>}
+                    <div className="inline-block">
+                      {graphStatus ? (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${graphStatusStyle(graphStatus)}`}
+                          onMouseEnter={(e) => {
+                            if (s.timings && s.timings.length > 0)
+                              setTimingHover({ id: s.id, anchor: e.currentTarget.getBoundingClientRect() });
+                          }}
+                          onMouseLeave={() => setTimingHover((h) => (h?.id === s.id ? null : h))}
+                        >
+                          {graphStatus}
+                          {s.timings && s.timings.length > 0 && <Clock className="h-3 w-3 opacity-60" />}
+                        </span>
+                      ) : <span className="text-gray-400">—</span>}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
@@ -369,6 +436,14 @@ export function Sessions() {
                 <div><span className="text-gray-500">Edges:</span> {summaries.get(selected.id)!.numEdges.toLocaleString()}</div>
               </>
             )}
+            {selected.timings && selected.timings.length > 0 && (
+              <div>
+                <span className="flex items-center gap-1 text-gray-500"><Clock className="h-3 w-3" /> Timing breakdown</span>
+                <div className="mt-1 rounded bg-gray-50 p-2">
+                  <TimingsList timings={selected.timings} />
+                </div>
+              </div>
+            )}
             {selected.error && (
               <div>
                 <span className="text-gray-500">Error:</span>
@@ -439,6 +514,14 @@ export function Sessions() {
           )}
         </Card>
       )}
+
+      {/* Hover popover for timing breakdown, rendered at root so the table's
+          overflow-hidden cannot clip it. */}
+      {timingHover && (() => {
+        const s = sessions.find((x) => x.id === timingHover.id);
+        if (!s?.timings || s.timings.length === 0) return null;
+        return <TimingsPopover timings={s.timings} anchor={timingHover.anchor} />;
+      })()}
     </div>
   );
 }

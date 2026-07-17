@@ -129,6 +129,7 @@ class ProjectionResponse(BaseModel):
     error: Optional[str] = None
     post_import_query: Optional[str] = None
     post_import_error: Optional[str] = None
+    timings: list[dict] = []
     created_at: datetime
 
 

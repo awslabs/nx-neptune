@@ -1,6 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -14,7 +15,7 @@ _FIELDS = [
     "id", "status", "catalog", "database", "sql_query", "node_query", "edge_query",
     "graph_name", "graph_memory_gb", "s3_staging_bucket", "graph_id", "graph_endpoint",
     "project_id", "step", "step_label", "progress", "error",
-    "post_import_query", "post_import_error", "created_at",
+    "post_import_query", "post_import_error", "timings", "created_at",
 ]
 
 
@@ -41,6 +42,7 @@ class Projection:
     error: Optional[str] = None
     post_import_query: Optional[str] = None
     post_import_error: Optional[str] = None
+    timings: list = field(default_factory=list)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -67,11 +69,19 @@ class ProjectionStore:
         conn = get_connection()
         conn.execute(
             f"INSERT INTO projections ({', '.join(_FIELDS)}) VALUES ({', '.join('?' for _ in _FIELDS)})",
-            [getattr(p, f) if f != "created_at" else p.created_at.isoformat() for f in _FIELDS],
+            [self._serialize_field(f, getattr(p, f)) for f in _FIELDS],
         )
         conn.commit()
         conn.close()
         return p
+
+    @staticmethod
+    def _serialize_field(field_name: str, value):
+        if field_name == "created_at":
+            return value.isoformat()
+        if field_name == "timings":
+            return json.dumps(value or [])
+        return value
 
     def get(self, projection_id: str) -> Optional[Projection]:
         conn = get_connection()
@@ -97,6 +107,8 @@ class ProjectionStore:
         invalid = set(kwargs.keys()) - self._ALLOWED_UPDATE_COLUMNS
         if invalid:
             raise ValueError(f"Invalid column(s): {invalid}")
+        if "timings" in kwargs:
+            kwargs["timings"] = json.dumps(kwargs["timings"] or [])
         sets = ", ".join(f"{k} = ?" for k in kwargs)
         vals = list(kwargs.values()) + [projection_id]
         conn = get_connection()
@@ -104,6 +116,19 @@ class ProjectionStore:
         conn.commit()
         conn.close()
         return self.get(projection_id)
+
+    def append_timing(self, projection_id: str, phase: str, seconds: float) -> Optional[Projection]:
+        """Append a single phase-timing record, preserving prior records (sequential log)."""
+        p = self.get(projection_id)
+        if not p:
+            return None
+        timings = list(p.timings)
+        timings.append({
+            "phase": phase,
+            "seconds": round(seconds, 3),
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+        return self.update(projection_id, timings=timings)
 
     def delete(self, projection_id: str) -> bool:
         conn = get_connection()
@@ -134,6 +159,7 @@ class ProjectionStore:
             error=row["error"],
             post_import_query=row["post_import_query"],
             post_import_error=row["post_import_error"],
+            timings=json.loads(row["timings"]) if row["timings"] else [],
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 
