@@ -270,7 +270,7 @@ export function Projections() {
                       ) : (
                         <button
                           className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
-                          disabled={!s.graph_id || isTransient}
+                          disabled={!s.graph_id || isTransient || s.status === "importing" || s.status === "executing"}
                           title="Delete graph (archive projection)"
                           onClick={(e) => { e.stopPropagation(); archiveProjection(s.id, s.graph_name || s.id.slice(0, 8)); }}
                         >
