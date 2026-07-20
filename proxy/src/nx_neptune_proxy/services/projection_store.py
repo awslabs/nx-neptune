@@ -8,8 +8,6 @@ from typing import Optional
 
 from .db import get_connection
 
-GRAPH_PREFIX = "nxp-"
-
 _FIELDS = [
     "id", "status", "catalog", "database", "sql_query", "node_query", "edge_query",
     "graph_name", "graph_memory_gb", "s3_staging_bucket", "graph_id", "graph_endpoint",
