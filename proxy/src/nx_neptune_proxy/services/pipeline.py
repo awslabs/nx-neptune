@@ -3,7 +3,8 @@
 
 import logging
 
-from nx_neptune_proxy.services.projection_store import GRAPH_PREFIX, Projection, store
+from nx_neptune_proxy.config import Settings
+from nx_neptune_proxy.services.projection_store import Projection, store
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,7 @@ async def run_pipeline(projection: Projection) -> None:
     """Execute the full pipeline: create graph → Athena → import."""
     from nx_neptune.session_manager import SessionManager
 
-    graph_name = f"{GRAPH_PREFIX}{projection.graph_name}"
+    graph_name = f"{Settings.from_env().graph_prefix}{projection.graph_name}"
     s3_location = projection.s3_staging_bucket.rstrip("/") + f"/{projection.id}/"
 
     try:
