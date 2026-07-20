@@ -97,7 +97,7 @@ export function Projections() {
   }
 
   async function purgeProjection(sessionId: string, name: string) {
-    if (!confirm(`Permanently delete projection job "${name}"? This cannot be undone.`)) return;
+    if (!confirm(`Delete projection "${name}"? This cannot be undone.`)) return;
     try {
       await projection.delete(sessionId);
       if (selected?.id === sessionId) setSelected(null);
@@ -259,15 +259,25 @@ export function Projections() {
                         <Play className="h-4 w-4" />
                       </button>
 
-                      {/* Archive (delete graph, keep projection) */}
-                      <button
-                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
-                        disabled={!s.graph_id || isTransient}
-                        title="Delete graph (archive projection)"
-                        onClick={(e) => { e.stopPropagation(); archiveProjection(s.id, s.graph_name || s.id.slice(0, 8)); }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      {/* Delete: X to discard draft, Trash2 to delete graph */}
+                      {s.status === "draft" ? (
+                        <button
+                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600"
+                          title="Discard draft"
+                          onClick={(e) => { e.stopPropagation(); purgeProjection(s.id, s.graph_name || s.id.slice(0, 8)); }}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <button
+                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                          disabled={!s.graph_id || isTransient || s.status === "importing" || s.status === "executing"}
+                          title="Delete graph (archive projection)"
+                          onClick={(e) => { e.stopPropagation(); archiveProjection(s.id, s.graph_name || s.id.slice(0, 8)); }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
