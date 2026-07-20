@@ -26,6 +26,7 @@ export function Graphs() {
   const [loading, setLoading] = useState(true);
   const [summaries, setSummaries] = useState<Record<string, Summary>>({});
   const [region, setRegion] = useState("");
+  const [graphPrefix, setGraphPrefix] = useState("nxp-");
   const [actionStates, setActionStates] = useState<Record<string, GraphActionState>>({});
   const [alerts, setAlerts] = useState<{ graphId: string; graphName: string; message: string }[]>([]);
 
@@ -64,7 +65,7 @@ export function Graphs() {
   }, [loadActions]);
 
   useEffect(() => {
-    metadata.config().then(c => setRegion(c.region));
+    metadata.config().then(c => { setRegion(c.region); setGraphPrefix(c.graph_prefix); });
     load({ withActions: true, withSummaries: true });
   }, [load]);
 
@@ -113,7 +114,7 @@ export function Graphs() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold">Neptune Analytics Graphs</h1>
-          <p className="text-sm text-gray-500">Showing graphs with <code className="rounded bg-gray-100 px-1">nxp-</code> prefix</p>
+          <p className="text-sm text-gray-500">Showing graphs with <code className="rounded bg-gray-100 px-1">{graphPrefix}</code> prefix</p>
         </div>
         <RefreshButton onClick={() => load({ withActions: true, withSummaries: true })} />
       </div>

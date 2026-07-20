@@ -21,7 +21,8 @@ router = APIRouter(prefix="/api/v0/metadata", tags=["metadata"])
 @router.get("/config", summary="Get server configuration")
 def get_config():
     """Get server-side configuration"""
-    return {"region": Settings.from_env().region or ""}
+    settings = Settings.from_env()
+    return {"region": settings.region or "", "graph_prefix": settings.graph_prefix}
 
 
 @router.get("/athena/catalogs", summary="List Athena data catalogs", response_model=CatalogsResponse)
@@ -75,15 +76,13 @@ def list_s3_buckets():
     return {"buckets": buckets}
 
 
-GRAPH_PREFIX = "nxp-"
-
-
 @router.get("/neptune/graph-analytics", summary="List Neptune Analytics graphs", response_model=NeptuneAnalyticsGraphsResponse)
 def list_neptune_graphs():
     """List Neptune Analytics graphs managed by nx-neptune"""
     client = ClientFactory().neptune()
     items = paginate_aws(client.list_graphs, "graphs")
-    filtered = [g for g in items if g.get("name", "").startswith(GRAPH_PREFIX)]
+    prefix = Settings.from_env().graph_prefix
+    filtered = [g for g in items if g.get("name", "").startswith(prefix)]
     return {"graphs": [{"id": g["id"], "name": g["name"], "status": g["status"]} for g in filtered]}
 
 
