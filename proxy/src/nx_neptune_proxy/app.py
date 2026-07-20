@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
-from nx_neptune_proxy.routers.preview import router as preview_router
+
 from nx_neptune_proxy.routers.projection import router as projection_router
 from nx_neptune_proxy.routers.project import router as project_router
 from nx_neptune_proxy.services.db import init_db
@@ -116,7 +116,6 @@ def info():
 
 app.include_router(metadata_router)
 app.include_router(projection_router)
-app.include_router(preview_router)
 app.include_router(project_router)
 app.include_router(graph_router)
 
