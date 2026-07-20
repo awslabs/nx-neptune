@@ -128,7 +128,8 @@ export function Projections() {
     switch (status) {
       case "complete": return "bg-green-100 text-green-700";
       case "failed": return "bg-red-100 text-red-700";
-      case "executing": case "deleting": return "bg-blue-100 text-blue-700";
+      case "executing": case "importing": return "bg-blue-100 text-blue-700";
+      case "deleting": return "bg-red-100 text-red-700";
       case "archived": return "bg-gray-100 text-gray-600";
       default: return "bg-gray-100 text-gray-700";
     }
@@ -211,7 +212,7 @@ export function Projections() {
                   <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
                   <td className="px-4 py-3">
                     {graphStatus ? (
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${graphStatusStyle(graphStatus)}`}>{graphStatus}</span>
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${graphStatusStyle(graphStatus)}`}>{graphStatus.toLowerCase()}</span>
                     ) : <span className="text-gray-400">—</span>}
                   </td>
                   <td className="px-4 py-3">
@@ -359,7 +360,7 @@ export function Projections() {
             {selected.graph_id && graphStatuses.get(selected.graph_id) && (
               <div><span className="text-gray-500">Graph Status:</span>{" "}
                 <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${graphStatusStyle(graphStatuses.get(selected.graph_id)!)}`}>
-                  {graphStatuses.get(selected.graph_id)}
+                  {graphStatuses.get(selected.graph_id)!.toLowerCase()}
                 </span>
               </div>
             )}
