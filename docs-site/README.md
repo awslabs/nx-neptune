@@ -19,8 +19,7 @@ Documentation pages live in `src/content/docs/`. The sidebar is configured in
 
 The blog is powered by the [`starlight-blog`](https://starlight-blog-docs.vercel.app/)
 plugin, registered in `astro.config.mjs`. Blog posts live in
-`src/content/docs/blog/` and are published at `/blog`, with an RSS feed at
-`/blog/rss.xml`.
+`src/content/docs/blog/` and are published at `/blog`. 
 
 ### Adding a new blog post
 
