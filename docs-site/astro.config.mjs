@@ -1,5 +1,6 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import starlightBlog from 'starlight-blog';
 
 export default defineConfig({
   site: 'https://awslabs.github.io',
@@ -10,6 +11,20 @@ export default defineConfig({
       description:
         'Graph analytics for your data lake — powered by NetworkX and Amazon Neptune Analytics.',
       customCss: ['./src/styles/custom.css'],
+      plugins: [
+        starlightBlog({
+          title: 'Blog',
+          authors: {
+            nxNeptuneTeam: {
+              name: 'nx-neptune team',
+              title: 'Maintainers',
+              url: 'https://github.com/awslabs/nx-neptune',
+            },
+            andrewCarbonetto: { name: 'Andrew Carbonetto', url: 'https://github.com/acarbonetto' },
+            andyKwok: { name: 'Andy Kwok (Hiu Fung)', url: 'https://github.com/andy-k-improving' },
+          },
+        }),
+      ],
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/awslabs/nx-neptune' },
       ],
