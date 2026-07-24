@@ -118,7 +118,7 @@ pytokens==0.4.1
     # via black
 pyyaml==6.0.3
     # via pre-commit
-s3transfer==0.19.1
+s3transfer==0.19.2
     # via boto3
 scipy==1.17.1
     # via nx-neptune (pyproject.toml)
