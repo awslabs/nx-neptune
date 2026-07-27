@@ -166,7 +166,7 @@ async def test_perform_start_accepted(mock_cf, mock_exec, client):
 @patch("nx_neptune_proxy.routers.graph.ClientFactory")
 async def test_perform_delete_accepted(mock_cf, mock_exec, client):
     mock_neptune = MagicMock()
-    mock_neptune.get_graph.return_value = {"status": "AVAILABLE"}
+    mock_neptune.get_graph.return_value = {"status": "AVAILABLE", "name": "nxp-test-graph"}
     mock_cf.return_value.neptune.return_value = mock_neptune
 
     resp = await client.post("/api/v0/graphs/g-123/delete")

@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-
+from nx_neptune_proxy.config import Settings
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune_proxy.services.graph_state_machine import (
     InvalidTransitionError,
@@ -52,6 +52,18 @@ def perform_action(graph_id: str, action: str, background_tasks: BackgroundTasks
     if not current_status:
         logger.warning(f"Graph {graph_id} returned empty status: {resp}")
         raise HTTPException(status_code=502, detail="Graph returned no status")
+
+    # Prefix guard: only allow destructive actions on graphs managed by this tool
+    if action == "delete":
+
+
+        prefix = Settings.from_env().graph_prefix
+        graph_name = resp.get("name", "")
+        if not graph_name.startswith(prefix):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Graph '{graph_name}' is not managed by this tool (missing '{prefix}' prefix)",
+            )
 
     try:
         # Validate early (execute_transition also validates, but fail fast for the user)
