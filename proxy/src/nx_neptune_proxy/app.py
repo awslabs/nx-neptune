@@ -46,8 +46,29 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
+
+
+# --- CSRF protection middleware ---
+
+_CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+@app.middleware("http")
+async def csrf_protection(request: Request, call_next):
+    """Require X-Requested-With header on state-changing requests.
+
+    This forces browsers to send a CORS preflight, which blocks cross-origin
+    requests from malicious tabs that don't pass the Origin check.
+    """
+    if request.method not in _CSRF_SAFE_METHODS:
+        if not request.headers.get("x-requested-with"):
+            return JSONResponse(
+                status_code=403,
+                content={"error": "csrf_rejected", "message": "Missing required X-Requested-With header"},
+            )
+    return await call_next(request)
 
 
 # --- Request logging middleware ---
