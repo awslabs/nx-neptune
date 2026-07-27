@@ -143,12 +143,18 @@ if UI_DIR.exists():
         if path.startswith("api/"):
             raise HTTPException(status_code=404)
 
+        # Control 1: Input sanitization — reject any path containing traversal
+        if ".." in path:
+            raise HTTPException(status_code=403)
+
+        # Control 2: Output validation — verify resolved path is inside ui_root
         ui_root = UI_DIR.resolve()
         try:
             normalized_relative = Path("/", path).resolve().relative_to("/")
         except ValueError:
             raise HTTPException(status_code=403)
 
+        # Stops symlinks that resolve outside ui_root
         file_path = (ui_root / normalized_relative).resolve()
         try:
             file_path.relative_to(ui_root)
