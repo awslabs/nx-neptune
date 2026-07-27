@@ -11,7 +11,7 @@ dev:              ## Run with auto-reload for development.
 install:          ## Install proxy in editable mode with test deps.
 	pip install -e ".[test]"
 
-test:             ## Run tests.
+test: ui           ## Run tests (builds frontend first).
 	pytest tests/ -v
 
 build:            ## Build container image.
