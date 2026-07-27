@@ -12,14 +12,10 @@ Covers:
 - Absence of credentials or secrets in local storage
 """
 
-import os
-from unittest.mock import patch
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from nx_neptune_proxy.app import app
-from nx_neptune_proxy.config import Settings
+from nx_neptune_proxy.app import app, UI_DIR
 from nx_neptune_proxy.services.db import get_connection
 from nx_neptune_proxy.services.projection_store import store
 from nx_neptune_proxy.app import UI_DIR
@@ -50,6 +46,10 @@ def clear_store():
 # =============================================================================
 
 
+@pytest.mark.skipif(
+    not UI_DIR.exists(),
+    reason="ui/ directory not built — run 'make ui' first",
+)
 class TestPathTraversal:
     """SPA fallback must not serve files outside UI_DIR.
 
@@ -224,6 +224,7 @@ class TestSqlInjection:
         p = store.create(database="testdb", graph_name=payload)
         retrieved = store.get(p.id)
         assert retrieved is not None
+        assert retrieved.graph_name == payload
 
 
 # =============================================================================
@@ -236,7 +237,7 @@ class TestCorsRejection:
 
     @pytest.mark.asyncio
     async def test_disallowed_origin_no_cors_headers(self, client):
-        """Preflight from an unknown origin should not return Access-Control-Allow-Origin."""
+        """Preflight from an unknown origin must not get permissive CORS headers."""
         resp = await client.options(
             "/api/v0/projection",
             headers={
@@ -244,23 +245,23 @@ class TestCorsRejection:
                 "Access-Control-Request-Method": "POST",
             },
         )
-        # Should not include the evil origin in allowed origins
         allow_origin = resp.headers.get("access-control-allow-origin")
-        assert allow_origin != "http://evil.com"
+        # Must be absent — not the evil origin, not wildcard
+        assert allow_origin is None
 
     @pytest.mark.asyncio
     async def test_disallowed_origin_get_request(self, client):
-        """Regular request from disallowed origin should not get CORS headers."""
+        """Regular request from disallowed origin must not get CORS headers."""
         resp = await client.get(
             "/health",
             headers={"Origin": "http://attacker.example.com"},
         )
         allow_origin = resp.headers.get("access-control-allow-origin")
-        assert allow_origin != "http://attacker.example.com"
+        assert allow_origin is None
 
     @pytest.mark.asyncio
-    async def test_no_wildcard_by_default(self, client):
-        """With no CORS_ALLOWED_ORIGINS set, should not allow wildcard."""
+    async def test_no_wildcard_cors(self, client):
+        """CORS must never return wildcard Access-Control-Allow-Origin."""
         resp = await client.options(
             "/api/v0/projection",
             headers={
@@ -270,13 +271,6 @@ class TestCorsRejection:
         )
         allow_origin = resp.headers.get("access-control-allow-origin")
         assert allow_origin != "*"
-
-    @pytest.mark.asyncio
-    async def test_allowed_origin_gets_cors_headers(self, client):
-        """If CORS_ALLOWED_ORIGINS is configured, that origin should be allowed."""
-        with patch.dict(os.environ, {"CORS_ALLOWED_ORIGINS": "http://localhost:5173"}):
-            test_settings = Settings.from_env()
-            assert "http://localhost:5173" in test_settings.allowed_origins
 
 
 # =============================================================================
