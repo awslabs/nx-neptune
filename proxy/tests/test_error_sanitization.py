@@ -23,17 +23,23 @@ class TestErrorSanitization:
         assert "MyRole" not in result
         assert "[ARN]" in result
 
-    def test_account_id_stripped(self):
-        msg = "Resource in account 123456789012 not found"
+    def test_account_id_in_arn_stripped(self):
+        msg = "Resource arn:aws:neptune-graph:us-east-1:123456789012:graph/g-123 not found"
         result = _sanitize_error_message(msg)
         assert "123456789012" not in result
-        assert "[ACCOUNT_ID]" in result
+        assert "arn:aws" not in result
 
     def test_access_key_stripped(self):
         msg = "The security token for AKIA1234567890ABCDEF is invalid"
         result = _sanitize_error_message(msg)
         assert "AKIA1234567890ABCDEF" not in result
-        assert "[ACCESS_KEY]" in result
+        assert "[AWS_ID]" in result
+
+    def test_session_key_stripped(self):
+        msg = "Token for ASIA1234567890ABCDEF expired"
+        result = _sanitize_error_message(msg)
+        assert "ASIA1234567890ABCDEF" not in result
+        assert "[AWS_ID]" in result
 
     def test_multiple_arns_stripped(self):
         msg = "arn:aws:iam::111111111111:role/A cannot assume arn:aws:iam::222222222222:role/B"
