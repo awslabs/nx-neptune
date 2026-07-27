@@ -64,7 +64,11 @@ async def run_pipeline(projection: Projection) -> None:
             error_msg = f"{err.get('Code', 'Error')}: {err.get('Message', str(e))}"
         else:
             error_msg = str(e)
-        store.update(projection.id, status="failed", error=error_msg)
+
+        # Sanitize before persisting — strip ARNs, account IDs
+        from nx_neptune_proxy.app import _sanitize_error_message
+
+        store.update(projection.id, status="failed", error=_sanitize_error_message(error_msg))
 
 
 def _update(projection_id: str, step: str, label: str, progress: float) -> None:

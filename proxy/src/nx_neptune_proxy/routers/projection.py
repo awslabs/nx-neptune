@@ -184,7 +184,9 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
             client.delete_graph(graphIdentifier=p.graph_id, skipSnapshot=True)
         except ClientError as e:
             if e.response["Error"]["Code"] != "ResourceNotFoundException":
-                store.update(projection_id, status="failed", error=str(e))
+                from nx_neptune_proxy.app import _sanitize_error_message
+
+                store.update(projection_id, status="failed", error=_sanitize_error_message(str(e)))
                 return
         # Poll until gone
         for _ in range(60):

@@ -98,6 +98,22 @@ _AWS_STATUS_MAP = {
     "ThrottlingException": 503,
 }
 
+# Patterns that leak account info — strip from user-facing messages
+import re
+
+_SENSITIVE_PATTERNS = [
+    (re.compile(r"arn:aws[^:\s]*:[^:\s]*:[^:\s]*:\d{12}:[^\s,\"']+"), "[ARN]"),
+    (re.compile(r"\b\d{12}\b"), "[ACCOUNT_ID]"),
+    (re.compile(r"AKIA[0-9A-Z]{16}"), "[ACCESS_KEY]"),
+]
+
+
+def _sanitize_error_message(message: str) -> str:
+    """Remove AWS account IDs, ARNs, and credentials from error messages."""
+    for pattern, replacement in _SENSITIVE_PATTERNS:
+        message = pattern.sub(replacement, message)
+    return message
+
 
 @app.exception_handler(ClientError)
 async def aws_exception_handler(request: Request, exc: ClientError):
@@ -107,7 +123,7 @@ async def aws_exception_handler(request: Request, exc: ClientError):
     logger.warning(f"AWS {code} on {request.method} {request.url.path}: {message}")
     return JSONResponse(
         status_code=status,
-        content={"error": code, "message": message},
+        content={"error": code, "message": _sanitize_error_message(message)},
     )
 
 
