@@ -36,6 +36,7 @@ _info = {
         "fast_label_propagation_communities",
         "asyn_lpa_communities",
         "louvain_communities",
+        "weakly_connected_components",
     },
     "additional_docs": {
         "bfs_edges": f"For additional details, see {algorithms_url}#bfs_edges",
@@ -62,6 +63,7 @@ strategy. Variant-specific control over the update method (e.g., synchronous vs.
         "louvain_communities": f"""- Please note that the `resolution` and `seed` parameters are not supported at the \
 moment.
 - For additional parameters, see {algorithms_url}#louvain_communities""",
+        "weakly_connected_components": f"For additional details, see {algorithms_url}#weakly_connected_components",
     },
     "additional_parameters": {},
 }

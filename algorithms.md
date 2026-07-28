@@ -450,3 +450,31 @@ Parameters:
 Returns:
 - Dictionary of community items to members, in the form of list of set.
 
+### weakly_connected_components
+
+Find the weakly connected components in a directed graph. A weakly-connected component is a group of nodes in which every node is reachable from every other node when edge directions are ignored.  
+Link: https://docs.aws.amazon.com/neptune-analytics/latest/userguide/wcc.html  
+
+Source: [nx_neptune/algorithms/communities/wcc.py](nx_neptune/algorithms/communities/wcc.py)
+
+```python
+@configure_if_nx_active()
+def weakly_connected_components(
+    neptune_graph: NeptuneGraph,
+    edge_labels: Optional[List] = None,
+    vertex_label: Optional[str] = None,
+    concurrency: Optional[int] = None,
+    write_property: Optional[str] = None,
+):
+```
+
+Parameters:
+- `neptune_graph : NeptuneGraph` - A NeptuneGraph instance
+- `edge_labels : list, optional` - To filter on one or more edge labels, provide a list of the ones to filter on. If no edgeLabels field is provided then all edge labels are processed during traversal.
+- `vertex_label : str, optional` - A vertex label for vertex filtering. If provided, only nodes matching the label are considered.
+- `concurrency : int, optional` - Controls the number of concurrent threads used to run the algorithm. If set to 0, uses all available threads. If set to 1, uses a single thread.
+- `write_property : str, optional` - Specifies the name of the node property that will store the computed component ID values. When specified, runs the mutate variant of the algorithm. For details, see: https://docs.aws.amazon.com/neptune-analytics/latest/userguide/wcc-mutate.html
+
+Returns:
+- A list of sets of nodes, one set per weakly connected component. Returns an empty dictionary when `write_property` is specified.
+

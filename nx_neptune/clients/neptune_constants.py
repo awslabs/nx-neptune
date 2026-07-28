@@ -62,6 +62,7 @@ PARAM_ITERATION_TOLERANCE = "iterationTolerance"
 # Internal constants for json results
 RESPONSE_RANK = "rank"
 RESPONSE_DEGREE = "degree"
+RESPONSE_COMPONENT = "component"
 RESPONSE_ID = "n.id"
 RESPONSE_SUCCESS = "success"
 

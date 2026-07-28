@@ -115,6 +115,10 @@ Add algorithm to `nx_neptune/algorithms/{category}/__init__.py`:
 - Import the new algorithm function
 - Add to `__all__` list for proper module exports
 
+Also add to `nx_neptune/algorithms/__init__.py` (top-level algorithms package):
+- Import the new algorithm function so it is accessible as `nx_neptune.algorithms.{function_name}`
+- This is required for the backend dispatch in `interface.py` to resolve the function
+
 #### Step 6: Create Comprehensive Tests
 Create `tests/algorithms/{category}/test_{algorithm_name}.py`:
 - Test class with descriptive name
@@ -134,18 +138,35 @@ Update `algorithms.md` with algorithm documentation:
 - Return value format and structure
 - Usage examples
 
+Also update the docs site and create a notebook demo. **Before writing these, read [docs/algorithm-docs-guide.md](docs/algorithm-docs-guide.md)** for required templates, cell structures, and formatting rules. The guide covers:
+- `docs-site/src/content/docs/networkx-backend/algorithms.mdx` — MDX page with parameter tables
+- `notebooks/{algorithm_name}_demo.ipynb` — Jupyter demo with fixed cell structure
+- `nx_plugin/__init__.py` — plugin registration (functions set + additional_docs)
+
 #### Step 8: Integration Testing
-- Test with actual Neptune Analytics instance using environment variables
-- Verify NetworkX compatibility and result format consistency
-- Performance benchmarking against NetworkX native implementation
-- Edge case handling (empty graphs, disconnected components)
-- Parameter validation and error scenarios
+Create `integ_test/graph_operations/test_algo_{algorithm_name}.py`:
+- Import from `utils.test_utils`: `BACKEND`, `neptune_graph`, `air_route_graph`
+- Use `air_route_graph` fixture for real-graph tests
+- Test class named `Test{AlgorithmName}` with methods covering:
+  - Basic execution (assert correct return type, non-empty, valid range)
+  - Variant with filtering (vertex_label, edge_labels)
+  - Mutation (write_property) — verify property written to nodes via `neptune_graph.get_all_nodes()`
+  - Empty graph (assert empty result)
+  - Single node graph (edge case)
+- All algorithm calls use `backend=BACKEND` (supports toggling NX-native vs Neptune)
+- Run with: `NETWORKX_GRAPH_ID=g-xxxxx make integ-test`
+- These tests require a live Neptune Analytics instance — they are NOT run in CI by default
 
 #### Step 9: Update Package Exports
 Add to main `nx_neptune/__init__.py`:
 - Import the algorithm from its module
 - Add to main package `__all__` list
 - Ensure proper backend registration
+
+**Critical:** Also add the algorithm name to the `ALGORITHMS` list in `nx_neptune/interface.py`:
+- This list drives the `BackendInterface` class decorator (`assign_algorithms`)
+- Without this, NetworkX will raise `NotImplementedError: '{name}' is not implemented by 'neptune' backend`
+- The name in the list must match the function name exactly as it appears in `nx_neptune.algorithms`
 
 ### Step 10: Update exported documentation
 Update `nx_plugin/__init__.py` with new or updated information on the algorithm.
@@ -179,7 +200,13 @@ Add new AWS service connections and API integrations to `clients/` directory. Fo
 Add shared utility functions and common helpers to `utils/` directory. For example, when creating graph data transformation utilities, parameter validation helpers, or common error handling functions that are used across multiple algorithms, place them in this module.
 
 ### Creating Documentation and Examples
-For new user-facing features, create or update practical examples in `/examples` directory and corresponding interactive demonstrations in `/notebooks` to showcase functionality and usage patterns.
+
+For new algorithms, documentation and examples must be created in three locations:
+1. `algorithms.md` (root) — detailed reference (covered in Step 7)
+2. `docs-site/src/content/docs/networkx-backend/algorithms.mdx` — Starlight docs site
+3. `notebooks/{algorithm_name}_demo.ipynb` — interactive Jupyter demo
+
+See Step 7 above and [docs/algorithm-docs-guide.md](docs/algorithm-docs-guide.md) for templates and formatting rules.
 
 ### Updating Agent Context
 Update `AGENTS.md` when making architectural changes, discovering new development patterns, or implementing reusable solutions.
