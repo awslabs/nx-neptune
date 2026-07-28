@@ -37,6 +37,7 @@ _info = {
         "asyn_lpa_communities",
         "louvain_communities",
         "weakly_connected_components",
+        "jaccard_coefficient",
     },
     "additional_docs": {
         "bfs_edges": f"For additional details, see {algorithms_url}#bfs_edges",
@@ -64,6 +65,11 @@ strategy. Variant-specific control over the update method (e.g., synchronous vs.
 moment.
 - For additional parameters, see {algorithms_url}#louvain_communities""",
         "weakly_connected_components": f"For additional details, see {algorithms_url}#weakly_connected_components",
+        "jaccard_coefficient": f"""- The `ebunch` parameter must be provided as an iterable of node pairs (u, v).
+- When `ebunch=None`, non-edges are computed locally from the NetworkX graph before being sent to Neptune. \
+For large graphs, prefer passing an explicit `ebunch`.
+- Neptune Analytics does not support a mutate variant for Jaccard similarity.
+- For additional parameters, see {algorithms_url}#jaccard_coefficient""",
     },
     "additional_parameters": {},
 }
