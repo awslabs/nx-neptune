@@ -140,11 +140,18 @@ Also update the docs site and create a notebook demo. **Before writing these, re
 - `nx_plugin/__init__.py` — plugin registration (functions set + additional_docs)
 
 #### Step 8: Integration Testing
-- Test with actual Neptune Analytics instance using environment variables
-- Verify NetworkX compatibility and result format consistency
-- Performance benchmarking against NetworkX native implementation
-- Edge case handling (empty graphs, disconnected components)
-- Parameter validation and error scenarios
+Create `integ_test/graph_operations/test_algo_{algorithm_name}.py`:
+- Import from `utils.test_utils`: `BACKEND`, `neptune_graph`, `air_route_graph`
+- Use `air_route_graph` fixture for real-graph tests
+- Test class named `Test{AlgorithmName}` with methods covering:
+  - Basic execution (assert correct return type, non-empty, valid range)
+  - Variant with filtering (vertex_label, edge_labels)
+  - Mutation (write_property) — verify property written to nodes via `neptune_graph.get_all_nodes()`
+  - Empty graph (assert empty result)
+  - Single node graph (edge case)
+- All algorithm calls use `backend=BACKEND` (supports toggling NX-native vs Neptune)
+- Run with: `NETWORKX_GRAPH_ID=g-xxxxx make integ-test`
+- These tests require a live Neptune Analytics instance — they are NOT run in CI by default
 
 #### Step 9: Update Package Exports
 Add to main `nx_neptune/__init__.py`:
