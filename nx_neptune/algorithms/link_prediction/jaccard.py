@@ -77,24 +77,19 @@ def jaccard_coefficient(
         # When ebunch is None, compute for all non-existent edges in the graph
         ebunch = _generate_non_edges(neptune_graph)
 
-    # Collect pairs into lists for batched execution
-    pairs = list(ebunch)
-    if not pairs:
-        return iter([])
-
-    first_nodes = [str(u) for u, v in pairs]
-    second_nodes = [str(v) for u, v in pairs]
-
-    query_str, para_map = jaccard_coefficient_query(first_nodes, second_nodes, parameters)
-    json_result = neptune_graph.execute_call(query_str, para_map)
-
-    # Map results back to original pairs
+    # Process one pair at a time — Neptune requires Node references from MATCH,
+    # and using MATCH ... IN with multiple nodes produces a cross join, not
+    # positional pairing. Each pair must be a separate query.
     results = []
-    for i, (u, v) in enumerate(pairs):
-        if json_result and i < len(json_result):
-            score = json_result[i].get("score", 0.0)
+    for u, v in ebunch:
+        query_str, para_map = jaccard_coefficient_query(str(u), str(v), parameters)
+        json_result = neptune_graph.execute_call(query_str, para_map)
+
+        if json_result and len(json_result) > 0:
+            score = json_result[0].get("score", 0.0)
         else:
             score = 0.0
+
         results.append((u, v, score))
 
     return iter(results)

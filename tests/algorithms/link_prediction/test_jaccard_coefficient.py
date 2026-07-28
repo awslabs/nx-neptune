@@ -47,7 +47,7 @@ class TestJaccardCoefficient:
             result = jaccard_coefficient(mock_graph, ebunch=[("A", "B")])
 
             # Verify the correct query was built and executed
-            expected_query, param_values = jaccard_coefficient_query(["A"], ["B"])
+            expected_query, param_values = jaccard_coefficient_query("A", "B")
             mock_graph.execute_call.assert_called_once_with(
                 expected_query, param_values
             )
@@ -59,12 +59,8 @@ class TestJaccardCoefficient:
             assert result_list[0] == ("A", "B", 0.6)
 
     def test_jaccard_coefficient_multiple_pairs(self, mock_graph):
-        """Test jaccard coefficient with multiple node pairs (batched)."""
-        mock_graph.execute_call.return_value = [
-            {"score": 0.6},
-            {"score": 0.4},
-            {"score": 0.8},
-        ]
+        """Test jaccard coefficient with multiple node pairs (one query per pair)."""
+        mock_graph.execute_call.return_value = [{"score": 0.6}]
 
         with patch.dict(os.environ, {"NX_ALGORITHM_TEST": "test_case"}):
             result = jaccard_coefficient(
@@ -73,12 +69,12 @@ class TestJaccardCoefficient:
 
             result_list = list(result)
             assert len(result_list) == 3
-            # Batched: only one call to Neptune
-            mock_graph.execute_call.assert_called_once()
+            # One query per pair
+            assert mock_graph.execute_call.call_count == 3
 
-            assert result_list[0] == ("A", "B", 0.6)
-            assert result_list[1] == ("C", "D", 0.4)
-            assert result_list[2] == ("E", "F", 0.8)
+            # All results should have score 0.6 (mocked)
+            for u, v, p in result_list:
+                assert p == 0.6
 
     def test_jaccard_coefficient_with_edge_labels(self, mock_graph):
         """Test jaccard coefficient with edge label filtering."""
@@ -90,7 +86,7 @@ class TestJaccardCoefficient:
             )
 
             expected_query, param_values = jaccard_coefficient_query(
-                ["A"], ["B"], {PARAM_EDGE_LABELS: ["route", "knows"]}
+                "A", "B", {PARAM_EDGE_LABELS: ["route", "knows"]}
             )
             mock_graph.execute_call.assert_called_once_with(
                 expected_query, param_values
@@ -110,7 +106,7 @@ class TestJaccardCoefficient:
             )
 
             expected_query, param_values = jaccard_coefficient_query(
-                ["A"], ["B"], {PARAM_VERTEX_LABEL: "airport"}
+                "A", "B", {PARAM_VERTEX_LABEL: "airport"}
             )
             mock_graph.execute_call.assert_called_once_with(
                 expected_query, param_values
@@ -130,7 +126,7 @@ class TestJaccardCoefficient:
             )
 
             expected_query, param_values = jaccard_coefficient_query(
-                ["A"], ["B"], {PARAM_TRAVERSAL_DIRECTION: "both"}
+                "A", "B", {PARAM_TRAVERSAL_DIRECTION: "both"}
             )
             mock_graph.execute_call.assert_called_once_with(
                 expected_query, param_values
@@ -152,8 +148,8 @@ class TestJaccardCoefficient:
             )
 
             expected_query, param_values = jaccard_coefficient_query(
-                ["A"],
-                ["B"],
+                "A",
+                "B",
                 {
                     PARAM_EDGE_LABELS: ["route"],
                     PARAM_VERTEX_LABEL: "airport",

@@ -1115,28 +1115,31 @@ def _get_nodes_in_list(source_nodes: list[str]):
 
 
 def jaccard_coefficient_query(
-    first_nodes: List[str],
-    second_nodes: List[str],
+    first_node: str,
+    second_node: str,
     parameters: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, Dict[str, Any]]:
     """
-    Create a query to execute the Jaccard Similarity algorithm on Neptune Analytics.
+    Create a query to execute the Jaccard Similarity algorithm on Neptune Analytics
+    for a single pair of nodes.
 
-    :param first_nodes: List of IDs for the first nodes
-    :param second_nodes: List of IDs for the second nodes (must be same length as first_nodes)
+    Neptune requires Node references from MATCH clauses, and using MATCH ... IN
+    with multiple nodes produces a cross join. Each pair must be queried separately.
+
+    :param first_node: The ID of the first node
+    :param second_node: The ID of the second node
     :param parameters: Optional dictionary of algorithm parameters (edgeLabels, vertexLabel, traversalDirection)
     :return: Tuple of (OpenCypher query string, parameter map) for Jaccard Similarity algorithm execution
 
     Example:
-        >>> jaccard_coefficient_query(["Alice", "Charlie"], ["Bob", "Dave"])
-        ("MATCH (n1) WHERE id(n1) IN $0 MATCH (n2) WHERE id(n2) IN $1
-        CALL neptune.algo.jaccardSimilarity(collect(n1), collect(n2)) YIELD score RETURN score",
-        {'0': ['Alice', 'Charlie'], '1': ['Bob', 'Dave']})
+        >>> jaccard_coefficient_query("Alice", "Bob")
+        ('MATCH (n1) WHERE id(n1) = $0 MATCH (n2) WHERE id(n2) = $1
+        CALL neptune.algo.jaccardSimilarity(n1, n2) YIELD score RETURN score', {'0': 'Alice', '1': 'Bob'})
     """
     param_builder = ParameterMapBuilder()
 
-    masked_first = param_builder.read_map({"id(n1)": first_nodes})
-    masked_second = param_builder.read_map({"id(n2)": second_nodes})
+    masked_first = param_builder.read_map({"id(n1)": first_node})
+    masked_second = param_builder.read_map({"id(n2)": second_node})
 
     jaccard_params = "n1, n2"
     if parameters:
@@ -1147,10 +1150,10 @@ def jaccard_coefficient_query(
         QueryBuilder()
         .match()
         .node(ref_name="n1")
-        .where_multiple(masked_first, comparison_operator="IN", escape=False)
+        .where_multiple(masked_first, escape=False)
         .match()
         .node(ref_name="n2")
-        .where_multiple(masked_second, comparison_operator="IN", escape=False)
+        .where_multiple(masked_second, escape=False)
         .call()
         .procedure(f"{_JACCARD_ALG}({jaccard_params})")
         .yield_((_SCORE_REF, _SCORE_REF))
