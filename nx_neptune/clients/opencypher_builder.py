@@ -47,6 +47,7 @@ _LOUVAIN_ALG = "neptune.algo.louvain"
 _LOUVAIN_MUTATE_ALG = "neptune.algo.louvain.mutate"
 _WCC_ALG = "neptune.algo.wcc"
 _WCC_MUTATE_ALG = "neptune.algo.wcc.mutate"
+_JACCARD_ALG = "neptune.algo.jaccardSimilarity"
 _RANK_REF = "rank"
 _DEGREE_REF = "degree"
 _COMMUNITY_REF = "community"
@@ -1111,3 +1112,49 @@ def _get_nodes_in_list(source_nodes: list[str]):
         if not _NODE_ID_RE.match(str(node_id)):
             raise ValueError(f"Invalid node ID: {node_id!r}")
     return "[" + ",".join(f"'{s}'" for s in nodes) + "]"
+
+
+def jaccard_coefficient_query(
+    first_nodes: List[str],
+    second_nodes: List[str],
+    parameters: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the Jaccard Similarity algorithm on Neptune Analytics.
+
+    :param first_nodes: List of IDs for the first nodes
+    :param second_nodes: List of IDs for the second nodes (must be same length as first_nodes)
+    :param parameters: Optional dictionary of algorithm parameters (edgeLabels, vertexLabel, traversalDirection)
+    :return: Tuple of (OpenCypher query string, parameter map) for Jaccard Similarity algorithm execution
+
+    Example:
+        >>> jaccard_coefficient_query(["Alice", "Charlie"], ["Bob", "Dave"])
+        ("MATCH (n1) WHERE id(n1) IN $0 MATCH (n2) WHERE id(n2) IN $1
+        CALL neptune.algo.jaccardSimilarity(collect(n1), collect(n2)) YIELD score RETURN score",
+        {'0': ['Alice', 'Charlie'], '1': ['Bob', 'Dave']})
+    """
+    param_builder = ParameterMapBuilder()
+
+    masked_first = param_builder.read_map({"id(n1)": first_nodes})
+    masked_second = param_builder.read_map({"id(n2)": second_nodes})
+
+    jaccard_params = "n1, n2"
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        jaccard_params = f"{jaccard_params}, {{{parameters_list_str}}}"
+
+    query_str = (
+        QueryBuilder()
+        .match()
+        .node(ref_name="n1")
+        .where_multiple(masked_first, comparison_operator="IN", escape=False)
+        .match()
+        .node(ref_name="n2")
+        .where_multiple(masked_second, comparison_operator="IN", escape=False)
+        .call()
+        .procedure(f"{_JACCARD_ALG}({jaccard_params})")
+        .yield_((_SCORE_REF, _SCORE_REF))
+        .return_literal(_SCORE_REF)
+        .query
+    )
+    return query_str, param_builder.get_param_values()

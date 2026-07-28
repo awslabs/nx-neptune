@@ -24,6 +24,7 @@ from .algorithms.communities.label_propagation import (
 )
 from .algorithms.communities.wcc import weakly_connected_components
 from .algorithms.link_analysis.pagerank import pagerank
+from .algorithms.link_prediction.jaccard import jaccard_coefficient
 from .algorithms.traversal.bfs import bfs_edges, bfs_layers, descendants_at_distance
 from .clients import Edge, Node
 from .instance_management import (
@@ -76,6 +77,7 @@ __all__ = [
     "fast_label_propagation_communities",
     "louvain_communities",
     "weakly_connected_components",
+    "jaccard_coefficient",
     # graphs
     "Node",
     "Edge",
