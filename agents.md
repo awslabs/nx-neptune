@@ -115,6 +115,10 @@ Add algorithm to `nx_neptune/algorithms/{category}/__init__.py`:
 - Import the new algorithm function
 - Add to `__all__` list for proper module exports
 
+Also add to `nx_neptune/algorithms/__init__.py` (top-level algorithms package):
+- Import the new algorithm function so it is accessible as `nx_neptune.algorithms.{function_name}`
+- This is required for the backend dispatch in `interface.py` to resolve the function
+
 #### Step 6: Create Comprehensive Tests
 Create `tests/algorithms/{category}/test_{algorithm_name}.py`:
 - Test class with descriptive name
@@ -158,6 +162,11 @@ Add to main `nx_neptune/__init__.py`:
 - Import the algorithm from its module
 - Add to main package `__all__` list
 - Ensure proper backend registration
+
+**Critical:** Also add the algorithm name to the `ALGORITHMS` list in `nx_neptune/interface.py`:
+- This list drives the `BackendInterface` class decorator (`assign_algorithms`)
+- Without this, NetworkX will raise `NotImplementedError: '{name}' is not implemented by 'neptune' backend`
+- The name in the list must match the function name exactly as it appears in `nx_neptune.algorithms`
 
 ### Step 10: Update exported documentation
 Update `nx_plugin/__init__.py` with new or updated information on the algorithm.

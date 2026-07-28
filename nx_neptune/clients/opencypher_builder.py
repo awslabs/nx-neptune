@@ -45,9 +45,12 @@ _CLOSENESS_ALG = "neptune.algo.closenessCentrality"
 _CLOSENESS_MUTATE_ALG = "neptune.algo.closenessCentrality.mutate"
 _LOUVAIN_ALG = "neptune.algo.louvain"
 _LOUVAIN_MUTATE_ALG = "neptune.algo.louvain.mutate"
+_WCC_ALG = "neptune.algo.wcc"
+_WCC_MUTATE_ALG = "neptune.algo.wcc.mutate"
 _RANK_REF = "rank"
 _DEGREE_REF = "degree"
 _COMMUNITY_REF = "community"
+_COMPONENT_REF = "component"
 
 __all__ = [
     "match_all_nodes",
@@ -978,6 +981,77 @@ def degree_centrality_mutation_query(parameters=None) -> Tuple[str, Dict[str, An
         QueryBuilder()
         .call()
         .procedure(f"{_DEGREE_MUTATE_ALG}({degree_params})")
+        .yield_((_SUCCESS_REF, _SUCCESS_REF))
+        .return_literal(RESPONSE_SUCCESS)
+        .query
+    ), {}
+
+
+def wcc_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the Weakly Connected Components (WCC) algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to WCC algorithm
+    :return: Tuple of (OpenCypher query string, parameter map) for WCC algorithm execution
+
+    Example:
+        >>> wcc_query()
+        (' MATCH (n) CALL neptune.algo.wcc(n)
+        YIELD node AS node, component AS component WITH component, id(node) AS nodeId
+        RETURN component AS component, collect(nodeId) AS members', {})
+        >>> wcc_query({'edgeLabels': ['route']})
+        (' MATCH (n) CALL neptune.algo.wcc(n, {edgeLabels:["route"]})
+        YIELD node AS node, component AS component WITH component, id(node) AS nodeId
+        RETURN component AS component, collect(nodeId) AS members', {})
+    """
+    params = f"{_NODE_REF}"
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        params = f"{params}, {{{parameters_list_str}}}"
+    return (
+        QueryBuilder()
+        .match()
+        .node(ref_name=_NODE_REF)
+        .call()
+        .procedure(f"{_WCC_ALG}({params})")
+        .yield_(
+            [
+                (_NODE_FULL_FORM_REF, _NODE_FULL_FORM_REF),
+                (_COMPONENT_REF, _COMPONENT_REF),
+            ]
+        )
+        .with_(
+            f"{_COMPONENT_REF}, {_NODE_FULL_FORM_ID_FUNC_REF} AS {_NODE_FULL_FORM_ID_REF}"
+        )
+        .return_mapping(
+            [
+                (_COMPONENT_REF, _COMPONENT_REF),
+                (f"collect({_NODE_FULL_FORM_ID_REF})", _MEMBERS_REF),
+            ]
+        )
+        .query
+    ), {}
+
+
+def wcc_mutation_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the mutated version of WCC algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to WCC algorithm execution
+    :return: Tuple of (OpenCypher query string, parameter map) for WCC algorithm execution
+
+    Example:
+        >>> wcc_mutation_query({'writeProperty': 'wccid'})
+        (' CALL neptune.algo.wcc.mutate({writeProperty:"wccid"})
+        YIELD success AS success RETURN success', {})
+    """
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        params = f"{{{parameters_list_str}}}"
+    return (
+        QueryBuilder()
+        .call()
+        .procedure(f"{_WCC_MUTATE_ALG}({params})")
         .yield_((_SUCCESS_REF, _SUCCESS_REF))
         .return_literal(RESPONSE_SUCCESS)
         .query

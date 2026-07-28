@@ -55,6 +55,7 @@ ALGORITHMS = [
     "asyn_lpa_communities",
     "fast_label_propagation_communities",
     "louvain_communities",
+    "weakly_connected_components",
 ]
 
 
