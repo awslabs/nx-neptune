@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
+from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 from nx_neptune_proxy.routers.projection import router as projection_router
 from nx_neptune_proxy.routers.project import router as project_router
@@ -107,7 +108,7 @@ async def aws_exception_handler(request: Request, exc: ClientError):
     logger.warning(f"AWS {code} on {request.method} {request.url.path}: {message}")
     return JSONResponse(
         status_code=status,
-        content={"error": code, "message": message},
+        content={"error": code, "message": sanitize_error_message(message)},
     )
 
 
