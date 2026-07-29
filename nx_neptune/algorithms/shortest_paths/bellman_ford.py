@@ -44,17 +44,29 @@ _DEFAULT_WEIGHT_TYPE = "double"
 
 def _build_sssp_parameters(
     weight: str = _DEFAULT_WEIGHT,
-    edge_weight_type: str = _DEFAULT_WEIGHT_TYPE,
+    edge_weight_property: Optional[str] = None,
+    edge_weight_type: Optional[str] = None,
     edge_labels: Optional[List] = None,
     vertex_label: Optional[str] = None,
     traversal_direction: Optional[str] = None,
     concurrency: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Build the common SSSP parameter dictionary for Neptune Analytics."""
-    parameters: Dict[str, Any] = {
-        PARAM_EDGE_WEIGHT_PROPERTY: weight,
-        PARAM_EDGE_WEIGHT_TYPE: edge_weight_type,
-    }
+    parameters: Dict[str, Any] = {}
+
+    # AWS options always take precedence
+    if edge_weight_property:
+        parameters[PARAM_EDGE_WEIGHT_PROPERTY] = edge_weight_property
+    elif weight:
+        # NX weight param maps directly to Neptune edgeWeightProperty
+        parameters[PARAM_EDGE_WEIGHT_PROPERTY] = weight
+
+    # AWS options always take precedence
+    if edge_weight_type:
+        parameters[PARAM_EDGE_WEIGHT_TYPE] = edge_weight_type
+    elif edge_weight_property or weight:
+        # Default to "double" when weight is used but type isn't specified
+        parameters[PARAM_EDGE_WEIGHT_TYPE] = _DEFAULT_WEIGHT_TYPE
 
     if edge_labels:
         parameters[PARAM_EDGE_LABELS] = edge_labels
@@ -77,7 +89,8 @@ def bellman_ford_path(
     source,
     target,
     weight="weight",
-    edge_weight_type: str = _DEFAULT_WEIGHT_TYPE,
+    edge_weight_property: Optional[str] = None,
+    edge_weight_type: Optional[str] = None,
     edge_labels: Optional[List] = None,
     vertex_label: Optional[str] = None,
     traversal_direction: Optional[str] = None,
@@ -96,6 +109,8 @@ def bellman_ford_path(
     :param weight: Edge attribute name used as weight. Must be a string property name
         on edges in Neptune. Default: "weight".
         Note: callable weight functions are not supported by Neptune Analytics.
+    :param edge_weight_property: The weight property to consider for weighted computation.
+        Takes precedence over the `weight` parameter if provided.
     :param edge_weight_type: The numeric type of the edge weight property.
         Must be one of: "int", "long", "float", "double". Default: "double".
     :param edge_labels: To filter on one or more edge labels, provide a list.
@@ -119,6 +134,7 @@ def bellman_ford_path(
 
     parameters = _build_sssp_parameters(
         weight=weight,
+        edge_weight_property=edge_weight_property,
         edge_weight_type=edge_weight_type,
         edge_labels=edge_labels,
         vertex_label=vertex_label,
@@ -126,17 +142,13 @@ def bellman_ford_path(
         concurrency=concurrency,
     )
 
-    query_str, para_map = bellman_ford_path_query(
-        str(source), str(target), parameters
-    )
+    query_str, para_map = bellman_ford_path_query(str(source), str(target), parameters)
     json_result = neptune_graph.execute_call(query_str, para_map)
 
     if not json_result:
         import networkx as nx
 
-        raise nx.NetworkXNoPath(
-            f"No path between {source} and {target}."
-        )
+        raise nx.NetworkXNoPath(f"No path between {source} and {target}.")
 
     # Extract node IDs from vertexPath
     vertex_path = json_result[0].get("vertexPath", [])
@@ -150,7 +162,8 @@ def single_source_bellman_ford_path_length(
     neptune_graph: NeptuneGraph,
     source,
     weight="weight",
-    edge_weight_type: str = _DEFAULT_WEIGHT_TYPE,
+    edge_weight_property: Optional[str] = None,
+    edge_weight_type: Optional[str] = None,
     edge_labels: Optional[List] = None,
     vertex_label: Optional[str] = None,
     traversal_direction: Optional[str] = None,
@@ -168,6 +181,8 @@ def single_source_bellman_ford_path_length(
     :param weight: Edge attribute name used as weight. Must be a string property name
         on edges in Neptune. Default: "weight".
         Note: callable weight functions are not supported by Neptune Analytics.
+    :param edge_weight_property: The weight property to consider for weighted computation.
+        Takes precedence over the `weight` parameter if provided.
     :param edge_weight_type: The numeric type of the edge weight property.
         Must be one of: "int", "long", "float", "double". Default: "double".
     :param edge_labels: To filter on one or more edge labels, provide a list.
@@ -190,6 +205,7 @@ def single_source_bellman_ford_path_length(
 
     parameters = _build_sssp_parameters(
         weight=weight,
+        edge_weight_property=edge_weight_property,
         edge_weight_type=edge_weight_type,
         edge_labels=edge_labels,
         vertex_label=vertex_label,
@@ -216,7 +232,8 @@ def bellman_ford_predecessor_and_distance(
     target=None,
     weight="weight",
     heuristic=False,
-    edge_weight_type: str = _DEFAULT_WEIGHT_TYPE,
+    edge_weight_property: Optional[str] = None,
+    edge_weight_type: Optional[str] = None,
     edge_labels: Optional[List] = None,
     vertex_label: Optional[str] = None,
     traversal_direction: Optional[str] = None,
@@ -238,6 +255,8 @@ def bellman_ford_predecessor_and_distance(
         Note: callable weight functions are not supported by Neptune Analytics.
     :param heuristic: (Unsupported) Neptune Analytics does not support the heuristic
         parameter. Included for NetworkX API compatibility.
+    :param edge_weight_property: The weight property to consider for weighted computation.
+        Takes precedence over the `weight` parameter if provided.
     :param edge_weight_type: The numeric type of the edge weight property.
         Must be one of: "int", "long", "float", "double". Default: "double".
     :param edge_labels: To filter on one or more edge labels, provide a list.
@@ -271,6 +290,7 @@ def bellman_ford_predecessor_and_distance(
 
     parameters = _build_sssp_parameters(
         weight=weight,
+        edge_weight_property=edge_weight_property,
         edge_weight_type=edge_weight_type,
         edge_labels=edge_labels,
         vertex_label=vertex_label,
@@ -283,8 +303,8 @@ def bellman_ford_predecessor_and_distance(
     )
     json_result = neptune_graph.execute_call(query_str, para_map)
 
-    pred = {str(source): []}
-    dist = {str(source): 0}
+    pred: Dict[str, List] = {str(source): []}
+    dist: Dict[str, Any] = {str(source): 0}
 
     for item in json_result:
         node_id = item["nodeId"]

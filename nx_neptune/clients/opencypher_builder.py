@@ -1224,7 +1224,7 @@ def single_source_bellman_ford_path_length_query(
     Example:
         >>> single_source_bellman_ford_path_length_query("A", {"edgeWeightProperty": "weight", "edgeWeightType": "int"})
     """
-    source_list = _get_nodes_in_list(source_node)
+    source_list = _get_nodes_in_list([source_node])
 
     parameters_list_str = _to_parameter_list(parameters)
     algo_params = f"{source_list}, {{{parameters_list_str}}}"
@@ -1260,7 +1260,7 @@ def bellman_ford_predecessor_and_distance_query(
     Example:
         >>> bellman_ford_predecessor_and_distance_query("A", {"edgeWeightProperty": "weight", "edgeWeightType": "int"})
     """
-    source_list = _get_nodes_in_list(source_node)
+    source_list = _get_nodes_in_list([source_node])
 
     parameters_list_str = _to_parameter_list(parameters)
     algo_params = f"{source_list}, {{{parameters_list_str}}}"

@@ -180,6 +180,33 @@ Update `nx_plugin/__init__.py` with new or updated information on the algorithm.
   - Document the parameter as "not supported" in the algorithm documentation
   - Raise a warning when the unsupported parameter is used
 
+#### Weight Parameter Mapping Pattern
+When an algorithm uses edge weights (e.g., shortest path, community detection), follow this established pattern:
+
+1. **Keep NetworkX's `weight` parameter** with its original default (usually `"weight"` or `None`). The NX `weight` string IS the edge property name and maps directly to Neptune's `edgeWeightProperty`.
+
+2. **Add `edge_weight_property: Optional[str] = None`** as a separate Neptune-specific override parameter. This takes precedence over `weight` when provided.
+
+3. **Add `edge_weight_type: Optional[str] = None`** for Neptune's required type annotation. Default to `"double"` internally when weight is used but type isn't specified.
+
+4. **Precedence logic** (see `louvain_communities` and `bellman_ford_path` for reference):
+   ```python
+   # AWS options always take precedence
+   if edge_weight_property:
+       parameters[PARAM_EDGE_WEIGHT_PROPERTY] = edge_weight_property
+   elif weight:
+       parameters[PARAM_EDGE_WEIGHT_PROPERTY] = weight
+
+   if edge_weight_type:
+       parameters[PARAM_EDGE_WEIGHT_TYPE] = edge_weight_type
+   elif edge_weight_property or weight:
+       parameters[PARAM_EDGE_WEIGHT_TYPE] = "double"  # or "float"
+   ```
+
+5. **Callable weight functions**: Neptune does not support them. Issue a `warnings.warn()` and fall back to the default `"weight"` string.
+
+This allows users to simply call `nx.algorithm(G, weight="dist", backend="neptune")` and have it work, while power users can use the explicit `edge_weight_property` and `edge_weight_type` for full control.
+
 #### Key Implementation Guidelines
 - **Parameter Mapping**: Map NetworkX parameters to Neptune Analytics equivalents
 - **Result Transformation**: Convert Neptune Analytics JSON results to NetworkX format
