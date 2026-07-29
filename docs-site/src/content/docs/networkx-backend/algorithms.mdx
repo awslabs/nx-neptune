@@ -144,6 +144,123 @@ def jaccard_coefficient(
 
 ---
 
+## Shortest Path Algorithms
+
+---
+
+### bellman_ford_path
+
+Returns the shortest path from source to target in a weighted graph using the Bellman-Ford algorithm.
+
+- **Neptune Analytics docs:** [Bellman-Ford SSSP Path](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/sssp-bellmanFord-path.html)
+- **Source:** [`nx_neptune/algorithms/shortest_paths/bellman_ford.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/algorithms/shortest_paths/bellman_ford.py)
+
+```python
+@configure_if_nx_active()
+def bellman_ford_path(
+    neptune_graph: NeptuneGraph,
+    source, target,
+    weight="weight",
+    edge_weight_type: str = "double",
+    edge_labels: Optional[List] = None,
+    vertex_label: Optional[str] = None,
+    traversal_direction: Optional[str] = None,
+    concurrency: Optional[int] = None,
+):
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `source` | node | Starting node |
+| `target` | node | Ending node |
+| `weight` | str | Edge weight property name (default: `"weight"`) |
+| `edge_weight_type` | str | `"int"`, `"long"`, `"float"`, or `"double"` |
+| `edge_labels` | list | Edge label filter |
+| `vertex_label` | str | Vertex label filter |
+| `traversal_direction` | str | `"inbound"` or `"outbound"` |
+
+**Returns:** List of nodes in the shortest path.
+
+---
+
+### single_source_bellman_ford_path_length
+
+Compute shortest path lengths from source to all reachable nodes.
+
+- **Neptune Analytics docs:** [Bellman-Ford SSSP](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/sssp-bellmanFord.html)
+- **Source:** [`nx_neptune/algorithms/shortest_paths/bellman_ford.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/algorithms/shortest_paths/bellman_ford.py)
+
+```python
+@configure_if_nx_active()
+def single_source_bellman_ford_path_length(
+    neptune_graph: NeptuneGraph,
+    source,
+    weight="weight",
+    edge_weight_type: str = "double",
+    edge_labels: Optional[List] = None,
+    vertex_label: Optional[str] = None,
+    traversal_direction: Optional[str] = None,
+    concurrency: Optional[int] = None,
+):
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `source` | node | Starting node |
+| `weight` | str | Edge weight property name (default: `"weight"`) |
+| `edge_weight_type` | str | `"int"`, `"long"`, `"float"`, or `"double"` |
+| `edge_labels` | list | Edge label filter |
+| `vertex_label` | str | Vertex label filter |
+| `traversal_direction` | str | `"inbound"` or `"outbound"` |
+
+**Returns:** Dictionary `{node: distance}` for all reachable nodes.
+
+---
+
+### bellman_ford_predecessor_and_distance
+
+Compute shortest path lengths and predecessors on shortest paths.
+
+- **Neptune Analytics docs:** [Bellman-Ford SSSP Parents](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/sssp-bellmanFord-parents.html)
+- **Source:** [`nx_neptune/algorithms/shortest_paths/bellman_ford.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/algorithms/shortest_paths/bellman_ford.py)
+
+```python
+@configure_if_nx_active()
+def bellman_ford_predecessor_and_distance(
+    neptune_graph: NeptuneGraph,
+    source, target=None,
+    weight="weight", heuristic=False,
+    edge_weight_type: str = "double",
+    edge_labels: Optional[List] = None,
+    vertex_label: Optional[str] = None,
+    traversal_direction: Optional[str] = None,
+    concurrency: Optional[int] = None,
+):
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `source` | node | Starting node |
+| `target` | node | (Unused) Included for NX API compatibility |
+| `weight` | str | Edge weight property name (default: `"weight"`) |
+| `heuristic` | bool | (Unsupported) Ignored |
+| `edge_weight_type` | str | `"int"`, `"long"`, `"float"`, or `"double"` |
+| `edge_labels` | list | Edge label filter |
+| `vertex_label` | str | Vertex label filter |
+| `traversal_direction` | str | `"inbound"` or `"outbound"` |
+
+**Returns:** Tuple of `(pred, dist)` dicts. `pred` maps nodes to `[parent]` lists, `dist` maps nodes to distances.
+
+<Aside type="caution">
+  Neptune does not support negative edge weights or `traversalDirection: "both"` for Bellman-Ford algorithms. The `weight` parameter must be a string property name — callable weight functions are not supported.
+</Aside>
+
+<Aside type="note">
+  Neptune returns a single parent per node. The predecessor list contains at most one element, unlike NetworkX which may return multiple equal-cost predecessors.
+</Aside>
+
+---
+
 ## Link Analysis Algorithms
 
 ### pagerank

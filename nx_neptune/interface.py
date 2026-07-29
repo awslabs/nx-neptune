@@ -57,6 +57,9 @@ ALGORITHMS = [
     "louvain_communities",
     "weakly_connected_components",
     "jaccard_coefficient",
+    "bellman_ford_path",
+    "single_source_bellman_ford_path_length",
+    "bellman_ford_predecessor_and_distance",
 ]
 
 

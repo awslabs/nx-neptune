@@ -48,6 +48,9 @@ _LOUVAIN_MUTATE_ALG = "neptune.algo.louvain.mutate"
 _WCC_ALG = "neptune.algo.wcc"
 _WCC_MUTATE_ALG = "neptune.algo.wcc.mutate"
 _JACCARD_ALG = "neptune.algo.jaccardSimilarity"
+_SSSP_BELLMAN_FORD_ALG = "neptune.algo.sssp.bellmanFord"
+_SSSP_BELLMAN_FORD_PATH_ALG = "neptune.algo.sssp.bellmanFord.path"
+_SSSP_BELLMAN_FORD_PARENTS_ALG = "neptune.algo.sssp.bellmanFord.parents"
 _RANK_REF = "rank"
 _DEGREE_REF = "degree"
 _COMMUNITY_REF = "community"
@@ -1161,3 +1164,119 @@ def jaccard_coefficient_query(
         .query
     )
     return query_str, param_builder.get_param_values()
+
+
+def bellman_ford_path_query(
+    source_node: str,
+    target_node: str,
+    parameters: Dict[str, Any],
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the Bellman-Ford shortest path algorithm on Neptune Analytics.
+
+    :param source_node: The ID of the source node
+    :param target_node: The ID of the target node
+    :param parameters: Dictionary of algorithm parameters (edgeWeightProperty and edgeWeightType required)
+    :return: Tuple of (OpenCypher query string, parameter map)
+
+    Example:
+        >>> bellman_ford_path_query("A", "B", {"edgeWeightProperty": "weight", "edgeWeightType": "int"})
+    """
+    _NODE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-:.]+\Z")
+    if not _NODE_ID_RE.match(source_node):
+        raise ValueError(f"Invalid node ID: {source_node!r}")
+    if not _NODE_ID_RE.match(target_node):
+        raise ValueError(f"Invalid node ID: {target_node!r}")
+
+    parameters_list_str = _to_parameter_list(parameters)
+    algo_params = f"'{source_node}', '{target_node}', {{{parameters_list_str}}}"
+
+    query_str = (
+        QueryBuilder()
+        .call()
+        .procedure(f"{_SSSP_BELLMAN_FORD_PATH_ALG}({algo_params})")
+        .yield_(
+            [
+                ("source", "source"),
+                ("target", "target"),
+                ("distance", "distance"),
+                ("vertexPath", "vertexPath"),
+            ]
+        )
+        .return_literal("source, target, distance, vertexPath")
+        .query
+    )
+    return query_str, {}
+
+
+def single_source_bellman_ford_path_length_query(
+    source_node: str,
+    parameters: Dict[str, Any],
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the Bellman-Ford SSSP algorithm on Neptune Analytics.
+    Returns distances from source to all reachable nodes.
+
+    :param source_node: The ID of the source node
+    :param parameters: Dictionary of algorithm parameters (edgeWeightProperty and edgeWeightType required)
+    :return: Tuple of (OpenCypher query string, parameter map)
+
+    Example:
+        >>> single_source_bellman_ford_path_length_query("A", {"edgeWeightProperty": "weight", "edgeWeightType": "int"})
+    """
+    source_list = _get_nodes_in_list(source_node)
+
+    parameters_list_str = _to_parameter_list(parameters)
+    algo_params = f"{source_list}, {{{parameters_list_str}}}"
+
+    query_str = (
+        QueryBuilder()
+        .call()
+        .procedure(f"{_SSSP_BELLMAN_FORD_ALG}({algo_params})")
+        .yield_(
+            [
+                ("node", "node"),
+                ("distance", "distance"),
+            ]
+        )
+        .return_literal("id(node) AS nodeId, distance")
+        .query
+    )
+    return query_str, {}
+
+
+def bellman_ford_predecessor_and_distance_query(
+    source_node: str,
+    parameters: Dict[str, Any],
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the Bellman-Ford SSSP parents algorithm on Neptune Analytics.
+    Returns predecessors and distances from source to all reachable nodes.
+
+    :param source_node: The ID of the source node
+    :param parameters: Dictionary of algorithm parameters (edgeWeightProperty and edgeWeightType required)
+    :return: Tuple of (OpenCypher query string, parameter map)
+
+    Example:
+        >>> bellman_ford_predecessor_and_distance_query("A", {"edgeWeightProperty": "weight", "edgeWeightType": "int"})
+    """
+    source_list = _get_nodes_in_list(source_node)
+
+    parameters_list_str = _to_parameter_list(parameters)
+    algo_params = f"{source_list}, {{{parameters_list_str}}}"
+
+    query_str = (
+        QueryBuilder()
+        .call()
+        .procedure(f"{_SSSP_BELLMAN_FORD_PARENTS_ALG}({algo_params})")
+        .yield_(
+            [
+                ("node", "node"),
+                ("parent", "parent"),
+                ("distance", "distance"),
+            ]
+        )
+        .return_literal("id(node) AS nodeId, id(parent) AS parentId, distance")
+        .query
+    )
+    return query_str, {}
