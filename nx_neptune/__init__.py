@@ -25,6 +25,11 @@ from .algorithms.communities.label_propagation import (
 from .algorithms.communities.wcc import weakly_connected_components
 from .algorithms.link_analysis.pagerank import pagerank
 from .algorithms.link_prediction.jaccard import jaccard_coefficient
+from .algorithms.shortest_paths.bellman_ford import (
+    bellman_ford_path,
+    bellman_ford_predecessor_and_distance,
+    single_source_bellman_ford_path_length,
+)
 from .algorithms.traversal.bfs import bfs_edges, bfs_layers, descendants_at_distance
 from .clients import Edge, Node
 from .instance_management import (
@@ -78,6 +83,9 @@ __all__ = [
     "louvain_communities",
     "weakly_connected_components",
     "jaccard_coefficient",
+    "bellman_ford_path",
+    "single_source_bellman_ford_path_length",
+    "bellman_ford_predecessor_and_distance",
     # graphs
     "Node",
     "Edge",

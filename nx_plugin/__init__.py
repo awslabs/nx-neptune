@@ -38,6 +38,9 @@ _info = {
         "louvain_communities",
         "weakly_connected_components",
         "jaccard_coefficient",
+        "bellman_ford_path",
+        "single_source_bellman_ford_path_length",
+        "bellman_ford_predecessor_and_distance",
     },
     "additional_docs": {
         "bfs_edges": f"For additional details, see {algorithms_url}#bfs_edges",
@@ -70,6 +73,23 @@ moment.
 For large graphs, prefer passing an explicit `ebunch`.
 - Neptune Analytics does not support a mutate variant for Jaccard similarity.
 - For additional parameters, see {algorithms_url}#jaccard_coefficient""",
+        "bellman_ford_path": f"""- The `weight` parameter must be a string (edge property name). Callable weight \
+functions are not supported by Neptune Analytics.
+- Neptune does not support negative edge weights or `traversalDirection: "both"`.
+- Requires `edge_weight_type` parameter ("int", "long", "float", or "double").
+- For additional parameters, see {algorithms_url}#bellman_ford_path""",
+        "single_source_bellman_ford_path_length": f"""- The `weight` parameter must be a string (edge property name). \
+Callable weight functions are not supported by Neptune Analytics.
+- Neptune does not support negative edge weights or `traversalDirection: "both"`.
+- Requires `edge_weight_type` parameter ("int", "long", "float", or "double").
+- For additional parameters, see {algorithms_url}#single_source_bellman_ford_path_length""",
+        "bellman_ford_predecessor_and_distance": f"""- The `weight` parameter must be a string (edge property name). \
+Callable weight functions are not supported by Neptune Analytics.
+- Neptune does not support negative edge weights or `traversalDirection: "both"`.
+- The `heuristic` parameter is not supported and will be ignored.
+- Neptune returns a single parent per node (not all equal-cost predecessors).
+- Requires `edge_weight_type` parameter ("int", "long", "float", or "double").
+- For additional parameters, see {algorithms_url}#bellman_ford_predecessor_and_distance""",
     },
     "additional_parameters": {},
 }
