@@ -20,6 +20,7 @@ from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 from nx_neptune_proxy.routers.projection import router as projection_router
 from nx_neptune_proxy.routers.project import router as project_router
+from nx_neptune_proxy.routers.project_io import router as project_io_router
 from nx_neptune_proxy.services.db import init_db
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.project_deletion import delete_project
@@ -138,6 +139,7 @@ def info():
 
 app.include_router(metadata_router)
 app.include_router(projection_router)
+app.include_router(project_io_router)
 app.include_router(project_router)
 app.include_router(graph_router)
 

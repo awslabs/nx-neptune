@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams, NavLink } from "react-router";
 import { projection, metadata, projectApi, graphActions, type Projection, type Project, type Inflight } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
-import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown } from "lucide-react";
+import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown, Download } from "lucide-react";
 import { useNavigate } from "react-router";
 
 export function Projections() {
@@ -151,6 +151,28 @@ export function Projections() {
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold">{projectName ? `${projectName} — Projections` : "Projections"}</h1>
           <div className="flex items-center gap-2">
+            {filterProjectId && (
+              <button
+                onClick={async () => {
+                  try {
+                    const data = await projectApi.exportOne(filterProjectId);
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${projectName || "project"}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch (e) {
+                    console.error("Export failed", e);
+                  }
+                }}
+                className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                title="Export project"
+              >
+                <Download className="h-3.5 w-3.5" /> Export
+              </button>
+            )}
             <NavLink
               to={filterProjectId ? `/import?project=${filterProjectId}&t=${Date.now()}` : "/import"}
               className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
