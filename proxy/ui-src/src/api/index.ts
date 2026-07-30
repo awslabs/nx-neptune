@@ -15,7 +15,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // --- Metadata ---
 
 export const metadata = {
-  config: () => request<{ region: string; graph_prefix: string }>("/metadata/config"),
+  config: () => request<{ region: string; graph_prefix: string; export_bucket: string | null }>("/metadata/config"),
   catalogs: () => request<{ catalogs: { name: string; status: string }[] }>("/metadata/athena/catalogs"),
   databases: (catalog: string) => request<{ databases: string[] }>(`/metadata/athena/databases?catalog=${encodeURIComponent(catalog)}`),
   tables: (database: string, catalog: string) => request<{ tables: string[] }>(`/metadata/athena/tables?database=${encodeURIComponent(database)}&catalog=${encodeURIComponent(catalog)}`),
@@ -102,4 +102,8 @@ export const projectApi = {
   delete: (id: string) => request<{ id: string; status: string }>(`/project/${id}`, { method: "DELETE" }),
   export: (id: string) => request<unknown>(`/project/${id}/export`),
   import: (data: unknown) => request<{ imported: { id: string; name: string } }>("/project/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
+  exportToS3: (id: string) => request<{ filename: string; key: string }>(`/project/${id}/export/s3`, { method: "POST" }),
+  import: (data: unknown) => request<{ imported: { id: string; name: string } }>("/project/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
+  listS3Exports: () => request<{ files: { key: string; filename: string; last_modified: string }[] }>("/project/import/s3/list"),
+  importFromS3: (key: string) => request<{ imported: { id: string; name: string } }>("/project/import/s3", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) }),
 };
