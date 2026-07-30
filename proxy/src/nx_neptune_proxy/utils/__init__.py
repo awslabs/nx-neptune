@@ -2,5 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from .aws_helper import paginate_aws, unpack_query_results
+from .sanitize import sanitize_error_message
 
-__all__ = ["paginate_aws", "unpack_query_results"]
+__all__ = ["paginate_aws", "unpack_query_results", "sanitize_error_message"]
