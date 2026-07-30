@@ -5,6 +5,7 @@ import logging
 
 from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.services.projection_store import Projection, store
+from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,9 @@ async def run_pipeline(projection: Projection) -> None:
             error_msg = f"{err.get('Code', 'Error')}: {err.get('Message', str(e))}"
         else:
             error_msg = str(e)
-        store.update(projection.id, status="failed", error=error_msg)
+
+        # Sanitize before persisting — strip ARNs, account IDs
+        store.update(projection.id, status="failed", error=sanitize_error_message(error_msg))
 
 
 def _update(projection_id: str, step: str, label: str, progress: float) -> None:
