@@ -11,6 +11,17 @@ from nx_neptune_proxy.services.db import get_connection
 @pytest.fixture
 def client():
     transport = ASGITransport(app=app)
+    return AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"X-Requested-With": "nx-neptune"},
+    )
+
+
+@pytest.fixture
+def bare_client():
+    """Client without X-Requested-With header — for CSRF rejection tests."""
+    transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://test")
 
 
