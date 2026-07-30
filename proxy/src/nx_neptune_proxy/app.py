@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
+from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 from nx_neptune_proxy.routers.projection import router as projection_router
 from nx_neptune_proxy.routers.project import router as project_router
@@ -46,8 +47,29 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
+
+
+# --- CSRF protection middleware ---
+
+_CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+@app.middleware("http")
+async def csrf_protection(request: Request, call_next):
+    """Require X-Requested-With header on state-changing requests.
+
+    This forces browsers to send a CORS preflight, which blocks cross-origin
+    requests from malicious tabs that don't pass the Origin check.
+    """
+    if request.method not in _CSRF_SAFE_METHODS:
+        if not request.headers.get("x-requested-with"):
+            return JSONResponse(
+                status_code=403,
+                content={"error": "csrf_rejected", "message": "Missing required X-Requested-With header"},
+            )
+    return await call_next(request)
 
 
 # --- Request logging middleware ---
@@ -86,7 +108,7 @@ async def aws_exception_handler(request: Request, exc: ClientError):
     logger.warning(f"AWS {code} on {request.method} {request.url.path}: {message}")
     return JSONResponse(
         status_code=status,
-        content={"error": code, "message": message},
+        content={"error": code, "message": sanitize_error_message(message)},
     )
 
 
