@@ -13,6 +13,8 @@ from nx_neptune.clients.response_utils import get_query_failure_reason, get_quer
 from nx_neptune.instance_management import _execute_athena_query, get_athena_query_results
 from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
 from nx_neptune.validators import check_athena_query, validate_resources, wrap_with_limit
+from nx_neptune_proxy.config import Settings
+from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 from nx_neptune_proxy.routers.schemas import (
     PreviewResponse,
     ProjectionCreate,
@@ -173,7 +175,7 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
             client.delete_graph(graphIdentifier=p.graph_id, skipSnapshot=True)
         except ClientError as e:
             if e.response["Error"]["Code"] != "ResourceNotFoundException":
-                store.update(projection_id, status="failed", error=str(e))
+                store.update(projection_id, status="failed", error=sanitize_error_message(str(e)))
                 return
         # Poll until gone
         for _ in range(60):
