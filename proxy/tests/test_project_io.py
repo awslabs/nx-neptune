@@ -11,7 +11,7 @@ from nx_neptune_proxy.services.projection_store import store as projection_store
 
 class TestProjectExport:
     @pytest.mark.anyio
-    async def test_export_single_project(self, client):
+    async def test_export_project(self, client):
         p = project_store.create(name="Test Project")
         projection_store.create(
             catalog="AwsDataCatalog",
@@ -66,7 +66,7 @@ class TestProjectExport:
 
 class TestProjectImport:
     @pytest.mark.anyio
-    async def test_import_single_project(self, client):
+    async def test_import_project(self, client):
         payload = {
             "version": "1.0",
             "project": {"name": "Imported Project"},
@@ -87,8 +87,7 @@ class TestProjectImport:
         assert resp.status_code == 201
 
         data = resp.json()
-        assert len(data["imported"]) == 1
-        assert data["imported"][0]["name"] == "Imported Project"
+        assert data["imported"]["name"] == "Imported Project"
 
         # Verify in DB
         projects = project_store.list()
@@ -99,34 +98,6 @@ class TestProjectImport:
         assert len(projections) == 1
         assert projections[0].database == "fraud_db"
         assert projections[0].project_id == projects[0].id
-
-    @pytest.mark.anyio
-    async def test_import_multi_project(self, client):
-        payload = {
-            "version": "1.0",
-            "projects": [
-                {
-                    "project": {"name": "Project A"},
-                    "projections": [{"database": "db_a"}],
-                },
-                {
-                    "project": {"name": "Project B"},
-                    "projections": [{"database": "db_b1"}, {"database": "db_b2"}],
-                },
-            ],
-        }
-
-        resp = await client.post("/api/v0/project/import", content=json.dumps(payload))
-        assert resp.status_code == 201
-
-        data = resp.json()
-        assert len(data["imported"]) == 2
-
-        projects = project_store.list()
-        assert len(projects) == 2
-
-        projections = projection_store.list()
-        assert len(projections) == 3
 
     @pytest.mark.anyio
     async def test_import_creates_new_ids(self, client):
@@ -170,7 +141,7 @@ class TestProjectImport:
         assert resp.status_code == 413
 
     @pytest.mark.anyio
-    async def test_import_missing_structure(self, client):
+    async def test_import_missing_project(self, client):
         payload = {"version": "1.0"}
 
         resp = await client.post("/api/v0/project/import", content=json.dumps(payload))
