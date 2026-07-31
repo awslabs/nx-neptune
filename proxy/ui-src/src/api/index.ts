@@ -101,5 +101,5 @@ export const projectApi = {
   create: (name: string) => request<Project>("/project", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }),
   delete: (id: string) => request<{ id: string; status: string }>(`/project/${id}`, { method: "DELETE" }),
   exportOne: (id: string) => request<unknown>(`/project/${id}/export`),
-  import: (data: unknown) => request<{ imported: { id: string; name: string }[] }>("/project/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
+  import: (data: unknown) => request<{ imported: { id: string; name: string } }>("/project/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
 };

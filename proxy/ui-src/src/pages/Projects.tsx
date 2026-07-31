@@ -29,8 +29,7 @@ export function Projects() {
       const text = await file.text();
       const data = JSON.parse(text);
       const result = await projectApi.import(data);
-      const count = result.imported.length;
-      setImportStatus(`Imported ${count} project${count !== 1 ? "s" : ""} successfully.`);
+      setImportStatus(`Imported project "${result.imported.name}" successfully.`);
       window.dispatchEvent(new Event("projects-changed"));
     } catch (err) {
       setImportStatus(`Import failed: ${err instanceof Error ? err.message : "Invalid file"}`);
