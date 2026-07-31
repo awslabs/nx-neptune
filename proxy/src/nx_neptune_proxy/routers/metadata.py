@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune_proxy.config import Settings
@@ -90,6 +90,15 @@ def list_neptune_graphs():
 def delete_neptune_graph(graph_id: str):
     """Delete a Neptune Analytics graph"""
     client = ClientFactory().neptune()
+    # Verify graph belongs to this tool (prefix guard)
+    prefix = Settings.from_env().graph_prefix
+    resp = client.get_graph(graphIdentifier=graph_id)
+    graph_name = resp.get("name", "")
+    if not graph_name.startswith(prefix):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Graph '{graph_name}' is not managed by this tool (missing '{prefix}' prefix)",
+        )
     client.delete_graph(graphIdentifier=graph_id, skipSnapshot=True)
     return {"id": graph_id, "status": "DELETING"}
 
