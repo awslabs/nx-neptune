@@ -282,20 +282,20 @@ class TestImportFromS3:
 
 class TestSanitizeName:
     def test_spaces_to_underscores(self):
-        from nx_neptune_proxy.routers.project_io import _sanitize_name
-        assert _sanitize_name("Fraud Detection") == "Fraud_Detection"
+        from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name
+        assert sanitize_s3_key_name("Fraud Detection") == "Fraud_Detection"
 
     def test_special_characters_stripped(self):
-        from nx_neptune_proxy.routers.project_io import _sanitize_name
-        assert _sanitize_name("My Project! (v2)") == "My_Project_v2"
+        from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name
+        assert sanitize_s3_key_name("My Project! (v2)") == "My_Project_v2"
 
     def test_hyphens_kept(self):
-        from nx_neptune_proxy.routers.project_io import _sanitize_name
-        assert _sanitize_name("fraud-detection") == "fraud-detection"
+        from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name
+        assert sanitize_s3_key_name("fraud-detection") == "fraud-detection"
 
     def test_underscores_kept(self):
-        from nx_neptune_proxy.routers.project_io import _sanitize_name
-        assert _sanitize_name("my_project") == "my_project"
+        from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name
+        assert sanitize_s3_key_name("my_project") == "my_project"
 
 
 class TestParseBucketConfig:

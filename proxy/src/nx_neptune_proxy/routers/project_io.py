@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -19,6 +18,8 @@ from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_store import store as projection_store
+from nx_neptune_proxy.utils.aws_helper import friendly_s3_error, check_content_length, check_body_size
+from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name
 
 router = APIRouter(prefix="/api/v0/project", tags=["project-io"])
 
@@ -53,12 +54,6 @@ class ProjectExportPayload(BaseModel):
 
 
 # --- Helpers ---
-
-
-def _sanitize_name(name: str) -> str:
-    """Sanitize project name for S3 key: spaces to _, strip non-alphanumeric except -_."""
-    name = name.replace(" ", "_")
-    return re.sub(r"[^a-zA-Z0-9_-]", "", name)
 
 
 def _parse_bucket_config(export_bucket: str) -> tuple[str, str]:
@@ -124,21 +119,6 @@ def _import_from_payload(payload: ProjectExportPayload) -> dict:
     return {"id": p.id, "name": p.name}
 
 
-def _friendly_s3_error(e: ClientError) -> str:
-    """Extract a user-friendly message from a boto3 ClientError."""
-    code = e.response["Error"].get("Code", "")
-    message = e.response["Error"].get("Message", "")
-    if code in ("AccessDenied", "403"):
-        return "Permission denied — check IAM role has required S3 permissions"
-    if code == "NoSuchBucket":
-        return f"Bucket not found — {message}"
-    if code == "NoSuchKey":
-        return "File not found in S3"
-    # If the message seems user-readable (short, no stack trace), use it
-    if message and len(message) < 200:
-        return message
-    return f"S3 error: {code}"
-
 
 # --- Export endpoints ---
 
@@ -161,7 +141,7 @@ def export_project_to_s3(project_id: str):
     payload, name = _build_export_payload(project_id)
 
     # Build S3 key
-    sanitized = _sanitize_name(name)
+    sanitized = sanitize_s3_key_name(name)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S") + f"{datetime.now(timezone.utc).microsecond // 1000:03d}"
     filename = f"{sanitized}_{timestamp}.json"
     key = f"{prefix}/{filename}" if prefix else filename
@@ -187,7 +167,7 @@ def export_project_to_s3(project_id: str):
     except HTTPException:
         raise
     except ClientError as e:
-        raise HTTPException(status_code=502, detail=_friendly_s3_error(e))
+        raise HTTPException(status_code=502, detail=friendly_s3_error(e))
 
     return {"filename": filename, "key": key}
 
@@ -198,14 +178,9 @@ def export_project_to_s3(project_id: str):
 @router.post("/import", summary="Import a project from JSON", status_code=201)
 async def import_project(request: Request):
     """Import a project and its projections from a JSON payload."""
-    # Size check
-    content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > MAX_IMPORT_SIZE:
-        raise HTTPException(status_code=413, detail="Payload too large (max 5 MB)")
-
+    check_content_length(request, MAX_IMPORT_SIZE)
     contents = await request.body()
-    if len(contents) > MAX_IMPORT_SIZE:
-        raise HTTPException(status_code=413, detail="Payload too large (max 5 MB)")
+    check_body_size(contents, MAX_IMPORT_SIZE)
 
     # Parse and validate
     try:
@@ -261,7 +236,7 @@ def list_s3_exports():
             ]
         }
     except ClientError as e:
-        raise HTTPException(status_code=502, detail=_friendly_s3_error(e))
+        raise HTTPException(status_code=502, detail=friendly_s3_error(e))
 
 
 @router.post("/import/s3", summary="Import a project from S3", status_code=201)
@@ -278,12 +253,11 @@ def import_project_from_s3(request_body: dict):
         resp = s3.get_object(Bucket=bucket, Key=key)
         contents = resp["Body"].read()
 
-        if len(contents) > MAX_IMPORT_SIZE:
-            raise HTTPException(status_code=413, detail="File too large (max 5 MB)")
+        check_body_size(contents, MAX_IMPORT_SIZE)
 
         payload = ProjectExportPayload.model_validate_json(contents)
     except ClientError as e:
-        raise HTTPException(status_code=502, detail=_friendly_s3_error(e))
+        raise HTTPException(status_code=502, detail=friendly_s3_error(e))
     except HTTPException:
         raise
     except Exception as e:
