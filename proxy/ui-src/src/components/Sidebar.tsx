@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
-import { Network, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronRight, Circle, Plus, Trash2 } from "lucide-react";
+import { Network, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronRight, Circle, Plus, Trash2, Upload } from "lucide-react";
 import { clsx } from "clsx";
 import { projectApi, projection, type Project, type Projection } from "../api";
 
@@ -15,6 +15,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const [projects, setProjects] = useState<Project[]>([]);
   const [projections, setProjections] = useState<Projection[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -60,6 +61,22 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
   const projByProject = (projectId: string) => projections.filter(p => p.project_id === projectId);
 
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const result = await projectApi.import(data);
+      loadProjects();
+      window.dispatchEvent(new Event("projects-changed"));
+      navigate(`/projections?project=${result.imported.id}`);
+    } catch {
+      // silently fail — Projects page has better error display
+    }
+    e.target.value = "";
+  }
+
   return (
     <aside className={clsx("flex flex-col border-r border-gray-200 bg-white transition-all", collapsed ? "w-14" : "w-60")}>
       <div className="flex h-14 items-center justify-between border-b border-gray-200 px-3">
@@ -94,9 +111,22 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           <div>
             <div className="flex items-center justify-between px-3">
               <span className="text-xs font-semibold uppercase text-gray-400">Projects</span>
-              <NavLink to="/projects" className="rounded p-0.5 text-gray-400 hover:text-gray-600" title="Add Project">
-                <Plus className="h-3 w-3" />
-              </NavLink>
+              <div className="flex items-center gap-1">
+                <button onClick={() => fileInputRef.current?.click()} className="rounded p-0.5 text-gray-400 hover:text-gray-600" title="Import Project">
+                  <Upload className="h-3 w-3" />
+                </button>
+                <NavLink to="/projects" className="rounded p-0.5 text-gray-400 hover:text-gray-600" title="Add Project">
+                  <Plus className="h-3 w-3" />
+                </NavLink>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={handleImportFile}
+                aria-label="Import project file"
+              />
             </div>
             <div className="mt-2 space-y-0.5">
               {projects.map(proj => {
