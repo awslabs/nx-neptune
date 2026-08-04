@@ -7,15 +7,14 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Optional
-
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 from nx_neptune.clients.client_factory import ClientFactory
+from nx_neptune.clients.iam_client import split_s3_arn_to_bucket_and_path
 from nx_neptune_proxy.config import Settings
+from nx_neptune_proxy.routers.schemas import ProjectionExport, ProjectExportPayload
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_store import store as projection_store
 from nx_neptune_proxy.utils.aws_helper import friendly_s3_error, check_content_length, check_body_size, check_key_not_exists, list_s3_json_objects
@@ -26,50 +25,24 @@ router = APIRouter(prefix="/api/v0/project", tags=["project-io"])
 MAX_IMPORT_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
-# --- Export/Import JSON schema ---
-
-
-class ProjectionExport(BaseModel):
-    """Projection config fields only — no runtime state."""
-
-    catalog: str = "AwsDataCatalog"
-    database: Optional[str] = None
-    node_query: Optional[str] = None
-    edge_query: Optional[str] = None
-    graph_name: Optional[str] = None
-    graph_memory_gb: int = 16
-    s3_staging_bucket: Optional[str] = None
-
-    model_config = {"extra": "forbid"}
-
-
-class ProjectExportPayload(BaseModel):
-    """Top-level export format for a single project."""
-
-    version: str = "1.0"
-    project: dict
-    projections: list[ProjectionExport] = []
-
-    model_config = {"extra": "forbid"}
-
-
 # --- Helpers ---
 
 
-def _parse_bucket_config(export_bucket: str) -> tuple[str, str]:
-    """Parse 'bucket' or 'bucket/prefix' into (bucket, prefix)."""
-    parts = export_bucket.split("/", 1)
-    bucket = parts[0]
-    prefix = parts[1] if len(parts) > 1 else ""
-    return bucket, prefix
-
-
-def _require_export_bucket() -> tuple[str, str]:
+def _get_export_bucket_tuple() -> tuple:
     """Return (bucket, prefix) or raise 404 if not configured."""
     settings = Settings.from_env()
     if not settings.export_bucket:
         raise HTTPException(status_code=404, detail="S3 export bucket not configured")
-    return _parse_bucket_config(settings.export_bucket)
+    return split_s3_arn_to_bucket_and_path(settings.export_bucket)
+
+
+def _s3_object_to_entry(obj: dict) -> dict:
+    """Convert an S3 object dict to an API response entry."""
+    return {
+        "key": obj["Key"],
+        "filename": obj["Key"].rsplit("/", 1)[-1],
+        "last_modified": obj["LastModified"].isoformat(),
+    }
 
 
 def _build_export_payload(project_id: str) -> tuple[dict, str]:
@@ -78,25 +51,9 @@ def _build_export_payload(project_id: str) -> tuple[dict, str]:
     if p is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    projections = [pr for pr in projection_store.list() if pr.project_id == project_id]
-
-    payload = {
-        "version": "1.0",
-        "project": {"name": p.name},
-        "projections": [
-            ProjectionExport(
-                catalog=pr.catalog,
-                database=pr.database,
-                node_query=pr.node_query,
-                edge_query=pr.edge_query,
-                graph_name=pr.graph_name,
-                graph_memory_gb=pr.graph_memory_gb,
-                s3_staging_bucket=pr.s3_staging_bucket,
-            ).model_dump()
-            for pr in projections
-        ],
-    }
-    return payload, p.name
+    projections = projection_store.list_by_project(project_id)
+    payload = ProjectExportPayload.from_project(p, projections)
+    return payload.model_dump(), p.name
 
 
 def _build_s3_key(name: str, prefix: str) -> tuple[str, str]:
@@ -123,16 +80,7 @@ def _import_from_payload(payload: ProjectExportPayload) -> dict:
     p = project_store.create(name=name)
 
     for pr_data in payload.projections:
-        projection_store.create(
-            catalog=pr_data.catalog,
-            database=pr_data.database,
-            node_query=pr_data.node_query,
-            edge_query=pr_data.edge_query,
-            graph_name=pr_data.graph_name,
-            graph_memory_gb=pr_data.graph_memory_gb,
-            s3_staging_bucket=pr_data.s3_staging_bucket,
-            project_id=p.id,
-        )
+        projection_store.create(**pr_data.model_dump(), project_id=p.id)
 
     return {"id": p.id, "name": p.name}
 
@@ -155,7 +103,7 @@ def export_project(project_id: str):
 @router.post("/{project_id}/export/s3", summary="Export a project to S3")
 def export_project_to_s3(project_id: str):
     """Export a project and its projections to the configured S3 bucket."""
-    bucket, prefix = _require_export_bucket()
+    bucket, prefix = _get_export_bucket_tuple()
     payload, name = _build_export_payload(project_id)
     key, filename = _build_s3_key(name, prefix)
 
@@ -195,7 +143,7 @@ async def import_project(request: Request):
 @router.get("/import/s3/list", summary="List available exports from S3")
 def list_s3_exports():
     """List the last 10 export files from S3 (filtered by prefix)."""
-    bucket, prefix = _require_export_bucket()
+    bucket, prefix = _get_export_bucket_tuple()
     s3 = ClientFactory().s3()
 
     try:
@@ -206,14 +154,7 @@ def list_s3_exports():
         recent = json_objects[:10]
 
         return {
-            "files": [
-                {
-                    "key": obj["Key"],
-                    "filename": obj["Key"].rsplit("/", 1)[-1],
-                    "last_modified": obj["LastModified"].isoformat(),
-                }
-                for obj in recent
-            ]
+            "files": [_s3_object_to_entry(obj) for obj in recent]
         }
     except ClientError as e:
         raise HTTPException(status_code=502, detail=friendly_s3_error(e))
@@ -226,7 +167,7 @@ def import_project_from_s3(request_body: dict):
     if not key:
         raise HTTPException(status_code=400, detail="Missing 'key' in request body")
 
-    bucket, _ = _require_export_bucket()
+    bucket, _ = _get_export_bucket_tuple()
     s3 = ClientFactory().s3()
 
     try:

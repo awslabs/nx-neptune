@@ -292,13 +292,13 @@ class TestSanitizeName:
 
 class TestParseBucketConfig:
     def test_bucket_only(self):
-        from nx_neptune_proxy.routers.project_io import _parse_bucket_config
-        bucket, prefix = _parse_bucket_config("my-bucket")
+        from nx_neptune.clients.iam_client import split_s3_arn_to_bucket_and_path
+        bucket, prefix = split_s3_arn_to_bucket_and_path("s3://my-bucket")
         assert bucket == "my-bucket"
         assert prefix == ""
 
     def test_bucket_with_prefix(self):
-        from nx_neptune_proxy.routers.project_io import _parse_bucket_config
-        bucket, prefix = _parse_bucket_config("my-bucket/team/exports")
+        from nx_neptune.clients.iam_client import split_s3_arn_to_bucket_and_path
+        bucket, prefix = split_s3_arn_to_bucket_and_path("s3://my-bucket/team/exports")
         assert bucket == "my-bucket"
         assert prefix == "team/exports"
