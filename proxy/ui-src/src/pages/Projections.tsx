@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useSearchParams, NavLink } from "react-router";
 import { projection, metadata, projectApi, graphActions, type Projection, type Project, type Inflight } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
-import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown, Download } from "lucide-react";
+import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown, Download, ChevronUp } from "lucide-react";
 import { useNavigate } from "react-router";
 
 export function Projections() {
@@ -16,12 +16,16 @@ export function Projections() {
   const [actionStates, setActionStates] = useState<Record<string, { actions: string[]; inflight: Inflight | null }>>({});
   const [alerts, setAlerts] = useState<{ graphId: string; graphName: string; message: string }[]>([]);
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [exportBucket, setExportBucket] = useState<string | null>(null);
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const filterProjectId = searchParams.get("project");
 
   useEffect(() => {
     load();
-    metadata.config().then(c => setRegion(c.region));
+    metadata.config().then(c => { setRegion(c.region); setExportBucket(c.export_bucket); });
     projectApi.list().then(list => setProjects(new Map(list.map(p => [p.id, p]))));
   }, []);
 
@@ -118,6 +122,17 @@ export function Projections() {
     ["STOPPING", "STARTING", "DELETING", "CREATING"].includes(s)
   );
 
+  // Close export dropdown on click outside
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(e.target as Node)) {
+        setExportDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
   useEffect(() => {
     if (!hasTransient) return;
     const interval = setInterval(() => load(), 30000);
@@ -152,26 +167,63 @@ export function Projections() {
           <h1 className="text-lg font-semibold">{projectName ? `${projectName} — Projections` : "Projections"}</h1>
           <div className="flex items-center gap-2">
             {filterProjectId && (
-              <button
-                onClick={async () => {
-                  try {
-                    const data = await projectApi.exportOne(filterProjectId);
-                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `${projectName || "project"}.json`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  } catch (e) {
-                    console.error("Export failed", e);
-                  }
-                }}
-                className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-                title="Export project"
-              >
-                <Download className="h-3.5 w-3.5" /> Export
-              </button>
+              <div className="relative" ref={exportDropdownRef}>
+                <button
+                  onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
+                  className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                  title="Export project"
+                >
+                  <Download className="h-3.5 w-3.5" /> Export
+                  {exportBucket && <ChevronDown className="h-3 w-3" />}
+                </button>
+                {exportDropdownOpen && (
+                  <div className="absolute right-0 z-10 mt-1 w-40 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                    <button
+                      className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                      onClick={async () => {
+                        setExportDropdownOpen(false);
+                        try {
+                          const data = await projectApi.exportOne(filterProjectId);
+                          const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `${projectName || "project"}.json`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        } catch (e) {
+                          console.error("Export failed", e);
+                        }
+                      }}
+                    >
+                      Download
+                    </button>
+                    {exportBucket && (
+                      <button
+                        className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                        onClick={async () => {
+                          setExportDropdownOpen(false);
+                          try {
+                            const result = await projectApi.exportToS3(filterProjectId);
+                            setExportStatus(`Saved to ${result.filename}`);
+                            setTimeout(() => setExportStatus(null), 4000);
+                          } catch (e: any) {
+                            setExportStatus(`Export failed: ${e.message}`);
+                            setTimeout(() => setExportStatus(null), 4000);
+                          }
+                        }}
+                      >
+                        Save to S3
+                      </button>
+                    )}
+                  </div>
+                )}
+                {exportStatus && (
+                  <div className="absolute right-0 mt-1 whitespace-nowrap rounded bg-gray-900 px-3 py-1.5 text-xs text-white shadow-lg">
+                    {exportStatus}
+                  </div>
+                )}
+              </div>
             )}
             <NavLink
               to={filterProjectId ? `/import?project=${filterProjectId}&t=${Date.now()}` : "/import"}
