@@ -113,8 +113,8 @@ class TestListS3Exports:
     @pytest.mark.anyio
     @patch("nx_neptune_proxy.routers.project_io.Settings.from_env")
     @patch("nx_neptune_proxy.routers.project_io.ClientFactory")
-    async def test_list_returns_tagged_files(self, mock_factory, mock_settings, client):
-        """Lists only files tagged with graph_studio=true, sorted by date."""
+    async def test_list_returns_json_files_sorted(self, mock_factory, mock_settings, client):
+        """Lists .json files sorted by last modified descending."""
         mock_settings.return_value = MagicMock(export_bucket="my-bucket/exports", region="us-west-2")
 
         mock_s3 = MagicMock()
@@ -127,16 +127,9 @@ class TestListS3Exports:
             "Contents": [
                 {"Key": "exports/proj_a.json", "LastModified": earlier},
                 {"Key": "exports/proj_b.json", "LastModified": now},
-                {"Key": "exports/untagged.json", "LastModified": now},
+                {"Key": "exports/not_json.txt", "LastModified": now},
             ]
         }
-
-        def mock_tagging(Bucket, Key):
-            if Key == "exports/untagged.json":
-                return {"TagSet": []}
-            return {"TagSet": [{"Key": "graph_studio", "Value": "true"}]}
-
-        mock_s3.get_object_tagging.side_effect = mock_tagging
 
         resp = await client.get("/api/v0/project/import/s3/list")
         assert resp.status_code == 200
@@ -172,13 +165,12 @@ class TestListS3Exports:
         mock_s3 = MagicMock()
         mock_factory.return_value.s3.return_value = mock_s3
 
-        # 15 files all tagged
+        # 15 .json files
         objects = [
             {"Key": f"file_{i}.json", "LastModified": datetime(2026, 7, 31, i, 0, 0, tzinfo=timezone.utc)}
             for i in range(15)
         ]
         mock_s3.list_objects_v2.return_value = {"Contents": objects}
-        mock_s3.get_object_tagging.return_value = {"TagSet": [{"Key": "graph_studio", "Value": "true"}]}
 
         resp = await client.get("/api/v0/project/import/s3/list")
         assert resp.status_code == 200

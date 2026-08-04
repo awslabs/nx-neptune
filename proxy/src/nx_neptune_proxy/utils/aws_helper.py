@@ -59,3 +59,38 @@ def check_body_size(contents: bytes, max_size: int) -> None:
     """Reject if body bytes exceed max_size."""
     if len(contents) > max_size:
         raise HTTPException(status_code=413, detail=f"Payload too large (max {max_size // (1024 * 1024)} MB)")
+
+
+def check_key_not_exists(s3, bucket: str, key: str) -> None:
+    """Raise 409 if the S3 key already exists."""
+    from fastapi import HTTPException
+    from botocore.exceptions import ClientError
+
+    try:
+        s3.head_object(Bucket=bucket, Key=key)
+        filename = key.rsplit("/", 1)[-1]
+        raise HTTPException(status_code=409, detail=f"File already exists: {filename}")
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "404":
+            raise HTTPException(status_code=502, detail=friendly_s3_error(e))
+
+
+def list_s3_json_objects(s3, bucket: str, prefix: str = "", max_keys: int = 100) -> list:
+    """List .json objects from an S3 bucket/prefix.
+
+    Args:
+        s3: boto3 S3 client
+        bucket: S3 bucket name
+        prefix: Optional key prefix (without trailing slash)
+        max_keys: Maximum number of objects to fetch from S3
+
+    Returns:
+        List of S3 object dicts (Key, LastModified, etc.) filtered to .json files only.
+    """
+    list_kwargs = {"Bucket": bucket, "MaxKeys": max_keys}
+    if prefix:
+        list_kwargs["Prefix"] = prefix + "/"
+
+    resp = s3.list_objects_v2(**list_kwargs)
+    objects = resp.get("Contents", [])
+    return [o for o in objects if o["Key"].endswith(".json")]

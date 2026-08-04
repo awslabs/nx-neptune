@@ -18,7 +18,7 @@ from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_store import store as projection_store
-from nx_neptune_proxy.utils.aws_helper import friendly_s3_error, check_content_length, check_body_size
+from nx_neptune_proxy.utils.aws_helper import friendly_s3_error, check_content_length, check_body_size, check_key_not_exists, list_s3_json_objects
 from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name
 
 router = APIRouter(prefix="/api/v0/project", tags=["project-io"])
@@ -99,6 +99,24 @@ def _build_export_payload(project_id: str) -> tuple[dict, str]:
     return payload, p.name
 
 
+def _build_s3_key(name: str, prefix: str) -> tuple[str, str]:
+    """Build S3 key from project name and prefix. Returns (key, filename)."""
+    sanitized = sanitize_s3_key_name(name)
+    now = datetime.now(timezone.utc)
+    timestamp = now.strftime("%Y%m%d_%H%M%S") + f"{now.microsecond // 1000:03d}"
+    filename = f"{sanitized}_{timestamp}.json"
+    key = f"{prefix}/{filename}" if prefix else filename
+    return key, filename
+
+
+def _parse_payload(contents: bytes) -> ProjectExportPayload:
+    """Parse and validate export JSON. Raises 400 on failure."""
+    try:
+        return ProjectExportPayload.model_validate_json(contents)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+
+
 def _import_from_payload(payload: ProjectExportPayload) -> dict:
     """Create project and projections from validated payload. Returns {id, name}."""
     name = payload.project.get("name", "Imported Project")
@@ -139,24 +157,11 @@ def export_project_to_s3(project_id: str):
     """Export a project and its projections to the configured S3 bucket."""
     bucket, prefix = _require_export_bucket()
     payload, name = _build_export_payload(project_id)
+    key, filename = _build_s3_key(name, prefix)
 
-    # Build S3 key
-    sanitized = sanitize_s3_key_name(name)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S") + f"{datetime.now(timezone.utc).microsecond // 1000:03d}"
-    filename = f"{sanitized}_{timestamp}.json"
-    key = f"{prefix}/{filename}" if prefix else filename
-
-    # Upload with tag and conditional check
     s3 = ClientFactory().s3()
     try:
-        # Check if key exists (fail on duplicate)
-        try:
-            s3.head_object(Bucket=bucket, Key=key)
-            raise HTTPException(status_code=409, detail=f"File already exists: {filename}")
-        except ClientError as e:
-            if e.response["Error"]["Code"] != "404":
-                raise
-
+        check_key_not_exists(s3, bucket, key)
         s3.put_object(
             Bucket=bucket,
             Key=key,
@@ -182,48 +187,23 @@ async def import_project(request: Request):
     contents = await request.body()
     check_body_size(contents, MAX_IMPORT_SIZE)
 
-    # Parse and validate
-    try:
-        payload = ProjectExportPayload.model_validate_json(contents)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
-
+    payload = _parse_payload(contents)
     result = _import_from_payload(payload)
     return {"imported": result}
 
 
 @router.get("/import/s3/list", summary="List available exports from S3")
 def list_s3_exports():
-    """List the last 10 export files from S3 (filtered by graph_studio tag)."""
+    """List the last 10 export files from S3 (filtered by prefix)."""
     bucket, prefix = _require_export_bucket()
     s3 = ClientFactory().s3()
 
     try:
-        # List objects in the prefix
-        list_kwargs = {"Bucket": bucket, "MaxKeys": 100}
-        if prefix:
-            list_kwargs["Prefix"] = prefix + "/"
-
-        resp = s3.list_objects_v2(**list_kwargs)
-        objects = resp.get("Contents", [])
-
-        # Filter to .json files only
-        json_objects = [o for o in objects if o["Key"].endswith(".json")]
-
-        # Filter by graph_studio tag
-        tagged = []
-        for obj in json_objects:
-            try:
-                tag_resp = s3.get_object_tagging(Bucket=bucket, Key=obj["Key"])
-                tags = {t["Key"]: t["Value"] for t in tag_resp.get("TagSet", [])}
-                if tags.get("graph_studio") == "true":
-                    tagged.append(obj)
-            except ClientError:
-                continue
+        json_objects = list_s3_json_objects(s3, bucket, prefix)
 
         # Sort by last modified descending, take last 10
-        tagged.sort(key=lambda o: o["LastModified"], reverse=True)
-        recent = tagged[:10]
+        json_objects.sort(key=lambda o: o["LastModified"], reverse=True)
+        recent = json_objects[:10]
 
         return {
             "files": [
@@ -252,16 +232,10 @@ def import_project_from_s3(request_body: dict):
     try:
         resp = s3.get_object(Bucket=bucket, Key=key)
         contents = resp["Body"].read()
-
-        check_body_size(contents, MAX_IMPORT_SIZE)
-
-        payload = ProjectExportPayload.model_validate_json(contents)
     except ClientError as e:
         raise HTTPException(status_code=502, detail=friendly_s3_error(e))
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON in S3 file: {e}")
 
+    check_body_size(contents, MAX_IMPORT_SIZE)
+    payload = _parse_payload(contents)
     result = _import_from_payload(payload)
     return {"imported": result}
