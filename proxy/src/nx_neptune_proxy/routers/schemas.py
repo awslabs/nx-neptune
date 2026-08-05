@@ -126,3 +126,51 @@ class ProjectionResponse(BaseModel):
     progress: float = 0
     error: Optional[str] = None
     created_at: datetime
+
+
+# --- Project import/export ---
+
+
+class ProjectionExport(BaseModel):
+    """Projection config fields only — no runtime state."""
+
+    catalog: str = "AwsDataCatalog"
+    database: Optional[str] = None
+    node_query: Optional[str] = None
+    edge_query: Optional[str] = None
+    graph_name: Optional[str] = None
+    graph_memory_gb: int = 16
+    s3_staging_bucket: Optional[str] = None
+
+    model_config = {"extra": "forbid"}
+
+    @classmethod
+    def from_projection(cls, pr) -> "ProjectionExport":
+        """Create from a Projection dataclass instance."""
+        return cls(
+            catalog=pr.catalog,
+            database=pr.database,
+            node_query=pr.node_query,
+            edge_query=pr.edge_query,
+            graph_name=pr.graph_name,
+            graph_memory_gb=pr.graph_memory_gb,
+            s3_staging_bucket=pr.s3_staging_bucket,
+        )
+
+
+class ProjectExportPayload(BaseModel):
+    """Top-level export format for a single project."""
+
+    version: str = "1.0"
+    project: dict
+    projections: list[ProjectionExport] = []
+
+    model_config = {"extra": "forbid"}
+
+    @classmethod
+    def from_project(cls, project, projections: list) -> "ProjectExportPayload":
+        """Build export payload from a project and its projections."""
+        return cls(
+            project={"name": project.name},
+            projections=[ProjectionExport.from_projection(pr) for pr in projections],
+        )

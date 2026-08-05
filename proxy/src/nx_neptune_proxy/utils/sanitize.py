@@ -17,3 +17,23 @@ def sanitize_error_message(message: str) -> str:
     for pattern, replacement in _SENSITIVE_PATTERNS:
         message = pattern.sub(replacement, message)
     return message
+
+
+def sanitize_s3_key_name(name: str) -> str:
+    """Sanitize a project name for use as an S3 object key component.
+
+    Ensures the output is safe for S3 keys by:
+    - Replacing spaces with underscores
+    - Stripping characters outside [a-zA-Z0-9_-]
+
+    S3 key requirements (https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html):
+    - Max 1024 bytes UTF-8
+    - Safe characters: alphanumeric, !, -, _, ., *, ', (, )
+    - Characters to avoid: \\, {, }, ^, %, `, ], [, ", <, >, ~, #, |
+
+    This function is conservative — it only allows alphanumeric, hyphens,
+    and underscores to avoid any ambiguity with URL encoding or special
+    handling by S3 console/CLI tools.
+    """
+    name = name.replace(" ", "_")
+    return re.sub(r"[^a-zA-Z0-9_-]", "", name)

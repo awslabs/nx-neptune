@@ -1,6 +1,8 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+from __future__ import annotations
+
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -76,6 +78,15 @@ class ProjectionStore:
     def list(self) -> list[Projection]:
         conn = get_connection()
         rows = conn.execute("SELECT * FROM projections ORDER BY created_at DESC").fetchall()
+        conn.close()
+        return [self._row_to_projection(r) for r in rows]
+
+    def list_by_project(self, project_id: str) -> list[Projection]:
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM projections WHERE project_id = ? ORDER BY created_at DESC",
+            (project_id,),
+        ).fetchall()
         conn.close()
         return [self._row_to_projection(r) for r in rows]
 

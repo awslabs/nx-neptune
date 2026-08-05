@@ -22,7 +22,11 @@ router = APIRouter(prefix="/api/v0/metadata", tags=["metadata"])
 def get_config():
     """Get server-side configuration"""
     settings = Settings.from_env()
-    return {"region": settings.region or "", "graph_prefix": settings.graph_prefix}
+    return {
+        "region": settings.region or "",
+        "graph_prefix": settings.graph_prefix,
+        "export_bucket": settings.export_bucket or None,
+    }
 
 
 @router.get("/athena/catalogs", summary="List Athena data catalogs", response_model=CatalogsResponse)

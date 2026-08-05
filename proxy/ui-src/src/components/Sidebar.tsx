@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { Network, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronRight, Circle, Plus, Trash2, Upload } from "lucide-react";
 import { clsx } from "clsx";
-import { projectApi, projection, type Project, type Projection } from "../api";
+import { projectApi, projection, metadata, type Project, type Projection } from "../api";
 
 const statusColor: Record<string, string> = {
   complete: "text-green-500",
@@ -15,7 +15,10 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const [projects, setProjects] = useState<Project[]>([]);
   const [projections, setProjections] = useState<Projection[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [exportBucket, setExportBucket] = useState<string | null>(null);
+  const [importDropdownOpen, setImportDropdownOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importDropdownRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -41,9 +44,21 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
   useEffect(() => {
     loadProjects();
+    metadata.config().then(c => setExportBucket(c.export_bucket));
     const handler = () => loadProjects();
     window.addEventListener("projects-changed", handler);
     return () => window.removeEventListener("projects-changed", handler);
+  }, []);
+
+  // Close import dropdown on click outside
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (importDropdownRef.current && !importDropdownRef.current.contains(e.target as Node)) {
+        setImportDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
   function loadProjects() {
@@ -112,9 +127,39 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
             <div className="flex items-center justify-between px-3">
               <span className="text-xs font-semibold uppercase text-gray-400">Projects</span>
               <div className="flex items-center gap-1">
-                <button onClick={() => fileInputRef.current?.click()} className="rounded p-0.5 text-gray-400 hover:text-gray-600" title="Import Project">
-                  <Upload className="h-3 w-3" />
-                </button>
+                <div className="relative" ref={importDropdownRef}>
+                  <button
+                    onClick={() => setImportDropdownOpen(!importDropdownOpen)}
+                    className="rounded p-0.5 text-gray-400 hover:text-gray-600"
+                    title="Import Project"
+                  >
+                    <Upload className="h-3 w-3" />
+                  </button>
+                  {importDropdownOpen && (
+                    <div className="absolute right-0 z-10 mt-1 w-36 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                      <button
+                        className="block w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-100"
+                        onClick={() => {
+                          setImportDropdownOpen(false);
+                          fileInputRef.current?.click();
+                        }}
+                      >
+                        Upload file
+                      </button>
+                      {exportBucket && (
+                        <button
+                          className="block w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-100"
+                          onClick={() => {
+                            setImportDropdownOpen(false);
+                            window.dispatchEvent(new Event("open-s3-import-dialog"));
+                          }}
+                        >
+                          Load from S3
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <NavLink to="/projects" className="rounded p-0.5 text-gray-400 hover:text-gray-600" title="Add Project">
                   <Plus className="h-3 w-3" />
                 </NavLink>
