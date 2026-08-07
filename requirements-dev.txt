@@ -63,7 +63,7 @@ numpy==2.4.6
     #   nx-neptune (pyproject.toml)
     #   pandas
     #   scipy
-packaging==26.2
+packaging==26.3
     # via
     #   black
     #   pytest
