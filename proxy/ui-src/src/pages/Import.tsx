@@ -6,8 +6,10 @@ import { Play, CheckCircle, Eye, Network, Plus, Trash2 } from "lucide-react";
 import { SchemaPreview, type SchemaNode, type SchemaEdge } from "../components/SchemaPreview";
 
 function extractLabel(sql: string): string | null {
-  const match = sql.match(/'(\w+)'\s+AS\s+~label/i);
-  return match?.[1] ?? null;
+  // Matches: 'Label' AS "~label", 'Label' AS `~label`, 'Label' AS [~label], 'Label' AS ~label
+  // Also handles: 'Label' "~label" (no AS keyword), multi-word labels, underscores, numbers
+  const match = sql.match(/'([^']+)'\s+(?:AS\s+)?(?:"|`|\[)?~label(?:"|`|\])?/i);
+  return match?.[1]?.trim() ?? null;
 }
 
 export function Import() {
@@ -202,6 +204,15 @@ export function Import() {
     } catch (e: any) { setError(e.message); } finally { setLoading(null); }
   }
 
+  async function handleValidateQuery() {
+    setChecks([]); setPreview(null); setError(null); setLoading("validate-query");
+    try {
+      const id = await ensureProjection();
+      const res = await projection.validateQuery(id);
+      setChecks(res.checks);
+    } catch (e: any) { setError(e.message); } finally { setLoading(null); }
+  }
+
   async function handlePreview() {
     setChecks([]); setPreview(null); setError(null); setLoading("preview");
     try {
@@ -284,6 +295,30 @@ export function Import() {
                 setProjectId(ws.id);
               }}>+</Button>
             </div>
+          </label>
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-gray-700">Copy config from</span>
+            <Select
+              value=""
+              onChange={(e) => {
+                const s = projectionsList.find((s) => s.id === e.target.value);
+                if (!s) return;
+                if (s.catalog) setCatalog(s.catalog);
+                if (s.database) setDatabase(s.database);
+                if (s.s3_staging_bucket) setBucket(s.s3_staging_bucket);
+                if (s.graph_memory_gb) setGraphMemoryGb(s.graph_memory_gb);
+                // Load queries from the selected projection
+                projection.getQueries(s.id).then((res) => {
+                  if (res.node_queries.length > 0) setNodeQueries(res.node_queries.map((q) => ({ id: q.id, sql: q.sql })));
+                  if (res.edge_queries.length > 0) setEdgeQueries(res.edge_queries.map((q) => ({ id: q.id, sql: q.sql, from_type: q.from_type ?? "", to_type: q.to_type ?? "" })));
+                });
+              }}
+            >
+              <option value="">Select a projection...</option>
+              {(projectId ? projectionsList.filter(s => s.project_id === projectId) : projectionsList).map((s) => (
+                <option key={s.id} value={s.id}>{s.graph_name || s.id.slice(0, 8)}</option>
+              ))}
+            </Select>
           </label>
           <div className="grid grid-cols-2 gap-4">
             <label className="space-y-1">
@@ -434,7 +469,8 @@ export function Import() {
 
       {/* Actions */}
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" onClick={handleValidate} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate" ? "Validating..." : "Validate"}</Button>
+        <Button variant="secondary" onClick={handleValidate} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate" ? "Validating..." : "Validate Resources"}</Button>
+        <Button variant="secondary" onClick={handleValidateQuery} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate-query" ? "Validating..." : "Validate Query"}</Button>
         <Button variant="secondary" onClick={handlePreview} disabled={!!loading}><Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview Data"}</Button>
         <Button variant="secondary" onClick={handleSchemaPreview} disabled={schemaNodes.length === 0}><Network className="h-4 w-4" /> Preview Schema</Button>
         <Button onClick={handleExecute} disabled={polling || !!loading}><Play className="h-4 w-4" /> Execute</Button>
@@ -461,7 +497,11 @@ export function Import() {
         <div className="space-y-4">
           {preview.map((result, i) => (
             <Card key={i}>
-              <h2 className="mb-2 text-sm font-medium">{i === 0 ? "Node Preview" : "Edge Preview"}</h2>
+              <h2 className="mb-2 text-sm font-medium">
+                {i < nodeQueries.length
+                  ? `Node: ${extractLabel(nodeQueries[i]?.sql ?? "") ?? `Query ${i + 1}`}`
+                  : `Edge: ${extractLabel(edgeQueries[i - nodeQueries.length]?.sql ?? "") ?? `Query ${i - nodeQueries.length + 1}`}`}
+              </h2>
               <div className="overflow-auto">
                 <table className="w-full text-left text-sm">
                   <thead className="border-b bg-gray-50">

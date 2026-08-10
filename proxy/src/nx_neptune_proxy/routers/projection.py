@@ -98,15 +98,33 @@ def validate_query(projection_id: str):
     """Validate node and edge queries individually"""
     p = _get_projection_or_404(projection_id)
     checks = []
-    for label, query in [("node_query", p.node_query), ("edge_query", p.edge_query)]:
-        if not query:
-            continue
+
+    # Try new multi-query tables first, fall back to legacy single fields
+    node_queries_list = query_store.list_node_queries(projection_id)
+    edge_queries_list = query_store.list_edge_queries(projection_id)
+
+    queries_to_validate = []
+    if node_queries_list:
+        for i, nq in enumerate(node_queries_list):
+            if nq.sql.strip():
+                queries_to_validate.append((f"node_query_{i+1}", nq.sql, "node"))
+    elif p.node_query:
+        queries_to_validate.append(("node_query", p.node_query, "node"))
+
+    if edge_queries_list:
+        for i, eq in enumerate(edge_queries_list):
+            if eq.sql.strip():
+                queries_to_validate.append((f"edge_query_{i+1}", eq.sql, "edge"))
+    elif p.edge_query:
+        queries_to_validate.append(("edge_query", p.edge_query, "edge"))
+
+    for label, query, query_type in queries_to_validate:
         result = check_athena_query(
             sql_query=query,
             catalog=p.catalog,
             database=p.database,
             output_location=p.s3_staging_bucket,
-            query_type="edge" if label == "edge_query" else "node",
+            query_type=query_type,
         )
         checks.append({"check": label, "passed": result.passed, "message": result.message})
     valid = all(c["passed"] for c in checks) if checks else False
@@ -119,9 +137,18 @@ async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le
     p = _get_projection_or_404(projection_id)
     client = ClientFactory().athena()
 
-    queries = [q for q in [p.node_query, p.edge_query] if q]
-    if not queries and p.sql_query:
-        queries = [q.strip() for q in p.sql_query.split(";") if q.strip()]
+    # Try new multi-query tables first, fall back to legacy single fields
+    node_queries_list = query_store.list_node_queries(projection_id)
+    edge_queries_list = query_store.list_edge_queries(projection_id)
+
+    queries = []
+    if node_queries_list or edge_queries_list:
+        queries = [nq.sql for nq in node_queries_list if nq.sql.strip()]
+        queries += [eq.sql for eq in edge_queries_list if eq.sql.strip()]
+    else:
+        queries = [q for q in [p.node_query, p.edge_query] if q]
+        if not queries and p.sql_query:
+            queries = [q.strip() for q in p.sql_query.split(";") if q.strip()]
     all_results = []
 
     for q in queries:
