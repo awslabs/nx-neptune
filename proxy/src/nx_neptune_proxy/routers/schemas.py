@@ -126,3 +126,62 @@ class ProjectionResponse(BaseModel):
     progress: float = 0
     error: Optional[str] = None
     created_at: datetime
+
+
+# --- Schema Preview ---
+
+
+class SchemaNode(BaseModel):
+    id: str
+    label: str
+
+
+class SchemaEdge(BaseModel):
+    id: str
+    source: str
+    target: str
+    label: str
+
+
+class SchemaPreviewResponse(BaseModel):
+    nodes: list[SchemaNode]
+    edges: list[SchemaEdge]
+
+
+# --- Multi-Query ---
+
+
+class NodeQueryInput(BaseModel):
+    id: Optional[str] = None
+    sql: str = ""
+
+
+class EdgeQueryInput(BaseModel):
+    id: Optional[str] = None
+    sql: str = ""
+    from_type: Optional[str] = None
+    to_type: Optional[str] = None
+
+
+class NodeQueryResponse(BaseModel):
+    id: str
+    sql: str
+    position: int
+
+
+class EdgeQueryResponse(BaseModel):
+    id: str
+    sql: str
+    from_type: Optional[str] = None
+    to_type: Optional[str] = None
+    position: int
+
+
+class QueriesPayload(BaseModel):
+    node_queries: list[NodeQueryInput] = []
+    edge_queries: list[EdgeQueryInput] = []
+
+
+class QueriesResponse(BaseModel):
+    node_queries: list[NodeQueryResponse]
+    edge_queries: list[EdgeQueryResponse]

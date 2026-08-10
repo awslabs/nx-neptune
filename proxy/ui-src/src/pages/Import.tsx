@@ -1,8 +1,14 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router";
-import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project } from "../api";
+import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
-import { Play, CheckCircle, Eye } from "lucide-react";
+import { Play, CheckCircle, Eye, Network, Plus, Trash2 } from "lucide-react";
+import { SchemaPreview, type SchemaNode, type SchemaEdge } from "../components/SchemaPreview";
+
+function extractLabel(sql: string): string | null {
+  const match = sql.match(/'(\w+)'\s+AS\s+~label/i);
+  return match?.[1] ?? null;
+}
 
 export function Import() {
   const [searchParams] = useSearchParams();
@@ -20,11 +26,13 @@ export function Import() {
   // --- Form state ---
   const [catalog, setCatalog] = useState("AwsDataCatalog");
   const [database, setDatabase] = useState("");
-  const [nodeQuery, setNodeQuery] = useState("");
-  const [edgeQuery, setEdgeQuery] = useState("");
   const [bucket, setBucket] = useState("");
   const [graphName, setGraphName] = useState("");
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
+
+  // --- Multi-query state ---
+  const [nodeQueries, setNodeQueries] = useState<NodeQueryInput[]>([{ sql: "" }]);
+  const [edgeQueries, setEdgeQueries] = useState<EdgeQueryInput[]>([{ sql: "", from_type: "", to_type: "" }]);
 
   // --- Projection state ---
   const [projectionsList, setProjectionsList] = useState<Projection[]>([]);
@@ -37,6 +45,32 @@ export function Import() {
   const [preview, setPreview] = useState<{ columns: string[]; rows: string[][] }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
+
+  // --- Schema Preview ---
+  const [schemaVisible, setSchemaVisible] = useState(false);
+
+  // Derived: node types from current queries
+  const nodeTypes = useMemo(
+    () => nodeQueries.map((q) => extractLabel(q.sql)).filter((l): l is string => l !== null),
+    [nodeQueries],
+  );
+
+  // Derived: schema graph from local state
+  const schemaNodes: SchemaNode[] = useMemo(
+    () => nodeTypes.map((label) => ({ id: label, label })),
+    [nodeTypes],
+  );
+  const schemaEdges: SchemaEdge[] = useMemo(
+    () =>
+      edgeQueries
+        .map((eq, i) => {
+          const label = extractLabel(eq.sql);
+          if (!label || !eq.from_type || !eq.to_type) return null;
+          return { id: `e${i}`, source: eq.from_type, target: eq.to_type, label };
+        })
+        .filter((e): e is SchemaEdge => e !== null),
+    [edgeQueries],
+  );
 
   // --- Load metadata ---
   useEffect(() => {
@@ -59,19 +93,7 @@ export function Import() {
     if (wsParam) {
       setProjectId(wsParam);
       if (!projectionId) {
-        setCurrentId(null);
-        setStatus(null);
-        setPolling(false);
-        setChecks([]);
-        setPreview(null);
-        setError(null);
-        setCatalog("AwsDataCatalog");
-        setDatabase("");
-        setNodeQuery("");
-        setEdgeQuery("");
-        setBucket("");
-        setGraphName("");
-        setGraphMemoryGb(16);
+        resetForm();
       }
     }
     if (projectionId) {
@@ -84,6 +106,23 @@ export function Import() {
     metadata.databases(catalog).then((d) => { setDatabases(d.databases); setDbLoading(false); });
   }, [catalog]);
 
+  function resetForm() {
+    setCurrentId(null);
+    setStatus(null);
+    setPolling(false);
+    setChecks([]);
+    setPreview(null);
+    setError(null);
+    setCatalog("AwsDataCatalog");
+    setDatabase("");
+    setBucket("");
+    setGraphName("");
+    setGraphMemoryGb(16);
+    setNodeQueries([{ sql: "" }]);
+    setEdgeQueries([{ sql: "", from_type: "", to_type: "" }]);
+    setSchemaVisible(false);
+  }
+
   async function loadProjections() {
     const list = await projection.list();
     setProjectionsList(list);
@@ -91,13 +130,15 @@ export function Import() {
 
   // --- Projection management ---
   async function ensureProjection(): Promise<string> {
-    const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb, project_id: projectId || undefined };
+    const data = { catalog, database, graph_name: graphName, graph_memory_gb: graphMemoryGb, s3_staging_bucket: bucket, project_id: projectId || undefined };
     if (currentId) {
       await projection.update(currentId, data);
+      await projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: edgeQueries });
       return currentId;
     }
     const p = await projection.create(data);
     setCurrentId(p.id);
+    await projection.saveQueries(p.id, { node_queries: nodeQueries, edge_queries: edgeQueries });
     await loadProjections();
     window.dispatchEvent(new Event("projects-changed"));
     return p.id;
@@ -107,14 +148,18 @@ export function Import() {
     setCurrentId(p.id);
     if (p.catalog) setCatalog(p.catalog);
     if (p.database) setDatabase(p.database);
-    if (p.node_query) setNodeQuery(p.node_query);
-    if (p.edge_query) setEdgeQuery(p.edge_query);
     if (p.s3_staging_bucket) setBucket(p.s3_staging_bucket);
     if (p.graph_name) setGraphName(p.graph_name);
     if (p.graph_memory_gb) setGraphMemoryGb(p.graph_memory_gb);
     setChecks([]);
     setPreview(null);
     setError(null);
+
+    // Load queries
+    projection.getQueries(p.id).then((res) => {
+      setNodeQueries(res.node_queries.length > 0 ? res.node_queries.map((q) => ({ id: q.id, sql: q.sql })) : [{ sql: "" }]);
+      setEdgeQueries(res.edge_queries.length > 0 ? res.edge_queries.map((q) => ({ id: q.id, sql: q.sql, from_type: q.from_type ?? "", to_type: q.to_type ?? "" })) : [{ sql: "", from_type: "", to_type: "" }]);
+    });
 
     if (p.status === "executing") startPolling(p.id);
     else if (p.status === "complete") {
@@ -125,12 +170,31 @@ export function Import() {
     }
   }
 
+  // --- Node query handlers ---
+  function updateNodeQuery(index: number, sql: string) {
+    setNodeQueries((prev) => prev.map((q, i) => (i === index ? { ...q, sql } : q)));
+  }
+  function addNodeQuery() {
+    setNodeQueries((prev) => [...prev, { sql: "" }]);
+  }
+  function removeNodeQuery(index: number) {
+    setNodeQueries((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  // --- Edge query handlers ---
+  function updateEdgeQuery(index: number, updates: Partial<EdgeQueryInput>) {
+    setEdgeQueries((prev) => prev.map((q, i) => (i === index ? { ...q, ...updates } : q)));
+  }
+  function addEdgeQuery() {
+    setEdgeQueries((prev) => [...prev, { sql: "", from_type: "", to_type: "" }]);
+  }
+  function removeEdgeQuery(index: number) {
+    setEdgeQueries((prev) => prev.filter((_, i) => i !== index));
+  }
+
   // --- Actions ---
   async function handleValidate() {
-    setChecks([]);
-    setPreview(null);
-    setError(null);
-    setLoading("validate");
+    setChecks([]); setPreview(null); setError(null); setLoading("validate");
     try {
       const id = await ensureProjection();
       const res = await projection.validate(id);
@@ -138,23 +202,8 @@ export function Import() {
     } catch (e: any) { setError(e.message); } finally { setLoading(null); }
   }
 
-  async function handleValidateQuery() {
-    setChecks([]);
-    setPreview(null);
-    setError(null);
-    setLoading("validate-query");
-    try {
-      const id = await ensureProjection();
-      const res = await projection.validateQuery(id);
-      setChecks(res.checks);
-    } catch (e: any) { setError(e.message); } finally { setLoading(null); }
-  }
-
   async function handlePreview() {
-    setChecks([]);
-    setPreview(null);
-    setError(null);
-    setLoading("preview");
+    setChecks([]); setPreview(null); setError(null); setLoading("preview");
     try {
       const id = await ensureProjection();
       const res = await projection.preview(id);
@@ -164,15 +213,16 @@ export function Import() {
   }
 
   async function handleExecute() {
-    setError(null);
-    setLoading("execute");
+    setError(null); setLoading("execute");
     try {
       const id = await ensureProjection();
       await projection.execute(id);
       startPolling(id);
-    } catch (e: any) {
-      setError(e.message);
-    } finally { setLoading(null); }
+    } catch (e: any) { setError(e.message); } finally { setLoading(null); }
+  }
+
+  function handleSchemaPreview() {
+    setSchemaVisible(true);
   }
 
   // --- Polling ---
@@ -190,7 +240,10 @@ export function Import() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="flex h-full">
+      {/* Left pane: form */}
+      <div className={`overflow-auto p-6 ${schemaVisible ? "w-1/2 border-r border-gray-200" : "w-full max-w-4xl mx-auto"}`}>
+      <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Import</h1>
         <div className="flex items-center gap-2">
@@ -199,7 +252,7 @@ export function Import() {
             value={currentId || ""}
             onChange={(e) => {
               const id = e.target.value;
-              if (!id) { setCurrentId(null); setStatus(null); setChecks([]); setPreview(null); return; }
+              if (!id) { resetForm(); return; }
               const s = projectionsList.find((s) => s.id === id);
               if (s) loadProjection(s);
             }}
@@ -213,51 +266,25 @@ export function Import() {
         </div>
       </div>
 
+      {/* Config */}
       <Card>
         <div className="space-y-4">
           <label className="block space-y-1">
-              <span className="text-sm font-medium text-gray-700">Project</span>
-              <div className="flex gap-2">
-                <Select
-                  className="flex-1"
-                  value={projectId}
-                  onChange={(e) => setProjectId(e.target.value)}
-                >
-                  <option value="">No project</option>
-                  {projects.map((ws) => (
-                    <option key={ws.id} value={ws.id}>{ws.name}</option>
-                  ))}
-                </Select>
-                <Button variant="secondary" onClick={async () => {
-                  const name = prompt("Project name:");
-                  if (!name) return;
-                  const ws = await projectApi.create(name);
-                  setProjects(prev => [...prev, ws]);
-                  setProjectId(ws.id);
-                }}>+</Button>
-              </div>
-            </label>
-          <label className="block space-y-1">
-              <span className="text-sm font-medium text-gray-700">Copy config from</span>
-              <Select
-                value=""
-                onChange={(e) => {
-                  const s = projectionsList.find((s) => s.id === e.target.value);
-                  if (!s) return;
-                  if (s.catalog) setCatalog(s.catalog);
-                  if (s.database) setDatabase(s.database);
-                  if (s.node_query) setNodeQuery(s.node_query);
-                  if (s.edge_query) setEdgeQuery(s.edge_query);
-                  if (s.s3_staging_bucket) setBucket(s.s3_staging_bucket);
-                  if (s.graph_memory_gb) setGraphMemoryGb(s.graph_memory_gb);
-                }}
-              >
-                <option value="">Select a projection...</option>
-                {(projectId ? projectionsList.filter(s => s.project_id === projectId) : projectionsList).map((s) => (
-                  <option key={s.id} value={s.id}>{s.graph_name || s.id.slice(0, 8)}</option>
-                ))}
+            <span className="text-sm font-medium text-gray-700">Project</span>
+            <div className="flex gap-2">
+              <Select className="flex-1" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+                <option value="">No project</option>
+                {projects.map((ws) => <option key={ws.id} value={ws.id}>{ws.name}</option>)}
               </Select>
-            </label>
+              <Button variant="secondary" onClick={async () => {
+                const name = prompt("Project name:");
+                if (!name) return;
+                const ws = await projectApi.create(name);
+                setProjects((prev) => [...prev, ws]);
+                setProjectId(ws.id);
+              }}>+</Button>
+            </div>
+          </label>
           <div className="grid grid-cols-2 gap-4">
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">Catalog</span>
@@ -273,29 +300,6 @@ export function Import() {
               </Select>
             </label>
           </div>
-
-          <label className="block space-y-1">
-            <span className="text-sm font-medium text-gray-700">Node Query</span>
-            <textarea
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              rows={3}
-              placeholder="SELECT ~id, ~label, col1, col2 FROM nodes_table"
-              value={nodeQuery}
-              onChange={(e) => setNodeQuery(e.target.value)}
-            />
-          </label>
-
-          <label className="block space-y-1">
-            <span className="text-sm font-medium text-gray-700">Edge Query</span>
-            <textarea
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              rows={3}
-              placeholder="SELECT ~id, ~from, ~to, ~label FROM edges_table"
-              value={edgeQuery}
-              onChange={(e) => setEdgeQuery(e.target.value)}
-            />
-          </label>
-
           <div className="grid grid-cols-3 gap-4">
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">S3 Staging Bucket</span>
@@ -325,11 +329,114 @@ export function Import() {
         </div>
       </Card>
 
+      {/* Node Queries */}
+      <Card>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Node Queries</h2>
+            <button onClick={addNodeQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+              <Plus className="h-3 w-3" /> Add
+            </button>
+          </div>
+          {nodeQueries.map((nq, i) => {
+            const label = extractLabel(nq.sql);
+            return (
+              <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
+                  <span className="text-xs font-medium text-gray-700">
+                    {label ?? <span className="italic text-gray-400">No ~label detected</span>}
+                  </span>
+                  {nodeQueries.length > 1 && (
+                    <button onClick={() => removeNodeQuery(i)} className="text-gray-400 hover:text-red-600">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-none"
+                  rows={2}
+                  placeholder="SELECT id AS ~id, 'TypeName' AS ~label, col1 FROM table"
+                  value={nq.sql}
+                  onChange={(e) => updateNodeQuery(i, e.target.value)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* Edge Queries */}
+      <Card>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Edge Queries</h2>
+            <button onClick={addEdgeQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+              <Plus className="h-3 w-3" /> Add
+            </button>
+          </div>
+          {edgeQueries.map((eq, i) => {
+            const label = extractLabel(eq.sql);
+            const fromInvalid = eq.from_type && !nodeTypes.includes(eq.from_type);
+            const toInvalid = eq.to_type && !nodeTypes.includes(eq.to_type);
+            return (
+              <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
+                  <span className="text-xs font-medium text-gray-700">
+                    {label ?? <span className="italic text-gray-400">No ~label detected</span>}
+                  </span>
+                  {edgeQueries.length > 1 && (
+                    <button onClick={() => removeEdgeQuery(i)} className="text-gray-400 hover:text-red-600">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-none"
+                  rows={2}
+                  placeholder="SELECT id AS ~id, src AS ~from, dst AS ~to, 'EdgeType' AS ~label FROM table"
+                  value={eq.sql}
+                  onChange={(e) => updateEdgeQuery(i, { sql: e.target.value })}
+                />
+                <div className="flex gap-4 px-3 py-2 bg-gray-50 border-t border-gray-200">
+                  <label className="flex items-center gap-2 text-xs">
+                    <span className={fromInvalid ? "text-red-500 font-medium" : "text-gray-600"}>From:</span>
+                    <select
+                      className={`rounded border px-2 py-1 text-xs ${fromInvalid ? "border-red-300 bg-red-50" : "border-gray-300"}`}
+                      value={eq.from_type ?? ""}
+                      onChange={(e) => updateEdgeQuery(i, { from_type: e.target.value })}
+                    >
+                      <option value="">Select node type...</option>
+                      {nodeTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    {fromInvalid && <span className="text-red-500">⚠</span>}
+                  </label>
+                  <label className="flex items-center gap-2 text-xs">
+                    <span className={toInvalid ? "text-red-500 font-medium" : "text-gray-600"}>To:</span>
+                    <select
+                      className={`rounded border px-2 py-1 text-xs ${toInvalid ? "border-red-300 bg-red-50" : "border-gray-300"}`}
+                      value={eq.to_type ?? ""}
+                      onChange={(e) => updateEdgeQuery(i, { to_type: e.target.value })}
+                    >
+                      <option value="">Select node type...</option>
+                      {nodeTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    {toInvalid && <span className="text-red-500">⚠</span>}
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+          {nodeTypes.length === 0 && (
+            <p className="text-xs text-gray-400 italic">Define node queries with ~label to populate the dropdowns</p>
+          )}
+        </div>
+      </Card>
+
       {/* Actions */}
-      <div className="flex gap-2">
-        <Button variant="secondary" onClick={handleValidate} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate" ? "Validating..." : "Validate Resources"}</Button>
-        <Button variant="secondary" onClick={handleValidateQuery} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate-query" ? "Validating..." : "Validate Query"}</Button>
-        <Button variant="secondary" onClick={handlePreview} disabled={!!loading}><Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview"}</Button>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="secondary" onClick={handleValidate} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate" ? "Validating..." : "Validate"}</Button>
+        <Button variant="secondary" onClick={handlePreview} disabled={!!loading}><Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview Data"}</Button>
+        <Button variant="secondary" onClick={handleSchemaPreview} disabled={schemaNodes.length === 0}><Network className="h-4 w-4" /> Preview Schema</Button>
         <Button onClick={handleExecute} disabled={polling || !!loading}><Play className="h-4 w-4" /> Execute</Button>
       </div>
 
@@ -393,6 +500,31 @@ export function Import() {
       {/* Error */}
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+      )}
+      </div>
+      </div>
+
+      {/* Right pane: Schema Preview */}
+      {schemaVisible && (
+        <div className="w-1/2 flex flex-col">
+          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+            <h3 className="text-sm font-semibold text-gray-700">Schema Preview</h3>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-400">
+                {schemaNodes.length} node type{schemaNodes.length !== 1 ? "s" : ""} · {schemaEdges.length} edge type{schemaEdges.length !== 1 ? "s" : ""}
+              </span>
+              <button
+                onClick={() => setSchemaVisible(false)}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                ✕ Close
+              </button>
+            </div>
+          </div>
+          <div className="flex-1">
+            <SchemaPreview nodes={schemaNodes} edges={schemaEdges} />
+          </div>
+        </div>
       )}
     </div>
   );

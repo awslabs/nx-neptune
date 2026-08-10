@@ -21,10 +21,13 @@ from nx_neptune_proxy.routers.schemas import (
     ProjectionResponse,
     ProjectionStatus,
     ProjectionUpdate,
+    QueriesPayload,
+    QueriesResponse,
     ValidateResponse,
 )
 from nx_neptune_proxy.services.pipeline import run_pipeline
 from nx_neptune_proxy.services.projection_store import store
+from nx_neptune_proxy.services.query_store import query_store
 from nx_neptune_proxy.utils import unpack_query_results
 
 router = APIRouter(prefix="/api/v0/projection", tags=["projection"])
@@ -192,3 +195,41 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
 
     background_tasks.add_task(_delete_graph)
     return {"id": p.id, "status": "deleting"}
+
+
+@router.get(
+    "/{projection_id}/queries",
+    summary="Get node and edge queries for a projection",
+    response_model=QueriesResponse,
+)
+def get_queries(projection_id: str):
+    """Return all node and edge queries for a projection."""
+    _get_projection_or_404(projection_id)
+    node_queries = query_store.list_node_queries(projection_id)
+    edge_queries = query_store.list_edge_queries(projection_id)
+    return QueriesResponse(
+        node_queries=[{"id": q.id, "sql": q.sql, "position": q.position} for q in node_queries],
+        edge_queries=[
+            {"id": q.id, "sql": q.sql, "from_type": q.from_type, "to_type": q.to_type, "position": q.position}
+            for q in edge_queries
+        ],
+    )
+
+
+@router.put(
+    "/{projection_id}/queries",
+    summary="Save node and edge queries for a projection",
+    response_model=QueriesResponse,
+)
+def save_queries(projection_id: str, body: QueriesPayload):
+    """Replace all node and edge queries for a projection."""
+    _get_projection_or_404(projection_id)
+    node_queries = query_store.save_node_queries(projection_id, [q.model_dump() for q in body.node_queries])
+    edge_queries = query_store.save_edge_queries(projection_id, [q.model_dump() for q in body.edge_queries])
+    return QueriesResponse(
+        node_queries=[{"id": q.id, "sql": q.sql, "position": q.position} for q in node_queries],
+        edge_queries=[
+            {"id": q.id, "sql": q.sql, "from_type": q.from_type, "to_type": q.to_type, "position": q.position}
+            for q in edge_queries
+        ],
+    )
