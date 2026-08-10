@@ -571,10 +571,11 @@ export function Import() {
                   {/* Sub-tabs for each query result */}
                   <div className="flex gap-1 px-4 py-2 border-b border-gray-100 overflow-x-auto">
                     {preview.map((_, i) => {
-                      const isNode = i < nodeQueries.length;
+                      const activeNodeCount = nodeQueries.filter(q => q.sql.trim()).length;
+                      const isNode = i < activeNodeCount;
                       const label = isNode
                         ? extractLabel(nodeQueries[i]?.sql ?? "") ?? `Node ${i + 1}`
-                        : extractLabel(edgeQueries[i - nodeQueries.length]?.sql ?? "") ?? `Edge ${i - nodeQueries.length + 1}`;
+                        : extractLabel(edgeQueries[i - activeNodeCount]?.sql ?? "") ?? `Edge ${i - activeNodeCount + 1}`;
                       const activeClass = isNode ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700";
                       return (
                         <button
