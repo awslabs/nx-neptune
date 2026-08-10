@@ -53,28 +53,36 @@ export function Import() {
   const [rightPaneTab, setRightPaneTab] = useState<"schema" | "data">("schema");
   const [dataTab, setDataTab] = useState(0);
 
-  // Derived: node types from current queries
+  // --- Resizable pane ---
+  const [leftWidth, setLeftWidth] = useState(50);
+  const [dragging, setDragging] = useState(false);
+
+  const handleMouseDown = useCallback(() => setDragging(true), []);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      const pct = (e.clientX / window.innerWidth) * 100;
+      setLeftWidth(Math.min(Math.max(pct, 25), 75));
+    };
+    const handleMouseUp = () => setDragging(false);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [dragging]);
+
+  // Derived: node types from current queries (reactive, for dropdowns)
   const nodeTypes = useMemo(
     () => nodeQueries.map((q) => extractLabel(q.sql)).filter((l): l is string => l !== null),
     [nodeQueries],
   );
 
-  // Derived: schema graph from local state
-  const schemaNodes: SchemaNode[] = useMemo(
-    () => nodeTypes.map((label) => ({ id: label, label })),
-    [nodeTypes],
-  );
-  const schemaEdges: SchemaEdge[] = useMemo(
-    () =>
-      edgeQueries
-        .map((eq, i) => {
-          const label = extractLabel(eq.sql);
-          if (!label || !eq.from_type || !eq.to_type) return null;
-          return { id: `e${i}`, source: eq.from_type, target: eq.to_type, label };
-        })
-        .filter((e): e is SchemaEdge => e !== null),
-    [edgeQueries],
-  );
+  // Schema graph: static, only updated when "Preview Schema" is clicked
+  const [schemaNodes, setSchemaNodes] = useState<SchemaNode[]>([]);
+  const [schemaEdges, setSchemaEdges] = useState<SchemaEdge[]>([]);
 
   // --- Load metadata ---
   useEffect(() => {
@@ -240,6 +248,16 @@ export function Import() {
   }
 
   function handleSchemaPreview() {
+    const nodes = nodeTypes.map((label) => ({ id: label, label }));
+    const edges = edgeQueries
+      .map((eq, i) => {
+        const label = extractLabel(eq.sql);
+        if (!label || !eq.from_type || !eq.to_type) return null;
+        return { id: `e${i}`, source: eq.from_type, target: eq.to_type, label };
+      })
+      .filter((e): e is SchemaEdge => e !== null);
+    setSchemaNodes(nodes);
+    setSchemaEdges(edges);
     setRightPaneOpen(true);
     setRightPaneTab("schema");
   }
@@ -259,9 +277,9 @@ export function Import() {
   }, []);
 
   return (
-    <div className="flex h-full">
+    <div className={`flex h-full ${dragging ? "select-none cursor-col-resize" : ""}`}>
       {/* Left pane: form */}
-      <div className={`overflow-auto p-6 ${rightPaneOpen ? "w-1/2 border-r border-gray-200" : "w-full max-w-4xl mx-auto"}`}>
+      <div className={`overflow-auto p-6 ${rightPaneOpen ? "border-r border-gray-200" : "w-full max-w-4xl mx-auto"}`} style={rightPaneOpen ? { width: `${leftWidth}%` } : undefined}>
       <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Import</h1>
@@ -480,7 +498,7 @@ export function Import() {
         <Button variant="secondary" onClick={handleValidate} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate" ? "Validating..." : "Validate Resources"}</Button>
         <Button variant="secondary" onClick={handleValidateQuery} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate-query" ? "Validating..." : "Validate Query"}</Button>
         <Button variant="secondary" onClick={handlePreview} disabled={!!loading}><Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview Data"}</Button>
-        <Button variant="secondary" onClick={handleSchemaPreview} disabled={schemaNodes.length === 0}><Network className="h-4 w-4" /> Preview Schema</Button>
+        <Button variant="secondary" onClick={handleSchemaPreview} disabled={nodeTypes.length === 0}><Network className="h-4 w-4" /> Preview Schema</Button>
         <Button onClick={handleExecute} disabled={polling || !!loading}><Play className="h-4 w-4" /> Execute</Button>
       </div>
 
@@ -523,9 +541,17 @@ export function Import() {
       </div>
       </div>
 
+      {/* Drag handle */}
+      {rightPaneOpen && (
+        <div
+          onMouseDown={handleMouseDown}
+          className={`w-1 cursor-col-resize hover:bg-blue-300 active:bg-blue-400 transition-colors ${dragging ? "bg-blue-400" : "bg-gray-200"}`}
+        />
+      )}
+
       {/* Right pane: Schema + Data tabs */}
       {rightPaneOpen && (
-        <div className="w-1/2 flex flex-col">
+        <div className="flex flex-col" style={{ width: `${100 - leftWidth}%` }}>
           <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2">
             <div className="flex gap-4">
               <button
