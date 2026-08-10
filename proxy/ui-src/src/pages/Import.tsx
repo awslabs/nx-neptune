@@ -49,7 +49,9 @@ export function Import() {
   const [loading, setLoading] = useState<string | null>(null);
 
   // --- Schema Preview ---
-  const [schemaVisible, setSchemaVisible] = useState(false);
+  const [rightPaneOpen, setRightPaneOpen] = useState(false);
+  const [rightPaneTab, setRightPaneTab] = useState<"schema" | "data">("schema");
+  const [dataTab, setDataTab] = useState(0);
 
   // Derived: node types from current queries
   const nodeTypes = useMemo(
@@ -122,7 +124,7 @@ export function Import() {
     setGraphMemoryGb(16);
     setNodeQueries([{ sql: "" }]);
     setEdgeQueries([{ sql: "", from_type: "", to_type: "" }]);
-    setSchemaVisible(false);
+    setRightPaneOpen(false);
   }
 
   async function loadProjections() {
@@ -219,7 +221,12 @@ export function Import() {
       const id = await ensureProjection();
       const res = await projection.preview(id);
       if (res.error) setError(res.error);
-      else setPreview(res.results);
+      else {
+        setPreview(res.results);
+        setDataTab(0);
+        setRightPaneOpen(true);
+        setRightPaneTab("data");
+      }
     } catch (e: any) { setError(e.message); } finally { setLoading(null); }
   }
 
@@ -233,7 +240,8 @@ export function Import() {
   }
 
   function handleSchemaPreview() {
-    setSchemaVisible(true);
+    setRightPaneOpen(true);
+    setRightPaneTab("schema");
   }
 
   // --- Polling ---
@@ -253,7 +261,7 @@ export function Import() {
   return (
     <div className="flex h-full">
       {/* Left pane: form */}
-      <div className={`overflow-auto p-6 ${schemaVisible ? "w-1/2 border-r border-gray-200" : "w-full max-w-4xl mx-auto"}`}>
+      <div className={`overflow-auto p-6 ${rightPaneOpen ? "w-1/2 border-r border-gray-200" : "w-full max-w-4xl mx-auto"}`}>
       <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Import</h1>
@@ -492,35 +500,6 @@ export function Import() {
         </Card>
       )}
 
-      {/* Preview */}
-      {preview && (
-        <div className="space-y-4">
-          {preview.map((result, i) => (
-            <Card key={i}>
-              <h2 className="mb-2 text-sm font-medium">
-                {i < nodeQueries.length
-                  ? `Node: ${extractLabel(nodeQueries[i]?.sql ?? "") ?? `Query ${i + 1}`}`
-                  : `Edge: ${extractLabel(edgeQueries[i - nodeQueries.length]?.sql ?? "") ?? `Query ${i - nodeQueries.length + 1}`}`}
-              </h2>
-              <div className="overflow-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b bg-gray-50">
-                    <tr>{result.columns.map((col) => <th key={col} className="px-3 py-2 font-medium">{col}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {result.rows.map((row, ri) => (
-                      <tr key={ri} className="border-b last:border-0">
-                        {row.map((cell, ci) => <td key={ci} className="px-3 py-2">{cell}</td>)}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-
       {/* Progress */}
       {status && (
         <Card>
@@ -544,26 +523,96 @@ export function Import() {
       </div>
       </div>
 
-      {/* Right pane: Schema Preview */}
-      {schemaVisible && (
+      {/* Right pane: Schema + Data tabs */}
+      {rightPaneOpen && (
         <div className="w-1/2 flex flex-col">
-          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-            <h3 className="text-sm font-semibold text-gray-700">Schema Preview</h3>
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-400">
-                {schemaNodes.length} node type{schemaNodes.length !== 1 ? "s" : ""} · {schemaEdges.length} edge type{schemaEdges.length !== 1 ? "s" : ""}
-              </span>
+          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2">
+            <div className="flex gap-4">
               <button
-                onClick={() => setSchemaVisible(false)}
-                className="text-xs text-gray-400 hover:text-gray-600"
+                onClick={() => setRightPaneTab("schema")}
+                className={`pb-1 text-sm ${rightPaneTab === "schema" ? "border-b-2 border-blue-600 text-blue-600 font-medium" : "text-gray-500 hover:text-gray-700"}`}
               >
-                ✕ Close
+                Schema
+              </button>
+              <button
+                onClick={() => setRightPaneTab("data")}
+                className={`pb-1 text-sm ${rightPaneTab === "data" ? "border-b-2 border-blue-600 text-blue-600 font-medium" : "text-gray-500 hover:text-gray-700"}`}
+              >
+                Data
               </button>
             </div>
+            <button
+              onClick={() => setRightPaneOpen(false)}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              ✕ Close
+            </button>
           </div>
-          <div className="flex-1">
-            <SchemaPreview nodes={schemaNodes} edges={schemaEdges} />
-          </div>
+
+          {/* Schema tab */}
+          {rightPaneTab === "schema" && (
+            <div className="flex-1 flex flex-col">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100">
+                <span className="text-xs text-gray-400">
+                  {schemaNodes.length} node type{schemaNodes.length !== 1 ? "s" : ""} · {schemaEdges.length} edge type{schemaEdges.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div className="flex-1">
+                <SchemaPreview nodes={schemaNodes} edges={schemaEdges} />
+              </div>
+            </div>
+          )}
+
+          {/* Data tab */}
+          {rightPaneTab === "data" && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {preview ? (
+                <>
+                  {/* Sub-tabs for each query result */}
+                  <div className="flex gap-1 px-4 py-2 border-b border-gray-100 overflow-x-auto">
+                    {preview.map((_, i) => {
+                      const isNode = i < nodeQueries.length;
+                      const label = isNode
+                        ? extractLabel(nodeQueries[i]?.sql ?? "") ?? `Node ${i + 1}`
+                        : extractLabel(edgeQueries[i - nodeQueries.length]?.sql ?? "") ?? `Edge ${i - nodeQueries.length + 1}`;
+                      const activeClass = isNode ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700";
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => setDataTab(i)}
+                          className={`px-3 py-1 text-xs rounded-md whitespace-nowrap flex items-center gap-1.5 ${dataTab === i ? `${activeClass} font-medium` : "text-gray-500 hover:bg-gray-100"}`}
+                        >
+                          <span className={`h-2 w-2 rounded-full ${isNode ? "bg-blue-400" : "bg-purple-400"}`}></span>
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* Table for selected tab */}
+                  <div className="flex-1 overflow-auto p-4">
+                    {preview[dataTab] && (
+                      <table className="w-full text-left text-sm">
+                        <thead className="border-b bg-gray-50 sticky top-0">
+                          <tr>{preview[dataTab].columns.map((col) => <th key={col} className="px-3 py-2 font-medium">{col}</th>)}</tr>
+                        </thead>
+                        <tbody>
+                          {preview[dataTab].rows.map((row, ri) => (
+                            <tr key={ri} className="border-b last:border-0">
+                              {row.map((cell, ci) => <td key={ci} className="px-3 py-2">{cell}</td>)}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-sm text-gray-400">
+                  Click "Preview Data" to see query results
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
