@@ -186,3 +186,57 @@ class TestRoundTrip:
         assert projections[0].database == "rt_db"
         assert projections[0].graph_name == "nxp-roundtrip"
         assert projections[0].graph_memory_gb == 64
+
+
+# --- Additional validation tests ---
+
+
+class TestImportValidation:
+    @pytest.mark.anyio
+    async def test_import_empty_project_name(self, client):
+        """Empty project name should be rejected."""
+        payload = {"version": "1.0", "project": {"name": "   "}, "projections": []}
+        resp = await client.post("/api/v0/project/import", content=json.dumps(payload))
+        assert resp.status_code == 400
+        assert "name" in resp.json()["detail"].lower()
+
+    @pytest.mark.anyio
+    async def test_import_missing_project_name(self, client):
+        """Missing project name should be rejected."""
+        payload = {"version": "1.0", "project": {}, "projections": []}
+        resp = await client.post("/api/v0/project/import", content=json.dumps(payload))
+        assert resp.status_code == 400
+
+    @pytest.mark.anyio
+    async def test_import_project_name_too_long(self, client):
+        """Project name exceeding 100 chars should be rejected."""
+        payload = {"version": "1.0", "project": {"name": "x" * 101}, "projections": []}
+        resp = await client.post("/api/v0/project/import", content=json.dumps(payload))
+        assert resp.status_code == 400
+        assert "too long" in resp.json()["detail"].lower()
+
+    @pytest.mark.anyio
+    async def test_import_invalid_content_length(self, client):
+        """Non-numeric Content-Length should return 400."""
+        payload = {"version": "1.0", "project": {"name": "Test"}, "projections": []}
+        resp = await client.post(
+            "/api/v0/project/import",
+            content=json.dumps(payload),
+            headers={"content-length": "not-a-number"},
+        )
+        assert resp.status_code == 400
+        assert "Content-Length" in resp.json()["detail"]
+
+
+class TestExportFilename:
+    @pytest.mark.anyio
+    async def test_export_sanitizes_filename(self, client):
+        """Special characters in project name should be sanitized in the filename."""
+        p = project_store.create(name='My Project / "Special" <chars>')
+        resp = await client.get(f"/api/v0/project/{p.id}/export")
+        assert resp.status_code == 200
+        disposition = resp.headers["content-disposition"]
+        # Should not contain the raw special characters
+        assert "/" not in disposition.split("filename=")[1]
+        assert "<" not in disposition.split("filename=")[1]
+        assert '"' not in disposition.split("filename=")[1].strip('"')

@@ -17,10 +17,13 @@ from pydantic import BaseModel, Field
 
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_store import store as projection_store
+from nx_neptune_proxy.utils.aws_helper import check_content_length
+from nx_neptune_proxy.utils.sanitize import sanitize_filename
 
 router = APIRouter(prefix="/api/v0/project", tags=["project-io"])
 
 MAX_IMPORT_SIZE = 5 * 1024 * 1024  # 5 MB
+MAX_PROJECT_NAME_LENGTH = 100
 
 
 # --- Export/Import JSON schema ---
@@ -99,7 +102,7 @@ def export_project(project_id: str):
 
     return JSONResponse(
         content=payload,
-        headers={"Content-Disposition": f'attachment; filename="{p.name}.json"'},
+        headers={"Content-Disposition": f'attachment; filename="{sanitize_filename(p.name)}.json"'},
     )
 
 
@@ -121,13 +124,11 @@ async def import_project(request: Request):
     - Unknown fields are rejected (extra='forbid')
     """
     # Size check
-    content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > MAX_IMPORT_SIZE:
-        raise HTTPException(status_code=413, detail="Payload too large (max 5 MB)")
+    check_content_length(request, MAX_IMPORT_SIZE)
 
     contents = await request.body()
     if len(contents) > MAX_IMPORT_SIZE:
-        raise HTTPException(status_code=413, detail="Payload too large (max 5 MB)")
+        raise HTTPException(status_code=413, detail=f"Payload too large (max {MAX_IMPORT_SIZE // (1024 * 1024)} MB)")
 
     # Parse and validate
     try:
@@ -135,8 +136,12 @@ async def import_project(request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
 
-    # Create project
-    name = payload.project.get("name", "Imported Project")
+    # Validate and create project
+    name = payload.project.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Project name is required")
+    if len(name) > MAX_PROJECT_NAME_LENGTH:
+        raise HTTPException(status_code=400, detail=f"Project name too long (max {MAX_PROJECT_NAME_LENGTH} characters)")
     p = project_store.create(name=name)
 
     # Create projections
