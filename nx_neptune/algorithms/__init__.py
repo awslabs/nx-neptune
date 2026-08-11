@@ -22,8 +22,10 @@ from .communities import (
     fast_label_propagation_communities,
     label_propagation_communities,
     louvain_communities,
+    weakly_connected_components,
 )
 from .link_analysis.pagerank import pagerank
+from .link_prediction.jaccard import jaccard_coefficient
 from .traversal.bfs import bfs_edges, bfs_layers, descendants_at_distance
 
 # import modules

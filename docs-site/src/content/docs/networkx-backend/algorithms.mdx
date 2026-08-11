@@ -103,6 +103,47 @@ def bfs_layers(
 
 ---
 
+## Link Prediction Algorithms
+
+---
+
+### jaccard_coefficient
+
+Compute the Jaccard coefficient of all node pairs in ebunch, measuring the similarity between two sets of neighbors.
+
+- **Neptune Analytics docs:** [Jaccard Similarity](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/jaccard-similarity.html)
+- **Source:** [`nx_neptune/algorithms/link_prediction/jaccard.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/algorithms/link_prediction/jaccard.py)
+
+```python
+@configure_if_nx_active()
+def jaccard_coefficient(
+    neptune_graph: NeptuneGraph,
+    ebunch=None,
+    edge_labels: Optional[List] = None,
+    vertex_label: Optional[str] = None,
+    traversal_direction: Optional[str] = None,
+):
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `ebunch` | iterable of node pairs | Node pairs to compute Jaccard coefficient for. If None, all non-edges are used. |
+| `edge_labels` | list | Edge label filter |
+| `vertex_label` | str | Vertex label filter (only matching nodes are considered neighbors) |
+| `traversal_direction` | str | `"inbound"`, `"outbound"`, or `"both"` |
+
+**Returns:** An iterator of 3-tuples `(u, v, p)` where `(u, v)` is a pair of nodes and `p` is their Jaccard coefficient.
+
+<Aside type="caution">
+  When `ebunch=None`, the non-existent edges are computed **locally** from the NetworkX graph object before being sent to Neptune Analytics. Neptune always receives an explicit list of node pairs — it does not compute non-edges on its own. For large graphs this can produce a very large number of pairs; prefer passing an explicit `ebunch` in production.
+</Aside>
+
+<Aside type="note">
+  Neptune Analytics does not support a mutate variant for Jaccard similarity.
+</Aside>
+
+---
+
 ## Link Analysis Algorithms
 
 ### pagerank
@@ -290,3 +331,32 @@ def label_propagation_communities(
 **Returns:** Dictionary of community items to members.
 
 **Variants:** `fast_label_propagation_communities`, `asyn_lpa_communities` — same parameters plus `weight` and `seed`.
+
+---
+
+### weakly_connected_components
+
+Find the weakly connected components in a directed graph. A weakly-connected component is a group of nodes in which every node is reachable from every other node when edge directions are ignored.
+
+- **Neptune Analytics docs:** [WCC](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/wcc.html)
+- **Source:** [`nx_neptune/algorithms/communities/wcc.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/algorithms/communities/wcc.py)
+
+```python
+@configure_if_nx_active()
+def weakly_connected_components(
+    neptune_graph: NeptuneGraph,
+    edge_labels: Optional[List] = None,
+    vertex_label: Optional[str] = None,
+    concurrency: Optional[int] = None,
+    write_property: Optional[str] = None,
+):
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `edge_labels` | list | Edge label filter |
+| `vertex_label` | str | Vertex label filter |
+| `concurrency` | int | Thread count (0 = all available) |
+| `write_property` | str | Persist component IDs as node property |
+
+**Returns:** List of sets of nodes (one set per component). Empty dict when `write_property` is specified.

@@ -45,9 +45,13 @@ _CLOSENESS_ALG = "neptune.algo.closenessCentrality"
 _CLOSENESS_MUTATE_ALG = "neptune.algo.closenessCentrality.mutate"
 _LOUVAIN_ALG = "neptune.algo.louvain"
 _LOUVAIN_MUTATE_ALG = "neptune.algo.louvain.mutate"
+_WCC_ALG = "neptune.algo.wcc"
+_WCC_MUTATE_ALG = "neptune.algo.wcc.mutate"
+_JACCARD_ALG = "neptune.algo.jaccardSimilarity"
 _RANK_REF = "rank"
 _DEGREE_REF = "degree"
 _COMMUNITY_REF = "community"
+_COMPONENT_REF = "component"
 
 __all__ = [
     "match_all_nodes",
@@ -984,6 +988,77 @@ def degree_centrality_mutation_query(parameters=None) -> Tuple[str, Dict[str, An
     ), {}
 
 
+def wcc_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the Weakly Connected Components (WCC) algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to WCC algorithm
+    :return: Tuple of (OpenCypher query string, parameter map) for WCC algorithm execution
+
+    Example:
+        >>> wcc_query()
+        (' MATCH (n) CALL neptune.algo.wcc(n)
+        YIELD node AS node, component AS component WITH component, id(node) AS nodeId
+        RETURN component AS component, collect(nodeId) AS members', {})
+        >>> wcc_query({'edgeLabels': ['route']})
+        (' MATCH (n) CALL neptune.algo.wcc(n, {edgeLabels:["route"]})
+        YIELD node AS node, component AS component WITH component, id(node) AS nodeId
+        RETURN component AS component, collect(nodeId) AS members', {})
+    """
+    params = f"{_NODE_REF}"
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        params = f"{params}, {{{parameters_list_str}}}"
+    return (
+        QueryBuilder()
+        .match()
+        .node(ref_name=_NODE_REF)
+        .call()
+        .procedure(f"{_WCC_ALG}({params})")
+        .yield_(
+            [
+                (_NODE_FULL_FORM_REF, _NODE_FULL_FORM_REF),
+                (_COMPONENT_REF, _COMPONENT_REF),
+            ]
+        )
+        .with_(
+            f"{_COMPONENT_REF}, {_NODE_FULL_FORM_ID_FUNC_REF} AS {_NODE_FULL_FORM_ID_REF}"
+        )
+        .return_mapping(
+            [
+                (_COMPONENT_REF, _COMPONENT_REF),
+                (f"collect({_NODE_FULL_FORM_ID_REF})", _MEMBERS_REF),
+            ]
+        )
+        .query
+    ), {}
+
+
+def wcc_mutation_query(parameters=None) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the mutated version of WCC algorithm on Neptune Analytics.
+
+    :param parameters: Optional dictionary of algorithm parameters to pass to WCC algorithm execution
+    :return: Tuple of (OpenCypher query string, parameter map) for WCC algorithm execution
+
+    Example:
+        >>> wcc_mutation_query({'writeProperty': 'wccid'})
+        (' CALL neptune.algo.wcc.mutate({writeProperty:"wccid"})
+        YIELD success AS success RETURN success', {})
+    """
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        params = f"{{{parameters_list_str}}}"
+    return (
+        QueryBuilder()
+        .call()
+        .procedure(f"{_WCC_MUTATE_ALG}({params})")
+        .yield_((_SUCCESS_REF, _SUCCESS_REF))
+        .return_literal(RESPONSE_SUCCESS)
+        .query
+    ), {}
+
+
 def _append_node(
     query_builder,
     param_builder: ParameterMapBuilder,
@@ -1037,3 +1112,52 @@ def _get_nodes_in_list(source_nodes: list[str]):
         if not _NODE_ID_RE.match(str(node_id)):
             raise ValueError(f"Invalid node ID: {node_id!r}")
     return "[" + ",".join(f"'{s}'" for s in nodes) + "]"
+
+
+def jaccard_coefficient_query(
+    first_node: str,
+    second_node: str,
+    parameters: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a query to execute the Jaccard Similarity algorithm on Neptune Analytics
+    for a single pair of nodes.
+
+    Neptune requires Node references from MATCH clauses, and using MATCH ... IN
+    with multiple nodes produces a cross join. Each pair must be queried separately.
+
+    :param first_node: The ID of the first node
+    :param second_node: The ID of the second node
+    :param parameters: Optional dictionary of algorithm parameters (edgeLabels, vertexLabel, traversalDirection)
+    :return: Tuple of (OpenCypher query string, parameter map) for Jaccard Similarity algorithm execution
+
+    Example:
+        >>> jaccard_coefficient_query("Alice", "Bob")
+        ('MATCH (n1) WHERE id(n1) = $0 MATCH (n2) WHERE id(n2) = $1
+        CALL neptune.algo.jaccardSimilarity(n1, n2) YIELD score RETURN score', {'0': 'Alice', '1': 'Bob'})
+    """
+    param_builder = ParameterMapBuilder()
+
+    masked_first = param_builder.read_map({"id(n1)": first_node})
+    masked_second = param_builder.read_map({"id(n2)": second_node})
+
+    jaccard_params = "n1, n2"
+    if parameters:
+        parameters_list_str = _to_parameter_list(parameters)
+        jaccard_params = f"{jaccard_params}, {{{parameters_list_str}}}"
+
+    query_str = (
+        QueryBuilder()
+        .match()
+        .node(ref_name="n1")
+        .where_multiple(masked_first, escape=False)
+        .match()
+        .node(ref_name="n2")
+        .where_multiple(masked_second, escape=False)
+        .call()
+        .procedure(f"{_JACCARD_ALG}({jaccard_params})")
+        .yield_((_SCORE_REF, _SCORE_REF))
+        .return_literal(_SCORE_REF)
+        .query
+    )
+    return query_str, param_builder.get_param_values()
