@@ -157,7 +157,7 @@ export function Import() {
     setLoading("preview");
     try {
       const id = await ensureProjection();
-      const res = await projection.preview(id);
+      const res = await projection.preview(id, 10);
       if (res.error) setError(res.error);
       else setPreview(res.results);
     } catch (e: any) { setError(e.message); } finally { setLoading(null); }
