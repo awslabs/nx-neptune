@@ -41,7 +41,8 @@ def _get_export_bucket_tuple() -> tuple:
     settings = Settings.from_env()
     if not settings.export_bucket:
         raise HTTPException(status_code=404, detail="S3 export bucket not configured")
-    return split_s3_arn_to_bucket_and_path(settings.export_bucket)
+    bucket, prefix = split_s3_arn_to_bucket_and_path(settings.export_bucket)
+    return bucket, prefix.rstrip("/")
 
 
 def _s3_object_to_entry(obj: dict) -> dict:
@@ -66,7 +67,7 @@ def _build_export_payload(project_id: str) -> tuple[dict, str]:
 
 def _build_s3_key(name: str, prefix: str) -> tuple[str, str]:
     """Build S3 key from project name and prefix. Returns (key, filename)."""
-    sanitized = sanitize_s3_key_name(name)
+    sanitized = sanitize_s3_key_name(name) or "project"
     now = datetime.now(timezone.utc)
     timestamp = now.strftime("%Y%m%d_%H%M%S") + f"{now.microsecond // 1000:03d}"
     filename = f"{sanitized}_{timestamp}.json"

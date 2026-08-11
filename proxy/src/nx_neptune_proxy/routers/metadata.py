@@ -26,7 +26,7 @@ def get_config():
     return {
         "region": settings.region or "",
         "graph_prefix": settings.graph_prefix,
-        "export_bucket": settings.export_bucket or None,
+        "export_bucket": settings.export_bucket or "",
     }
 
 

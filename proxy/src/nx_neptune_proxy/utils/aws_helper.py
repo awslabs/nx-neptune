@@ -124,22 +124,33 @@ def check_key_not_exists(s3, bucket: str, key: str) -> None:
             raise HTTPException(status_code=502, detail=friendly_s3_error(e))
 
 
-def list_s3_json_objects(s3, bucket: str, prefix: str = "", max_keys: int = 100) -> list:
-    """List .json objects from an S3 bucket/prefix.
+def list_s3_json_objects(s3, bucket: str, prefix: str = "", limit: int = 10) -> list:
+    """List .json objects from an S3 bucket/prefix, sorted by most recent first.
+
+    Paginates through all objects under the prefix, filters to .json files,
+    sorts by LastModified descending, and returns the most recent `limit` items.
 
     Args:
         s3: boto3 S3 client
         bucket: S3 bucket name
         prefix: Optional key prefix (without trailing slash)
-        max_keys: Maximum number of objects to fetch from S3
+        limit: Maximum number of results to return (most recent first)
 
     Returns:
         List of S3 object dicts (Key, LastModified, etc.) filtered to .json files only.
     """
-    list_kwargs = {"Bucket": bucket, "MaxKeys": max_keys}
+    list_kwargs = {"Bucket": bucket}
     if prefix:
         list_kwargs["Prefix"] = prefix + "/"
 
-    resp = s3.list_objects_v2(**list_kwargs)
-    objects = resp.get("Contents", [])
-    return [o for o in objects if o["Key"].endswith(".json")]
+    all_objects = []
+    while True:
+        resp = s3.list_objects_v2(**list_kwargs)
+        all_objects.extend(resp.get("Contents", []))
+        if not resp.get("IsTruncated"):
+            break
+        list_kwargs["ContinuationToken"] = resp["NextContinuationToken"]
+
+    json_objects = [o for o in all_objects if o["Key"].endswith(".json")]
+    json_objects.sort(key=lambda o: o["LastModified"], reverse=True)
+    return json_objects[:limit]
