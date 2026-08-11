@@ -1,12 +1,11 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-from botocore.exceptions import ClientError
 from fastapi import APIRouter, HTTPException, Query
 
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune_proxy.config import Settings
-from nx_neptune_proxy.services.prefix_guard import assert_managed_graph
+from nx_neptune_proxy.utils.aws_helper import assert_managed_graph, get_graph_or_exception
 from nx_neptune_proxy.routers.schemas import (
     BucketsResponse,
     CatalogsResponse,
@@ -93,12 +92,7 @@ def delete_neptune_graph(graph_id: str):
     """Delete a Neptune Analytics graph"""
     client = ClientFactory().neptune()
     # Verify graph exists and belongs to this tool (prefix guard)
-    try:
-        resp = client.get_graph(graphIdentifier=graph_id)
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "ResourceNotFoundException":
-            raise HTTPException(status_code=404, detail="Graph not found")
-        raise
+    resp = get_graph_or_exception(client, graph_id)
     assert_managed_graph(resp.get("name"))
     client.delete_graph(graphIdentifier=graph_id, skipSnapshot=True)
     return {"id": graph_id, "status": "DELETING"}
