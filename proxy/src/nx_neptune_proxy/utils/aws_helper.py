@@ -7,6 +7,7 @@ from botocore.exceptions import ClientError
 from fastapi import HTTPException
 
 from nx_neptune_proxy.config import get_settings
+from fastapi import HTTPException, Request
 
 
 def get_graph_or_exception(client, graph_id: str) -> dict:
@@ -36,6 +37,19 @@ def assert_managed_graph(graph_name: str | None) -> None:
             status_code=403,
             detail="Refusing to operate on a graph not managed by this tool",
         )
+
+
+
+
+def check_content_length(request: Request, max_size: int) -> None:
+    """Reject early if Content-Length header exceeds max_size."""
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_size:
+                raise HTTPException(status_code=413, detail=f"Payload too large (max {max_size // (1024 * 1024)} MB)")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length header")
 
 
 def paginate_aws(method: Callable, result_key: str, **kwargs: Any) -> list:
