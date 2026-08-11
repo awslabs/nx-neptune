@@ -221,6 +221,23 @@ Must be included in the `.ipynb` JSON:
 - Always include: basic execution, one variant (e.g. with filtering), and mutation
 - The notebook filename must match: `{algorithm_name}_demo.ipynb` (e.g., `wcc_demo.ipynb`)
 
+### Important: Edge and node labels in Neptune Analytics
+
+When nx-neptune syncs a plain NetworkX graph to Neptune Analytics:
+- **All edges** get the default label `"RELATES_TO"` (defined as `DEFAULT_EDGE_RELATIONSHIP` in `nx_neptune/clients/na_models.py`)
+- **All nodes** get the default label `"Node"` (defined as `DEFAULT_NODE_LABEL_TYPE`)
+
+This means:
+- The **only valid `edge_labels` value** for the air-routes dataset is `["RELATES_TO"]`
+- The **only valid `vertex_label` value** is `"Node"`
+- Do NOT use domain-specific labels like `["route"]`, `["airport"]`, etc. — they don't exist on the Neptune graph
+
+When writing filtering examples in notebooks or integ tests, always use:
+```python
+edge_labels=["RELATES_TO"]
+vertex_label="Node"
+```
+
 ---
 
 ## Updating the Plugin Info (`nx_plugin/__init__.py`)

@@ -25,6 +25,7 @@ from .communities import (
     weakly_connected_components,
 )
 from .link_analysis.pagerank import pagerank
+from .link_prediction.jaccard import jaccard_coefficient
 from .traversal.bfs import bfs_edges, bfs_layers, descendants_at_distance
 
 # import modules

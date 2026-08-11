@@ -100,6 +100,40 @@ Parameters:
 Yields:
 - List of nodes at the same distance from `sources`.
 
+## Link Prediction Algorithms
+
+### jaccard_coefficient
+
+Compute the Jaccard coefficient of all node pairs in ebunch. The Jaccard coefficient measures the similarity between two sets of neighbors: |Γ(u) ∩ Γ(v)| / |Γ(u) ∪ Γ(v)|.  
+Link: https://docs.aws.amazon.com/neptune-analytics/latest/userguide/jaccard-similarity.html
+
+Source: [nx_neptune/algorithms/link_prediction/jaccard.py](nx_neptune/algorithms/link_prediction/jaccard.py)
+
+```python
+@configure_if_nx_active()
+def jaccard_coefficient(
+    neptune_graph: NeptuneGraph,
+    ebunch=None,
+    edge_labels: Optional[List] = None,
+    vertex_label: Optional[str] = None,
+    traversal_direction: Optional[str] = None,
+):
+```
+
+Parameters:
+- `neptune_graph : NeptuneGraph` - A NeptuneGraph instance
+- `ebunch : iterable of node pairs, optional (default = None)` - Jaccard coefficient will be computed for each pair of nodes given in the iterable. The pairs must be given as 2-tuples (u, v) where u and v are nodes in the graph. If ebunch is None then all nonexistent edges in the graph will be used.
+
+Note: When `ebunch=None`, the non-existent edges are computed locally from the NetworkX graph object before being sent to Neptune Analytics. Neptune always receives an explicit list of node pairs — it does not compute non-edges on its own. For large graphs, this can produce a very large number of pairs; prefer passing an explicit `ebunch` in production.
+- `edge_labels : list, optional` - To filter on one or more edge labels, provide a list of the ones to filter on. If no edgeLabels field is provided then all edge labels are processed during traversal.
+- `vertex_label : str, optional` - A vertex label for vertex filtering. If a vertex label is provided, only nodes matching the label are considered neighbors.
+- `traversal_direction : str, optional` - The direction of edge to follow. Must be one of: "inbound", "outbound", or "both". Default: "outbound".
+
+Returns:
+- An iterator of 3-tuples in the form (u, v, p) where (u, v) is a pair of nodes and p is their Jaccard coefficient.
+
+Note: Neptune Analytics does not support a mutate variant for Jaccard similarity.
+
 ## Link Analysis Algorithms
 
 ### pagerank
