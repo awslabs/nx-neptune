@@ -1,10 +1,11 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune_proxy.config import Settings
+from nx_neptune_proxy.utils.aws_helper import assert_managed_graph, get_graph_or_exception
 from nx_neptune_proxy.routers.schemas import (
     BucketsResponse,
     CatalogsResponse,
@@ -90,6 +91,9 @@ def list_neptune_graphs():
 def delete_neptune_graph(graph_id: str):
     """Delete a Neptune Analytics graph"""
     client = ClientFactory().neptune()
+    # Verify graph exists and belongs to this tool (prefix guard)
+    resp = get_graph_or_exception(client, graph_id)
+    assert_managed_graph(resp.get("name"))
     client.delete_graph(graphIdentifier=graph_id, skipSnapshot=True)
     return {"id": graph_id, "status": "DELETING"}
 

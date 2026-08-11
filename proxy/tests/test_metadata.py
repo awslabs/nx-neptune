@@ -220,3 +220,46 @@ async def test_unknown_aws_error_returns_502(mock_cf, client):
     resp = await client.get("/api/v0/metadata/neptune/graph-analytics")
     assert resp.status_code == 502
     assert resp.json()["error"] == "InternalServerError"
+
+
+# --- Delete Neptune graph ---
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune_proxy.routers.metadata.ClientFactory")
+async def test_delete_neptune_graph_success(mock_cf, client):
+    mock_neptune = MagicMock()
+    mock_neptune.get_graph.return_value = {"name": "nxp-my-graph"}
+    mock_cf.return_value.neptune.return_value = mock_neptune
+
+    resp = await client.request("DELETE", "/api/v0/metadata/neptune/graph-analytics/g-123")
+    assert resp.status_code == 202
+    assert resp.json() == {"id": "g-123", "status": "DELETING"}
+    mock_neptune.delete_graph.assert_called_once_with(graphIdentifier="g-123", skipSnapshot=True)
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune_proxy.routers.metadata.ClientFactory")
+async def test_delete_neptune_graph_rejects_unmanaged(mock_cf, client):
+    mock_neptune = MagicMock()
+    mock_neptune.get_graph.return_value = {"name": "foreign-graph"}
+    mock_cf.return_value.neptune.return_value = mock_neptune
+
+    resp = await client.request("DELETE", "/api/v0/metadata/neptune/graph-analytics/g-456")
+    assert resp.status_code == 403
+    assert "not managed" in resp.json()["detail"]
+    mock_neptune.delete_graph.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune_proxy.routers.metadata.ClientFactory")
+async def test_delete_neptune_graph_not_found(mock_cf, client):
+    mock_neptune = MagicMock()
+    mock_neptune.get_graph.side_effect = ClientError(
+        {"Error": {"Code": "ResourceNotFoundException", "Message": "Graph not found"}}, "GetGraph"
+    )
+    mock_cf.return_value.neptune.return_value = mock_neptune
+
+    resp = await client.request("DELETE", "/api/v0/metadata/neptune/graph-analytics/g-999")
+    assert resp.status_code == 404
+    assert "not found" in resp.json()["detail"].lower()
