@@ -35,10 +35,6 @@ export function Projects() {
     navigate(`/projections?project=${project.id}`);
   }
 
-  function handleImportClick() {
-    fileInputRef.current?.click();
-  }
-
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -46,7 +42,7 @@ export function Projects() {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      const result = await projectApi.import(data);
+      const result = await projectApi.importProject(data);
       setImportStatus(`Imported project "${result.imported.name}" successfully.`);
       window.dispatchEvent(new Event("projects-changed"));
     } catch (err) {
@@ -54,23 +50,6 @@ export function Projects() {
     }
 
     // Reset input so the same file can be re-selected
-    e.target.value = "";
-  }
-
-  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      const result = await projectApi.import(data);
-      setImportStatus(`Imported project "${result.imported.name}" successfully.`);
-      window.dispatchEvent(new Event("projects-changed"));
-    } catch (err) {
-      setImportStatus(`Import failed: ${err instanceof Error ? err.message : "Invalid file"}`);
-    }
-
     e.target.value = "";
   }
 
@@ -92,15 +71,6 @@ export function Projects() {
             onKeyDown={(e) => e.key === "Enter" && handleCreate()}
           />
           <Button onClick={handleCreate} disabled={!name.trim()}>Create</Button>
-          <Button onClick={handleImportClick}>Import</Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json,application/json"
-            className="hidden"
-            onChange={handleFileSelected}
-            aria-label="Import project file"
-          />
           <div className="relative" ref={importDropdownRef}>
             <Button onClick={() => setImportDropdownOpen(!importDropdownOpen)}>Import</Button>
             {importDropdownOpen && (

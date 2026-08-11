@@ -82,7 +82,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      const result = await projectApi.import(data);
+      const result = await projectApi.importProject(data);
       loadProjects();
       window.dispatchEvent(new Event("projects-changed"));
       navigate(`/projections?project=${result.imported.id}`);

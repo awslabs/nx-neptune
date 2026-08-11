@@ -101,9 +101,8 @@ export const projectApi = {
   create: (name: string) => request<Project>("/project", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }),
   delete: (id: string) => request<{ id: string; status: string }>(`/project/${id}`, { method: "DELETE" }),
   export: (id: string) => request<unknown>(`/project/${id}/export`),
-  import: (data: unknown) => request<{ imported: { id: string; name: string } }>("/project/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
+  importProject: (data: unknown) => request<{ imported: { id: string; name: string } }>("/project/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
   exportToS3: (id: string) => request<{ filename: string; key: string }>(`/project/${id}/export/s3`, { method: "POST" }),
-  import: (data: unknown) => request<{ imported: { id: string; name: string } }>("/project/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
   listS3Exports: () => request<{ files: { key: string; filename: string; last_modified: string }[] }>("/project/import/s3/list"),
   importFromS3: (key: string) => request<{ imported: { id: string; name: string } }>("/project/import/s3", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) }),
 };
