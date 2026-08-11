@@ -155,7 +155,7 @@ export function Projections() {
               <button
                 onClick={async () => {
                   try {
-                    const data = await projectApi.exportOne(filterProjectId);
+                    const data = await projectApi.export(filterProjectId);
                     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
