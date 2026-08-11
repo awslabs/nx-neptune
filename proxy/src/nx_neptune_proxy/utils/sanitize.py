@@ -17,3 +17,13 @@ def sanitize_error_message(message: str) -> str:
     for pattern, replacement in _SENSITIVE_PATTERNS:
         message = pattern.sub(replacement, message)
     return message
+
+
+_SAFE_FILENAME_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ ")
+
+
+def sanitize_filename(name: str) -> str:
+    """Remove characters unsafe for filenames, collapse whitespace, truncate."""
+    cleaned = "".join(c if c in _SAFE_FILENAME_CHARS else "_" for c in name)
+    cleaned = "_".join(cleaned.split())  # collapse whitespace
+    return cleaned[:80] or "project"

@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router";
 import { projectApi } from "../api";
 import { Card, Button } from "../components/ui";
 
 export function Projects() {
   const [name, setName] = useState("");
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   async function handleCreate() {
@@ -13,6 +15,28 @@ export function Projects() {
     setName("");
     window.dispatchEvent(new Event("projects-changed"));
     navigate(`/projections?project=${project.id}`);
+  }
+
+  function handleImportClick() {
+    fileInputRef.current?.click();
+  }
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const result = await projectApi.import(data);
+      setImportStatus(`Imported project "${result.imported.name}" successfully.`);
+      window.dispatchEvent(new Event("projects-changed"));
+    } catch (err) {
+      setImportStatus(`Import failed: ${err instanceof Error ? err.message : "Invalid file"}`);
+    }
+
+    // Reset input so the same file can be re-selected
+    e.target.value = "";
   }
 
   return (
@@ -33,7 +57,19 @@ export function Projects() {
             onKeyDown={(e) => e.key === "Enter" && handleCreate()}
           />
           <Button onClick={handleCreate} disabled={!name.trim()}>Create</Button>
+          <Button onClick={handleImportClick}>Import</Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={handleFileSelected}
+            aria-label="Import project file"
+          />
         </div>
+        {importStatus && (
+          <p className="mt-2 text-sm text-gray-600">{importStatus}</p>
+        )}
       </Card>
     </div>
   );
