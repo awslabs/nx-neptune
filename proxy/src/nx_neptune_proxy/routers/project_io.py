@@ -39,9 +39,9 @@ MAX_PROJECT_NAME_LENGTH = 100
 def _get_export_bucket_tuple() -> tuple:
     """Return (bucket, prefix) or raise 404 if not configured."""
     settings = Settings.from_env()
-    if not settings.export_bucket:
+    if not settings.config_bucket:
         raise HTTPException(status_code=404, detail="S3 export bucket not configured")
-    bucket, prefix = split_s3_arn_to_bucket_and_path(settings.export_bucket)
+    bucket, prefix = split_s3_arn_to_bucket_and_path(settings.config_bucket)
     return bucket, prefix.rstrip("/")
 
 

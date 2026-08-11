@@ -44,7 +44,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
   useEffect(() => {
     loadProjects();
-    metadata.config().then(c => setExportBucket(c.export_bucket));
+    metadata.config().then(c => setExportBucket(c.config_bucket));
     const handler = () => loadProjects();
     window.addEventListener("projects-changed", handler);
     return () => window.removeEventListener("projects-changed", handler);

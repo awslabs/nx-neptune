@@ -13,7 +13,7 @@ export function Projects() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    metadata.config().then(c => setExportBucket(c.export_bucket));
+    metadata.config().then(c => setExportBucket(c.config_bucket));
   }, []);
 
   // Close dropdown on click outside

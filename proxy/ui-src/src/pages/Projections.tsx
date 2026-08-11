@@ -25,7 +25,7 @@ export function Projections() {
 
   useEffect(() => {
     load();
-    metadata.config().then(c => { setRegion(c.region); setExportBucket(c.export_bucket); });
+    metadata.config().then(c => { setRegion(c.region); setExportBucket(c.config_bucket); });
     projectApi.list().then(list => setProjects(new Map(list.map(p => [p.id, p]))));
   }, []);
 

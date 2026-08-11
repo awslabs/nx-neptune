@@ -14,7 +14,7 @@ class Settings:
     port: int = 8080
     region: str = ""
     graph_prefix: str = "nxp-"
-    export_bucket: str = ""
+    config_bucket: str = ""
 
     def __post_init__(self) -> None:
         if self.allowed_origins is None:
@@ -30,5 +30,5 @@ class Settings:
             port=int(os.environ.get("PORT", "8080")),
             region=os.environ.get("AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "")),
             graph_prefix=os.environ.get("GRAPH_PREFIX", "nxp-"),
-            export_bucket=os.environ.get("NX_NEPTUNE_EXPORT_BUCKET", ""),
+            config_bucket=os.environ.get("NX_NEPTUNE_CONFIG_BUCKET", ""),
         )
