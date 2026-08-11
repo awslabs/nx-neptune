@@ -18,7 +18,7 @@ build:            ## Build container image.
 	$(RUNTIME) build -t nx-neptune-proxy -f Dockerfile ..
 
 run:              ## Run container with AWS credentials from environment.
-	$(RUNTIME) run --rm --name nx-neptune-proxy -p 8080:8080 \
+	$(RUNTIME) run --rm --name nx-neptune-proxy -p 127.0.0.1:8080:8080 \
 		-e AWS_ACCESS_KEY_ID \
 		-e AWS_SECRET_ACCESS_KEY \
 		-e AWS_SESSION_TOKEN \
