@@ -8,8 +8,8 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-
 from nx_neptune.clients.client_factory import ClientFactory
+from nx_neptune_proxy.utils.aws_helper import assert_managed_graph, get_graph_or_exception
 from nx_neptune_proxy.services.graph_state_machine import (
     InvalidTransitionError,
     available_actions,
@@ -47,11 +47,15 @@ def get_available_actions(graph_id: str):
 def perform_action(graph_id: str, action: str, background_tasks: BackgroundTasks):
     """Initiate a state transition (stop, start, delete) as a background task."""
     client = ClientFactory().neptune()
-    resp = client.get_graph(graphIdentifier=graph_id)
+    resp = get_graph_or_exception(client, graph_id)
     current_status = resp.get("status")
     if not current_status:
         logger.warning(f"Graph {graph_id} returned empty status: {resp}")
         raise HTTPException(status_code=502, detail="Graph returned no status")
+
+    # Prefix guard: only allow destructive actions on graphs managed by this tool
+    if action == "delete":
+        assert_managed_graph(resp.get("name"))
 
     try:
         # Validate early (execute_transition also validates, but fail fast for the user)
