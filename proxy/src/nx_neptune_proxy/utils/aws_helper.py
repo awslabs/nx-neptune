@@ -49,6 +49,16 @@ def check_content_length(request: Request, max_size: int) -> None:
             raise HTTPException(status_code=400, detail="Invalid Content-Length header")
 
 
+def require_name(value: str | None, max_length: int = 100) -> str:
+    """Validate a required name. Returns stripped value or raises HTTP 400."""
+    stripped = (value or "").strip()
+    if not stripped:
+        raise HTTPException(status_code=400, detail="Name is required")
+    if len(stripped) > max_length:
+        raise HTTPException(status_code=400, detail=f"Name too long (max {max_length} characters)")
+    return stripped
+
+
 
 def paginate_aws(method: Callable, result_key: str, **kwargs: Any) -> list:
     """Paginate an AWS API call that uses NextToken.

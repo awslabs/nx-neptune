@@ -1,15 +1,22 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Project import/export endpoints."""
+"""Project import/export endpoints.
+
+Enables exporting a project's configuration as a portable JSON file
+and re-importing it to recreate the project in another environment.
+"""
 
 from __future__ import annotations
+
+from typing import Optional
 
 import json
 from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune.clients.iam_client import split_s3_arn_to_bucket_and_path
@@ -17,12 +24,13 @@ from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.routers.schemas import ProjectionExport, ProjectExportPayload
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_store import store as projection_store
-from nx_neptune_proxy.utils.aws_helper import friendly_s3_error, check_content_length, check_body_size, check_key_not_exists, list_s3_json_objects
-from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name
+from nx_neptune_proxy.utils.aws_helper import friendly_s3_error, check_content_length, check_body_size, check_key_not_exists, list_s3_json_objects, require_name
+from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name, sanitize_filename
 
 router = APIRouter(prefix="/api/v0/project", tags=["project-io"])
 
 MAX_IMPORT_SIZE = 5 * 1024 * 1024  # 5 MB
+MAX_PROJECT_NAME_LENGTH = 100
 
 
 # --- Helpers ---
@@ -76,7 +84,8 @@ def _parse_payload(contents: bytes) -> ProjectExportPayload:
 
 def _import_from_payload(payload: ProjectExportPayload) -> dict:
     """Create project and projections from validated payload. Returns {id, name}."""
-    name = payload.project.get("name", "Imported Project")
+    name = require_name(payload.project.get("name"), max_length=MAX_PROJECT_NAME_LENGTH)
+
     p = project_store.create(name=name)
 
     for pr_data in payload.projections:
@@ -89,14 +98,22 @@ def _import_from_payload(payload: ProjectExportPayload) -> dict:
 # --- Export endpoints ---
 
 
-@router.get("/{project_id}/export", summary="Export a project")
+@router.get("/{project_id}/export", summary="Export a project as JSON",
+            response_description="JSON file containing the project configuration and its projections")
 def export_project(project_id: str):
-    """Export a project and its projections as JSON (download)."""
+    """Export a project and all its projection configurations as a downloadable JSON file.
+
+    The exported file contains only configuration data (queries, database references,
+    graph settings). Runtime state such as graph IDs, execution status, and endpoints
+    are not included.
+
+    The response includes a Content-Disposition header for browser download.
+    """
     payload, name = _build_export_payload(project_id)
 
     return JSONResponse(
         content=payload,
-        headers={"Content-Disposition": f'attachment; filename="{name}.json"'},
+        headers={"Content-Disposition": f'attachment; filename="{sanitize_filename(name)}.json"'},
     )
 
 

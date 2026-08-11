@@ -4,7 +4,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # --- Metadata responses ---
@@ -134,13 +134,13 @@ class ProjectionResponse(BaseModel):
 class ProjectionExport(BaseModel):
     """Projection config fields only — no runtime state."""
 
-    catalog: str = "AwsDataCatalog"
-    database: Optional[str] = None
-    node_query: Optional[str] = None
-    edge_query: Optional[str] = None
-    graph_name: Optional[str] = None
-    graph_memory_gb: int = 16
-    s3_staging_bucket: Optional[str] = None
+    catalog: str = Field("AwsDataCatalog", description="Athena catalog name")
+    database: Optional[str] = Field(None, description="Athena database name")
+    node_query: Optional[str] = Field(None, description="SQL query that produces nodes (must include ~id and ~label columns)")
+    edge_query: Optional[str] = Field(None, description="SQL query that produces edges (must include ~from, ~to, and ~label columns)")
+    graph_name: Optional[str] = Field(None, description="Neptune Analytics graph name suffix (prefix is added automatically)")
+    graph_memory_gb: int = Field(16, description="Graph memory allocation in GB")
+    s3_staging_bucket: Optional[str] = Field(None, description="S3 bucket path for staging Athena results (e.g. s3://bucket/prefix)")
 
     model_config = {"extra": "forbid"}
 
