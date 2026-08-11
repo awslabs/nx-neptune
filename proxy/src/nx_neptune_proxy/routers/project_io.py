@@ -11,14 +11,21 @@ from __future__ import annotations
 
 from typing import Optional
 
+import json
+from datetime import datetime, timezone
+from botocore.exceptions import ClientError
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from nx_neptune.clients.client_factory import ClientFactory
+from nx_neptune.clients.iam_client import split_s3_arn_to_bucket_and_path
+from nx_neptune_proxy.config import Settings
+from nx_neptune_proxy.routers.schemas import ProjectionExport, ProjectExportPayload
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_store import store as projection_store
-from nx_neptune_proxy.utils.aws_helper import check_content_length
-from nx_neptune_proxy.utils.sanitize import sanitize_filename
+from nx_neptune_proxy.utils.aws_helper import friendly_s3_error, check_content_length, check_body_size, check_key_not_exists, list_s3_json_objects, require_name
+from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name, sanitize_filename
 
 router = APIRouter(prefix="/api/v0/project", tags=["project-io"])
 
@@ -26,42 +33,70 @@ MAX_IMPORT_SIZE = 5 * 1024 * 1024  # 5 MB
 MAX_PROJECT_NAME_LENGTH = 100
 
 
-# --- Export/Import JSON schema ---
+# --- Helpers ---
 
 
-class ProjectionExport(BaseModel):
-    """Projection configuration (no runtime state such as graph_id, status, or progress)."""
-
-    catalog: str = Field("AwsDataCatalog", description="Athena catalog name")
-    database: Optional[str] = Field(None, description="Athena database name")
-    node_query: Optional[str] = Field(None, description="SQL query that produces nodes (must include ~id and ~label columns)")
-    edge_query: Optional[str] = Field(None, description="SQL query that produces edges (must include ~from, ~to, and ~label columns)")
-    graph_name: Optional[str] = Field(None, description="Neptune Analytics graph name suffix (prefix is added automatically)")
-    graph_memory_gb: int = Field(16, description="Graph memory allocation in GB")
-    s3_staging_bucket: Optional[str] = Field(None, description="S3 bucket path for staging Athena results (e.g. s3://bucket/prefix)")
-
-    model_config = {"extra": "forbid"}
+def _get_export_bucket_tuple() -> tuple:
+    """Return (bucket, prefix) or raise 404 if not configured."""
+    settings = Settings.from_env()
+    if not settings.config_bucket:
+        raise HTTPException(status_code=404, detail="S3 export bucket not configured")
+    bucket, prefix = split_s3_arn_to_bucket_and_path(settings.config_bucket)
+    return bucket, prefix.rstrip("/")
 
 
-class ProjectExportPayload(BaseModel):
-    """Top-level schema for project import/export JSON files.
-
-    Example:
-        {
-            "version": "1.0",
-            "project": {"name": "My Project"},
-            "projections": [{"catalog": "AwsDataCatalog", "database": "mydb", ...}]
-        }
-    """
-
-    version: str = Field("1.0", description="Schema version for forward compatibility")
-    project: dict = Field(..., description="Project metadata (must contain 'name' key)")
-    projections: list[ProjectionExport] = Field(default=[], description="List of projection configurations to create")
-
-    model_config = {"extra": "forbid"}
+def _s3_object_to_entry(obj: dict) -> dict:
+    """Convert an S3 object dict to an API response entry."""
+    return {
+        "key": obj["Key"],
+        "filename": obj["Key"].rsplit("/", 1)[-1],
+        "last_modified": obj["LastModified"].isoformat(),
+    }
 
 
-# --- Export endpoint ---
+def _build_export_payload(project_id: str) -> tuple[dict, str]:
+    """Build the export JSON payload for a project. Returns (payload_dict, project_name)."""
+    p = project_store.get(project_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    projections = projection_store.list_by_project(project_id)
+    payload = ProjectExportPayload.from_project(p, projections)
+    return payload.model_dump(), p.name
+
+
+def _build_s3_key(name: str, prefix: str) -> tuple[str, str]:
+    """Build S3 key from project name and prefix. Returns (key, filename)."""
+    sanitized = sanitize_s3_key_name(name) or "project"
+    now = datetime.now(timezone.utc)
+    timestamp = now.strftime("%Y%m%d_%H%M%S") + f"{now.microsecond // 1000:03d}"
+    filename = f"{sanitized}_{timestamp}.json"
+    key = f"{prefix}/{filename}" if prefix else filename
+    return key, filename
+
+
+def _parse_payload(contents: bytes) -> ProjectExportPayload:
+    """Parse and validate export JSON. Raises 400 on failure."""
+    try:
+        return ProjectExportPayload.model_validate_json(contents)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+
+
+def _import_from_payload(payload: ProjectExportPayload) -> dict:
+    """Create project and projections from validated payload. Returns {id, name}."""
+    name = require_name(payload.project.get("name"), max_length=MAX_PROJECT_NAME_LENGTH)
+
+    p = project_store.create(name=name)
+
+    for pr_data in payload.projections:
+        projection_store.create(**pr_data.model_dump(), project_id=p.id)
+
+    return {"id": p.id, "name": p.name}
+
+
+
+# --- Export endpoints ---
 
 
 @router.get("/{project_id}/export", summary="Export a project as JSON",
@@ -75,86 +110,91 @@ def export_project(project_id: str):
 
     The response includes a Content-Disposition header for browser download.
     """
-    p = project_store.get(project_id)
-    if p is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    projections = [
-        pr for pr in projection_store.list() if pr.project_id == project_id
-    ]
-
-    payload = {
-        "version": "1.0",
-        "project": {"name": p.name},
-        "projections": [
-            ProjectionExport(
-                catalog=pr.catalog,
-                database=pr.database,
-                node_query=pr.node_query,
-                edge_query=pr.edge_query,
-                graph_name=pr.graph_name,
-                graph_memory_gb=pr.graph_memory_gb,
-                s3_staging_bucket=pr.s3_staging_bucket,
-            ).model_dump()
-            for pr in projections
-        ],
-    }
+    payload, name = _build_export_payload(project_id)
 
     return JSONResponse(
         content=payload,
-        headers={"Content-Disposition": f'attachment; filename="{sanitize_filename(p.name)}.json"'},
+        headers={"Content-Disposition": f'attachment; filename="{sanitize_filename(name)}.json"'},
     )
 
 
-# --- Import endpoint ---
+@router.post("/{project_id}/export/s3", summary="Export a project to S3")
+def export_project_to_s3(project_id: str):
+    """Export a project and its projections to the configured S3 bucket."""
+    bucket, prefix = _get_export_bucket_tuple()
+    payload, name = _build_export_payload(project_id)
+    key, filename = _build_s3_key(name, prefix)
 
-
-@router.post("/import", summary="Import a project from JSON", status_code=201,
-             response_description="The newly created project ID and name")
-async def import_project(request: Request):
-    """Create a project and its projections from a previously exported JSON payload.
-
-    Accepts the same JSON schema produced by the export endpoint. A new project
-    is created with a fresh ID regardless of whether a project with the same name
-    already exists. All projections start in 'draft' status.
-
-    Constraints:
-    - Maximum payload size: 5 MB
-    - Maximum 50 projections per import
-    - Unknown fields are rejected (extra='forbid')
-    """
-    # Size check
-    check_content_length(request, MAX_IMPORT_SIZE)
-
-    contents = await request.body()
-    if len(contents) > MAX_IMPORT_SIZE:
-        raise HTTPException(status_code=413, detail=f"Payload too large (max {MAX_IMPORT_SIZE // (1024 * 1024)} MB)")
-
-    # Parse and validate
+    s3 = ClientFactory().s3()
     try:
-        payload = ProjectExportPayload.model_validate_json(contents)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
-
-    # Validate and create project
-    name = payload.project.get("name", "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Project name is required")
-    if len(name) > MAX_PROJECT_NAME_LENGTH:
-        raise HTTPException(status_code=400, detail=f"Project name too long (max {MAX_PROJECT_NAME_LENGTH} characters)")
-    p = project_store.create(name=name)
-
-    # Create projections
-    for pr_data in payload.projections:
-        projection_store.create(
-            catalog=pr_data.catalog,
-            database=pr_data.database,
-            node_query=pr_data.node_query,
-            edge_query=pr_data.edge_query,
-            graph_name=pr_data.graph_name,
-            graph_memory_gb=pr_data.graph_memory_gb,
-            s3_staging_bucket=pr_data.s3_staging_bucket,
-            project_id=p.id,
+        check_key_not_exists(s3, bucket, key)
+        s3.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=json.dumps(payload, indent=2),
+            ContentType="application/json",
+            Tagging="graph_studio=true",
         )
+    except HTTPException:
+        raise
+    except ClientError as e:
+        raise HTTPException(status_code=502, detail=friendly_s3_error(e))
 
-    return {"imported": {"id": p.id, "name": p.name}}
+    return {"filename": filename, "key": key}
+
+
+# --- Import endpoints ---
+
+
+@router.post("/import", summary="Import a project from JSON", status_code=201)
+async def import_project(request: Request):
+    """Import a project and its projections from a JSON payload."""
+    check_content_length(request, MAX_IMPORT_SIZE)
+    contents = await request.body()
+    check_body_size(contents, MAX_IMPORT_SIZE)
+
+    payload = _parse_payload(contents)
+    result = _import_from_payload(payload)
+    return {"imported": result}
+
+
+@router.get("/import/s3/list", summary="List available exports from S3")
+def list_s3_exports():
+    """List the last 10 export files from S3 (filtered by prefix)."""
+    bucket, prefix = _get_export_bucket_tuple()
+    s3 = ClientFactory().s3()
+
+    try:
+        json_objects = list_s3_json_objects(s3, bucket, prefix)
+
+        # Sort by last modified descending, take last 10
+        json_objects.sort(key=lambda o: o["LastModified"], reverse=True)
+        recent = json_objects[:10]
+
+        return {
+            "files": [_s3_object_to_entry(obj) for obj in recent]
+        }
+    except ClientError as e:
+        raise HTTPException(status_code=502, detail=friendly_s3_error(e))
+
+
+@router.post("/import/s3", summary="Import a project from S3", status_code=201)
+def import_project_from_s3(request_body: dict):
+    """Import a project from a specific S3 file."""
+    key = request_body.get("key")
+    if not key:
+        raise HTTPException(status_code=400, detail="Missing 'key' in request body")
+
+    bucket, _ = _get_export_bucket_tuple()
+    s3 = ClientFactory().s3()
+
+    try:
+        resp = s3.get_object(Bucket=bucket, Key=key)
+        contents = resp["Body"].read()
+    except ClientError as e:
+        raise HTTPException(status_code=502, detail=friendly_s3_error(e))
+
+    check_body_size(contents, MAX_IMPORT_SIZE)
+    payload = _parse_payload(contents)
+    result = _import_from_payload(payload)
+    return {"imported": result}

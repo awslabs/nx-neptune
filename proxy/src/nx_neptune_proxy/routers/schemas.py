@@ -4,7 +4,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # --- Metadata responses ---
@@ -126,3 +126,51 @@ class ProjectionResponse(BaseModel):
     progress: float = 0
     error: Optional[str] = None
     created_at: datetime
+
+
+# --- Project import/export ---
+
+
+class ProjectionExport(BaseModel):
+    """Projection config fields only — no runtime state."""
+
+    catalog: str = Field("AwsDataCatalog", description="Athena catalog name")
+    database: Optional[str] = Field(None, description="Athena database name")
+    node_query: Optional[str] = Field(None, description="SQL query that produces nodes (must include ~id and ~label columns)")
+    edge_query: Optional[str] = Field(None, description="SQL query that produces edges (must include ~from, ~to, and ~label columns)")
+    graph_name: Optional[str] = Field(None, description="Neptune Analytics graph name suffix (prefix is added automatically)")
+    graph_memory_gb: int = Field(16, description="Graph memory allocation in GB")
+    s3_staging_bucket: Optional[str] = Field(None, description="S3 bucket path for staging Athena results (e.g. s3://bucket/prefix)")
+
+    model_config = {"extra": "forbid"}
+
+    @classmethod
+    def from_projection(cls, pr) -> "ProjectionExport":
+        """Create from a Projection dataclass instance."""
+        return cls(
+            catalog=pr.catalog,
+            database=pr.database,
+            node_query=pr.node_query,
+            edge_query=pr.edge_query,
+            graph_name=pr.graph_name,
+            graph_memory_gb=pr.graph_memory_gb,
+            s3_staging_bucket=pr.s3_staging_bucket,
+        )
+
+
+class ProjectExportPayload(BaseModel):
+    """Top-level export format for a single project."""
+
+    version: str = "1.0"
+    project: dict
+    projections: list[ProjectionExport] = []
+
+    model_config = {"extra": "forbid"}
+
+    @classmethod
+    def from_project(cls, project, projections: list) -> "ProjectExportPayload":
+        """Build export payload from a project and its projections."""
+        return cls(
+            project={"name": project.name},
+            projections=[ProjectionExport.from_projection(pr) for pr in projections],
+        )
