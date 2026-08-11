@@ -166,7 +166,7 @@ async def test_perform_start_accepted(mock_cf, mock_exec, client):
 @patch("nx_neptune_proxy.routers.graph.ClientFactory")
 async def test_perform_delete_accepted(mock_cf, mock_exec, client):
     mock_neptune = MagicMock()
-    mock_neptune.get_graph.return_value = {"status": "AVAILABLE"}
+    mock_neptune.get_graph.return_value = {"status": "AVAILABLE", "name": "nxp-test-graph"}
     mock_cf.return_value.neptune.return_value = mock_neptune
 
     resp = await client.post("/api/v0/graphs/g-123/delete")
@@ -278,3 +278,32 @@ async def test_dismiss_inflight_noop_when_nothing(client):
     resp = await client.request("DELETE", "/api/v0/graphs/g-123/inflight")
     assert resp.status_code == 200
     assert resp.json()["cleared"] is True
+
+
+# --- Prefix guard on delete ---
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune_proxy.routers.graph.ClientFactory")
+async def test_delete_rejects_unmanaged_graph(mock_cf, client):
+    """Delete action should return 403 for graphs without the nxp- prefix."""
+    mock_neptune = MagicMock()
+    mock_neptune.get_graph.return_value = {"status": "AVAILABLE", "name": "foreign-graph"}
+    mock_cf.return_value.neptune.return_value = mock_neptune
+
+    resp = await client.post("/api/v0/graphs/g-456/delete")
+    assert resp.status_code == 403
+    assert "not managed" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune_proxy.routers.graph.execute_transition")
+@patch("nx_neptune_proxy.routers.graph.ClientFactory")
+async def test_delete_allows_managed_graph(mock_cf, mock_exec, client):
+    """Delete action should succeed for graphs with the nxp- prefix."""
+    mock_neptune = MagicMock()
+    mock_neptune.get_graph.return_value = {"status": "AVAILABLE", "name": "nxp-my-graph"}
+    mock_cf.return_value.neptune.return_value = mock_neptune
+
+    resp = await client.post("/api/v0/graphs/g-123/delete")
+    assert resp.status_code == 202
