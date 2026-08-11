@@ -20,6 +20,7 @@ from nx_neptune_proxy.config import _LOOPBACK_HOSTS, get_settings, normalize_ori
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
 from nx_neptune_proxy.routers.project import router as project_router
+from nx_neptune_proxy.routers.project_io import router as project_io_router
 from nx_neptune_proxy.routers.projection import router as projection_router
 from nx_neptune_proxy.services.db import init_db
 from nx_neptune_proxy.services.project_deletion import delete_project
@@ -239,6 +240,7 @@ app.include_router(metadata_router, dependencies=[Depends(require_token)])
 app.include_router(projection_router, dependencies=[Depends(require_token)])
 app.include_router(project_router, dependencies=[Depends(require_token)])
 app.include_router(graph_router, dependencies=[Depends(require_token)])
+app.include_router(project_io_router, dependencies=[Depends(require_token)])
 
 
 # --- Startup: resume stuck deletions ---
