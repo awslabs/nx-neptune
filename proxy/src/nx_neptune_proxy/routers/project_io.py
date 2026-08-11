@@ -1,7 +1,11 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Project import/export endpoints."""
+"""Project import/export endpoints.
+
+Enables exporting a project's configuration as a portable JSON file
+and re-importing it to recreate the project in another environment.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_store import store as projection_store
@@ -23,25 +27,33 @@ MAX_IMPORT_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
 class ProjectionExport(BaseModel):
-    """Projection config fields only — no runtime state."""
+    """Projection configuration (no runtime state such as graph_id, status, or progress)."""
 
-    catalog: str = "AwsDataCatalog"
-    database: Optional[str] = None
-    node_query: Optional[str] = None
-    edge_query: Optional[str] = None
-    graph_name: Optional[str] = None
-    graph_memory_gb: int = 16
-    s3_staging_bucket: Optional[str] = None
+    catalog: str = Field("AwsDataCatalog", description="Athena catalog name")
+    database: Optional[str] = Field(None, description="Athena database name")
+    node_query: Optional[str] = Field(None, description="SQL query that produces nodes (must include ~id and ~label columns)")
+    edge_query: Optional[str] = Field(None, description="SQL query that produces edges (must include ~from, ~to, and ~label columns)")
+    graph_name: Optional[str] = Field(None, description="Neptune Analytics graph name suffix (prefix is added automatically)")
+    graph_memory_gb: int = Field(16, description="Graph memory allocation in GB")
+    s3_staging_bucket: Optional[str] = Field(None, description="S3 bucket path for staging Athena results (e.g. s3://bucket/prefix)")
 
     model_config = {"extra": "forbid"}
 
 
 class ProjectExportPayload(BaseModel):
-    """Top-level export format for a single project."""
+    """Top-level schema for project import/export JSON files.
 
-    version: str = "1.0"
-    project: dict
-    projections: list[ProjectionExport] = []
+    Example:
+        {
+            "version": "1.0",
+            "project": {"name": "My Project"},
+            "projections": [{"catalog": "AwsDataCatalog", "database": "mydb", ...}]
+        }
+    """
+
+    version: str = Field("1.0", description="Schema version for forward compatibility")
+    project: dict = Field(..., description="Project metadata (must contain 'name' key)")
+    projections: list[ProjectionExport] = Field(default=[], description="List of projection configurations to create")
 
     model_config = {"extra": "forbid"}
 
@@ -49,9 +61,17 @@ class ProjectExportPayload(BaseModel):
 # --- Export endpoint ---
 
 
-@router.get("/{project_id}/export", summary="Export a project")
+@router.get("/{project_id}/export", summary="Export a project as JSON",
+            response_description="JSON file containing the project configuration and its projections")
 def export_project(project_id: str):
-    """Export a project and its projections as JSON."""
+    """Export a project and all its projection configurations as a downloadable JSON file.
+
+    The exported file contains only configuration data (queries, database references,
+    graph settings). Runtime state such as graph IDs, execution status, and endpoints
+    are not included.
+
+    The response includes a Content-Disposition header for browser download.
+    """
     p = project_store.get(project_id)
     if p is None:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -86,9 +106,20 @@ def export_project(project_id: str):
 # --- Import endpoint ---
 
 
-@router.post("/import", summary="Import a project from JSON", status_code=201)
+@router.post("/import", summary="Import a project from JSON", status_code=201,
+             response_description="The newly created project ID and name")
 async def import_project(request: Request):
-    """Import a project and its projections from a JSON payload."""
+    """Create a project and its projections from a previously exported JSON payload.
+
+    Accepts the same JSON schema produced by the export endpoint. A new project
+    is created with a fresh ID regardless of whether a project with the same name
+    already exists. All projections start in 'draft' status.
+
+    Constraints:
+    - Maximum payload size: 5 MB
+    - Maximum 50 projections per import
+    - Unknown fields are rejected (extra='forbid')
+    """
     # Size check
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > MAX_IMPORT_SIZE:
