@@ -13,7 +13,7 @@ from nx_neptune.clients.response_utils import get_query_failure_reason, get_quer
 from nx_neptune.instance_management import _execute_athena_query, get_athena_query_results
 from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
 from nx_neptune.validators import check_athena_query, validate_resources, wrap_with_limit
-from nx_neptune_proxy.config import Settings
+from nx_neptune_proxy.utils.aws_helper import assert_managed_graph, get_graph_or_exception
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 from nx_neptune_proxy.routers.schemas import (
     PreviewResponse,
@@ -167,6 +167,12 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
         raise HTTPException(status_code=409, detail="No graph associated with this projection")
     if p.status == "deleting":
         raise HTTPException(status_code=409, detail="Already deleting")
+
+    # Prefix guard: only delete graphs managed by this tool
+    client = ClientFactory().neptune()
+    resp = get_graph_or_exception(client, p.graph_id)
+    assert_managed_graph(resp.get("name"))
+
     store.update(projection_id, status="deleting", step="graph_delete", step_label="Deleting graph")
 
     async def _delete_graph():
