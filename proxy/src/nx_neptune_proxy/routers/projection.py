@@ -13,7 +13,7 @@ from nx_neptune.clients.response_utils import get_query_failure_reason, get_quer
 from nx_neptune.instance_management import _execute_athena_query, get_athena_query_results
 from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
 from nx_neptune.validators import check_athena_query, validate_resources, wrap_with_limit
-from nx_neptune_proxy.config import Settings
+from nx_neptune_proxy.services.prefix_guard import assert_managed_graph
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 from nx_neptune_proxy.routers.schemas import (
     PreviewResponse,
@@ -169,12 +169,14 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
         raise HTTPException(status_code=409, detail="Already deleting")
 
     # Prefix guard: only delete graphs managed by this tool
-    prefix = Settings.from_env().graph_prefix
-    if p.graph_name and not p.graph_name.startswith(prefix):
-        raise HTTPException(
-            status_code=403,
-            detail=f"Graph '{p.graph_name}' is not managed by this tool (missing '{prefix}' prefix)",
-        )
+    client = ClientFactory().neptune()
+    try:
+        resp = client.get_graph(graphIdentifier=p.graph_id)
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            raise HTTPException(status_code=404, detail="Graph not found in Neptune")
+        raise
+    assert_managed_graph(resp.get("name"))
 
     store.update(projection_id, status="deleting", step="graph_delete", step_label="Deleting graph")
 
