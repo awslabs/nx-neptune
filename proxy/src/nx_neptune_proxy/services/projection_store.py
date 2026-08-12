@@ -15,7 +15,6 @@ _FIELDS = [
     "status",
     "catalog",
     "database",
-    "sql_query",
     "node_query",
     "edge_query",
     "graph_name",
@@ -40,7 +39,6 @@ class Projection:
     status: str
     catalog: str = "AwsDataCatalog"
     database: Optional[str] = None
-    sql_query: Optional[str] = None
     node_query: Optional[str] = None
     edge_query: Optional[str] = None
     graph_name: Optional[str] = None
@@ -61,7 +59,6 @@ class ProjectionStore:
         self,
         catalog: str = "AwsDataCatalog",
         database: Optional[str] = None,
-        sql_query: Optional[str] = None,
         node_query: Optional[str] = None,
         edge_query: Optional[str] = None,
         graph_name: Optional[str] = None,
@@ -74,7 +71,6 @@ class ProjectionStore:
             status="draft",
             catalog=catalog,
             database=database,
-            sql_query=sql_query,
             node_query=node_query,
             edge_query=edge_query,
             graph_name=graph_name,
@@ -123,7 +119,6 @@ class ProjectionStore:
         "status",
         "catalog",
         "database",
-        "sql_query",
         "node_query",
         "edge_query",
         "graph_name",
@@ -166,7 +161,6 @@ class ProjectionStore:
             status=row["status"],
             catalog=row["catalog"],
             database=row["database"],
-            sql_query=row["sql_query"],
             node_query=row["node_query"],
             edge_query=row["edge_query"],
             graph_name=row["graph_name"],
