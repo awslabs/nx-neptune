@@ -42,8 +42,8 @@ def clear_store():
 
 SAMPLE_BODY = {
     "database": "mydb",
-    "sql_query": "SELECT * FROM t",
-    "node_query": "SELECT * FROM t",
+    "node_query": "SELECT id AS `~id`, type AS `~label` FROM nodes",
+    "edge_query": "SELECT src AS `~from`, dst AS `~to`, rel AS `~label` FROM edges",
     "graph_name": "test-graph",
     "s3_staging_bucket": "s3://my-bucket/staging/",
 }
@@ -86,17 +86,20 @@ async def test_update_projection(client):
     pid = create_resp.json()["id"]
 
     resp = await client.put(
-        f"/api/v0/projection/{pid}", json={"sql_query": "SELECT id FROM t"}
-    )
+        f"/api/v0/projection/{pid}", json={
+        "node_query": "SELECT id FROM t",
+        "edge_query": "SELECT src, dst FROM edges",
+    })
     assert resp.status_code == 200
-    assert resp.json()["sql_query"] == "SELECT id FROM t"
+    assert resp.json()["node_query"] == "SELECT id FROM t"
+    assert resp.json()["edge_query"] == "SELECT src, dst FROM edges"
     # Other fields unchanged
     assert resp.json()["database"] == "mydb"
 
 
 @pytest.mark.asyncio
 async def test_update_projection_not_found(client):
-    resp = await client.put("/api/v0/projection/nonexistent", json={"sql_query": "x"})
+    resp = await client.put("/api/v0/projection/nonexistent", json={"node_query": "x", "edge_query": "y"})
     assert resp.status_code == 404
 
 

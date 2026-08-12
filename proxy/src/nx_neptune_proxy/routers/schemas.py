@@ -67,7 +67,6 @@ class NeptuneAnalyticsGraphsResponse(BaseModel):
 class ProjectionCreate(BaseModel):
     catalog: str = "AwsDataCatalog"
     database: Optional[str] = None
-    sql_query: Optional[str] = None
     node_query: Optional[str] = None
     edge_query: Optional[str] = None
     graph_name: Optional[str] = Field(
@@ -84,7 +83,6 @@ class ProjectionCreate(BaseModel):
 class ProjectionUpdate(BaseModel):
     catalog: Optional[str] = None
     database: Optional[str] = None
-    sql_query: Optional[str] = None
     node_query: Optional[str] = None
     edge_query: Optional[str] = None
     graph_name: Optional[str] = Field(
@@ -133,7 +131,6 @@ class ProjectionResponse(BaseModel):
     status: str
     catalog: str
     database: Optional[str] = None
-    sql_query: Optional[str] = None
     node_query: Optional[str] = None
     edge_query: Optional[str] = None
     graph_name: Optional[str] = None

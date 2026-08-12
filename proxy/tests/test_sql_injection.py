@@ -34,11 +34,11 @@ class TestSqlInjection:
         p2 = store.create(database="testdb2", graph_name="test2")
         assert store.get(p2.id) is not None
 
-    def test_injection_in_sql_query_field(self):
+    def test_injection_in_node_query_field(self):
         payload = "SELECT * FROM t; DROP TABLE projections;--"
-        p = store.create(database="testdb", sql_query=payload, graph_name="test")
+        p = store.create(database="testdb", node_query=payload, graph_name="test")
         retrieved = store.get(p.id)
-        assert retrieved.sql_query == payload
+        assert retrieved.node_query == payload
 
     def test_unicode_injection(self):
         payload = "test\u0000'; DROP TABLE projections;--"
