@@ -34,7 +34,6 @@ def clear_store():
 
 SAMPLE_BODY = {
     "database": "mydb",
-    "sql_query": "SELECT * FROM t",
     "node_query": "SELECT * FROM t",
     "graph_name": "test-graph",
     "s3_staging_bucket": "s3://my-bucket/staging/",
@@ -77,16 +76,16 @@ async def test_update_projection(client):
     create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
     pid = create_resp.json()["id"]
 
-    resp = await client.put(f"/api/v0/projection/{pid}", json={"sql_query": "SELECT id FROM t"})
+    resp = await client.put(f"/api/v0/projection/{pid}", json={"node_query": "SELECT id FROM t"})
     assert resp.status_code == 200
-    assert resp.json()["sql_query"] == "SELECT id FROM t"
+    assert resp.json()["node_query"] == "SELECT id FROM t"
     # Other fields unchanged
     assert resp.json()["database"] == "mydb"
 
 
 @pytest.mark.asyncio
 async def test_update_projection_not_found(client):
-    resp = await client.put("/api/v0/projection/nonexistent", json={"sql_query": "x"})
+    resp = await client.put("/api/v0/projection/nonexistent", json={"node_query": "x"})
     assert resp.status_code == 404
 
 

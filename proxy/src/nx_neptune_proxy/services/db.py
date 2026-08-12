@@ -32,7 +32,6 @@ def init_db() -> None:
             status TEXT NOT NULL DEFAULT 'draft',
             catalog TEXT DEFAULT 'AwsDataCatalog',
             database TEXT,
-            sql_query TEXT,
             node_query TEXT,
             edge_query TEXT,
             graph_name TEXT,

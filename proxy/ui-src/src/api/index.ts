@@ -47,7 +47,6 @@ export interface Projection {
   status: string;
   catalog: string;
   database?: string;
-  sql_query?: string;
   node_query?: string;
   edge_query?: string;
   graph_name?: string;
