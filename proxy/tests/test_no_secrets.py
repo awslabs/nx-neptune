@@ -26,7 +26,7 @@ class TestNoSecretsInDb:
             database="production_db",
             graph_name="fraud-graph",
             s3_staging_bucket="s3://my-bucket/staging/",
-            sql_query="SELECT user_id, name FROM users",
+            node_query="SELECT user_id, name FROM users",
         )
         store.create(
             database="analytics",

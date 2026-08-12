@@ -117,8 +117,6 @@ async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le
     client = ClientFactory().athena()
 
     queries = [q for q in [p.node_query, p.edge_query] if q]
-    if not queries and p.sql_query:
-        queries = [q.strip() for q in p.sql_query.split(";") if q.strip()]
     all_results = []
 
     for q in queries:
