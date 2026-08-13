@@ -276,3 +276,63 @@ async def test_execute_poll_lifecycle(client):
     assert resp.json()["status"] == "complete"
     assert resp.json()["progress"] == 100
     assert resp.json()["graph_endpoint"] == "https://g-123.neptune-graph.amazonaws.com"
+
+
+# --- Queries endpoints ---
+
+
+@pytest.mark.asyncio
+async def test_get_queries_not_found(client):
+    resp = await client.get("/api/v0/projection/nonexistent/queries")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_save_queries_not_found(client):
+    resp = await client.put("/api/v0/projection/nonexistent/queries", json={
+        "node_queries": [{"sql": "SELECT 1"}],
+        "edge_queries": [],
+    })
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_save_and_get_queries(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    pid = create_resp.json()["id"]
+
+    save_resp = await client.put(f"/api/v0/projection/{pid}/queries", json={
+        "node_queries": [{"sql": "SELECT id FROM nodes"}, {"sql": "SELECT id FROM users"}],
+        "edge_queries": [{"sql": "SELECT src, dst FROM edges"}],
+    })
+    assert save_resp.status_code == 200
+    data = save_resp.json()
+    assert len(data["node_queries"]) == 2
+    assert len(data["edge_queries"]) == 1
+    assert data["node_queries"][0]["sql"] == "SELECT id FROM nodes"
+    assert data["node_queries"][1]["position"] == 1
+
+    get_resp = await client.get(f"/api/v0/projection/{pid}/queries")
+    assert get_resp.status_code == 200
+    assert get_resp.json() == data
+
+
+@pytest.mark.asyncio
+async def test_save_queries_replaces_previous(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    pid = create_resp.json()["id"]
+
+    await client.put(f"/api/v0/projection/{pid}/queries", json={
+        "node_queries": [{"sql": "old query 1"}, {"sql": "old query 2"}],
+        "edge_queries": [],
+    })
+
+    await client.put(f"/api/v0/projection/{pid}/queries", json={
+        "node_queries": [{"sql": "new query only"}],
+        "edge_queries": [],
+    })
+
+    get_resp = await client.get(f"/api/v0/projection/{pid}/queries")
+    data = get_resp.json()
+    assert len(data["node_queries"]) == 1
+    assert data["node_queries"][0]["sql"] == "new query only"

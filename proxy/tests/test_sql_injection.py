@@ -43,6 +43,25 @@ class TestSqlInjection:
         assert len(retrieved) == 1
         assert retrieved[0].sql == payload
 
+    def test_injection_in_edge_query_field(self):
+        payload = "SELECT * FROM t; DROP TABLE edge_queries;--"
+        p = store.create(database="testdb", graph_name="test")
+        query_store.save_edge_queries(p.id, [{"sql": payload}])
+        retrieved = query_store.list_edge_queries(p.id)
+        assert len(retrieved) == 1
+        assert retrieved[0].sql == payload
+
+    def test_query_isolation_across_projections(self):
+        """Queries saved to one projection must not leak to another."""
+        p1 = store.create(database="db1", graph_name="g1")
+        p2 = store.create(database="db2", graph_name="g2")
+        query_store.save_node_queries(p1.id, [{"sql": "SELECT secret FROM p1"}])
+        query_store.save_node_queries(p2.id, [{"sql": "SELECT public FROM p2"}])
+        assert len(query_store.list_node_queries(p1.id)) == 1
+        assert query_store.list_node_queries(p1.id)[0].sql == "SELECT secret FROM p1"
+        assert len(query_store.list_node_queries(p2.id)) == 1
+        assert query_store.list_node_queries(p2.id)[0].sql == "SELECT public FROM p2"
+
     def test_unicode_injection(self):
         payload = "test\u0000'; DROP TABLE projections;--"
         p = store.create(database="testdb", graph_name=payload)
