@@ -21,10 +21,13 @@ from nx_neptune_proxy.routers.schemas import (
     ProjectionResponse,
     ProjectionStatus,
     ProjectionUpdate,
+    QueriesPayload,
+    QueriesResponse,
     ValidateResponse,
 )
 from nx_neptune_proxy.services.pipeline import run_pipeline
 from nx_neptune_proxy.services.projection_store import store
+from nx_neptune_proxy.services.query_store import query_store
 from nx_neptune_proxy.utils import unpack_query_results
 
 router = APIRouter(prefix="/api/v0/projection", tags=["projection"])
@@ -95,15 +98,26 @@ def validate_query(projection_id: str):
     """Validate node and edge queries individually"""
     p = _get_projection_or_404(projection_id)
     checks = []
-    for label, query in [("node_query", p.node_query), ("edge_query", p.edge_query)]:
-        if not query:
-            continue
+
+    node_queries_list = query_store.list_node_queries(projection_id)
+    edge_queries_list = query_store.list_edge_queries(projection_id)
+
+    queries_to_validate = []
+    for i, nq in enumerate(node_queries_list):
+        if nq.sql.strip():
+            queries_to_validate.append((f"node_query_{i+1}", nq.sql, "node"))
+
+    for i, eq in enumerate(edge_queries_list):
+        if eq.sql.strip():
+            queries_to_validate.append((f"edge_query_{i+1}", eq.sql, "edge"))
+
+    for label, query, query_type in queries_to_validate:
         result = check_athena_query(
             sql_query=query,
             catalog=p.catalog,
             database=p.database,
             output_location=p.s3_staging_bucket,
-            query_type="edge" if label == "edge_query" else "node",
+            query_type=query_type,
         )
         checks.append({"check": label, "passed": result.passed, "message": result.message})
     valid = all(c["passed"] for c in checks) if checks else False
@@ -116,7 +130,12 @@ async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le
     p = _get_projection_or_404(projection_id)
     client = ClientFactory().athena()
 
-    queries = [q for q in [p.node_query, p.edge_query] if q]
+    node_queries_list = query_store.list_node_queries(projection_id)
+    edge_queries_list = query_store.list_edge_queries(projection_id)
+
+    queries = [nq.sql for nq in node_queries_list if nq.sql.strip()]
+    queries += [eq.sql for eq in edge_queries_list if eq.sql.strip()]
+
     all_results = []
 
     for q in queries:
@@ -196,3 +215,41 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
 
     background_tasks.add_task(_delete_graph)
     return {"id": p.id, "status": "deleting"}
+
+
+@router.get(
+    "/{projection_id}/queries",
+    summary="Get node and edge queries for a projection",
+    response_model=QueriesResponse,
+)
+def get_queries(projection_id: str):
+    """Return all node and edge queries for a projection."""
+    _get_projection_or_404(projection_id)
+    node_queries = query_store.list_node_queries(projection_id)
+    edge_queries = query_store.list_edge_queries(projection_id)
+    return QueriesResponse(
+        node_queries=[{"id": q.id, "sql": q.sql, "position": q.position} for q in node_queries],
+        edge_queries=[
+            {"id": q.id, "sql": q.sql, "from_type": q.from_type, "to_type": q.to_type, "position": q.position}
+            for q in edge_queries
+        ],
+    )
+
+
+@router.put(
+    "/{projection_id}/queries",
+    summary="Save node and edge queries for a projection",
+    response_model=QueriesResponse,
+)
+def save_queries(projection_id: str, body: QueriesPayload):
+    """Replace all node and edge queries for a projection."""
+    _get_projection_or_404(projection_id)
+    node_queries = query_store.save_node_queries(projection_id, [q.model_dump() for q in body.node_queries])
+    edge_queries = query_store.save_edge_queries(projection_id, [q.model_dump() for q in body.edge_queries])
+    return QueriesResponse(
+        node_queries=[{"id": q.id, "sql": q.sql, "position": q.position} for q in node_queries],
+        edge_queries=[
+            {"id": q.id, "sql": q.sql, "from_type": q.from_type, "to_type": q.to_type, "position": q.position}
+            for q in edge_queries
+        ],
+    )

@@ -11,7 +11,7 @@ from typing import Optional
 from .db import get_connection
 
 _FIELDS = [
-    "id", "status", "catalog", "database", "node_query", "edge_query",
+    "id", "status", "catalog", "database",
     "graph_name", "graph_memory_gb", "s3_staging_bucket", "graph_id", "graph_endpoint",
     "project_id", "step", "step_label", "progress", "error", "created_at",
 ]
@@ -25,8 +25,6 @@ class Projection:
     status: str
     catalog: str = "AwsDataCatalog"
     database: Optional[str] = None
-    node_query: Optional[str] = None
-    edge_query: Optional[str] = None
     graph_name: Optional[str] = None
     graph_memory_gb: int = 16
     s3_staging_bucket: Optional[str] = None
@@ -42,17 +40,14 @@ class Projection:
 
 class ProjectionStore:
     def create(self, catalog: str = "AwsDataCatalog", database: str = None,
-               node_query: str = None,
-               edge_query: str = None, graph_name: str = None,
+               graph_name: str = None,
                graph_memory_gb: int = 16, s3_staging_bucket: str = None,
-               project_id: str = None) -> Projection:
+               project_id: str = None, **_kwargs) -> Projection:
         p = Projection(
             id=str(uuid.uuid4()),
             status="draft",
             catalog=catalog,
             database=database,
-            node_query=node_query,
-            edge_query=edge_query,
             graph_name=graph_name,
             graph_memory_gb=graph_memory_gb,
             s3_staging_bucket=s3_staging_bucket,
@@ -89,7 +84,7 @@ class ProjectionStore:
         return [self._row_to_projection(r) for r in rows]
 
     _ALLOWED_UPDATE_COLUMNS = {
-        "status", "catalog", "database", "node_query", "edge_query",
+        "status", "catalog", "database",
         "graph_name", "graph_memory_gb", "s3_staging_bucket", "graph_id", "graph_endpoint",
         "project_id", "step", "step_label", "progress", "error",
     }
@@ -122,8 +117,6 @@ class ProjectionStore:
             status=row["status"],
             catalog=row["catalog"],
             database=row["database"],
-            node_query=row["node_query"],
-            edge_query=row["edge_query"],
             graph_name=row["graph_name"],
             graph_memory_gb=row["graph_memory_gb"] or 16,
             s3_staging_bucket=row["s3_staging_bucket"],

@@ -20,12 +20,16 @@ def client():
 @pytest.fixture(autouse=True)
 def clear_store():
     conn = get_connection()
+    conn.execute("DELETE FROM node_queries")
+    conn.execute("DELETE FROM edge_queries")
     conn.execute("DELETE FROM projections")
     conn.execute("DELETE FROM projects")
     conn.commit()
     conn.close()
     yield
     conn = get_connection()
+    conn.execute("DELETE FROM node_queries")
+    conn.execute("DELETE FROM edge_queries")
     conn.execute("DELETE FROM projections")
     conn.execute("DELETE FROM projects")
     conn.commit()
@@ -34,8 +38,6 @@ def clear_store():
 
 SAMPLE_BODY = {
     "database": "mydb",
-    "node_query": "SELECT id AS `~id`, type AS `~label` FROM nodes",
-    "edge_query": "SELECT src AS `~from`, dst AS `~to`, rel AS `~label` FROM edges",
     "graph_name": "test-graph",
     "s3_staging_bucket": "s3://my-bucket/staging/",
 }
@@ -78,19 +80,19 @@ async def test_update_projection(client):
     pid = create_resp.json()["id"]
 
     resp = await client.put(f"/api/v0/projection/{pid}", json={
-        "node_query": "SELECT id FROM t",
-        "edge_query": "SELECT src, dst FROM edges",
+        "database": "other_db",
+        "graph_name": "updated-graph",
     })
     assert resp.status_code == 200
-    assert resp.json()["node_query"] == "SELECT id FROM t"
-    assert resp.json()["edge_query"] == "SELECT src, dst FROM edges"
+    assert resp.json()["database"] == "other_db"
+    assert resp.json()["graph_name"] == "updated-graph"
     # Other fields unchanged
-    assert resp.json()["database"] == "mydb"
+    assert resp.json()["s3_staging_bucket"] == "s3://my-bucket/staging/"
 
 
 @pytest.mark.asyncio
 async def test_update_projection_not_found(client):
-    resp = await client.put("/api/v0/projection/nonexistent", json={"node_query": "x", "edge_query": "y"})
+    resp = await client.put("/api/v0/projection/nonexistent", json={"database": "x"})
     assert resp.status_code == 404
 
 
@@ -160,6 +162,12 @@ async def test_validate_query(mock_check, client):
     create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
     pid = create_resp.json()["id"]
 
+    # Save queries so validate-query has something to check
+    await client.put(f"/api/v0/projection/{pid}/queries", json={
+        "node_queries": [{"sql": "SELECT id AS `~id`, type AS `~label` FROM nodes"}],
+        "edge_queries": [{"sql": "SELECT src AS `~from`, dst AS `~to`, rel AS `~label` FROM edges"}],
+    })
+
     resp = await client.post(f"/api/v0/projection/{pid}/validate-query")
     assert resp.status_code == 200
     assert resp.json()["valid"] is True
@@ -183,6 +191,12 @@ async def test_preview(mock_cf, mock_wait, mock_results, client):
 
     create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
     pid = create_resp.json()["id"]
+
+    # Save queries so preview has something to run
+    await client.put(f"/api/v0/projection/{pid}/queries", json={
+        "node_queries": [{"sql": "SELECT id, name FROM nodes"}],
+        "edge_queries": [],
+    })
 
     resp = await client.post(f"/api/v0/projection/{pid}/preview")
     assert resp.status_code == 200

@@ -5,6 +5,7 @@ import logging
 
 from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.services.projection_store import Projection, store
+from nx_neptune_proxy.services.query_store import query_store
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,10 @@ async def run_pipeline(projection: Projection) -> None:
 
         # Step 2: Athena query + CSV import
         _update(projection.id, step="athena_import", label="Running Athena query and importing data", progress=45)
-        sql_queries = [q for q in [projection.node_query, projection.edge_query] if q]
+        node_queries = query_store.list_node_queries(projection.id)
+        edge_queries = query_store.list_edge_queries(projection.id)
+        sql_queries = [nq.sql for nq in node_queries if nq.sql.strip()]
+        sql_queries += [eq.sql for eq in edge_queries if eq.sql.strip()]
         await sm.import_from_table(
             graph=graph,
             s3_location=s3_location,

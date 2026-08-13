@@ -4,6 +4,7 @@
 """SQL injection resistance via parameterized queries."""
 
 from nx_neptune_proxy.services.projection_store import store
+from nx_neptune_proxy.services.query_store import query_store
 
 
 class TestSqlInjection:
@@ -36,9 +37,11 @@ class TestSqlInjection:
 
     def test_injection_in_node_query_field(self):
         payload = "SELECT * FROM t; DROP TABLE projections;--"
-        p = store.create(database="testdb", node_query=payload, graph_name="test")
-        retrieved = store.get(p.id)
-        assert retrieved.node_query == payload
+        p = store.create(database="testdb", graph_name="test")
+        query_store.save_node_queries(p.id, [{"sql": payload}])
+        retrieved = query_store.list_node_queries(p.id)
+        assert len(retrieved) == 1
+        assert retrieved[0].sql == payload
 
     def test_unicode_injection(self):
         payload = "test\u0000'; DROP TABLE projections;--"

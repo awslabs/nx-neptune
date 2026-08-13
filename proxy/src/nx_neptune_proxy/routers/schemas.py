@@ -56,8 +56,6 @@ class NeptuneAnalyticsGraphsResponse(BaseModel):
 class ProjectionCreate(BaseModel):
     catalog: str = "AwsDataCatalog"
     database: Optional[str] = None
-    node_query: Optional[str] = None
-    edge_query: Optional[str] = None
     graph_name: Optional[str] = None
     graph_memory_gb: int = 16
     s3_staging_bucket: Optional[str] = None
@@ -67,8 +65,6 @@ class ProjectionCreate(BaseModel):
 class ProjectionUpdate(BaseModel):
     catalog: Optional[str] = None
     database: Optional[str] = None
-    node_query: Optional[str] = None
-    edge_query: Optional[str] = None
     graph_name: Optional[str] = None
     graph_memory_gb: Optional[int] = None
     s3_staging_bucket: Optional[str] = None
@@ -110,8 +106,6 @@ class ProjectionResponse(BaseModel):
     status: str
     catalog: str
     database: Optional[str] = None
-    node_query: Optional[str] = None
-    edge_query: Optional[str] = None
     graph_name: Optional[str] = None
     graph_id: Optional[str] = None
     graph_endpoint: Optional[str] = None
@@ -133,8 +127,6 @@ class ProjectionExport(BaseModel):
 
     catalog: str = Field("AwsDataCatalog", description="Athena catalog name")
     database: Optional[str] = Field(None, description="Athena database name")
-    node_query: Optional[str] = Field(None, description="SQL query that produces nodes (must include ~id and ~label columns)")
-    edge_query: Optional[str] = Field(None, description="SQL query that produces edges (must include ~from, ~to, and ~label columns)")
     graph_name: Optional[str] = Field(None, description="Neptune Analytics graph name suffix (prefix is added automatically)")
     graph_memory_gb: int = Field(16, description="Graph memory allocation in GB")
     s3_staging_bucket: Optional[str] = Field(None, description="S3 bucket path for staging Athena results (e.g. s3://bucket/prefix)")
@@ -147,8 +139,6 @@ class ProjectionExport(BaseModel):
         return cls(
             catalog=pr.catalog,
             database=pr.database,
-            node_query=pr.node_query,
-            edge_query=pr.edge_query,
             graph_name=pr.graph_name,
             graph_memory_gb=pr.graph_memory_gb,
             s3_staging_bucket=pr.s3_staging_bucket,
@@ -171,3 +161,42 @@ class ProjectExportPayload(BaseModel):
             project={"name": project.name},
             projections=[ProjectionExport.from_projection(pr) for pr in projections],
         )
+
+
+# --- Multi-Query ---
+
+
+class NodeQueryInput(BaseModel):
+    id: Optional[str] = None
+    sql: str = ""
+
+
+class EdgeQueryInput(BaseModel):
+    id: Optional[str] = None
+    sql: str = ""
+    from_type: Optional[str] = None
+    to_type: Optional[str] = None
+
+
+class NodeQueryResponse(BaseModel):
+    id: str
+    sql: str
+    position: int
+
+
+class EdgeQueryResponse(BaseModel):
+    id: str
+    sql: str
+    from_type: Optional[str] = None
+    to_type: Optional[str] = None
+    position: int
+
+
+class QueriesPayload(BaseModel):
+    node_queries: list[NodeQueryInput] = []
+    edge_queries: list[EdgeQueryInput] = []
+
+
+class QueriesResponse(BaseModel):
+    node_queries: list[NodeQueryResponse]
+    edge_queries: list[EdgeQueryResponse]

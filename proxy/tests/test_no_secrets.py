@@ -26,14 +26,11 @@ class TestNoSecretsInDb:
             database="production_db",
             graph_name="fraud-graph",
             s3_staging_bucket="s3://my-bucket/staging/",
-            node_query="SELECT user_id, name FROM users",
         )
         store.create(
             database="analytics",
             graph_name="social-graph",
             s3_staging_bucket="s3://other-bucket/data/",
-            node_query="SELECT id AS `~id`, type AS `~label` FROM nodes",
-            edge_query="SELECT src AS `~from`, dst AS `~to` FROM edges",
         )
 
         # Read the raw database content

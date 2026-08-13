@@ -32,8 +32,6 @@ def init_db() -> None:
             status TEXT NOT NULL DEFAULT 'draft',
             catalog TEXT DEFAULT 'AwsDataCatalog',
             database TEXT,
-            node_query TEXT,
-            edge_query TEXT,
             graph_name TEXT,
             graph_memory_gb INTEGER DEFAULT 16,
             s3_staging_bucket TEXT,
@@ -46,6 +44,22 @@ def init_db() -> None:
             error TEXT,
             created_at TEXT NOT NULL,
             FOREIGN KEY (project_id) REFERENCES projects(id)
+        );
+        CREATE TABLE IF NOT EXISTS node_queries (
+            id TEXT PRIMARY KEY,
+            projection_id TEXT NOT NULL,
+            sql TEXT NOT NULL DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (projection_id) REFERENCES projections(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS edge_queries (
+            id TEXT PRIMARY KEY,
+            projection_id TEXT NOT NULL,
+            sql TEXT NOT NULL DEFAULT '',
+            from_type TEXT,
+            to_type TEXT,
+            position INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (projection_id) REFERENCES projections(id) ON DELETE CASCADE
         );
     """)
     conn.commit()

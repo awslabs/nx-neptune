@@ -16,7 +16,6 @@ class TestProjectExport:
         projection_store.create(
             catalog="AwsDataCatalog",
             database="test_db",
-            node_query="SELECT id, name FROM nodes",
             graph_name="nxp-test",
             graph_memory_gb=32,
             s3_staging_bucket="s3://bucket/staging",
@@ -74,8 +73,6 @@ class TestProjectImport:
                 {
                     "catalog": "AwsDataCatalog",
                     "database": "fraud_db",
-                    "node_query": "SELECT id FROM accounts",
-                    "edge_query": "SELECT src, dst FROM transfers",
                     "graph_name": "nxp-fraud",
                     "graph_memory_gb": 32,
                     "s3_staging_bucket": "s3://my-bucket/staging",
@@ -155,7 +152,6 @@ class TestRoundTrip:
         p = project_store.create(name="Round Trip")
         projection_store.create(
             database="rt_db",
-            node_query="SELECT 1",
             graph_name="nxp-roundtrip",
             graph_memory_gb=64,
             project_id=p.id,
