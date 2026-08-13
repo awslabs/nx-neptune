@@ -96,6 +96,58 @@ export function Import() {
   }
 
   // --- Projection management ---
+
+  // Auto-create projection once user starts filling the form
+  useEffect(() => {
+    if (currentId) return;
+    const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
+    if (!hasContent) return;
+    projection.create({
+      catalog,
+      database,
+      s3_staging_bucket: bucket,
+      graph_name: graphName,
+      graph_memory_gb: graphMemoryGb,
+      project_id: projectId || undefined,
+    }).then((p) => {
+      setCurrentId(p.id);
+      loadProjections();
+      window.dispatchEvent(new Event("projects-changed"));
+    });
+  }, [database, bucket, graphName, nodeQueries, edgeQueries]);
+
+  // Auto-create projection once user starts filling the form, then auto-save config on changes
+  const configTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
+    if (!hasContent) return;
+
+    const data = {
+      catalog,
+      database,
+      s3_staging_bucket: bucket,
+      graph_name: graphName,
+      graph_memory_gb: graphMemoryGb,
+      project_id: projectId || undefined,
+    };
+
+    if (!currentId) {
+      // First time — create
+      projection.create(data).then((p) => {
+        setCurrentId(p.id);
+        loadProjections();
+        window.dispatchEvent(new Event("projects-changed"));
+      });
+    } else {
+      // Subsequent changes — debounced update
+      if (configTimer.current) clearTimeout(configTimer.current);
+      configTimer.current = setTimeout(() => {
+        projection.update(currentId, data);
+      }, 1000);
+    }
+  }, [catalog, database, bucket, graphName, graphMemoryGb, projectId]);
+
   async function ensureProjection(): Promise<string> {
     const data = {
       catalog,
