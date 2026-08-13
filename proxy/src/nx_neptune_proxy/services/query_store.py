@@ -15,6 +15,9 @@ class NodeQuery:
     sql: str = ""
     position: int = 0
 
+    def to_response(self) -> dict:
+        return {"id": self.id, "sql": self.sql, "position": self.position}
+
 
 @dataclass
 class EdgeQuery:
@@ -24,6 +27,9 @@ class EdgeQuery:
     from_type: Optional[str] = None
     to_type: Optional[str] = None
     position: int = 0
+
+    def to_response(self) -> dict:
+        return {"id": self.id, "sql": self.sql, "from_type": self.from_type, "to_type": self.to_type, "position": self.position}
 
 
 class QueryStore:
@@ -39,6 +45,10 @@ class QueryStore:
         ).fetchall()
         conn.close()
         return [NodeQuery(id=r["id"], projection_id=r["projection_id"], sql=r["sql"], position=r["position"]) for r in rows]
+
+    def list_node_responses(self, projection_id: str) -> list[dict]:
+        """Same as list_node_queries but returns API-ready dicts (excludes projection_id)."""
+        return [q.to_response() for q in self.list_node_queries(projection_id)]
 
     def save_node_queries(self, projection_id: str, queries: list[dict]) -> list[NodeQuery]:
         """Replace all node queries for a projection."""
@@ -57,6 +67,10 @@ class QueryStore:
         conn.close()
         return results
 
+    def save_node_from_payload(self, projection_id: str, models: list) -> None:
+        """Variant that accepts Pydantic models directly (calls model_dump internally)."""
+        self.save_node_queries(projection_id, [m.model_dump() for m in models])
+
     # --- Edge Queries ---
 
     def list_edge_queries(self, projection_id: str) -> list[EdgeQuery]:
@@ -73,6 +87,10 @@ class QueryStore:
             )
             for r in rows
         ]
+
+    def list_edge_responses(self, projection_id: str) -> list[dict]:
+        """Same as list_edge_queries but returns API-ready dicts (excludes projection_id)."""
+        return [q.to_response() for q in self.list_edge_queries(projection_id)]
 
     def save_edge_queries(self, projection_id: str, queries: list[dict]) -> list[EdgeQuery]:
         """Replace all edge queries for a projection."""
@@ -92,6 +110,10 @@ class QueryStore:
         conn.commit()
         conn.close()
         return results
+
+    def save_edge_from_payload(self, projection_id: str, models: list) -> None:
+        """Variant that accepts Pydantic models directly (calls model_dump internally)."""
+        self.save_edge_queries(projection_id, [m.model_dump() for m in models])
 
 
 # Singleton

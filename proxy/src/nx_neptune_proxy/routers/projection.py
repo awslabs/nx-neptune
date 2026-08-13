@@ -225,14 +225,9 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
 def get_queries(projection_id: str):
     """Return all node and edge queries for a projection."""
     _get_projection_or_404(projection_id)
-    node_queries = query_store.list_node_queries(projection_id)
-    edge_queries = query_store.list_edge_queries(projection_id)
     return QueriesResponse(
-        node_queries=[{"id": q.id, "sql": q.sql, "position": q.position} for q in node_queries],
-        edge_queries=[
-            {"id": q.id, "sql": q.sql, "from_type": q.from_type, "to_type": q.to_type, "position": q.position}
-            for q in edge_queries
-        ],
+        node_queries=query_store.list_node_responses(projection_id),
+        edge_queries=query_store.list_edge_responses(projection_id),
     )
 
 
@@ -244,12 +239,9 @@ def get_queries(projection_id: str):
 def save_queries(projection_id: str, body: QueriesPayload):
     """Replace all node and edge queries for a projection."""
     _get_projection_or_404(projection_id)
-    node_queries = query_store.save_node_queries(projection_id, [q.model_dump() for q in body.node_queries])
-    edge_queries = query_store.save_edge_queries(projection_id, [q.model_dump() for q in body.edge_queries])
+    query_store.save_node_from_payload(projection_id, body.node_queries)
+    query_store.save_edge_from_payload(projection_id, body.edge_queries)
     return QueriesResponse(
-        node_queries=[{"id": q.id, "sql": q.sql, "position": q.position} for q in node_queries],
-        edge_queries=[
-            {"id": q.id, "sql": q.sql, "from_type": q.from_type, "to_type": q.to_type, "position": q.position}
-            for q in edge_queries
-        ],
+        node_queries=query_store.list_node_responses(projection_id),
+        edge_queries=query_store.list_edge_responses(projection_id),
     )
