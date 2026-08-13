@@ -39,7 +39,7 @@ def init_db() -> None:
             s3_staging_bucket TEXT,
             graph_id TEXT,
             graph_endpoint TEXT,
-            project_id TEXT,
+            project_id TEXT NOT NULL,
             step TEXT,
             step_label TEXT,
             progress REAL DEFAULT 0,

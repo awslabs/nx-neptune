@@ -54,7 +54,7 @@ export interface Projection {
   graph_endpoint?: string;
   graph_memory_gb: number;
   s3_staging_bucket?: string;
-  project_id?: string;
+  project_id: string;
   step?: string;
   step_label?: string;
   progress: number;

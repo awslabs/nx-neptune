@@ -91,7 +91,8 @@ export function Import() {
 
   // --- Projection management ---
   async function ensureProjection(): Promise<string> {
-    const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb, project_id: projectId || undefined };
+    if (!projectId) throw new Error("Please select a project first");
+    const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb, project_id: projectId };
     if (currentId) {
       await projection.update(currentId, data);
       return currentId;
@@ -223,7 +224,7 @@ export function Import() {
                   value={projectId}
                   onChange={(e) => setProjectId(e.target.value)}
                 >
-                  <option value="">No project</option>
+                  <option value="" disabled>Select a project</option>
                   {projects.map((ws) => (
                     <option key={ws.id} value={ws.id}>{ws.name}</option>
                   ))}

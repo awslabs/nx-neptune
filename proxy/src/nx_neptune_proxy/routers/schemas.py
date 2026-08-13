@@ -61,7 +61,7 @@ class ProjectionCreate(BaseModel):
     graph_name: Optional[str] = None
     graph_memory_gb: int = 16
     s3_staging_bucket: Optional[str] = None
-    project_id: Optional[str] = None
+    project_id: str
 
 
 class ProjectionUpdate(BaseModel):

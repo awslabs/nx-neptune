@@ -19,7 +19,7 @@ class TestNoSecretsInDb:
         "password",
     ]
 
-    def test_no_secrets_after_creating_projections(self):
+    def test_no_secrets_after_creating_projections(self, test_project_id):
         """After CRUD operations, DB should contain no credential patterns."""
         # Create several projections with various data
         store.create(
@@ -27,6 +27,7 @@ class TestNoSecretsInDb:
             graph_name="fraud-graph",
             s3_staging_bucket="s3://my-bucket/staging/",
             node_query="SELECT user_id, name FROM users",
+            project_id=test_project_id,
         )
         store.create(
             database="analytics",
@@ -34,6 +35,7 @@ class TestNoSecretsInDb:
             s3_staging_bucket="s3://other-bucket/data/",
             node_query="SELECT id AS `~id`, type AS `~label` FROM nodes",
             edge_query="SELECT src AS `~from`, dst AS `~to` FROM edges",
+            project_id=test_project_id,
         )
 
         # Read the raw database content
@@ -57,9 +59,9 @@ class TestNoSecretsInDb:
                 f"Sensitive pattern '{pattern}' found in SQLite data"
             )
 
-    def test_no_secrets_after_update_with_error(self):
+    def test_no_secrets_after_update_with_error(self, test_project_id):
         """Error messages stored in DB should not contain credentials."""
-        p = store.create(database="testdb", graph_name="test")
+        p = store.create(database="testdb", graph_name="test", project_id=test_project_id)
         store.update(
             p.id,
             status="failed",

@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 
 from nx_neptune_proxy.app import app
 from nx_neptune_proxy.services.db import get_connection
+from nx_neptune_proxy.services.project_store import store as project_store
 
 
 @pytest.fixture
@@ -38,3 +39,10 @@ def clear_store():
     conn.execute("DELETE FROM projects")
     conn.commit()
     conn.close()
+
+
+@pytest.fixture
+def test_project_id():
+    """Create a test project and return its ID."""
+    p = project_store.create(name="Test Project")
+    return p.id
