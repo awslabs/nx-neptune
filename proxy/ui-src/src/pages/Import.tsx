@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
@@ -148,24 +148,47 @@ export function Import() {
   }
 
   // --- Query management ---
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function saveCurrentQueries() {
+    if (!currentId) return;
+    projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: edgeQueries });
+  }
+
+  function scheduleSave(nq: NodeQueryInput[], eq: EdgeQueryInput[]) {
+    if (!currentId) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      projection.saveQueries(currentId, { node_queries: nq, edge_queries: eq });
+    }, 1000);
+  }
+
   function updateNodeQuery(index: number, sql: string) {
-    setNodeQueries((prev) => prev.map((q, i) => (i === index ? { ...q, sql } : q)));
+    const updated = nodeQueries.map((q, i) => (i === index ? { ...q, sql } : q));
+    setNodeQueries(updated);
+    scheduleSave(updated, edgeQueries);
   }
   function addNodeQuery() {
     setNodeQueries((prev) => [...prev, { sql: "" }]);
   }
   function removeNodeQuery(index: number) {
-    setNodeQueries((prev) => prev.filter((_, i) => i !== index));
+    const updated = nodeQueries.filter((_, i) => i !== index);
+    setNodeQueries(updated);
+    if (currentId) projection.saveQueries(currentId, { node_queries: updated, edge_queries: edgeQueries });
   }
 
   function updateEdgeQuery(index: number, updates: Partial<EdgeQueryInput>) {
-    setEdgeQueries((prev) => prev.map((q, i) => (i === index ? { ...q, ...updates } : q)));
+    const updated = edgeQueries.map((q, i) => (i === index ? { ...q, ...updates } : q));
+    setEdgeQueries(updated);
+    scheduleSave(nodeQueries, updated);
   }
   function addEdgeQuery() {
     setEdgeQueries((prev) => [...prev, { sql: "", from_type: "", to_type: "" }]);
   }
   function removeEdgeQuery(index: number) {
-    setEdgeQueries((prev) => prev.filter((_, i) => i !== index));
+    const updated = edgeQueries.filter((_, i) => i !== index);
+    setEdgeQueries(updated);
+    if (currentId) projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: updated });
   }
 
   // --- Actions ---
@@ -356,6 +379,7 @@ export function Import() {
                 placeholder="SELECT id AS &quot;~id&quot;, 'Label' AS &quot;~label&quot;, col1 FROM table"
                 value={nq.sql}
                 onChange={(e) => updateNodeQuery(i, e.target.value)}
+                onBlur={() => saveCurrentQueries()}
               />
             </div>
           ))}
@@ -387,6 +411,7 @@ export function Import() {
                 placeholder="SELECT id AS &quot;~id&quot;, src AS &quot;~from&quot;, dst AS &quot;~to&quot;, 'Label' AS &quot;~label&quot; FROM table"
                 value={eq.sql}
                 onChange={(e) => updateEdgeQuery(i, { sql: e.target.value })}
+                onBlur={() => saveCurrentQueries()}
               />
             </div>
           ))}
