@@ -26,7 +26,7 @@ export function Import() {
 
   // --- Multi-query state ---
   const [nodeQueries, setNodeQueries] = useState<NodeQueryInput[]>([{ sql: "" }]);
-  const [edgeQueries, setEdgeQueries] = useState<EdgeQueryInput[]>([{ sql: "", from_type: "", to_type: "" }]);
+  const [edgeQueries, setEdgeQueries] = useState<EdgeQueryInput[]>([{ sql: "" }]);
 
   // --- Projection state ---
   const [projectionsList, setProjectionsList] = useState<Projection[]>([]);
@@ -84,7 +84,7 @@ export function Import() {
     setCatalog("AwsDataCatalog");
     setDatabase("");
     setNodeQueries([{ sql: "" }]);
-    setEdgeQueries([{ sql: "", from_type: "", to_type: "" }]);
+    setEdgeQueries([{ sql: "" }]);
     setBucket("");
     setGraphName("");
     setGraphMemoryGb(16);
@@ -134,8 +134,8 @@ export function Import() {
       if (res.node_queries.length > 0) setNodeQueries(res.node_queries.map((q) => ({ id: q.id, sql: q.sql })));
       else setNodeQueries([{ sql: "" }]);
 
-      if (res.edge_queries.length > 0) setEdgeQueries(res.edge_queries.map((q) => ({ id: q.id, sql: q.sql, from_type: q.from_type ?? "", to_type: q.to_type ?? "" })));
-      else setEdgeQueries([{ sql: "", from_type: "", to_type: "" }]);
+      if (res.edge_queries.length > 0) setEdgeQueries(res.edge_queries.map((q) => ({ id: q.id, sql: q.sql })));
+      else setEdgeQueries([{ sql: "" }]);
     });
 
     if (p.status === "executing") startPolling(p.id);
@@ -183,7 +183,7 @@ export function Import() {
     scheduleSave(nodeQueries, updated);
   }
   function addEdgeQuery() {
-    setEdgeQueries((prev) => [...prev, { sql: "", from_type: "", to_type: "" }]);
+    setEdgeQueries((prev) => [...prev, { sql: "" }]);
   }
   function removeEdgeQuery(index: number) {
     const updated = edgeQueries.filter((_, i) => i !== index);
@@ -300,7 +300,7 @@ export function Import() {
                 // Load queries from source projection
                 projection.getQueries(s.id).then((res) => {
                   if (res.node_queries.length > 0) setNodeQueries(res.node_queries.map((q) => ({ sql: q.sql })));
-                  if (res.edge_queries.length > 0) setEdgeQueries(res.edge_queries.map((q) => ({ sql: q.sql, from_type: q.from_type ?? "", to_type: q.to_type ?? "" })));
+                  if (res.edge_queries.length > 0) setEdgeQueries(res.edge_queries.map((q) => ({ sql: q.sql })));
                 });
               }}
             >

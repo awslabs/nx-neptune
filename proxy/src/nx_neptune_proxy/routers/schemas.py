@@ -174,8 +174,6 @@ class NodeQueryInput(BaseModel):
 class EdgeQueryInput(BaseModel):
     id: Optional[str] = None
     sql: str = ""
-    from_type: Optional[str] = None
-    to_type: Optional[str] = None
 
 
 class NodeQueryResponse(BaseModel):
@@ -187,8 +185,6 @@ class NodeQueryResponse(BaseModel):
 class EdgeQueryResponse(BaseModel):
     id: str
     sql: str
-    from_type: Optional[str] = None
-    to_type: Optional[str] = None
     position: int
 
 

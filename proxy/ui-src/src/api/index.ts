@@ -96,8 +96,6 @@ export interface NodeQueryInput {
 export interface EdgeQueryInput {
   id?: string;
   sql: string;
-  from_type?: string;
-  to_type?: string;
 }
 
 export interface NodeQueryResponse {
@@ -109,8 +107,6 @@ export interface NodeQueryResponse {
 export interface EdgeQueryResponse {
   id: string;
   sql: string;
-  from_type?: string;
-  to_type?: string;
   position: number;
 }
 
