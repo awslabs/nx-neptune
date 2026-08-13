@@ -130,11 +130,13 @@ class ProjectionExport(BaseModel):
     graph_name: Optional[str] = Field(None, description="Neptune Analytics graph name suffix (prefix is added automatically)")
     graph_memory_gb: int = Field(16, description="Graph memory allocation in GB")
     s3_staging_bucket: Optional[str] = Field(None, description="S3 bucket path for staging Athena results (e.g. s3://bucket/prefix)")
+    node_queries: list[str] = Field(default_factory=list, description="Node SQL queries")
+    edge_queries: list[str] = Field(default_factory=list, description="Edge SQL queries")
 
     model_config = {"extra": "forbid"}
 
     @classmethod
-    def from_projection(cls, pr) -> "ProjectionExport":
+    def from_projection(cls, pr, node_queries: list[str] = None, edge_queries: list[str] = None) -> "ProjectionExport":
         """Create from a Projection dataclass instance."""
         return cls(
             catalog=pr.catalog,
@@ -142,6 +144,8 @@ class ProjectionExport(BaseModel):
             graph_name=pr.graph_name,
             graph_memory_gb=pr.graph_memory_gb,
             s3_staging_bucket=pr.s3_staging_bucket,
+            node_queries=node_queries or [],
+            edge_queries=edge_queries or [],
         )
 
 
@@ -155,11 +159,23 @@ class ProjectExportPayload(BaseModel):
     model_config = {"extra": "forbid"}
 
     @classmethod
-    def from_project(cls, project, projections: list) -> "ProjectExportPayload":
-        """Build export payload from a project and its projections."""
+    def from_project(cls, project, projections: list, queries_by_projection: dict = None) -> "ProjectExportPayload":
+        """Build export payload from a project and its projections.
+
+        Args:
+            queries_by_projection: dict mapping projection_id to (node_queries, edge_queries) tuple of SQL strings.
+        """
+        qmap = queries_by_projection or {}
         return cls(
             project={"name": project.name},
-            projections=[ProjectionExport.from_projection(pr) for pr in projections],
+            projections=[
+                ProjectionExport.from_projection(
+                    pr,
+                    node_queries=qmap.get(pr.id, ([], []))[0],
+                    edge_queries=qmap.get(pr.id, ([], []))[1],
+                )
+                for pr in projections
+            ],
         )
 
 

@@ -7,6 +7,7 @@ import pytest
 
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_store import store as projection_store
+from nx_neptune_proxy.services.query_store import query_store
 
 
 class TestProjectExport:
@@ -150,17 +151,24 @@ class TestRoundTrip:
     async def test_export_then_import(self, client):
         """Export a project, then import it — should recreate correctly."""
         p = project_store.create(name="Round Trip")
-        projection_store.create(
+        pr = projection_store.create(
             database="rt_db",
             graph_name="nxp-roundtrip",
             graph_memory_gb=64,
             project_id=p.id,
         )
+        query_store.save_node_queries(pr.id, [{"sql": "SELECT id FROM nodes"}, {"sql": "SELECT id FROM users"}])
+        query_store.save_edge_queries(pr.id, [{"sql": "SELECT src, dst FROM edges"}])
 
         # Export
         export_resp = await client.get(f"/api/v0/project/{p.id}/export")
         assert export_resp.status_code == 200
         export_data = export_resp.content
+
+        # Verify queries in export
+        export_json = export_resp.json()
+        assert export_json["projections"][0]["node_queries"] == ["SELECT id FROM nodes", "SELECT id FROM users"]
+        assert export_json["projections"][0]["edge_queries"] == ["SELECT src, dst FROM edges"]
 
         # Import
         import_resp = await client.post(
@@ -182,6 +190,15 @@ class TestRoundTrip:
         assert projections[0].database == "rt_db"
         assert projections[0].graph_name == "nxp-roundtrip"
         assert projections[0].graph_memory_gb == 64
+
+        # Imported queries should match
+        imported_node_queries = query_store.list_node_queries(projections[0].id)
+        imported_edge_queries = query_store.list_edge_queries(projections[0].id)
+        assert len(imported_node_queries) == 2
+        assert imported_node_queries[0].sql == "SELECT id FROM nodes"
+        assert imported_node_queries[1].sql == "SELECT id FROM users"
+        assert len(imported_edge_queries) == 1
+        assert imported_edge_queries[0].sql == "SELECT src, dst FROM edges"
 
 
 # --- Additional validation tests ---
