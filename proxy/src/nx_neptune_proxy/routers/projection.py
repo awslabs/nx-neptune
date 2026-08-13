@@ -16,6 +16,7 @@ from nx_neptune.validators import check_athena_query, validate_resources, wrap_w
 from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 from nx_neptune_proxy.routers.schemas import (
+    DiscoverLabelsResponse,
     PreviewResponse,
     ProjectionCreate,
     ProjectionResponse,
@@ -23,11 +24,13 @@ from nx_neptune_proxy.routers.schemas import (
     ProjectionUpdate,
     QueriesPayload,
     QueriesResponse,
+    SchemaPreviewResponse,
     ValidateResponse,
 )
 from nx_neptune_proxy.services.pipeline import run_pipeline
 from nx_neptune_proxy.services.projection_store import store
 from nx_neptune_proxy.services.query_store import query_store
+from nx_neptune_proxy.services.schema_preview import discover_labels
 from nx_neptune_proxy.utils import unpack_query_results
 
 router = APIRouter(prefix="/api/v0/projection", tags=["projection"])
@@ -129,6 +132,44 @@ def validate_query(projection_id: str):
         checks.append({"check": label, "passed": result.passed, "message": result.message})
     valid = all(c["passed"] for c in checks) if checks else False
     return {"valid": valid, "checks": checks}
+
+
+@router.post("/{projection_id}/schema-preview", summary="Discover graph schema labels", response_model=DiscoverLabelsResponse)
+async def schema_preview(projection_id: str):
+    """Discover distinct node and edge labels by running SELECT DISTINCT via Athena.
+
+    Requires database and s3_staging_bucket to be configured.
+    """
+    p = _get_projection_or_404(projection_id)
+    if not p.database or not p.s3_staging_bucket:
+        raise HTTPException(status_code=400, detail="Database and S3 staging bucket must be configured")
+
+    node_queries_list = query_store.list_node_queries(projection_id)
+    edge_queries_list = query_store.list_edge_queries(projection_id)
+
+    # Discover node labels
+    node_labels: list[str] = []
+    for nq in node_queries_list:
+        if not nq.sql.strip():
+            continue
+        labels = await discover_labels(nq.sql, p.catalog, p.database, p.s3_staging_bucket)
+        node_labels.extend(labels)
+
+    # Discover edge labels
+    edge_labels: list[str] = []
+    for eq in edge_queries_list:
+        if not eq.sql.strip():
+            continue
+        labels = await discover_labels(eq.sql, p.catalog, p.database, p.s3_staging_bucket)
+        edge_labels.extend(labels)
+
+    # Deduplicate while preserving order
+    seen_n: set[str] = set()
+    node_labels = [l for l in node_labels if not (l in seen_n or seen_n.add(l))]
+    seen_e: set[str] = set()
+    edge_labels = [l for l in edge_labels if not (l in seen_e or seen_e.add(l))]
+
+    return {"node_labels": node_labels, "edge_labels": edge_labels}
 
 
 @router.post("/{projection_id}/preview", summary="Preview first N rows", response_model=PreviewResponse)

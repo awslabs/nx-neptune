@@ -83,6 +83,7 @@ export const projection = {
   validateQuery: (id: string) => request<{ valid: boolean; checks: { check: string; passed: boolean; message?: string }[] }>(`/projection/${id}/validate-query`, { method: "POST" }),
   preview: (id: string, limit = 10) => request<{ error?: string; results: { columns: string[]; rows: string[][] }[] }>(`/projection/${id}/preview?limit=${limit}`, { method: "POST" }),
   execute: (id: string) => request<{ message: string }>(`/projection/${id}/execute`, { method: "POST" }),
+  schemaPreview: (id: string) => request<{ node_labels: string[]; edge_labels: string[] }>(`/projection/${id}/schema-preview`, { method: "POST" }),
   getQueries: (id: string) => request<QueriesResponse>(`/projection/${id}/queries`),
   saveQueries: (id: string, data: QueriesPayload) => request<QueriesResponse>(`/projection/${id}/queries`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
   delete: (id: string) => request<{ id: string; status: string }>(`/projection/${id}`, { method: "DELETE" }),

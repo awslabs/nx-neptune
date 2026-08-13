@@ -148,6 +148,11 @@ class SchemaPreviewResponse(BaseModel):
     edges: list[SchemaEdge]
 
 
+class DiscoverLabelsResponse(BaseModel):
+    node_labels: list[str]
+    edge_labels: list[str]
+
+
 # --- Multi-Query ---
 
 

@@ -1,16 +1,9 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
 import { Play, CheckCircle, Eye, Network, Plus, Trash2 } from "lucide-react";
 import { SchemaPreview, type SchemaNode, type SchemaEdge } from "../components/SchemaPreview";
-
-function extractLabel(sql: string): string | null {
-  // Matches: 'Label' AS "~label", 'Label' AS `~label`, 'Label' AS [~label], 'Label' AS ~label
-  // Also handles: 'Label' "~label" (no AS keyword), multi-word labels, underscores, numbers
-  const match = sql.match(/'([^']+)'\s+(?:AS\s+)?(?:"|`|\[)?~label(?:"|`|\])?/i);
-  return match?.[1]?.trim() ?? null;
-}
 
 export function Import() {
   const [searchParams] = useSearchParams();
@@ -74,11 +67,11 @@ export function Import() {
     };
   }, [dragging]);
 
-  // Derived: node types from current queries (reactive, for dropdowns)
-  const nodeTypes = useMemo(
-    () => nodeQueries.map((q) => extractLabel(q.sql)).filter((l): l is string => l !== null),
-    [nodeQueries],
-  );
+  // Node types from backend discovery
+  const [discoveredNodeTypes, setDiscoveredNodeTypes] = useState<string[]>([]);
+  const [discoveredEdgeLabels, setDiscoveredEdgeLabels] = useState<string[]>([]);
+  const [edgeMappings, setEdgeMappings] = useState<Record<string, { from: string; to: string }>>({});
+  const nodeTypes = discoveredNodeTypes;
 
   // Schema graph: static, only updated when "Preview Schema" is clicked
   const [schemaNodes, setSchemaNodes] = useState<SchemaNode[]>([]);
@@ -247,13 +240,33 @@ export function Import() {
     } catch (e: any) { setError(e.message); } finally { setLoading(null); }
   }
 
+  async function handleDiscoverLabels() {
+    try {
+      const id = await ensureProjection();
+      const result = await projection.schemaPreview(id);
+      setDiscoveredNodeTypes(result.node_labels);
+      setDiscoveredEdgeLabels(result.edge_labels);
+      // Initialize mappings for new edge labels
+      const newMappings: Record<string, { from: string; to: string }> = { ...edgeMappings };
+      for (const label of result.edge_labels) {
+        if (!newMappings[label]) {
+          newMappings[label] = { from: "", to: "" };
+        }
+      }
+      setEdgeMappings(newMappings);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
   function handleSchemaPreview() {
+    // Build graph from discovered labels + user-supplied edge mappings
     const nodes = nodeTypes.map((label) => ({ id: label, label }));
-    const edges = edgeQueries
-      .map((eq, i) => {
-        const label = extractLabel(eq.sql);
-        if (!label || !eq.from_type || !eq.to_type) return null;
-        return { id: `e${i}`, source: eq.from_type, target: eq.to_type, label };
+    const edges = discoveredEdgeLabels
+      .map((label, i) => {
+        const mapping = edgeMappings[label];
+        if (!mapping?.from || !mapping?.to) return null;
+        return { id: `e${i}`, source: mapping.from, target: mapping.to, label };
       })
       .filter((e): e is SchemaEdge => e !== null);
     setSchemaNodes(nodes);
@@ -400,12 +413,11 @@ export function Import() {
             </button>
           </div>
           {nodeQueries.map((nq, i) => {
-            const label = extractLabel(nq.sql);
             return (
               <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
                 <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
                   <span className="text-xs font-medium text-gray-700">
-                    {label ?? <span className="italic text-gray-400">No ~label detected</span>}
+                    {discoveredNodeTypes[i] ?? <span className="italic text-gray-400">Node {i + 1}</span>}
                   </span>
                   {nodeQueries.length > 1 && (
                     <button onClick={() => removeNodeQuery(i)} className="text-gray-400 hover:text-red-600">
@@ -436,14 +448,11 @@ export function Import() {
             </button>
           </div>
           {edgeQueries.map((eq, i) => {
-            const label = extractLabel(eq.sql);
-            const fromInvalid = eq.from_type && !nodeTypes.includes(eq.from_type);
-            const toInvalid = eq.to_type && !nodeTypes.includes(eq.to_type);
             return (
               <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
                 <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
                   <span className="text-xs font-medium text-gray-700">
-                    {label ?? <span className="italic text-gray-400">No ~label detected</span>}
+                    {discoveredEdgeLabels[i] ?? <span className="italic text-gray-400">Edge {i + 1}</span>}
                   </span>
                   {edgeQueries.length > 1 && (
                     <button onClick={() => removeEdgeQuery(i)} className="text-gray-400 hover:text-red-600">
@@ -458,37 +467,55 @@ export function Import() {
                   value={eq.sql}
                   onChange={(e) => updateEdgeQuery(i, { sql: e.target.value })}
                 />
-                <div className="flex gap-4 px-3 py-2 bg-gray-50 border-t border-gray-200">
-                  <label className="flex items-center gap-2 text-xs">
-                    <span className={fromInvalid ? "text-red-500 font-medium" : "text-gray-600"}>From:</span>
-                    <select
-                      className={`rounded border px-2 py-1 text-xs ${fromInvalid ? "border-red-300 bg-red-50" : "border-gray-300"}`}
-                      value={eq.from_type ?? ""}
-                      onChange={(e) => updateEdgeQuery(i, { from_type: e.target.value })}
-                    >
-                      <option value="">Select node type...</option>
-                      {nodeTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                    {fromInvalid && <span className="text-red-500">⚠</span>}
-                  </label>
-                  <label className="flex items-center gap-2 text-xs">
-                    <span className={toInvalid ? "text-red-500 font-medium" : "text-gray-600"}>To:</span>
-                    <select
-                      className={`rounded border px-2 py-1 text-xs ${toInvalid ? "border-red-300 bg-red-50" : "border-gray-300"}`}
-                      value={eq.to_type ?? ""}
-                      onChange={(e) => updateEdgeQuery(i, { to_type: e.target.value })}
-                    >
-                      <option value="">Select node type...</option>
-                      {nodeTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                    {toInvalid && <span className="text-red-500">⚠</span>}
-                  </label>
-                </div>
               </div>
             );
           })}
-          {nodeTypes.length === 0 && (
-            <p className="text-xs text-gray-400 italic">Define node queries with ~label to populate the dropdowns</p>
+        </div>
+      </Card>
+
+      {/* Schema Discovery & Edge Mapping */}
+      <Card>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Schema Discovery</h2>
+            <button onClick={handleDiscoverLabels} className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800">
+              <Eye className="h-3 w-3" /> Discover Labels
+            </button>
+          </div>
+          {nodeTypes.length > 0 && (
+            <div className="text-xs text-gray-600">
+              <span className="font-medium">Node types:</span> {nodeTypes.join(", ")}
+            </div>
+          )}
+          {discoveredEdgeLabels.length > 0 && (
+            <>
+              <p className="text-xs text-gray-500">For each edge label, select which node types it connects.</p>
+              {discoveredEdgeLabels.map((label) => (
+                <div key={label} className="flex items-center gap-3 text-xs">
+                  <span className="w-28 font-medium text-gray-700 truncate">{label}</span>
+                  <select
+                    className="rounded border border-gray-300 px-2 py-1 text-xs"
+                    value={edgeMappings[label]?.from ?? ""}
+                    onChange={(e) => setEdgeMappings((m) => ({ ...m, [label]: { ...m[label], from: e.target.value } }))}
+                  >
+                    <option value="">From...</option>
+                    {nodeTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <span className="text-gray-400">→</span>
+                  <select
+                    className="rounded border border-gray-300 px-2 py-1 text-xs"
+                    value={edgeMappings[label]?.to ?? ""}
+                    onChange={(e) => setEdgeMappings((m) => ({ ...m, [label]: { ...m[label], to: e.target.value } }))}
+                  >
+                    <option value="">To...</option>
+                    {nodeTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              ))}
+            </>
+          )}
+          {nodeTypes.length === 0 && discoveredEdgeLabels.length === 0 && (
+            <p className="text-xs text-gray-400 italic">Click "Discover Labels" to detect node and edge types from your queries via Athena.</p>
           )}
         </div>
       </Card>
@@ -600,8 +627,8 @@ export function Import() {
                       const activeNodeCount = nodeQueries.filter(q => q.sql.trim()).length;
                       const isNode = i < activeNodeCount;
                       const label = isNode
-                        ? extractLabel(nodeQueries[i]?.sql ?? "") ?? `Node ${i + 1}`
-                        : extractLabel(edgeQueries[i - activeNodeCount]?.sql ?? "") ?? `Edge ${i - activeNodeCount + 1}`;
+                        ? discoveredNodeTypes[i] ?? `Node ${i + 1}`
+                        : discoveredEdgeLabels[i - activeNodeCount] ?? `Edge ${i - activeNodeCount + 1}`;
                       const activeClass = isNode ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700";
                       return (
                         <button
