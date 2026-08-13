@@ -136,20 +136,26 @@ async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le
     queries = [nq.sql for nq in node_queries_list if nq.sql.strip()]
     queries += [eq.sql for eq in edge_queries_list if eq.sql.strip()]
 
-    all_results = []
+    if not queries:
+        return {"error": None, "results": []}
 
+    # Submit all queries in parallel
+    exec_ids = []
     for q in queries:
         limited = wrap_with_limit(q, limit)
-
         exec_id = _execute_athena_query(client, limited, p.s3_staging_bucket, catalog=p.catalog, database=p.database)
+        exec_ids.append(exec_id)
 
-        await wait_until_all_complete([exec_id], TaskType.EXPORT_ATHENA_TABLE, client, polling_interval=5)
+    # Wait for all to complete
+    await wait_until_all_complete(exec_ids, TaskType.EXPORT_ATHENA_TABLE, client, polling_interval=5)
 
+    # Collect results in order
+    all_results = []
+    for exec_id in exec_ids:
         resp = client.get_query_execution(QueryExecutionId=exec_id)
         state = get_query_state(resp)
         if state != "SUCCEEDED":
             return {"error": get_query_failure_reason(resp), "results": all_results}
-
         rows = get_athena_query_results(query_execution_id=exec_id, client=client)
         all_results.append(unpack_query_results(rows))
 
