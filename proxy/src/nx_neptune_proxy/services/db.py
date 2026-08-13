@@ -18,6 +18,15 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+def query(sql: str, params: tuple = ()) -> list:
+    """Execute a read query and return all rows. Handles connection lifecycle."""
+    conn = get_connection()
+    try:
+        return conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+
+
 def init_db() -> None:
     conn = get_connection()
     conn.executescript("""

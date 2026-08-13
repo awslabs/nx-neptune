@@ -4,7 +4,7 @@
 import uuid
 from dataclasses import dataclass
 
-from .db import get_connection
+from .db import get_connection, query
 
 
 @dataclass
@@ -13,6 +13,10 @@ class NodeQuery:
     projection_id: str
     sql: str = ""
     position: int = 0
+
+    @classmethod
+    def from_row(cls, row) -> "NodeQuery":
+        return cls(id=row["id"], projection_id=row["projection_id"], sql=row["sql"], position=row["position"])
 
     def to_response(self) -> dict:
         return {"id": self.id, "sql": self.sql, "position": self.position}
@@ -25,6 +29,10 @@ class EdgeQuery:
     sql: str = ""
     position: int = 0
 
+    @classmethod
+    def from_row(cls, row) -> "EdgeQuery":
+        return cls(id=row["id"], projection_id=row["projection_id"], sql=row["sql"], position=row["position"])
+
     def to_response(self) -> dict:
         return {"id": self.id, "sql": self.sql, "position": self.position}
 
@@ -35,13 +43,8 @@ class QueryStore:
     # --- Node Queries ---
 
     def list_node_queries(self, projection_id: str) -> list[NodeQuery]:
-        conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM node_queries WHERE projection_id = ? ORDER BY position",
-            (projection_id,),
-        ).fetchall()
-        conn.close()
-        return [NodeQuery(id=r["id"], projection_id=r["projection_id"], sql=r["sql"], position=r["position"]) for r in rows]
+        rows = query("SELECT * FROM node_queries WHERE projection_id = ? ORDER BY position", (projection_id,))
+        return [NodeQuery.from_row(r) for r in rows]
 
     def list_node_responses(self, projection_id: str) -> list[dict]:
         """Same as list_node_queries but returns API-ready dicts (excludes projection_id)."""
@@ -71,19 +74,8 @@ class QueryStore:
     # --- Edge Queries ---
 
     def list_edge_queries(self, projection_id: str) -> list[EdgeQuery]:
-        conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM edge_queries WHERE projection_id = ? ORDER BY position",
-            (projection_id,),
-        ).fetchall()
-        conn.close()
-        return [
-            EdgeQuery(
-                id=r["id"], projection_id=r["projection_id"], sql=r["sql"],
-                position=r["position"],
-            )
-            for r in rows
-        ]
+        rows = query("SELECT * FROM edge_queries WHERE projection_id = ? ORDER BY position", (projection_id,))
+        return [EdgeQuery.from_row(r) for r in rows]
 
     def list_edge_responses(self, projection_id: str) -> list[dict]:
         """Same as list_edge_queries but returns API-ready dicts (excludes projection_id)."""
