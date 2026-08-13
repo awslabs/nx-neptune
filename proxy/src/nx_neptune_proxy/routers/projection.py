@@ -9,10 +9,10 @@ from botocore.exceptions import ClientError
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from nx_neptune.clients.client_factory import ClientFactory
-from nx_neptune.clients.response_utils import get_query_failure_reason, get_query_state
+from nx_neptune.clients.response_utils import get_query_failure_reason, get_query_result_columns, get_query_state
 from nx_neptune.instance_management import _execute_athena_query, get_athena_query_results
 from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
-from nx_neptune.validators import check_athena_query, validate_resources, wrap_with_limit
+from nx_neptune.validators import validate_resources, wrap_with_limit
 from nx_neptune_proxy.utils.aws_helper import assert_managed_graph, get_graph_or_exception
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 from nx_neptune_proxy.routers.schemas import (
@@ -94,10 +94,9 @@ def validate_projection(projection_id: str):
 
 
 @router.post("/{projection_id}/validate-query", summary="Validate query only", response_model=ValidateResponse)
-def validate_query(projection_id: str):
-    """Validate node and edge queries individually"""
+async def validate_query(projection_id: str):
+    """Validate node and edge queries by running with LIMIT 0 in parallel."""
     p = _get_projection_or_404(projection_id)
-    checks = []
 
     node_queries_list = query_store.list_node_queries(projection_id)
     edge_queries_list = query_store.list_edge_queries(projection_id)
@@ -106,21 +105,46 @@ def validate_query(projection_id: str):
     for i, nq in enumerate(node_queries_list):
         if nq.sql.strip():
             queries_to_validate.append((f"node_query_{i+1}", nq.sql, "node"))
-
     for i, eq in enumerate(edge_queries_list):
         if eq.sql.strip():
             queries_to_validate.append((f"edge_query_{i+1}", eq.sql, "edge"))
 
-    for label, query, query_type in queries_to_validate:
-        result = check_athena_query(
-            sql_query=query,
-            catalog=p.catalog,
-            database=p.database,
-            output_location=p.s3_staging_bucket,
-            query_type=query_type,
-        )
-        checks.append({"check": label, "passed": result.passed, "message": result.message})
-    valid = all(c["passed"] for c in checks) if checks else False
+    if not queries_to_validate:
+        return {"valid": False, "checks": []}
+
+    client = ClientFactory().athena()
+
+    # Submit all queries in parallel with LIMIT 0
+    exec_ids = []
+    for label, sql, query_type in queries_to_validate:
+        wrapped = wrap_with_limit(sql, 0)
+        exec_id = _execute_athena_query(client, wrapped, p.s3_staging_bucket, catalog=p.catalog, database=p.database)
+        exec_ids.append(exec_id)
+
+    # Wait for all to complete
+    await wait_until_all_complete(exec_ids, TaskType.EXPORT_ATHENA_TABLE, client, polling_interval=3)
+
+    # Collect results in order
+    checks = []
+    required_columns = {"node": {"~id"}, "edge": {"~from", "~to"}}
+
+    for exec_id, (label, sql, query_type) in zip(exec_ids, queries_to_validate):
+        resp = client.get_query_execution(QueryExecutionId=exec_id)
+        state = get_query_state(resp)
+        if state != "SUCCEEDED":
+            checks.append({"check": label, "passed": False, "message": get_query_failure_reason(resp)})
+            continue
+
+        results = client.get_query_results(QueryExecutionId=exec_id, MaxResults=1)
+        columns = get_query_result_columns(results)
+        missing = required_columns[query_type] - set(columns)
+
+        if missing:
+            checks.append({"check": label, "passed": False, "message": f"Missing required column(s): {', '.join(sorted(missing))}. Got: {', '.join(columns)}"})
+        else:
+            checks.append({"check": label, "passed": True, "message": f"Valid. Columns: {', '.join(columns)}"})
+
+    valid = all(c["passed"] for c in checks)
     return {"valid": valid, "checks": checks}
 
 
@@ -136,20 +160,26 @@ async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le
     queries = [nq.sql for nq in node_queries_list if nq.sql.strip()]
     queries += [eq.sql for eq in edge_queries_list if eq.sql.strip()]
 
-    all_results = []
+    if not queries:
+        return {"error": None, "results": []}
 
+    # Submit all queries in parallel
+    exec_ids = []
     for q in queries:
         limited = wrap_with_limit(q, limit)
-
         exec_id = _execute_athena_query(client, limited, p.s3_staging_bucket, catalog=p.catalog, database=p.database)
+        exec_ids.append(exec_id)
 
-        await wait_until_all_complete([exec_id], TaskType.EXPORT_ATHENA_TABLE, client, polling_interval=5)
+    # Wait for all to complete
+    await wait_until_all_complete(exec_ids, TaskType.EXPORT_ATHENA_TABLE, client, polling_interval=5)
 
+    # Collect results in order
+    all_results = []
+    for exec_id in exec_ids:
         resp = client.get_query_execution(QueryExecutionId=exec_id)
         state = get_query_state(resp)
         if state != "SUCCEEDED":
             return {"error": get_query_failure_reason(resp), "results": all_results}
-
         rows = get_athena_query_results(query_execution_id=exec_id, client=client)
         all_results.append(unpack_query_results(rows))
 

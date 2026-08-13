@@ -152,12 +152,18 @@ async def test_validate_projection_fails(mock_validate, client):
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune_proxy.routers.projection.check_athena_query")
-async def test_validate_query(mock_check, client):
-    mock_result = MagicMock()
-    mock_result.passed = True
-    mock_result.message = ""
-    mock_check.return_value = mock_result
+@patch("nx_neptune_proxy.routers.projection.get_query_result_columns")
+@patch("nx_neptune_proxy.routers.projection.wait_until_all_complete")
+@patch("nx_neptune_proxy.routers.projection._execute_athena_query")
+@patch("nx_neptune_proxy.routers.projection.ClientFactory")
+async def test_validate_query(mock_cf, mock_exec, mock_wait, mock_columns, client):
+    mock_athena = MagicMock()
+    mock_cf.return_value.athena.return_value = mock_athena
+    mock_exec.side_effect = ["exec-1", "exec-2"]
+    mock_wait.return_value = None
+    mock_athena.get_query_execution.return_value = {"QueryExecution": {"Status": {"State": "SUCCEEDED"}}}
+    mock_athena.get_query_results.return_value = {"ResultSet": {"ResultSetMetadata": {"ColumnInfo": []}}}
+    mock_columns.side_effect = [["~id", "~label", "name"], ["~from", "~to", "~label"]]
 
     create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
     pid = create_resp.json()["id"]
@@ -171,6 +177,7 @@ async def test_validate_query(mock_check, client):
     resp = await client.post(f"/api/v0/projection/{pid}/validate-query")
     assert resp.status_code == 200
     assert resp.json()["valid"] is True
+    assert len(resp.json()["checks"]) == 2
 
 
 # --- Preview ---
