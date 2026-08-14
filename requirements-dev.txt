@@ -83,7 +83,7 @@ pluggy==1.6.0
     # via
     #   pytest
     #   pytest-cov
-pre-commit==4.6.1
+pre-commit==4.6.2
     # via nx-neptune (pyproject.toml)
 prettytable==3.18.0
     # via pip-licenses
