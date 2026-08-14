@@ -26,6 +26,7 @@ from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.project_deletion import delete_project
 
 settings = Settings.from_env()
+settings.validate()
 
 # --- Database ---
 init_db()

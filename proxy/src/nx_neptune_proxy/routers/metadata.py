@@ -102,6 +102,8 @@ def delete_neptune_graph(graph_id: str):
 def get_graph_summary(graph_id: str):
     """Get node and edge counts for a Neptune Analytics graph"""
     client = ClientFactory().neptune()
+    resp = get_graph_or_exception(client, graph_id)
+    assert_managed_graph(resp.get("name"))
     resp = client.get_graph_summary(graphIdentifier=graph_id, mode="BASIC")
     s = resp.get("graphSummary", {})
     return {

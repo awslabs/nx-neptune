@@ -34,7 +34,7 @@ def assert_managed_graph(graph_name: str | None) -> None:
     if not graph_name or not graph_name.startswith(prefix):
         raise HTTPException(
             status_code=403,
-            detail=f"Refusing to delete graph '{graph_name or ''}': not managed by this tool (expected prefix '{prefix}')",
+            detail=f"Refusing to operate on graph '{graph_name or ''}': not managed by this tool (expected prefix '{prefix}')",
         )
 
 

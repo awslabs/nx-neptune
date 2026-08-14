@@ -58,3 +58,12 @@ class Settings:
             ),
             graph_prefix=os.environ.get("GRAPH_PREFIX", "nxp-"),
         )
+
+    def validate(self) -> None:
+        """Validate settings at startup. Raises SystemExit on invalid config."""
+        if not self.graph_prefix:
+            raise SystemExit(
+                "ERROR: GRAPH_PREFIX must not be empty. "
+                "An empty prefix disables the managed-graph safety guard, "
+                "allowing operations on any graph in the account."
+            )

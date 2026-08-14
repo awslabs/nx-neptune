@@ -29,6 +29,7 @@ def get_available_actions(graph_id: str):
     """Return valid actions based on the graph's current Neptune status."""
     client = ClientFactory().neptune()
     resp = client.get_graph(graphIdentifier=graph_id)
+    assert_managed_graph(resp.get("name"))
     status = resp.get("status")
     if not status:
         logger.warning(f"Graph {graph_id} returned empty status: {resp}")
@@ -53,9 +54,8 @@ def perform_action(graph_id: str, action: str, background_tasks: BackgroundTasks
         logger.warning(f"Graph {graph_id} returned empty status: {resp}")
         raise HTTPException(status_code=502, detail="Graph returned no status")
 
-    # Prefix guard: only allow destructive actions on graphs managed by this tool
-    if action == "delete":
-        assert_managed_graph(resp.get("name"))
+    # Prefix guard: only allow actions on graphs managed by this tool
+    assert_managed_graph(resp.get("name"))
 
     try:
         # Validate early (execute_transition also validates, but fail fast for the user)
@@ -75,6 +75,9 @@ def perform_action(graph_id: str, action: str, background_tasks: BackgroundTasks
 @router.get("/{graph_id}/inflight", summary="Check in-flight operation status")
 def get_inflight_status(graph_id: str):
     """Return current in-flight operation info, including any error."""
+    client = ClientFactory().neptune()
+    resp = get_graph_or_exception(client, graph_id)
+    assert_managed_graph(resp.get("name"))
     inflight = get_inflight(graph_id)
     if not inflight:
         return {"graph_id": graph_id, "inflight": None}
