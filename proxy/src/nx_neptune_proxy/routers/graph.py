@@ -74,10 +74,11 @@ def perform_action(graph_id: str, action: str, background_tasks: BackgroundTasks
 
 @router.get("/{graph_id}/inflight", summary="Check in-flight operation status")
 def get_inflight_status(graph_id: str):
-    """Return current in-flight operation info, including any error."""
-    client = ClientFactory().neptune()
-    resp = get_graph_or_exception(client, graph_id)
-    assert_managed_graph(resp.get("name"))
+    """Return current in-flight operation info, including any error.
+
+    No prefix guard needed: the inflight map is populated only by guarded
+    actions, so it only ever contains managed graphs. Unmanaged IDs return null.
+    """
     inflight = get_inflight(graph_id)
     if not inflight:
         return {"graph_id": graph_id, "inflight": None}

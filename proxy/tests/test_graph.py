@@ -227,12 +227,7 @@ async def test_perform_graph_not_found_returns_404(mock_cf, client):
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune_proxy.routers.graph.ClientFactory")
-async def test_get_inflight_no_operation(mock_cf, client):
-    mock_neptune = MagicMock()
-    mock_neptune.get_graph.return_value = {"status": "AVAILABLE", "name": "nxp-test"}
-    mock_cf.return_value.neptune.return_value = mock_neptune
-
+async def test_get_inflight_no_operation(client):
     resp = await client.get("/api/v0/graphs/g-123/inflight")
     assert resp.status_code == 200
     data = resp.json()
@@ -241,12 +236,7 @@ async def test_get_inflight_no_operation(mock_cf, client):
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune_proxy.routers.graph.ClientFactory")
-async def test_get_inflight_with_operation(mock_cf, client):
-    mock_neptune = MagicMock()
-    mock_neptune.get_graph.return_value = {"status": "STOPPING", "name": "nxp-test"}
-    mock_cf.return_value.neptune.return_value = mock_neptune
-
+async def test_get_inflight_with_operation(client):
     graph_state_machine._inflight["g-123"] = {"action": "stop", "error": None}
 
     resp = await client.get("/api/v0/graphs/g-123/inflight")
@@ -257,12 +247,7 @@ async def test_get_inflight_with_operation(mock_cf, client):
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune_proxy.routers.graph.ClientFactory")
-async def test_get_inflight_with_error(mock_cf, client):
-    mock_neptune = MagicMock()
-    mock_neptune.get_graph.return_value = {"status": "AVAILABLE", "name": "nxp-test"}
-    mock_cf.return_value.neptune.return_value = mock_neptune
-
+async def test_get_inflight_with_error(client):
     graph_state_machine._inflight["g-123"] = {"action": "stop", "error": "Timeout"}
 
     resp = await client.get("/api/v0/graphs/g-123/inflight")
