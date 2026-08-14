@@ -14,7 +14,7 @@ from nx_neptune_proxy.services import graph_state_machine
 @pytest.fixture
 def client():
     transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://test", headers={"X-Requested-With": "nx-neptune"})
+    return AsyncClient(transport=transport, base_url="http://localhost", headers={"X-Requested-With": "nx-neptune"})
 
 
 @pytest.fixture(autouse=True)

@@ -12,6 +12,7 @@ class Settings:
     log_level: str = "INFO"
     allowed_origins: list[str] = None  # type: ignore[assignment]
     port: int = 8080
+    host: str = "127.0.0.1"
     region: str = ""
     graph_prefix: str = "nxp-"
 
@@ -27,6 +28,17 @@ class Settings:
             log_level=os.environ.get("LOG_LEVEL", "INFO").upper(),
             allowed_origins=origins,
             port=int(os.environ.get("PORT", "8080")),
+            host=os.environ.get("HOST", "127.0.0.1"),
             region=os.environ.get("AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "")),
             graph_prefix=os.environ.get("GRAPH_PREFIX", "nxp-"),
         )
+
+    def validate_host(self) -> None:
+        """Refuse to start on non-loopback address."""
+        loopback = {"127.0.0.1", "::1", "localhost"}
+        if self.host not in loopback:
+            raise SystemExit(
+                f"ERROR: Refusing to bind to '{self.host}'. "
+                f"This proxy is designed for local development only. "
+                f"Set HOST=127.0.0.1 or remove the HOST override."
+            )

@@ -6,6 +6,7 @@ import logging
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 from botocore.exceptions import ClientError
 from fastapi import FastAPI, HTTPException, Request
@@ -25,6 +26,7 @@ from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.project_deletion import delete_project
 
 settings = Settings.from_env()
+settings.validate_host()
 
 # --- Database ---
 init_db()
@@ -41,7 +43,13 @@ logger = logging.getLogger("nx_neptune_proxy")
 
 # --- App ---
 
-app = FastAPI(title="nx-neptune-proxy", version="0.1.0", docs_url="/docs", redoc_url=None)
+app = FastAPI(title="nx-neptune-proxy", version="0.1.0", docs_url=None, redoc_url=None)
+
+# --- TrustedHost middleware (blocks DNS rebinding) ---
+
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]"])
 
 app.add_middleware(
     CORSMiddleware,
@@ -49,6 +57,34 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
+
+
+# --- Origin validation middleware (server-side, defense-in-depth) ---
+
+_ALLOWED_ORIGIN_HOSTS = {"localhost", "127.0.0.1", "[::1]"}
+
+
+@app.middleware("http")
+async def origin_validation(request: Request, call_next):
+    """Reject requests with an Origin header not on the allowlist.
+
+    Browsers always send a truthful Origin header on cross-origin requests.
+    This blocks DNS rebinding even if TrustedHost is bypassed.
+    """
+    origin = request.headers.get("origin")
+    if origin:
+        # Parse origin to extract host (e.g. "http://localhost:8080" -> "localhost")
+        try:
+            parsed = urlparse(origin)
+            host = parsed.hostname or ""
+        except Exception:
+            host = ""
+        if host not in _ALLOWED_ORIGIN_HOSTS:
+            return JSONResponse(
+                status_code=403,
+                content={"error": "origin_rejected", "message": f"Origin '{origin}' is not allowed"},
+            )
+    return await call_next(request)
 
 
 # --- CSRF protection middleware ---

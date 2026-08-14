@@ -29,7 +29,7 @@ class TestPathTraversal:
         scope = {
             "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
             "method": "GET", "path": path, "root_path": "",
-            "query_string": b"", "headers": [(b"host", b"test")],
+            "query_string": b"", "headers": [(b"host", b"localhost")],
         }
         status = None
         body_parts = []
