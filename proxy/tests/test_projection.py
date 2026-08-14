@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 
 from nx_neptune_proxy.app import app
 from nx_neptune_proxy.auth import get_token
+from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.db import get_connection
 from nx_neptune_proxy.services.projection_store import store
 
@@ -32,6 +33,10 @@ def clear_store():
     conn.execute("DELETE FROM projects")
     conn.commit()
     conn.close()
+    # Create a default project for tests
+    p = project_store.create(name="Test Project")
+    global _TEST_PROJECT_ID
+    _TEST_PROJECT_ID = p.id
     yield
     conn = get_connection()
     conn.execute("DELETE FROM projections")
@@ -40,13 +45,18 @@ def clear_store():
     conn.close()
 
 
-SAMPLE_BODY = {
-    "database": "mydb",
-    "node_query": "SELECT id AS `~id`, type AS `~label` FROM nodes",
-    "edge_query": "SELECT src AS `~from`, dst AS `~to`, rel AS `~label` FROM edges",
-    "graph_name": "test-graph",
-    "s3_staging_bucket": "s3://my-bucket/staging/",
-}
+_TEST_PROJECT_ID = ""
+
+
+def SAMPLE_BODY():
+    return {
+        "database": "mydb",
+        "node_query": "SELECT id AS `~id`, type AS `~label` FROM nodes",
+        "edge_query": "SELECT src AS `~from`, dst AS `~to`, rel AS `~label` FROM edges",
+        "graph_name": "test-graph",
+        "s3_staging_bucket": "s3://my-bucket/staging/",
+        "project_id": _TEST_PROJECT_ID,
+    }
 
 
 # --- CRUD ---
@@ -54,7 +64,7 @@ SAMPLE_BODY = {
 
 @pytest.mark.asyncio
 async def test_create_projection(client):
-    resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     assert resp.status_code == 201
     data = resp.json()
     assert data["status"] == "draft"
@@ -66,7 +76,7 @@ async def test_create_projection(client):
 
 @pytest.mark.asyncio
 async def test_get_projection(client):
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     resp = await client.get(f"/api/v0/projection/{pid}")
@@ -82,7 +92,7 @@ async def test_get_projection_not_found(client):
 
 @pytest.mark.asyncio
 async def test_update_projection(client):
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     resp = await client.put(
@@ -108,7 +118,7 @@ async def test_update_projection_not_found(client):
 
 @pytest.mark.asyncio
 async def test_get_status(client):
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     resp = await client.get(f"/api/v0/projection/{pid}/status")
@@ -130,7 +140,7 @@ async def test_validate_projection(mock_validate, client):
         {"check": "query_valid", "passed": True, "error": None},
     ]
 
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     resp = await client.post(f"/api/v0/projection/{pid}/validate")
@@ -147,7 +157,7 @@ async def test_validate_projection_fails(mock_validate, client):
         {"check": "bucket_region", "passed": False, "error": "Wrong region"},
     ]
 
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     resp = await client.post(f"/api/v0/projection/{pid}/validate")
@@ -166,7 +176,7 @@ async def test_validate_query(mock_check, client):
     mock_result.message = ""
     mock_check.return_value = mock_result
 
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     resp = await client.post(f"/api/v0/projection/{pid}/validate-query")
@@ -190,7 +200,7 @@ async def test_preview(mock_cf, mock_wait, mock_results, client):
     mock_cf.return_value.athena.return_value = mock_athena
     mock_results.return_value = [["id", "name"], ["1", "Alice"]]
 
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     resp = await client.post(f"/api/v0/projection/{pid}/preview")
@@ -206,7 +216,7 @@ async def test_preview(mock_cf, mock_wait, mock_results, client):
 
 @pytest.mark.asyncio
 async def test_execute_returns_202(client):
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     with patch("nx_neptune_proxy.routers.projection.run_pipeline"):
@@ -217,7 +227,7 @@ async def test_execute_returns_202(client):
 
 @pytest.mark.asyncio
 async def test_execute_conflict_if_already_running(client):
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
     store.update(pid, status="executing")
 
@@ -230,8 +240,8 @@ async def test_execute_conflict_if_already_running(client):
 
 @pytest.mark.asyncio
 async def test_list_projections(client):
-    await client.post("/api/v0/projection", json=SAMPLE_BODY)
-    await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    await client.post("/api/v0/projection", json=SAMPLE_BODY())
 
     resp = await client.get("/api/v0/projection")
     assert resp.status_code == 200
@@ -254,7 +264,7 @@ async def test_create_projection_invalid_body(client):
 
 @pytest.mark.asyncio
 async def test_execute_poll_lifecycle(client):
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     with patch("nx_neptune_proxy.routers.projection.run_pipeline"):
