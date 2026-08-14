@@ -25,6 +25,8 @@ from nx_neptune_proxy.services.db import init_db
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.project_deletion import delete_project
 
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+
 settings = Settings.from_env()
 settings.validate_host()
 
@@ -47,7 +49,6 @@ app = FastAPI(title="nx-neptune-proxy", version="0.1.0", docs_url=None, redoc_ur
 
 # --- TrustedHost middleware (blocks DNS rebinding) ---
 
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]"])
 
