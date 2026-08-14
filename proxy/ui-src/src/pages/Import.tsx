@@ -91,7 +91,8 @@ export function Import() {
 
   // --- Projection management ---
   async function ensureProjection(): Promise<string> {
-    const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb, project_id: projectId || undefined };
+    if (!projectId) throw new Error("Please select a project first");
+    const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb, project_id: projectId };
     if (currentId) {
       await projection.update(currentId, data);
       return currentId;
@@ -105,6 +106,7 @@ export function Import() {
 
   function loadProjection(p: Projection) {
     setCurrentId(p.id);
+    if (p.project_id) setProjectId(p.project_id);
     if (p.catalog) setCatalog(p.catalog);
     if (p.database) setDatabase(p.database);
     if (p.node_query) setNodeQuery(p.node_query);
@@ -217,25 +219,16 @@ export function Import() {
         <div className="space-y-4">
           <label className="block space-y-1">
               <span className="text-sm font-medium text-gray-700">Project</span>
-              <div className="flex gap-2">
-                <Select
-                  className="flex-1"
-                  value={projectId}
-                  onChange={(e) => setProjectId(e.target.value)}
-                >
-                  <option value="">No project</option>
-                  {projects.map((ws) => (
-                    <option key={ws.id} value={ws.id}>{ws.name}</option>
-                  ))}
-                </Select>
-                <Button variant="secondary" onClick={async () => {
-                  const name = prompt("Project name:");
-                  if (!name) return;
-                  const ws = await projectApi.create(name);
-                  setProjects(prev => [...prev, ws]);
-                  setProjectId(ws.id);
-                }}>+</Button>
-              </div>
+              <Select
+                className="flex-1"
+                value={projectId}
+                disabled
+              >
+                <option value="" disabled>Select a project</option>
+                {projects.map((ws) => (
+                  <option key={ws.id} value={ws.id}>{ws.name}</option>
+                ))}
+              </Select>
             </label>
           <label className="block space-y-1">
               <span className="text-sm font-medium text-gray-700">Copy config from</span>
