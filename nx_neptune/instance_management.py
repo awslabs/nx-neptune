@@ -734,9 +734,18 @@ def _get_create_instance_config(graph_name, config=None):
 
     config = config or {}
     # Ensure mandatory config present.
-    config.setdefault("publicConnectivity", True)
+    # Secure by default: private graph + deletion protection. Public connectivity
+    # is opt-in ("true"); deletion protection is opt-out ("false"). Any other
+    # value keeps the secure state. An explicit `config` value wins over both.
+    config.setdefault(
+        "publicConnectivity",
+        os.getenv("NETWORKX_PUBLIC_CONNECTIVITY", "false").strip().lower() == "true",
+    )
     config.setdefault("replicaCount", 0)
-    config.setdefault("deletionProtection", False)
+    config.setdefault(
+        "deletionProtection",
+        os.getenv("NETWORKX_DELETION_PROTECTION", "true").strip().lower() != "false",
+    )
     config.setdefault("provisionedMemory", 16)
 
     # Make sure agent tag shows regardless
@@ -777,9 +786,18 @@ def _get_create_instance_with_import_config(
 
     config = config or {}
     # Ensure mandatory config present.
-    config.setdefault("publicConnectivity", True)
+    # Secure by default: private graph + deletion protection. Public connectivity
+    # is opt-in ("true"); deletion protection is opt-out ("false"). Any other
+    # value keeps the secure state. An explicit `config` value wins over both.
+    config.setdefault(
+        "publicConnectivity",
+        os.getenv("NETWORKX_PUBLIC_CONNECTIVITY", "false").strip().lower() == "true",
+    )
     config.setdefault("replicaCount", 0)
-    config.setdefault("deletionProtection", False)
+    config.setdefault(
+        "deletionProtection",
+        os.getenv("NETWORKX_DELETION_PROTECTION", "true").strip().lower() != "false",
+    )
     config.setdefault("minProvisionedMemory", 16)
     config.setdefault("maxProvisionedMemory", 32)
     config.setdefault("format", "CSV")

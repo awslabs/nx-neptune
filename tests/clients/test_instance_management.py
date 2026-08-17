@@ -954,9 +954,9 @@ async def test_create_graph_config_base():
     result = _get_create_instance_config("test")
     expected = {
         "graphName": "test",
-        "publicConnectivity": True,
+        "publicConnectivity": False,
         "replicaCount": 0,
-        "deletionProtection": False,
+        "deletionProtection": True,
         "provisionedMemory": 16,
         "tags": {"agent": "nx-neptune"},
     }
@@ -974,9 +974,9 @@ async def test_create_graph_config_custom_parameters():
     result = _get_create_instance_config("test", config)
     expected = {
         "graphName": "test",
-        "publicConnectivity": True,
+        "publicConnectivity": False,
         "replicaCount": 0,
-        "deletionProtection": False,
+        "deletionProtection": True,
         "provisionedMemory": 16,
         "tags": {"agent": "nx-neptune"},
         "custom_parameter": 123,
@@ -1006,6 +1006,39 @@ async def test_create_graph_config_override_default_options():
         "tags": {"agent": "nx-neptune", "additional_tag": "test_value"},
     }
     assert expected == result
+
+
+@pytest.mark.asyncio
+async def test_create_graph_config_env_override(monkeypatch):
+    # Env vars flip the secure defaults when no explicit config is given.
+    monkeypatch.setenv("NETWORKX_PUBLIC_CONNECTIVITY", "true")
+    monkeypatch.setenv("NETWORKX_DELETION_PROTECTION", "false")
+    result = _get_create_instance_config("test")
+    assert result["publicConnectivity"] is True
+    assert result["deletionProtection"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_graph_config_explicit_beats_env(monkeypatch):
+    # Explicit config always wins over env vars.
+    monkeypatch.setenv("NETWORKX_PUBLIC_CONNECTIVITY", "true")
+    monkeypatch.setenv("NETWORKX_DELETION_PROTECTION", "false")
+    result = _get_create_instance_config(
+        "test", {"publicConnectivity": False, "deletionProtection": True}
+    )
+    assert result["publicConnectivity"] is False
+    assert result["deletionProtection"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_graph_config_unrecognized_env_keeps_secure(monkeypatch):
+    # A typo / unrecognized value must land on the secure side for both:
+    # public stays private, deletion stays protected.
+    monkeypatch.setenv("NETWORKX_PUBLIC_CONNECTIVITY", "yes")
+    monkeypatch.setenv("NETWORKX_DELETION_PROTECTION", "ture")
+    result = _get_create_instance_config("test")
+    assert result["publicConnectivity"] is False
+    assert result["deletionProtection"] is True
 
 
 @pytest.mark.asyncio
@@ -1254,7 +1287,8 @@ def test_get_create_instance_with_import_config():
     assert result["source"] == "s3://test-bucket/data"
     assert result["roleArn"] == "arn:aws:iam::123456789012:role/test-role"
     assert result["format"] == "CSV"
-    assert result["publicConnectivity"] is True
+    assert result["publicConnectivity"] is False
+    assert result["deletionProtection"] is True
     assert result["tags"]["agent"] == "nx-neptune"
 
 
