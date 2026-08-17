@@ -10,8 +10,24 @@ from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 logger = logging.getLogger(__name__)
 
 
+def _assert_managed(graph_name: str | None) -> None:
+    """Raise if graph_name isn't managed by this tool (doesn't carry the prefix).
+
+    Mirrors aws_helper.assert_managed_graph, but raises a plain exception rather
+    than HTTPException because the pipeline runs as a background task where an
+    HTTP response cannot be returned.
+    """
+    prefix = Settings.from_env().graph_prefix
+    if not graph_name or not graph_name.startswith(prefix):
+        raise RuntimeError(
+            f"Refusing to reset graph '{graph_name or ''}': not managed by this tool "
+            f"(expected prefix '{prefix}')"
+        )
+
+
 async def run_pipeline(projection: Projection) -> None:
     """Execute the full pipeline: create graph → Athena → import."""
+    from nx_neptune.clients.client_factory import ClientFactory
     from nx_neptune.session_manager import SessionManager
 
     graph_name = f"{get_settings().graph_prefix}{projection.graph_name}"
@@ -28,8 +44,27 @@ async def run_pipeline(projection: Projection) -> None:
             progress=5,
         )
         sm = SessionManager(session_name=graph_name)
-        graphs = sm.list_graphs()
-        existing = next((g for g in graphs if g.status == "AVAILABLE"), None)
+
+        # Only reuse a graph we previously recorded for THIS projection, matched by
+        # exact graph_id — never adopt an arbitrary graph by name prefix (a short or
+        # empty graph_name would otherwise collide with, and reset, an unrelated graph).
+        existing = None
+        if projection.graph_id:
+            neptune = ClientFactory().neptune()
+            try:
+                resp = neptune.get_graph(graphIdentifier=projection.graph_id)
+            except Exception:
+                # Recorded graph no longer exists (or is unreachable): treat as a
+                # fresh run and create a new graph below rather than adopting one.
+                logger.warning(
+                    "Recorded graph_id %s not retrievable; creating a new graph",
+                    projection.graph_id,
+                )
+                resp = None
+            if resp is not None and resp.get("status") == "AVAILABLE":
+                # Guard: confirm the recorded graph is one this tool manages before reset.
+                _assert_managed(resp.get("name"))
+                existing = sm.get_graph(projection.graph_id)
 
         if existing:
             # Reuse existing graph (retry scenario) — reset data

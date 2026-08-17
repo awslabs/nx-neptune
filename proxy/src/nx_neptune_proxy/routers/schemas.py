@@ -4,7 +4,19 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+# --- graph_name validation ---
+
+# Neptune Analytics graph names in this tool are formed as `{prefix}{graph_name}`.
+# Constrain the user-supplied portion so it cannot be empty/short and collide with
+# the managed prefix (which previously allowed adopting/resetting an unrelated
+# graph). First character must be alphanumeric; remaining may include
+# hyphen/underscore. Upper- and lower-case are both allowed.
+GRAPH_NAME_MIN_LENGTH = 3
+GRAPH_NAME_MAX_LENGTH = 63
+GRAPH_NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$"
 
 
 # --- Metadata responses ---
@@ -59,7 +71,12 @@ class ProjectionCreate(BaseModel):
     sql_query: Optional[str] = None
     node_query: Optional[str] = None
     edge_query: Optional[str] = None
-    graph_name: Optional[str] = None
+    graph_name: Optional[str] = Field(
+        default=None,
+        min_length=GRAPH_NAME_MIN_LENGTH,
+        max_length=GRAPH_NAME_MAX_LENGTH,
+        pattern=GRAPH_NAME_PATTERN,
+    )
     graph_memory_gb: int = 16
     s3_staging_bucket: Optional[str] = None
     project_id: Optional[str] = None
@@ -71,7 +88,12 @@ class ProjectionUpdate(BaseModel):
     sql_query: Optional[str] = None
     node_query: Optional[str] = None
     edge_query: Optional[str] = None
-    graph_name: Optional[str] = None
+    graph_name: Optional[str] = Field(
+        default=None,
+        min_length=GRAPH_NAME_MIN_LENGTH,
+        max_length=GRAPH_NAME_MAX_LENGTH,
+        pattern=GRAPH_NAME_PATTERN,
+    )
     graph_memory_gb: Optional[int] = None
     s3_staging_bucket: Optional[str] = None
 
