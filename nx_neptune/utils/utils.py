@@ -57,14 +57,19 @@ class SqlValueKind(Enum):
 
 
 # Allowlisted Athena/Hive column types (base scalar types plus parameterized
-# complex types built from them).
+# complex types built from them). Includes the type names emitted in Neptune
+# CSV export headers (e.g. byte, short, bool) which flow through unmapped.
 _ALLOWED_BASE_TYPES = {
     "boolean",
+    "bool",
+    "byte",
+    "short",
     "tinyint",
     "smallint",
     "int",
     "integer",
     "bigint",
+    "long",
     "float",
     "double",
     "real",
