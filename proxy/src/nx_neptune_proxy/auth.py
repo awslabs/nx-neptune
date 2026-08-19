@@ -3,10 +3,9 @@
 
 """Per-run bearer token for the proxy's own HTTP API.
 
-Unrelated to AWS credentials (e.g. AWS_SESSION_TOKEN): this token gates who
-may call *this* proxy's /api/* routes. It has no meaning to AWS and is never
-sent to AWS. A fresh, random token is generated once per process start and
-kept in memory only — it is never written to disk or logged in full.
+Gates who may call this proxy's /api/* routes. A fresh, random token is
+generated once per process start and kept in memory only — it is never
+written to disk or logged in full.
 """
 
 import logging
