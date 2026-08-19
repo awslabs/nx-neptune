@@ -7,6 +7,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from nx_neptune_proxy.app import app
+from nx_neptune_proxy.auth import get_token
 from nx_neptune_proxy.services.projection_store import store
 from nx_neptune_proxy.services.db import get_connection
 
@@ -14,7 +15,14 @@ from nx_neptune_proxy.services.db import get_connection
 @pytest.fixture
 def client():
     transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://localhost", headers={"X-Requested-With": "nx-neptune"})
+    return AsyncClient(
+        transport=transport,
+        base_url="http://localhost",
+        headers={
+            "X-Requested-With": "nx-neptune",
+            "Authorization": f"Bearer {get_token()}",
+        },
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -77,7 +85,9 @@ async def test_update_projection(client):
     create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
     pid = create_resp.json()["id"]
 
-    resp = await client.put(f"/api/v0/projection/{pid}", json={"sql_query": "SELECT id FROM t"})
+    resp = await client.put(
+        f"/api/v0/projection/{pid}", json={"sql_query": "SELECT id FROM t"}
+    )
     assert resp.status_code == 200
     assert resp.json()["sql_query"] == "SELECT id FROM t"
     # Other fields unchanged
@@ -230,7 +240,9 @@ async def test_list_projections(client):
 
 @pytest.mark.asyncio
 async def test_create_projection_invalid_body(client):
-    resp = await client.post("/api/v0/projection", json={"graph_memory_gb": "not_a_number"})
+    resp = await client.post(
+        "/api/v0/projection", json={"graph_memory_gb": "not_a_number"}
+    )
     assert resp.status_code == 422
 
 
@@ -253,7 +265,12 @@ async def test_execute_poll_lifecycle(client):
     assert resp.json()["progress"] == 50
 
     # Simulate completion
-    store.update(pid, status="complete", progress=100, graph_endpoint="https://g-123.neptune-graph.amazonaws.com")
+    store.update(
+        pid,
+        status="complete",
+        progress=100,
+        graph_endpoint="https://g-123.neptune-graph.amazonaws.com",
+    )
     resp = await client.get(f"/api/v0/projection/{pid}/status")
     assert resp.json()["status"] == "complete"
     assert resp.json()["progress"] == 100

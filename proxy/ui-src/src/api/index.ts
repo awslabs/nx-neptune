@@ -1,8 +1,19 @@
 const BASE = "/api/v0";
 
+// Injected into index.html by the proxy at serve time (same-origin only —
+// see nx_neptune_proxy.app._serve_index). Read once; every request attaches
+// it as a bearer token so the proxy's own API can distinguish this UI from
+// an arbitrary caller.
+const PROXY_TOKEN = document
+  .querySelector('meta[name="nx-neptune-proxy-token"]')
+  ?.getAttribute("content");
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set("X-Requested-With", "nx-neptune");
+  if (PROXY_TOKEN) {
+    headers.set("Authorization", `Bearer ${PROXY_TOKEN}`);
+  }
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

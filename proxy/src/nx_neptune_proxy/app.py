@@ -9,11 +9,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from botocore.exceptions import ClientError
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from nx_neptune_proxy.auth import get_token, log_token_notice, require_token
 from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
@@ -42,6 +43,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("nx_neptune_proxy")
 
+# --- Proxy access token (per-run bearer token, distinct from AWS credentials) ---
+# Printed directly to stdout (not through the structured logger) so it never
+# ends up in aggregated/forwarded logs. Only a caller with access to this
+# process's own console output, or the bundled UI (which receives it via
+# index.html), can read it.
+print(f"\nProxy access token for this run: {get_token()}\n")
+log_token_notice()
+
 
 # --- App ---
 
@@ -50,7 +59,9 @@ app = FastAPI(title="nx-neptune-proxy", version="0.1.0", docs_url=None, redoc_ur
 # --- TrustedHost middleware (blocks DNS rebinding) ---
 
 
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]"])
+app.add_middleware(
+    TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]"]
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -83,7 +94,10 @@ async def origin_validation(request: Request, call_next):
         if host not in _ALLOWED_ORIGIN_HOSTS:
             return JSONResponse(
                 status_code=403,
-                content={"error": "origin_rejected", "message": f"Origin '{origin}' is not allowed"},
+                content={
+                    "error": "origin_rejected",
+                    "message": f"Origin '{origin}' is not allowed",
+                },
             )
     return await call_next(request)
 
@@ -104,7 +118,10 @@ async def csrf_protection(request: Request, call_next):
         if not request.headers.get("x-requested-with"):
             return JSONResponse(
                 status_code=403,
-                content={"error": "csrf_rejected", "message": "Missing required X-Requested-With header"},
+                content={
+                    "error": "csrf_rejected",
+                    "message": "Missing required X-Requested-With header",
+                },
             )
     return await call_next(request)
 
@@ -154,7 +171,10 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.exception(f"Unhandled error on {request.method} {request.url.path}")
     return JSONResponse(
         status_code=500,
-        content={"error": "internal_server_error", "message": "An unexpected error occurred"},
+        content={
+            "error": "internal_server_error",
+            "message": "An unexpected error occurred",
+        },
     )
 
 
@@ -171,15 +191,16 @@ def info():
     return {"name": "nx-neptune-proxy", "version": "0.1.0"}
 
 
-# --- Routers ---
+# --- Routers (all /api/* routes require the per-run bearer token) ---
 
-app.include_router(metadata_router)
-app.include_router(projection_router)
-app.include_router(project_router)
-app.include_router(graph_router)
+app.include_router(metadata_router, dependencies=[Depends(require_token)])
+app.include_router(projection_router, dependencies=[Depends(require_token)])
+app.include_router(project_router, dependencies=[Depends(require_token)])
+app.include_router(graph_router, dependencies=[Depends(require_token)])
 
 
 # --- Startup: resume stuck deletions ---
+
 
 @app.on_event("startup")
 async def resume_pending_deletions():
@@ -196,6 +217,26 @@ if not UI_DIR.exists():
     UI_DIR = Path("/app/proxy/ui")
 if UI_DIR.exists():
     app.mount("/assets", StaticFiles(directory=UI_DIR / "assets"), name="assets")
+
+    _INDEX_TOKEN_PLACEHOLDER = "</head>"
+
+    def _serve_index() -> HTMLResponse:
+        """Serve index.html with this run's token injected for the bundled UI.
+
+        The token is embedded in the HTML response body, which is only
+        readable by same-origin JavaScript (browser Same-Origin Policy) —
+        a cross-origin or rebound page cannot read it even if it can reach
+        this endpoint.
+        """
+        html = (UI_DIR / "index.html").read_text()
+        snippet = f'<meta name="nx-neptune-proxy-token" content="{get_token()}">'
+        if _INDEX_TOKEN_PLACEHOLDER in html:
+            html = html.replace(
+                _INDEX_TOKEN_PLACEHOLDER, f"{snippet}{_INDEX_TOKEN_PLACEHOLDER}", 1
+            )
+        else:
+            html = snippet + html
+        return HTMLResponse(html)
 
     @app.get("/{path:path}")
     async def spa_fallback(path: str):
@@ -220,6 +261,6 @@ if UI_DIR.exists():
         except ValueError:
             raise HTTPException(status_code=403)
 
-        if file_path.is_file():
+        if file_path.is_file() and file_path != (ui_root / "index.html"):
             return FileResponse(file_path)
-        return FileResponse(ui_root / "index.html")
+        return _serve_index()

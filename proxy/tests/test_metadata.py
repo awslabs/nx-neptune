@@ -8,12 +8,20 @@ from botocore.exceptions import ClientError
 from httpx import ASGITransport, AsyncClient
 
 from nx_neptune_proxy.app import app
+from nx_neptune_proxy.auth import get_token
 
 
 @pytest.fixture
 def client():
     transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://localhost", headers={"X-Requested-With": "nx-neptune"})
+    return AsyncClient(
+        transport=transport,
+        base_url="http://localhost",
+        headers={
+            "X-Requested-With": "nx-neptune",
+            "Authorization": f"Bearer {get_token()}",
+        },
+    )
 
 
 # --- Athena databases ---
@@ -33,10 +41,12 @@ async def test_list_catalogs(mock_cf, client):
 
     resp = await client.get("/api/v0/metadata/athena/catalogs")
     assert resp.status_code == 200
-    assert resp.json() == {"catalogs": [
-        {"name": "AwsDataCatalog", "status": "CREATE_COMPLETE"},
-        {"name": "MyCatalog", "status": "CREATE_COMPLETE"},
-    ]}
+    assert resp.json() == {
+        "catalogs": [
+            {"name": "AwsDataCatalog", "status": "CREATE_COMPLETE"},
+            {"name": "MyCatalog", "status": "CREATE_COMPLETE"},
+        ]
+    }
 
 
 @pytest.mark.asyncio
@@ -85,7 +95,8 @@ async def test_list_databases_custom_catalog(mock_cf, client):
 async def test_list_databases_access_denied(mock_cf, client):
     mock_athena = MagicMock()
     mock_athena.list_databases.side_effect = ClientError(
-        {"Error": {"Code": "AccessDeniedException", "Message": "No access"}}, "ListDatabases"
+        {"Error": {"Code": "AccessDeniedException", "Message": "No access"}},
+        "ListDatabases",
     )
     mock_cf.return_value.athena.return_value = mock_athena
 
@@ -125,13 +136,22 @@ async def test_list_tables_missing_database(client):
 async def test_list_columns(mock_cf, client):
     mock_athena = MagicMock()
     mock_athena.get_table_metadata.return_value = {
-        "TableMetadata": {"Columns": [{"Name": "id", "Type": "int"}, {"Name": "name", "Type": "string"}]}
+        "TableMetadata": {
+            "Columns": [
+                {"Name": "id", "Type": "int"},
+                {"Name": "name", "Type": "string"},
+            ]
+        }
     }
     mock_cf.return_value.athena.return_value = mock_athena
 
-    resp = await client.get("/api/v0/metadata/athena/columns?database=mydb&table=mytable")
+    resp = await client.get(
+        "/api/v0/metadata/athena/columns?database=mydb&table=mytable"
+    )
     assert resp.status_code == 200
-    assert resp.json() == {"columns": [{"name": "id", "type": "int"}, {"name": "name", "type": "string"}]}
+    assert resp.json() == {
+        "columns": [{"name": "id", "type": "int"}, {"name": "name", "type": "string"}]
+    }
 
 
 @pytest.mark.asyncio
@@ -148,7 +168,9 @@ async def test_list_columns_missing_params(client):
 @patch("nx_neptune_proxy.routers.metadata.ClientFactory")
 async def test_list_s3_buckets(mock_cf, mock_settings, client):
     mock_s3 = MagicMock()
-    mock_s3.list_buckets.return_value = {"Buckets": [{"Name": "bucket1"}, {"Name": "bucket2"}]}
+    mock_s3.list_buckets.return_value = {
+        "Buckets": [{"Name": "bucket1"}, {"Name": "bucket2"}]
+    }
     mock_cf.return_value.s3.return_value = mock_s3
     mock_settings.from_env.return_value.region = "us-west-2"
 
@@ -213,7 +235,8 @@ async def test_list_neptune_graphs_empty(mock_cf, client):
 async def test_unknown_aws_error_returns_502(mock_cf, client):
     mock_neptune = MagicMock()
     mock_neptune.list_graphs.side_effect = ClientError(
-        {"Error": {"Code": "InternalServerError", "Message": "Something broke"}}, "ListGraphs"
+        {"Error": {"Code": "InternalServerError", "Message": "Something broke"}},
+        "ListGraphs",
     )
     mock_cf.return_value.neptune.return_value = mock_neptune
 
@@ -232,10 +255,14 @@ async def test_delete_neptune_graph_success(mock_cf, client):
     mock_neptune.get_graph.return_value = {"name": "nxp-my-graph"}
     mock_cf.return_value.neptune.return_value = mock_neptune
 
-    resp = await client.request("DELETE", "/api/v0/metadata/neptune/graph-analytics/g-123")
+    resp = await client.request(
+        "DELETE", "/api/v0/metadata/neptune/graph-analytics/g-123"
+    )
     assert resp.status_code == 202
     assert resp.json() == {"id": "g-123", "status": "DELETING"}
-    mock_neptune.delete_graph.assert_called_once_with(graphIdentifier="g-123", skipSnapshot=True)
+    mock_neptune.delete_graph.assert_called_once_with(
+        graphIdentifier="g-123", skipSnapshot=True
+    )
 
 
 @pytest.mark.asyncio
@@ -245,7 +272,9 @@ async def test_delete_neptune_graph_rejects_unmanaged(mock_cf, client):
     mock_neptune.get_graph.return_value = {"name": "foreign-graph"}
     mock_cf.return_value.neptune.return_value = mock_neptune
 
-    resp = await client.request("DELETE", "/api/v0/metadata/neptune/graph-analytics/g-456")
+    resp = await client.request(
+        "DELETE", "/api/v0/metadata/neptune/graph-analytics/g-456"
+    )
     assert resp.status_code == 403
     assert "not managed" in resp.json()["detail"]
     mock_neptune.delete_graph.assert_not_called()
@@ -256,10 +285,13 @@ async def test_delete_neptune_graph_rejects_unmanaged(mock_cf, client):
 async def test_delete_neptune_graph_not_found(mock_cf, client):
     mock_neptune = MagicMock()
     mock_neptune.get_graph.side_effect = ClientError(
-        {"Error": {"Code": "ResourceNotFoundException", "Message": "Graph not found"}}, "GetGraph"
+        {"Error": {"Code": "ResourceNotFoundException", "Message": "Graph not found"}},
+        "GetGraph",
     )
     mock_cf.return_value.neptune.return_value = mock_neptune
 
-    resp = await client.request("DELETE", "/api/v0/metadata/neptune/graph-analytics/g-999")
+    resp = await client.request(
+        "DELETE", "/api/v0/metadata/neptune/graph-analytics/g-999"
+    )
     assert resp.status_code == 404
     assert "not found" in resp.json()["detail"].lower()
