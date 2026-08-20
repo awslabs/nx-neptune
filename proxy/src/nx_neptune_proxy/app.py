@@ -41,7 +41,7 @@ logger = logging.getLogger("nx_neptune_proxy")
 
 # --- App ---
 
-app = FastAPI(title="nx-neptune-proxy", version="0.1.0", docs_url="/docs", redoc_url=None)
+app = FastAPI(title="nx-neptune-proxy", version="0.1.0", docs_url=None, redoc_url=None)
 
 app.add_middleware(
     CORSMiddleware,

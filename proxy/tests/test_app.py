@@ -39,6 +39,12 @@ async def test_not_found_returns_404(client):
 
 
 @pytest.mark.asyncio
-async def test_openapi_docs_available(client):
+async def test_docs_disabled(client):
     resp = await client.get("/docs")
-    assert resp.status_code == 200
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_redoc_disabled(client):
+    resp = await client.get("/redoc")
+    assert resp.status_code == 404
