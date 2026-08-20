@@ -165,6 +165,11 @@ if UI_DIR.exists():
         if path.startswith("api/"):
             raise HTTPException(status_code=404)
 
+        # docs_url/redoc_url are disabled above; also block the SPA
+        # fallback from serving index.html at these paths instead.
+        if path in ("docs", "redoc"):
+            raise HTTPException(status_code=404)
+
         # Control 1: Input sanitization — reject any path containing traversal
         if ".." in path:
             raise HTTPException(status_code=403)
