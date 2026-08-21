@@ -40,7 +40,7 @@ def _require_status(graph_id: str, resp: dict) -> str:
 def get_available_actions(graph_id: str):
     """Return valid actions based on the graph's current Neptune status."""
     client = ClientFactory().neptune()
-    resp = client.get_graph(graphIdentifier=graph_id)
+    resp = get_graph_or_exception(client, graph_id)
     # Prefix guard first, before any status handling.
     assert_managed_graph(resp.get("name"))
     status = _require_status(graph_id, resp)
