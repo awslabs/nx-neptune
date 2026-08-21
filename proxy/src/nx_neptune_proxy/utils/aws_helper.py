@@ -6,7 +6,7 @@ from typing import Any, Callable
 from botocore.exceptions import ClientError
 from fastapi import HTTPException
 
-from nx_neptune_proxy.config import Settings
+from nx_neptune_proxy.config import get_settings
 
 
 def get_graph_or_exception(client, graph_id: str) -> dict:
@@ -30,11 +30,11 @@ def assert_managed_graph(graph_name: str | None) -> None:
         graph_name: The full (prefixed) graph name as it exists in Neptune.
                     If None or empty, the guard rejects the request.
     """
-    prefix = Settings.from_env().graph_prefix
+    prefix = get_settings().graph_prefix
     if not graph_name or not graph_name.startswith(prefix):
         raise HTTPException(
             status_code=403,
-            detail=f"Refusing to delete graph '{graph_name or ''}': not managed by this tool (expected prefix '{prefix}')",
+            detail="Refusing to operate on a graph not managed by this tool",
         )
 
 
@@ -62,5 +62,9 @@ def paginate_aws(method: Callable, result_key: str, **kwargs: Any) -> list:
 def unpack_query_results(rows: list) -> dict:
     """Convert raw query rows (header + data) into {columns, rows} dict."""
     columns = rows[0] if rows else []
-    data_rows = [[cell if cell is not None else "n/a" for cell in row] for row in rows[1:]] if len(rows) > 1 else []
+    data_rows = (
+        [[cell if cell is not None else "n/a" for cell in row] for row in rows[1:]]
+        if len(rows) > 1
+        else []
+    )
     return {"columns": columns, "rows": data_rows}

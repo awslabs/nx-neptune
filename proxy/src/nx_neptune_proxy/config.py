@@ -58,3 +58,47 @@ class Settings:
             ),
             graph_prefix=os.environ.get("GRAPH_PREFIX", "nxp-"),
         )
+
+    def validate(self) -> None:
+        """Validate settings at startup. Reports all problems at once.
+
+        Raises SystemExit listing every configuration error found, so the
+        user can fix them in one pass rather than one restart at a time.
+        """
+        errors: list[str] = []
+
+        if not self.graph_prefix:
+            errors.append(
+                "GRAPH_PREFIX must not be empty. An empty prefix disables "
+                "the managed-graph safety guard, allowing operations on any "
+                "graph in the account."
+            )
+
+        if errors:
+            raise SystemExit(
+                "ERROR: invalid configuration:\n"
+                + "\n".join(f"  - {e}" for e in errors)
+            )
+
+
+# Single validated Settings instance shared across the process. Built and
+# validated once on first access, then reused, so the value the startup
+# guard validates is the exact same instance every consumer (e.g. the
+# managed-graph guard) reads — not an independent, unvalidated re-read.
+_settings: "Settings | None" = None
+
+
+def get_settings() -> "Settings":
+    """Return the process-wide validated Settings instance.
+
+    Loads from the environment and validates on first call, then caches.
+    All runtime consumers should read configuration through this, rather
+    than calling ``Settings.from_env()`` directly, so everyone shares the
+    one instance that startup validation checked.
+    """
+    global _settings
+    if _settings is None:
+        settings = Settings.from_env()
+        settings.validate()
+        _settings = settings
+    return _settings
