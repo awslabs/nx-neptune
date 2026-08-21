@@ -123,7 +123,7 @@ scipy==1.17.1
     # via nx-neptune (pyproject.toml)
 six==1.17.0
     # via python-dateutil
-sqlglot==30.16.0
+sqlglot==30.17.0
     # via nx-neptune (pyproject.toml)
 typing-extensions==4.16.0
     # via
