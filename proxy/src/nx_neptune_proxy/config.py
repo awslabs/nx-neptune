@@ -67,3 +67,26 @@ class Settings:
                 "An empty prefix disables the managed-graph safety guard, "
                 "allowing operations on any graph in the account."
             )
+
+
+# Single validated Settings instance shared across the process. Built and
+# validated once on first access, then reused, so the value the startup
+# guard validates is the exact same instance every consumer (e.g. the
+# managed-graph guard) reads — not an independent, unvalidated re-read.
+_settings: "Settings | None" = None
+
+
+def get_settings() -> "Settings":
+    """Return the process-wide validated Settings instance.
+
+    Loads from the environment and validates on first call, then caches.
+    All runtime consumers should read configuration through this, rather
+    than calling ``Settings.from_env()`` directly, so everyone shares the
+    one instance that startup validation checked.
+    """
+    global _settings
+    if _settings is None:
+        settings = Settings.from_env()
+        settings.validate()
+        _settings = settings
+    return _settings
