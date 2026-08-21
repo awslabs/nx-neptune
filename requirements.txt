@@ -6,7 +6,7 @@
 #
 boto3==1.43.67
     # via nx-neptune (pyproject.toml)
-botocore==1.43.67
+botocore==1.43.73
     # via
     #   boto3
     #   s3transfer
