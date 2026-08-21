@@ -9,7 +9,10 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from nx_neptune.clients.client_factory import ClientFactory
-from nx_neptune_proxy.utils.aws_helper import assert_managed_graph, get_graph_or_exception
+from nx_neptune_proxy.utils.aws_helper import (
+    assert_managed_graph,
+    get_graph_or_exception,
+)
 from nx_neptune_proxy.services.graph_state_machine import (
     InvalidTransitionError,
     available_actions,
@@ -24,15 +27,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v0/graphs", tags=["graphs"])
 
 
-@router.get("/{graph_id}/actions", summary="List available actions for a graph")
-def get_available_actions(graph_id: str):
-    """Return valid actions based on the graph's current Neptune status."""
-    client = ClientFactory().neptune()
-    resp = client.get_graph(graphIdentifier=graph_id)
+def _require_status(graph_id: str, resp: dict) -> str:
+    """Return the graph's status, or raise 502 if it is missing/empty."""
     status = resp.get("status")
     if not status:
         logger.warning(f"Graph {graph_id} returned empty status: {resp}")
         raise HTTPException(status_code=502, detail="Graph returned no status")
+    return status
+
+
+@router.get("/{graph_id}/actions", summary="List available actions for a graph")
+def get_available_actions(graph_id: str):
+    """Return valid actions based on the graph's current Neptune status."""
+    client = ClientFactory().neptune()
+    resp = get_graph_or_exception(client, graph_id)
+    # Prefix guard first, before any status handling.
+    assert_managed_graph(resp.get("name"))
+    status = _require_status(graph_id, resp)
     actions = available_actions(status)
     inflight = get_inflight(graph_id)
     return {
@@ -48,14 +59,9 @@ def perform_action(graph_id: str, action: str, background_tasks: BackgroundTasks
     """Initiate a state transition (stop, start, delete) as a background task."""
     client = ClientFactory().neptune()
     resp = get_graph_or_exception(client, graph_id)
-    current_status = resp.get("status")
-    if not current_status:
-        logger.warning(f"Graph {graph_id} returned empty status: {resp}")
-        raise HTTPException(status_code=502, detail="Graph returned no status")
-
-    # Prefix guard: only allow destructive actions on graphs managed by this tool
-    if action == "delete":
-        assert_managed_graph(resp.get("name"))
+    # Prefix guard first, before any status handling.
+    assert_managed_graph(resp.get("name"))
+    current_status = _require_status(graph_id, resp)
 
     try:
         # Validate early (execute_transition also validates, but fail fast for the user)
@@ -74,7 +80,11 @@ def perform_action(graph_id: str, action: str, background_tasks: BackgroundTasks
 
 @router.get("/{graph_id}/inflight", summary="Check in-flight operation status")
 def get_inflight_status(graph_id: str):
-    """Return current in-flight operation info, including any error."""
+    """Return current in-flight operation info, including any error.
+
+    No prefix guard needed: the inflight map is populated only by guarded
+    actions, so it only ever contains managed graphs. Unmanaged IDs return null.
+    """
     inflight = get_inflight(graph_id)
     if not inflight:
         return {"graph_id": graph_id, "inflight": None}
