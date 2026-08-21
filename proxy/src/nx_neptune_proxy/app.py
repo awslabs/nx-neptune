@@ -46,15 +46,16 @@ app = FastAPI(title="nx-neptune-proxy", version="0.1.0", docs_url=None, redoc_ur
 
 # --- TrustedHost middleware (blocks DNS rebinding) ---
 #
-# Known limitation: Starlette's TrustedHostMiddleware parses the Host header
-# via `.split(":")[0]`, which returns "[" for any IPv6 literal (e.g.
-# "[::1]:8080"), never a value that can match an allowlist entry. This means
-# requests addressed via an IPv6 literal are always rejected, regardless of
-# what's configured. Hostname-based access (localhost, 127.0.0.1, or any
-# configured hostname that happens to resolve to an IPv6 address) is
-# unaffected, since the Host header carries the hostname as typed, not the
-# resolved IP.
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.trusted_hosts))
+# TODO: IPv6 is not supported until encode/starlette#3357 is fixed
+# (Starlette can't parse IPv6 Host headers, so any IPv6 entry here is
+# dead code). Re-add "::1" once a fixed release is available. No security
+# leak: all IPv6 hosts are denied in the meantime, not allowed.
+_host_middleware_allowed_hosts = [
+    host
+    for host in settings.trusted_hosts
+    if not host.startswith("[") and ":" not in host
+]
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=_host_middleware_allowed_hosts)
 
 app.add_middleware(
     CORSMiddleware,
