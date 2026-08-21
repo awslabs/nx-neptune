@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from nx_neptune_proxy.config import Settings
+from nx_neptune_proxy.config import get_settings
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
@@ -25,7 +25,7 @@ from nx_neptune_proxy.services.db import init_db
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.project_deletion import delete_project
 
-settings = Settings.from_env()
+settings = get_settings()
 
 # --- Database ---
 init_db()
@@ -42,9 +42,7 @@ logger = logging.getLogger("nx_neptune_proxy")
 
 # --- App ---
 
-app = FastAPI(
-    title="nx-neptune-proxy", version="0.1.0", docs_url=None, redoc_url=None
-)
+app = FastAPI(title="nx-neptune-proxy", version="0.1.0", docs_url=None, redoc_url=None)
 
 app.add_middleware(
     CORSMiddleware,

@@ -7,36 +7,39 @@ import pytest
 from botocore.exceptions import ClientError
 from fastapi import HTTPException
 
-from nx_neptune_proxy.utils.aws_helper import assert_managed_graph, get_graph_or_exception
+from nx_neptune_proxy.utils.aws_helper import (
+    assert_managed_graph,
+    get_graph_or_exception,
+)
 
 
-@patch("nx_neptune_proxy.utils.aws_helper.Settings")
-def test_assert_managed_graph_passes_with_prefix(mock_settings):
-    mock_settings.from_env.return_value.graph_prefix = "nxp-"
+@patch("nx_neptune_proxy.utils.aws_helper.get_settings")
+def test_assert_managed_graph_passes_with_prefix(mock_get_settings):
+    mock_get_settings.return_value.graph_prefix = "nxp-"
     # Should not raise
     assert_managed_graph("nxp-my-graph")
 
 
-@patch("nx_neptune_proxy.utils.aws_helper.Settings")
-def test_assert_managed_graph_rejects_wrong_prefix(mock_settings):
-    mock_settings.from_env.return_value.graph_prefix = "nxp-"
+@patch("nx_neptune_proxy.utils.aws_helper.get_settings")
+def test_assert_managed_graph_rejects_wrong_prefix(mock_get_settings):
+    mock_get_settings.return_value.graph_prefix = "nxp-"
     with pytest.raises(HTTPException) as exc_info:
         assert_managed_graph("other-graph")
     assert exc_info.value.status_code == 403
     assert "not managed" in exc_info.value.detail
 
 
-@patch("nx_neptune_proxy.utils.aws_helper.Settings")
-def test_assert_managed_graph_rejects_none(mock_settings):
-    mock_settings.from_env.return_value.graph_prefix = "nxp-"
+@patch("nx_neptune_proxy.utils.aws_helper.get_settings")
+def test_assert_managed_graph_rejects_none(mock_get_settings):
+    mock_get_settings.return_value.graph_prefix = "nxp-"
     with pytest.raises(HTTPException) as exc_info:
         assert_managed_graph(None)
     assert exc_info.value.status_code == 403
 
 
-@patch("nx_neptune_proxy.utils.aws_helper.Settings")
-def test_assert_managed_graph_rejects_empty_string(mock_settings):
-    mock_settings.from_env.return_value.graph_prefix = "nxp-"
+@patch("nx_neptune_proxy.utils.aws_helper.get_settings")
+def test_assert_managed_graph_rejects_empty_string(mock_get_settings):
+    mock_get_settings.return_value.graph_prefix = "nxp-"
     with pytest.raises(HTTPException) as exc_info:
         assert_managed_graph("")
     assert exc_info.value.status_code == 403
@@ -56,7 +59,8 @@ def test_get_graph_or_exception_returns_response():
 def test_get_graph_or_exception_raises_404_on_not_found():
     mock_client = MagicMock()
     mock_client.get_graph.side_effect = ClientError(
-        {"Error": {"Code": "ResourceNotFoundException", "Message": "Not found"}}, "GetGraph"
+        {"Error": {"Code": "ResourceNotFoundException", "Message": "Not found"}},
+        "GetGraph",
     )
     with pytest.raises(HTTPException) as exc_info:
         get_graph_or_exception(mock_client, "g-999")
