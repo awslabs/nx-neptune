@@ -15,7 +15,9 @@ class Settings:
 
     log_level: str = "INFO"
     allowed_origins: list[str] = None  # type: ignore[assignment]
+    host: str = "127.0.0.1"
     port: int = 8080
+    allow_non_loopback_bind: bool = False
     extra_trusted_hosts: frozenset[str] = field(default_factory=frozenset)
     region: str = ""
     graph_prefix: str = "nxp-"
@@ -39,20 +41,24 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         origins_raw = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+        trusted_hosts_raw = os.environ.get("TRUSTED_HOSTS", "")
+        extra_trusted = frozenset(
+            h.strip() for h in trusted_hosts_raw.split(",") if h.strip()
+        )
         origins = (
             [o.strip() for o in origins_raw.split(",") if o.strip()]
             if origins_raw
             else []
         )
-        trusted_hosts_raw = os.environ.get("TRUSTED_HOSTS", "")
-        extra_trusted = frozenset(
-            h.strip() for h in trusted_hosts_raw.split(",") if h.strip()
-        )
+        allow_raw = os.environ.get("ALLOW_NON_LOOPBACK_BIND", "")
         return cls(
             log_level=os.environ.get("LOG_LEVEL", "INFO").upper(),
             allowed_origins=origins,
+            host=os.environ.get("HOST", "127.0.0.1"),
             port=int(os.environ.get("PORT", "8080")),
             extra_trusted_hosts=extra_trusted,
+            allow_non_loopback_bind=allow_raw.strip().lower()
+            not in ("", "0", "false", "no"),
             region=os.environ.get(
                 "AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "")
             ),
