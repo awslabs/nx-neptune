@@ -60,12 +60,24 @@ class Settings:
         )
 
     def validate(self) -> None:
-        """Validate settings at startup. Raises SystemExit on invalid config."""
+        """Validate settings at startup. Reports all problems at once.
+
+        Raises SystemExit listing every configuration error found, so the
+        user can fix them in one pass rather than one restart at a time.
+        """
+        errors: list[str] = []
+
         if not self.graph_prefix:
+            errors.append(
+                "GRAPH_PREFIX must not be empty. An empty prefix disables "
+                "the managed-graph safety guard, allowing operations on any "
+                "graph in the account."
+            )
+
+        if errors:
             raise SystemExit(
-                "ERROR: GRAPH_PREFIX must not be empty. "
-                "An empty prefix disables the managed-graph safety guard, "
-                "allowing operations on any graph in the account."
+                "ERROR: invalid configuration:\n"
+                + "\n".join(f"  - {e}" for e in errors)
             )
 
 
