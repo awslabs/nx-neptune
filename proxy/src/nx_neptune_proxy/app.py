@@ -6,6 +6,7 @@ import logging
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 from botocore.exceptions import ClientError
 from fastapi import FastAPI, HTTPException, Request
@@ -41,7 +42,9 @@ logger = logging.getLogger("nx_neptune_proxy")
 
 # --- App ---
 
-app = FastAPI(title="nx-neptune-proxy", version="0.1.0", docs_url=None, redoc_url=None)
+app = FastAPI(
+    title="nx-neptune-proxy", version="0.1.0", docs_url=None, redoc_url=None
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -49,6 +52,36 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
+
+
+# --- Origin validation middleware (server-side, defense-in-depth) ---
+
+
+@app.middleware("http")
+async def origin_validation(request: Request, call_next):
+    """Reject requests with an Origin header not on the allowlist.
+
+    Browsers always send a truthful Origin header on cross-origin requests.
+    This enforces the allowlist server-side, rather than relying on the
+    browser to respect CORS.
+    """
+    origin = request.headers.get("origin")
+    if origin:
+        # Parse origin to extract host (e.g. "http://localhost:8080" -> "localhost")
+        try:
+            parsed = urlparse(origin)
+            host = parsed.hostname or ""
+        except Exception:
+            host = ""
+        if host not in settings.trusted_hosts:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "origin_rejected",
+                    "message": f"Origin '{origin}' is not allowed",
+                },
+            )
+    return await call_next(request)
 
 
 # --- CSRF protection middleware ---
@@ -67,7 +100,10 @@ async def csrf_protection(request: Request, call_next):
         if not request.headers.get("x-requested-with"):
             return JSONResponse(
                 status_code=403,
-                content={"error": "csrf_rejected", "message": "Missing required X-Requested-With header"},
+                content={
+                    "error": "csrf_rejected",
+                    "message": "Missing required X-Requested-With header",
+                },
             )
     return await call_next(request)
 
@@ -117,7 +153,10 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.exception(f"Unhandled error on {request.method} {request.url.path}")
     return JSONResponse(
         status_code=500,
-        content={"error": "internal_server_error", "message": "An unexpected error occurred"},
+        content={
+            "error": "internal_server_error",
+            "message": "An unexpected error occurred",
+        },
     )
 
 
@@ -143,6 +182,7 @@ app.include_router(graph_router)
 
 
 # --- Startup: resume stuck deletions ---
+
 
 @app.on_event("startup")
 async def resume_pending_deletions():
