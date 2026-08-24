@@ -70,21 +70,22 @@ app.add_middleware(
 
 @app.middleware("http")
 async def origin_validation(request: Request, call_next):
-    """Reject requests with an Origin header not on the allowlist.
+    """Reject requests whose Origin isn't on the allowlist.
 
-    Browsers always send a truthful Origin header on cross-origin requests.
-    This enforces the allowlist server-side, rather than relying on the
-    browser to respect CORS.
+    Browsers always send a truthful Origin header on cross-origin requests,
+    so this enforces the allowlist server-side rather than relying on the
+    browser to respect CORS. Matches the full origin (scheme + host + port)
+    against the same normalized list CORS uses, so the two can't diverge.
+    Loopback origins are always allowed (local development).
     """
     origin = request.headers.get("origin")
     if origin:
-        # Parse origin to extract host (e.g. "http://localhost:8080" -> "localhost")
-        try:
-            parsed = urlparse(origin)
-            host = parsed.hostname or ""
-        except Exception:
-            host = ""
-        if host not in settings.trusted_hosts:
+        normalized = normalize_origin(origin)
+        parsed_host = urlparse(origin).hostname or ""
+        is_loopback = parsed_host in _LOOPBACK_HOSTS
+        if not is_loopback and (
+            normalized is None or normalized not in settings.allowed_origins
+        ):
             return JSONResponse(
                 status_code=403,
                 content={
