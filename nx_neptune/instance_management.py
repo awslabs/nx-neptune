@@ -56,10 +56,9 @@ from .utils.task_future import (
     wait_until_all_complete,
 )
 from .utils.utils import (
-    SqlValueKind,
     _validate_column_type,
+    _validate_s3_location,
     _validate_sql_identifier,
-    _validate_value,
 )
 
 logger = logging.getLogger(__name__)
@@ -1339,7 +1338,7 @@ def _build_sql_statement(
         s3_location = f"s3://{bucket_name}/{bucket_folder}/{prefix}"
     else:
         s3_location = f"s3://{bucket_name}/{prefix}"
-    _validate_value(s3_location, SqlValueKind.S3_LOCATION)
+    _validate_s3_location(s3_location)
 
     return f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
     {table_schema}

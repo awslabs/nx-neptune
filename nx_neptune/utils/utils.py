@@ -16,7 +16,6 @@ import logging
 import os
 import re
 import sys
-from enum import Enum
 from itertools import islice
 from time import sleep
 from typing import List, Optional
@@ -29,16 +28,6 @@ import boto3
 _S3_LOCATION_RE = re.compile(
     r"^s3://[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9](/[^'\"\n\r]*)?\Z"
 )
-
-
-class SqlValueKind(Enum):
-    """Kinds of caller-supplied SQL values, each mapped to (regex, error label).
-
-    Used by :func:`_validate_value` to pick the pattern to match and the
-    label to report on failure.
-    """
-
-    S3_LOCATION = (_S3_LOCATION_RE, "S3 location")
 
 
 # Allowlisted Athena column types for CSV-export DDL. The export path derives
@@ -519,16 +508,14 @@ def _validate_sql_identifier(value: str) -> str:
     return value
 
 
-def _validate_value(value: str, kind: SqlValueKind) -> str:
-    """Validate *value* against the pattern selected by *kind*.
-
-    *kind* is a :class:`SqlValueKind` carrying the regex to match and the
-    label used in the error message. Raises ``ValueError`` if *value* is empty
-    or does not match.
+def _validate_s3_location(value: str) -> str:
+    """Validate an ``s3://bucket/key`` location before interpolating it into a
+    single-quoted SQL string literal. The key excludes quotes and newlines so
+    it cannot terminate the literal. Raises ``ValueError`` if *value* is empty
+    or malformed.
     """
-    regex, label = kind.value
-    if not value or not regex.match(value):
-        raise ValueError(f"Invalid {label}: {value!r}.")
+    if not value or not _S3_LOCATION_RE.match(value):
+        raise ValueError(f"Invalid S3 location: {value!r}.")
     return value
 
 
