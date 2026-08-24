@@ -22,6 +22,42 @@ from typing import List, Optional
 
 import boto3
 
+# --- SQL/DDL generation: identifier and literal validation constants ---------
+# S3 URI: s3://<bucket>/<key>. Bucket is DNS-style; key excludes quotes/newlines
+# so it cannot terminate a surrounding SQL string literal.
+_S3_LOCATION_RE = re.compile(
+    r"^s3://[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9](/[^'\"\n\r]*)?\Z"
+)
+
+
+# Allowlisted Athena column types for CSV-export DDL. The export path derives
+# datatypes from the Neptune CSV header (String, Int, Long, Double, Bool, ...),
+# which are always scalar — vectors are skipped upstream. A flat scalar
+# allowlist rejects both malformed values (``int)``) and unsupported complex
+# types (``struct<...>``) without needing to parse a type grammar.
+_ALLOWED_COLUMN_TYPES = {
+    "boolean",
+    "bool",
+    "byte",
+    "short",
+    "tinyint",
+    "smallint",
+    "int",
+    "integer",
+    "bigint",
+    "long",
+    "float",
+    "double",
+    "real",
+    "decimal",
+    "string",
+    "varchar",
+    "char",
+    "binary",
+    "date",
+    "timestamp",
+}
+
 
 def get_stdout_logger(
     project_identifier: str,
@@ -469,4 +505,30 @@ def _validate_sql_identifier(value: str) -> str:
     _SQL_IDENTIFIER_RE = re.compile(rf"^{_SEGMENT}(\.{_SEGMENT})*\Z")
     if not value or not _SQL_IDENTIFIER_RE.match(value):
         raise ValueError(f"Invalid SQL identifier: {value!r}.")
+    return value
+
+
+def _validate_s3_location(value: str) -> str:
+    """Validate an ``s3://bucket/key`` location before interpolating it into a
+    single-quoted SQL string literal. The key excludes quotes and newlines so
+    it cannot terminate the literal. Raises ``ValueError`` if *value* is empty
+    or malformed.
+    """
+    if not value or not _S3_LOCATION_RE.match(value):
+        raise ValueError(f"Invalid S3 location: {value!r}.")
+    return value
+
+
+def _validate_column_type(value: str) -> str:
+    """Validate a column type against the scalar allowlist.
+
+    The CSV-export DDL path only ever produces scalar Athena types (the Neptune
+    export header carries ``String``/``Int``/``Long``/``Double``/``Bool``/...;
+    vectors are skipped upstream), so an exact-match scalar allowlist is
+    sufficient. It rejects both malformed values (e.g. ``int)``, ``int, string``)
+    and unsupported complex types (e.g. ``struct<...>``). Raises ``ValueError``
+    otherwise.
+    """
+    if not value or value.lower() not in _ALLOWED_COLUMN_TYPES:
+        raise ValueError(f"Invalid column type: {value!r}.")
     return value

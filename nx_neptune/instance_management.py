@@ -55,7 +55,11 @@ from .utils.task_future import (
     TaskType,
     wait_until_all_complete,
 )
-from .utils.utils import _validate_sql_identifier
+from .utils.utils import (
+    _validate_column_type,
+    _validate_s3_location,
+    _validate_sql_identifier,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1321,12 +1325,20 @@ def _build_sql_statement(
                 continue
             table_columns[field] = datatype.lower()
 
+    # Column names and datatypes are parsed from the CSV header in the staging
+    # bucket, i.e. from data outside this function's control. Validate each one
+    # before interpolating it into the DDL: names must be safe SQL identifiers
+    # and datatypes must be in the allowlist.
+    for k, v in table_columns.items():
+        _validate_sql_identifier(k)
+        _validate_column_type(v)
     table_schema = ",\n    ".join(f"`{k}` {v}" for k, v in table_columns.items())
     _validate_sql_identifier(table_name)
     if bucket_folder:
         s3_location = f"s3://{bucket_name}/{bucket_folder}/{prefix}"
     else:
         s3_location = f"s3://{bucket_name}/{prefix}"
+    _validate_s3_location(s3_location)
 
     return f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
     {table_schema}
