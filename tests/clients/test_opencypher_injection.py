@@ -113,6 +113,27 @@ class TestParameterValueInjection:
         rendered = _to_parameter_list({"writeProperty": payload})
         assert rendered == r'writeProperty:"X\\\") MATCH (m) DETACH DELETE m //"'
 
+    def test_unicode_escape_sequence_is_not_interpreted(self):
+        """A payload containing the literal characters ``\\u0022`` (an attempt
+        to smuggle a double-quote via a unicode escape) is neutralized: the
+        backslash is doubled first, so it renders as a literal backslash
+        followed by the text ``u0022`` and can never decode to a quote that
+        terminates the literal."""
+        payload = "X\\u0022 ) MATCH (m) DETACH DELETE m //"
+        rendered = _to_parameter_list({"writeProperty": payload})
+        assert rendered == r'writeProperty:"X\\u0022 ) MATCH (m) DETACH DELETE m //"'
+
+    def test_error_message_truncates_long_payload(self):
+        """A rejected value is not echoed verbatim into the error message; a
+        long attacker payload is truncated so it can't flood exceptions/logs."""
+        payload = "A" * 500 + '") MATCH (m) DETACH DELETE m //'
+        with pytest.raises(ValueError) as exc_info:
+            _to_parameter_list({"numOfIterations": payload})
+        msg = str(exc_info.value)
+        assert payload not in msg  # full payload not reflected
+        assert "…" in msg  # truncated
+        assert len(msg) < 120  # message stays bounded
+
     def test_pagerank_query_injection_is_neutralized(self):
         """End-to-end: a vertexLabel payload cannot inject into pagerank_query.
         It is confined inside an escaped double-quoted string literal."""

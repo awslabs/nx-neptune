@@ -74,6 +74,19 @@ __all__ = [
 ]
 
 
+def _truncate_for_error(value: Any, limit: int = 40) -> str:
+    """Return a repr of ``value`` safe to embed in an error message.
+
+    Validation errors can carry attacker-supplied input; reflecting the whole
+    value verbatim into exceptions/logs is undesirable. Truncate long values so
+    the message stays useful for debugging without echoing an unbounded payload.
+    """
+    text = repr(value)
+    if len(text) > limit:
+        return text[:limit] + "…"
+    return text
+
+
 def _escape_labels(labels) -> list:
     """Backtick-escape a list of node/edge labels.
 
@@ -142,8 +155,8 @@ def _render_parameter_value(key: str, value: Any) -> str:
         allowed = ALGO_PARAM_ENUM_VALUES[key]
         if value not in allowed:
             raise ValueError(
-                f"Invalid value {value!r} for parameter {key!r}; "
-                f"expected one of {sorted(allowed)}"
+                f"Invalid value {_truncate_for_error(value)} for parameter "
+                f"{key!r}; expected one of {sorted(allowed)}"
             )
         return _escape_string_literal(value)
 
@@ -162,7 +175,9 @@ def _render_parameter_value(key: str, value: Any) -> str:
     # List-valued parameters: encode each element.
     if key in ALGO_PARAM_LIST_KEYS:
         if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
-            raise ValueError(f"Parameter {key!r} must be a list, got {type(value).__name__}")
+            raise ValueError(
+                f"Parameter {key!r} must be a list, got {type(value).__name__}"
+            )
         return "[" + ", ".join(_render_list_element(v) for v in value) + "]"
 
     # Everything else is expected to be numeric or boolean. Reject strings and
@@ -173,7 +188,8 @@ def _render_parameter_value(key: str, value: Any) -> str:
         return str(value)
 
     raise ValueError(
-        f"Invalid value {value!r} for parameter {key!r}: expected a numeric value"
+        f"Invalid value {_truncate_for_error(value)} for parameter "
+        f"{key!r}: expected a numeric value"
     )
 
 
@@ -1225,7 +1241,7 @@ def _get_nodes_in_list(source_nodes: list[str]):
     nodes = [source_nodes] if isinstance(source_nodes, str) else source_nodes
     for node_id in nodes:
         if not _NODE_ID_RE.match(str(node_id)):
-            raise ValueError(f"Invalid node ID: {node_id!r}")
+            raise ValueError(f"Invalid node ID: {_truncate_for_error(node_id)}")
     return "[" + ",".join(f"'{s}'" for s in nodes) + "]"
 
 
