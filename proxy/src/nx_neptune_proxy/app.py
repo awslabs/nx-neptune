@@ -46,7 +46,7 @@ app = FastAPI(title="nx-neptune-proxy", version="0.1.0", docs_url=None, redoc_ur
 
 # --- TrustedHost middleware (blocks DNS rebinding) ---
 #
-# TODO: IPv6 is not supported until encode/starlette#3357 is fixed
+# TODO: IPv6 is not supported until starlette#3471 is fixed
 # (Starlette can't parse IPv6 Host headers, so any IPv6 entry here is
 # dead code). Re-add "::1" once a fixed release is available. No security
 # leak: all IPv6 hosts are denied in the meantime, not allowed.
