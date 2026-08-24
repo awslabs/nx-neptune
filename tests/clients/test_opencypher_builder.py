@@ -146,7 +146,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                         id="456", labels=["Person"], properties={"name": "Bob"}
                     ),
                 ),
-                " MERGE (a: Person {name : $0, `~id` : $1}) MERGE (b: Person {name : $2, `~id` : $3}) MERGE (a)-[r: FRIEND_WITH]->(b)",
+                " MERGE (a: `Person` {name : $0, `~id` : $1}) MERGE (b: `Person` {name : $2, `~id` : $3}) MERGE (a)-[r: `FRIEND_WITH`]->(b)",
                 {"0": "Alice", "1": "123", "2": "Bob", "3": "456"},
             ),
             # Edge without properties
@@ -158,7 +158,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                     node_src=Node(id="123", labels=["Person"]),
                     node_dest=Node(id="456", labels=["Person"]),
                 ),
-                " MERGE (a: Person {`~id` : $0}) MERGE (b: Person {`~id` : $1}) MERGE (a)-[r: FRIEND_WITH]->(b)",
+                " MERGE (a: `Person` {`~id` : $0}) MERGE (b: `Person` {`~id` : $1}) MERGE (a)-[r: `FRIEND_WITH`]->(b)",
                 {"0": "123", "1": "456"},
             ),
             # Edge with properties
@@ -174,7 +174,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                         id="456", labels=["Person"], properties={"name": "Bob"}
                     ),
                 ),
-                " MERGE (a: Person {name : $0, `~id` : $1}) MERGE (b: Person {name : $2, `~id` : $3}) MERGE (a)-[r: FRIEND_WITH {since : $4}]->(b)",
+                " MERGE (a: `Person` {name : $0, `~id` : $1}) MERGE (b: `Person` {name : $2, `~id` : $3}) MERGE (a)-[r: `FRIEND_WITH` {since : $4}]->(b)",
                 {"0": "Alice", "1": "123", "2": "Bob", "3": "456", "4": "2020"},
             ),
             # Edge between nodes with multiple labels
@@ -194,7 +194,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                         properties={"name": "Bob"},
                     ),
                 ),
-                " MERGE (a: Person: Employee {name : $0, `~id` : $1}) MERGE (b: Person: Manager {name : $2, `~id` : $3}) MERGE (a)-[r: REPORTS_TO]->(b)",
+                " MERGE (a: `Person`: `Employee` {name : $0, `~id` : $1}) MERGE (b: `Person`: `Manager` {name : $2, `~id` : $3}) MERGE (a)-[r: `REPORTS_TO`]->(b)",
                 {"0": "Alice", "1": "123", "2": "Bob", "3": "456"},
             ),
             # Edge with numeric property values
@@ -210,7 +210,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                         id="456", labels=["Product"], properties={"id": "1001"}
                     ),
                 ),
-                " MERGE (a: Person {name : $0, `~id` : $1}) MERGE (b: Product {id : $2, `~id` : $3}) MERGE (a)-[r: PURCHASED {quantity : $4, price : $5}]->(b)",
+                " MERGE (a: `Person` {name : $0, `~id` : $1}) MERGE (b: `Product` {id : $2, `~id` : $3}) MERGE (a)-[r: `PURCHASED` {quantity : $4, price : $5}]->(b)",
                 {"0": "Alice", "1": "123", "2": "1001", "3": "456", "4": 5, "5": 29.99},
             ),
             # Edge with boolean property values
@@ -226,7 +226,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                         id="456", labels=["Content"], properties={"id": "content-456"}
                     ),
                 ),
-                " MERGE (a: User {username : $0, `~id` : $1}) MERGE (b: Content {id : $2, `~id` : $3}) MERGE (a)-[r: LIKED {public : $4, notified : $5}]->(b)",
+                " MERGE (a: `User` {username : $0, `~id` : $1}) MERGE (b: `Content` {id : $2, `~id` : $3}) MERGE (a)-[r: `LIKED` {public : $4, notified : $5}]->(b)",
                 {
                     "0": "alice123",
                     "1": "123",
@@ -249,7 +249,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                         id="456", labels=["Company"], properties={"name": "ACME Inc"}
                     ),
                 ),
-                " MERGE (a: Person {name : $0, `~id` : $1}) MERGE (b: Company {name : $2, `~id` : $3}) MERGE (a)-[r: WORKS_FOR {role : $4}]->(b)",
+                " MERGE (a: `Person` {name : $0, `~id` : $1}) MERGE (b: `Company` {name : $2, `~id` : $3}) MERGE (a)-[r: `WORKS_FOR` {role : $4}]->(b)",
                 {
                     "0": "Alice",
                     "1": "123",
@@ -276,7 +276,7 @@ class TestOpencypherBuilder(unittest.TestCase):
             (
                 "Single label with properties",
                 Node(id="123", labels=["Person"], properties={"name": "Alice"}),
-                " CREATE (: Person {name : $0, `~id` : $1})",
+                " CREATE (: `Person` {name : $0, `~id` : $1})",
                 {"0": "Alice", "1": "123"},
             ),
             (
@@ -284,13 +284,13 @@ class TestOpencypherBuilder(unittest.TestCase):
                 Node(
                     id="456", labels=["Person", "Employee"], properties={"id": "12345"}
                 ),
-                " CREATE (: Person: Employee {id : $0, `~id` : $1})",
+                " CREATE (: `Person`: `Employee` {id : $0, `~id` : $1})",
                 {"0": "12345", "1": "456"},
             ),
             (
                 "Single label without properties",
                 Node(id="789", labels=["Person"]),
-                " CREATE (: Person {`~id` : $0})",
+                " CREATE (: `Person` {`~id` : $0})",
                 {"0": "789"},
             ),
             (
@@ -306,7 +306,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                     labels=["Product"],
                     properties={"price": 29.99, "stock": 100},
                 ),
-                " CREATE (: Product {price : $0, stock : $1, `~id` : $2})",
+                " CREATE (: `Product` {price : $0, stock : $1, `~id` : $2})",
                 {"0": 29.99, "1": 100, "2": "222"},
             ),
             (
@@ -316,7 +316,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                     labels=["User"],
                     properties={"active": True, "verified": False},
                 ),
-                " CREATE (: User {active : $0, verified : $1, `~id` : $2})",
+                " CREATE (: `User` {active : $0, verified : $1, `~id` : $2})",
                 {"0": True, "1": False, "2": "333"},
             ),
         ]
@@ -346,7 +346,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "b",
                 {"a.name": "Alice", "b.name": "Bob"},
                 {"r.since": "2020"},
-                " MATCH (a: Person {`~id` : $0})-[r: FRIEND_WITH]->(b: Person {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.since = $4",
+                " MATCH (a: `Person` {`~id` : $0})-[r: `FRIEND_WITH`]->(b: `Person` {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.since = $4",
                 {"0": "123", "1": "456", "2": "Alice", "3": "Bob", "4": "2020"},
             ),
             (
@@ -362,7 +362,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "b",
                 {"a.name": "Alice", "b.name": "Bob"},
                 {"r.since": "2020", "r.strength": "strong", "r.active": "true"},
-                " MATCH (a: Person {`~id` : $0})-[r: FRIEND_WITH]->(b: Person {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.since = $4, r.strength = $5, r.active = $6",
+                " MATCH (a: `Person` {`~id` : $0})-[r: `FRIEND_WITH`]->(b: `Person` {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.since = $4, r.strength = $5, r.active = $6",
                 {
                     "0": "123",
                     "1": "456",
@@ -386,7 +386,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "b",
                 {"a.name": "Alice", "b.name": "ACME Inc"},
                 {"r.role": "Engineer", "r.startDate": "2022-01-15"},
-                " MATCH (a: Person {`~id` : $0})-[r: WORKS_FOR]->(b: Company {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.role = $4, r.startDate = $5",
+                " MATCH (a: `Person` {`~id` : $0})-[r: `WORKS_FOR`]->(b: `Company` {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.role = $4, r.startDate = $5",
                 {
                     "0": "123",
                     "1": "456",
@@ -413,7 +413,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "b",
                 {"a.name": "Alice", "b.name": "Bob"},
                 {"r.strength": "very strong"},
-                " MATCH (a: Person {age : $0, `~id` : $1})-[r: FRIEND_WITH]->(b: Person {age : $2, `~id` : $3}) WHERE a.name = $4 AND b.name = $5 SET r.strength = $6",
+                " MATCH (a: `Person` {age : $0, `~id` : $1})-[r: `FRIEND_WITH`]->(b: `Person` {age : $2, `~id` : $3}) WHERE a.name = $4 AND b.name = $5 SET r.strength = $6",
                 {
                     "0": "30",
                     "1": "123",
@@ -441,7 +441,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "b",
                 {"a.name": "Alice", "b.name": "Bob"},
                 {"r.department": "Engineering"},
-                " MATCH (a: Person: Employee {`~id` : $0})-[r: REPORTS_TO]->(b: Person: Manager {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.department = $4",
+                " MATCH (a: `Person`: `Employee` {`~id` : $0})-[r: `REPORTS_TO`]->(b: `Person`: `Manager` {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.department = $4",
                 {"0": "123", "1": "456", "2": "Alice", "3": "Bob", "4": "Engineering"},
             ),
             (
@@ -463,7 +463,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                     "r.since": "2018",
                 },
                 {"r.strength": "best friends"},
-                " MATCH (a: Person {`~id` : $0})-[r: FRIEND_WITH]->(b: Person {`~id` : $1}) WHERE a.name = $2 AND a.age = $3 AND b.name = $4 AND b.city = $5 AND r.since = $6 SET r.strength = $7",
+                " MATCH (a: `Person` {`~id` : $0})-[r: `FRIEND_WITH`]->(b: `Person` {`~id` : $1}) WHERE a.name = $2 AND a.age = $3 AND b.name = $4 AND b.city = $5 AND r.since = $6 SET r.strength = $7",
                 {
                     "0": "123",
                     "1": "456",
@@ -488,7 +488,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "b",
                 {"a.name": "Alice", "b.id": "1001"},
                 {"r.quantity": 5, "r.price": 29.99},
-                " MATCH (a: Person {`~id` : $0})-[r: PURCHASED]->(b: Product {`~id` : $1}) WHERE a.name = $2 AND b.id = $3 SET r.quantity = $4, r.price = $5",
+                " MATCH (a: `Person` {`~id` : $0})-[r: `PURCHASED`]->(b: `Product` {`~id` : $1}) WHERE a.name = $2 AND b.id = $3 SET r.quantity = $4, r.price = $5",
                 {"0": "123", "1": "456", "2": "Alice", "3": "1001", "4": 5, "5": 29.99},
             ),
             (
@@ -504,7 +504,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "b",
                 {"a.username": "alice123", "b.id": "content-456"},
                 {"r.public": True, "r.notified": False},
-                " MATCH (a: User {`~id` : $0})-[r: LIKED]->(b: Content {`~id` : $1}) WHERE a.username = $2 AND b.id = $3 SET r.public = $4, r.notified = $5",
+                " MATCH (a: `User` {`~id` : $0})-[r: `LIKED`]->(b: `Content` {`~id` : $1}) WHERE a.username = $2 AND b.id = $3 SET r.public = $4, r.notified = $5",
                 {
                     "0": "123",
                     "1": "456",
@@ -527,7 +527,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "b",
                 {"a.name": "Alice", "b.name": "Bob"},
                 {"r.endDate": None},
-                " MATCH (a: Person {`~id` : $0})-[r: FRIEND_WITH]->(b: Person {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.endDate = $4",
+                " MATCH (a: `Person` {`~id` : $0})-[r: `FRIEND_WITH`]->(b: `Person` {`~id` : $1}) WHERE a.name = $2 AND b.name = $3 SET r.endDate = $4",
                 {"0": "123", "1": "456", "2": "Alice", "3": "Bob", "4": None},
             ),
             (
@@ -543,7 +543,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "actor",
                 {"movie.title": "The Matrix", "actor.name": "Keanu Reeves"},
                 {"role.character": "Neo"},
-                " MATCH (movie: Movie {`~id` : $0})-[role: ACTED_IN]->(actor: Person {`~id` : $1}) WHERE movie.title = $2 AND actor.name = $3 SET role.character = $4",
+                " MATCH (movie: `Movie` {`~id` : $0})-[role: `ACTED_IN`]->(actor: `Person` {`~id` : $1}) WHERE movie.title = $2 AND actor.name = $3 SET role.character = $4",
                 {
                     "0": "123",
                     "1": "456",
@@ -589,7 +589,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "a",
                 ["Alice"],
                 {"a.age": "25"},
-                " MATCH (a: Person) WHERE id(a)=$0 SET a.age = $1",
+                " MATCH (a: `Person`) WHERE id(a)=$0 SET a.age = $1",
                 {"0": "Alice", "1": "25"},
             ),
             (
@@ -598,7 +598,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "a",
                 ["12345"],
                 {"a.age": "30", "a.status": "Active", "a.updated": "true"},
-                " MATCH (a: Person) WHERE id(a)=$0 SET a.age = $1, a.status = $2, a.updated = $3",
+                " MATCH (a: `Person`) WHERE id(a)=$0 SET a.age = $1, a.status = $2, a.updated = $3",
                 {"0": "12345", "1": "30", "2": "Active", "3": "true"},
             ),
             (
@@ -607,7 +607,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "a",
                 ["alice@example.com"],
                 {"a.department": "Engineering"},
-                " MATCH (a: Person: Employee) WHERE id(a)=$0 SET a.department = $1",
+                " MATCH (a: `Person`: `Employee`) WHERE id(a)=$0 SET a.department = $1",
                 {"0": "alice@example.com", "1": "Engineering"},
             ),
             (
@@ -616,7 +616,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "a",
                 ["Alice", "Bob"],
                 {"a.lastLogin": "2023-04-01"},
-                " MATCH (a: Person) WHERE id(a)=$0 OR id(a)=$1 SET a.lastLogin = $2",
+                " MATCH (a: `Person`) WHERE id(a)=$0 OR id(a)=$1 SET a.lastLogin = $2",
                 {"0": "Alice", "1": "Bob", "2": "2023-04-01"},
             ),
             (
@@ -625,7 +625,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "p",
                 ["1001"],
                 {"p.price": 29.99, "p.stock": 100},
-                " MATCH (p: Product) WHERE id(p)=$0 SET p.price = $1, p.stock = $2",
+                " MATCH (p: `Product`) WHERE id(p)=$0 SET p.price = $1, p.stock = $2",
                 {"0": "1001", "1": 29.99, "2": 100},
             ),
             (
@@ -634,7 +634,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "u",
                 ["alice123"],
                 {"u.verified": True, "u.active": False},
-                " MATCH (u: User) WHERE id(u)=$0 SET u.verified = $1, u.active = $2",
+                " MATCH (u: `User`) WHERE id(u)=$0 SET u.verified = $1, u.active = $2",
                 {"0": "alice123", "1": True, "2": False},
             ),
             (
@@ -643,7 +643,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "a",
                 ["Alice"],
                 {"a.previousJob": None},
-                " MATCH (a: Person) WHERE id(a)=$0 SET a.previousJob = $1",
+                " MATCH (a: `Person`) WHERE id(a)=$0 SET a.previousJob = $1",
                 {"0": "Alice", "1": None},
             ),
             (
@@ -652,7 +652,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                 "movie",
                 ["The Matrix"],
                 {"movie.rating": 4.8},
-                " MATCH (movie: Movie) WHERE id(movie)=$0 SET movie.rating = $1",
+                " MATCH (movie: `Movie`) WHERE id(movie)=$0 SET movie.rating = $1",
                 {"0": "The Matrix", "1": 4.8},
             ),
         ]
@@ -682,7 +682,7 @@ class TestOpencypherBuilder(unittest.TestCase):
             (
                 "Single label with properties",
                 Node(id="123", labels=["Person"], properties={"name": "Alice"}),
-                " MATCH (n: Person {name : $0, `~id` : $1}) DELETE n",
+                " MATCH (n: `Person` {name : $0, `~id` : $1}) DELETE n",
                 {"0": "Alice", "1": "123"},
             ),
             (
@@ -690,13 +690,13 @@ class TestOpencypherBuilder(unittest.TestCase):
                 Node(
                     id="456", labels=["Person", "Employee"], properties={"id": "12345"}
                 ),
-                " MATCH (n: Person: Employee {id : $0, `~id` : $1}) DELETE n",
+                " MATCH (n: `Person`: `Employee` {id : $0, `~id` : $1}) DELETE n",
                 {"0": "12345", "1": "456"},
             ),
             (
                 "Single label without properties",
                 Node(id="789", labels=["Person"]),
-                " MATCH (n: Person {`~id` : $0}) DELETE n",
+                " MATCH (n: `Person` {`~id` : $0}) DELETE n",
                 {"0": "789"},
             ),
             (
@@ -712,7 +712,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                     labels=["Product"],
                     properties={"price": 29.99, "stock": 100},
                 ),
-                " MATCH (n: Product {price : $0, stock : $1, `~id` : $2}) DELETE n",
+                " MATCH (n: `Product` {price : $0, stock : $1, `~id` : $2}) DELETE n",
                 {"0": 29.99, "1": 100, "2": "222"},
             ),
             (
@@ -722,13 +722,13 @@ class TestOpencypherBuilder(unittest.TestCase):
                     labels=["User"],
                     properties={"active": True, "verified": False},
                 ),
-                " MATCH (n: User {active : $0, verified : $1, `~id` : $2}) DELETE n",
+                " MATCH (n: `User` {active : $0, verified : $1, `~id` : $2}) DELETE n",
                 {"0": True, "1": False, "2": "333"},
             ),
             (
                 "Null property value",
                 Node(id="444", labels=["Person"], properties={"previousJob": None}),
-                " MATCH (n: Person {previousJob : $0, `~id` : $1}) DELETE n",
+                " MATCH (n: `Person` {previousJob : $0, `~id` : $1}) DELETE n",
                 {"0": None, "1": "444"},
             ),
         ]
@@ -757,7 +757,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                         id="456", labels=["Person"], properties={"name": "Bob"}
                     ),
                 ),
-                " MATCH (a: Person {name : $0, `~id` : $1})-[r: FRIEND_WITH]->(b: Person {name : $2, `~id` : $3}) DELETE r",
+                " MATCH (a: `Person` {name : $0, `~id` : $1})-[r: `FRIEND_WITH`]->(b: `Person` {name : $2, `~id` : $3}) DELETE r",
                 {"0": "Alice", "1": "123", "2": "Bob", "3": "456"},
             ),
             (
@@ -772,7 +772,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                         id="456", labels=["Person"], properties={"name": "Bob"}
                     ),
                 ),
-                " MATCH (a: Person {name : $0, `~id` : $1})-[r: FRIEND_WITH]->(b: Person {name : $2, `~id` : $3}) DELETE r",
+                " MATCH (a: `Person` {name : $0, `~id` : $1})-[r: `FRIEND_WITH`]->(b: `Person` {name : $2, `~id` : $3}) DELETE r",
                 {"0": "Alice", "1": "123", "2": "Bob", "3": "456"},
             ),
             (
@@ -783,7 +783,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                     node_src=Node(id="123", labels=["Person"]),
                     node_dest=Node(id="456", labels=["Person"]),
                 ),
-                " MATCH (a: Person {`~id` : $0})-[r: FRIEND_WITH]->(b: Person {`~id` : $1}) DELETE r",
+                " MATCH (a: `Person` {`~id` : $0})-[r: `FRIEND_WITH`]->(b: `Person` {`~id` : $1}) DELETE r",
                 {"0": "123", "1": "456"},
             ),
             (
@@ -798,7 +798,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                         id="456", labels=["Company"], properties={"name": "ACME Inc"}
                     ),
                 ),
-                " MATCH (a: Person {name : $0, `~id` : $1})-[r: WORKS_FOR]->(b: Company {name : $2, `~id` : $3}) DELETE r",
+                " MATCH (a: `Person` {name : $0, `~id` : $1})-[r: `WORKS_FOR`]->(b: `Company` {name : $2, `~id` : $3}) DELETE r",
                 {"0": "Alice", "1": "123", "2": "ACME Inc", "3": "456"},
             ),
             (
@@ -817,7 +817,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                         properties={"name": "Bob"},
                     ),
                 ),
-                " MATCH (a: Person: Employee {name : $0, `~id` : $1})-[r: REPORTS_TO]->(b: Person: Manager {name : $2, `~id` : $3}) DELETE r",
+                " MATCH (a: `Person`: `Employee` {name : $0, `~id` : $1})-[r: `REPORTS_TO`]->(b: `Person`: `Manager` {name : $2, `~id` : $3}) DELETE r",
                 {"0": "Alice", "1": "123", "2": "Bob", "3": "456"},
             ),
             (
@@ -832,7 +832,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                         id="456", labels=["Product"], properties={"id": "1001"}
                     ),
                 ),
-                " MATCH (a: Person {name : $0, `~id` : $1})-[r: PURCHASED]->(b: Product {id : $2, `~id` : $3}) DELETE r",
+                " MATCH (a: `Person` {name : $0, `~id` : $1})-[r: `PURCHASED`]->(b: `Product` {id : $2, `~id` : $3}) DELETE r",
                 {"0": "Alice", "1": "123", "2": "1001", "3": "456"},
             ),
             (
@@ -847,7 +847,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                         id="456", labels=["Content"], properties={"id": "content-456"}
                     ),
                 ),
-                " MATCH (a: User {username : $0, `~id` : $1})-[r: LIKED]->(b: Content {id : $2, `~id` : $3}) DELETE r",
+                " MATCH (a: `User` {username : $0, `~id` : $1})-[r: `LIKED`]->(b: `Content` {id : $2, `~id` : $3}) DELETE r",
                 {"0": "alice123", "1": "123", "2": "content-456", "3": "456"},
             ),
             (
@@ -862,7 +862,7 @@ class TestOpencypherBuilder(unittest.TestCase):
                         id="456", labels=["Person"], properties={"name": "Bob"}
                     ),
                 ),
-                " MATCH (a: Person {name : $0, `~id` : $1})-[r: FRIEND_WITH]->(b: Person {name : $2, `~id` : $3}) DELETE r",
+                " MATCH (a: `Person` {name : $0, `~id` : $1})-[r: `FRIEND_WITH`]->(b: `Person` {name : $2, `~id` : $3}) DELETE r",
                 {"0": "Alice", "1": "123", "2": "Bob", "3": "456"},
             ),
         ]
