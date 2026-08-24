@@ -90,3 +90,27 @@ class TestBuildSqlStatementRejects:
     def test_table_name_injection(self):
         with pytest.raises(ValueError):
             _build("~id,name:String", table_name="t; DROP TABLE x --")
+
+    def test_complex_type_rejected(self):
+        # Complex/parameterized types are not produced by the export path and
+        # are rejected outright (previously mis-parsed on struct field names).
+        with pytest.raises(ValueError):
+            _build("~id,x:struct<name:string>")
+
+    def test_malformed_type_rejected(self):
+        # A datatype carrying stray SQL punctuation must not slip through.
+        with pytest.raises(ValueError):
+            _build("~id,x:int)")
+
+
+class TestBuildSqlStatementScalarTypes:
+    def test_all_export_scalar_types_accepted(self):
+        # The scalar type names emitted in Neptune CSV export headers all pass.
+        ddl = _build(
+            "~id,a:String,b:Int,c:Long,d:Double,e:Float,f:Bool,g:Byte,h:Short,i:Date"
+        )
+        assert "`a` string" in ddl
+        assert "`c` bigint" in ddl  # Long -> bigint
+        assert "`f` bool" in ddl
+        assert "`g` byte" in ddl
+        assert "`h` short" in ddl
