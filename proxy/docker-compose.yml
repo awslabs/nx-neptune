@@ -12,6 +12,10 @@ services:
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-west-2}
       - CORS_ALLOWED_ORIGINS=http://localhost:8080,https://localhost:6373
       - LOG_LEVEL=info
+      # Pass-through from the host env. If unset, the library applies its secure
+      # defaults (private graph + deletion protection). `make up` sets both.
+      - NETWORKX_PUBLIC_CONNECTIVITY
+      - NETWORKX_DELETION_PROTECTION
     healthcheck:
       test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:8080/health"]
       interval: 10s
