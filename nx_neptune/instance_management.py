@@ -880,6 +880,19 @@ def _delete_na_instance_task(client, graph_id: str):
     Raises:
         ClientError: If there's an issue with the AWS API call
     """
+    # Graphs are created with deletion protection enabled by default (secure
+    # default). delete_graph fails with ConflictException on a protected graph,
+    # so clear protection first. This is best-effort: if the graph is already
+    # unprotected the update is a harmless no-op, and any failure here is logged
+    # rather than masking the delete the caller asked for.
+    try:
+        client.update_graph(graphIdentifier=graph_id, deletionProtection=False)
+    except ClientError as e:
+        logger.warning(
+            "Could not clear deletion protection for graph %s before delete: %s",
+            graph_id,
+            e,
+        )
     response = client.delete_graph(graphIdentifier=graph_id, skipSnapshot=True)
     return response
 

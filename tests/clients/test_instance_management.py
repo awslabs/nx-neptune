@@ -913,6 +913,47 @@ async def test_delete_na_instance_success(mock_boto3_client):
     assert result == "test-123"
 
 
+def test_delete_clears_deletion_protection_before_delete():
+    """The teardown path must clear deletion protection (update_graph) before
+    delete_graph, otherwise Neptune rejects deleting a protected graph."""
+    from nx_neptune.instance_management import _delete_na_instance_task
+
+    client = MagicMock()
+    manager = MagicMock()
+    manager.attach_mock(client.update_graph, "update_graph")
+    manager.attach_mock(client.delete_graph, "delete_graph")
+
+    _delete_na_instance_task(client, "g-123")
+
+    client.update_graph.assert_called_once_with(
+        graphIdentifier="g-123", deletionProtection=False
+    )
+    client.delete_graph.assert_called_once_with(
+        graphIdentifier="g-123", skipSnapshot=True
+    )
+    # update_graph must come before delete_graph
+    order = [c[0] for c in manager.mock_calls]
+    assert order.index("update_graph") < order.index("delete_graph")
+
+
+def test_delete_proceeds_when_clearing_protection_fails():
+    """If clearing deletion protection errors (e.g. already unprotected), the
+    delete the caller asked for still proceeds."""
+    from nx_neptune.instance_management import _delete_na_instance_task
+
+    client = MagicMock()
+    client.update_graph.side_effect = ClientError(
+        error_response={"Error": {"Code": "ValidationException"}},
+        operation_name="UpdateGraph",
+    )
+
+    _delete_na_instance_task(client, "g-123")
+
+    client.delete_graph.assert_called_once_with(
+        graphIdentifier="g-123", skipSnapshot=True
+    )
+
+
 @pytest.mark.asyncio
 @patch("boto3.client")
 async def test_delete_na_instance_insufficient_permissions(mock_boto3_client):
