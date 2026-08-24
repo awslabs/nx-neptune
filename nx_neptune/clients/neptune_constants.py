@@ -68,3 +68,77 @@ RESPONSE_SUCCESS = "success"
 
 # Misc
 MAX_INT = 9223372036854775807
+
+# ---------------------------------------------------------------------------
+# Algorithm-parameter validation allowlists
+#
+# neptune.algo.* procedures take their configuration as an inline openCypher map
+# literal ({key:value,...}) in the CALL clause, so those keys/values cannot be
+# bound as query parameters ($n) the way MATCH/WHERE values can. To prevent
+# openCypher injection through algorithm parameters they are validated/encoded
+# in opencypher_builder._to_parameter_list against the sets below.
+#
+# Value ranges are taken from the Neptune Analytics algorithm documentation, e.g.
+# https://docs.aws.amazon.com/neptune-analytics/latest/userguide/label-propagation.html
+# ---------------------------------------------------------------------------
+
+# Every algorithm-parameter key the library is allowed to emit. Any key outside
+# this set is rejected (fail closed) rather than interpolated.
+ALLOWED_ALGO_PARAM_KEYS = {
+    PARAM_MAX_DEPTH,
+    PARAM_TRAVERSAL_DIRECTION,
+    PARAM_DISTANCE,
+    PARAM_DAMPING_FACTOR,
+    PARAM_NUM_OF_ITERATIONS,
+    PARAM_NUM_SOURCES,
+    PARAM_NORMALIZE,
+    PARAM_TOLERANCE,
+    PARAM_SEED,
+    PARAM_RESOLUTION,
+    PARAM_VERTEX_LABEL,
+    PARAM_VERTEX_WEIGHT_PROPERTY,
+    PARAM_VERTEX_WEIGHT_TYPE,
+    PARAM_EDGE_LABELS,
+    PARAM_LEVEL_TOLERANCE,
+    PARAM_CONCURRENCY,
+    PARAM_EDGE_WEIGHT_PROPERTY,
+    PARAM_EDGE_WEIGHT_TYPE,
+    PARAM_MAX_ITERATIONS,
+    PARAM_SOURCE_NODES,
+    PARAM_SOURCE_WEIGHTS,
+    PARAM_WRITE_PROPERTY,
+    PARAM_MAX_LEVEL,
+    PARAM_ITERATION_TOLERANCE,
+}
+
+# String parameters that name a label or property (open-domain identifiers).
+# openCypher permits almost any name when backtick-quoted, so these are
+# backtick-escaped + wrapped rather than matched against a narrow charset.
+ALGO_PARAM_IDENTIFIER_KEYS = {
+    PARAM_VERTEX_LABEL,
+    PARAM_WRITE_PROPERTY,
+    PARAM_EDGE_WEIGHT_PROPERTY,
+    PARAM_VERTEX_WEIGHT_PROPERTY,
+}
+
+# String parameters with a closed set of legal values (rejected if not a member).
+PARAM_TRAVERSAL_DIRECTIONS = {
+    PARAM_TRAVERSAL_DIRECTION_INBOUND,
+    PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
+    PARAM_TRAVERSAL_DIRECTION_BOTH,
+}
+PARAM_WEIGHT_TYPES = {"int", "long", "float", "double"}
+
+ALGO_PARAM_ENUM_VALUES = {
+    PARAM_TRAVERSAL_DIRECTION: PARAM_TRAVERSAL_DIRECTIONS,
+    PARAM_EDGE_WEIGHT_TYPE: PARAM_WEIGHT_TYPES,
+    PARAM_VERTEX_WEIGHT_TYPE: PARAM_WEIGHT_TYPES,
+}
+
+# List-valued parameters whose string elements are label/identifier-like and are
+# backtick-escaped per element; numeric elements pass through.
+ALGO_PARAM_LIST_KEYS = {
+    PARAM_EDGE_LABELS,
+    PARAM_SOURCE_NODES,
+    PARAM_SOURCE_WEIGHTS,
+}
