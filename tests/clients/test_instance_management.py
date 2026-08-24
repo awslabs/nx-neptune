@@ -954,6 +954,26 @@ def test_delete_proceeds_when_clearing_protection_fails():
     )
 
 
+def test_private_graph_logs_connectivity_hint(caplog, monkeypatch):
+    """A private (default) graph logs a hint pointing at the opt-in env var."""
+    from nx_neptune.instance_management import _get_create_instance_config
+
+    monkeypatch.delenv("NETWORKX_PUBLIC_CONNECTIVITY", raising=False)
+    with caplog.at_level("INFO", logger="nx_neptune.instance_management"):
+        _get_create_instance_config("test")
+    assert "NETWORKX_PUBLIC_CONNECTIVITY=true" in caplog.text
+
+
+def test_public_graph_does_not_log_connectivity_hint(caplog, monkeypatch):
+    """A public graph (opt-in) does not emit the private-connectivity hint."""
+    from nx_neptune.instance_management import _get_create_instance_config
+
+    monkeypatch.setenv("NETWORKX_PUBLIC_CONNECTIVITY", "true")
+    with caplog.at_level("INFO", logger="nx_neptune.instance_management"):
+        _get_create_instance_config("test")
+    assert "publicConnectivity=false" not in caplog.text
+
+
 @pytest.mark.asyncio
 @patch("boto3.client")
 async def test_delete_na_instance_insufficient_permissions(mock_boto3_client):
@@ -991,7 +1011,10 @@ async def test_delete_na_instance_failure(mock_boto3_client):
 
 
 @pytest.mark.asyncio
-async def test_create_graph_config_base():
+async def test_create_graph_config_base(monkeypatch):
+    # Assert the secure defaults independent of the developer's environment.
+    monkeypatch.delenv("NETWORKX_PUBLIC_CONNECTIVITY", raising=False)
+    monkeypatch.delenv("NETWORKX_DELETION_PROTECTION", raising=False)
     result = _get_create_instance_config("test")
     expected = {
         "graphName": "test",
@@ -1005,7 +1028,10 @@ async def test_create_graph_config_base():
 
 
 @pytest.mark.asyncio
-async def test_create_graph_config_custom_parameters():
+async def test_create_graph_config_custom_parameters(monkeypatch):
+    # Assert the secure defaults independent of the developer's environment.
+    monkeypatch.delenv("NETWORKX_PUBLIC_CONNECTIVITY", raising=False)
+    monkeypatch.delenv("NETWORKX_DELETION_PROTECTION", raising=False)
     # Unrelated parameters will be discarded.
     config = {
         "custom_parameter": 123,
@@ -1314,10 +1340,13 @@ async def test_create_na_instance_with_s3_import_success(
     assert task_id == "test-task-id"
 
 
-def test_get_create_instance_with_import_config():
+def test_get_create_instance_with_import_config(monkeypatch):
     """Test _get_create_instance_with_import_config function."""
     from nx_neptune.instance_management import _get_create_instance_with_import_config
 
+    # Assert the secure defaults independent of the developer's environment.
+    monkeypatch.delenv("NETWORKX_PUBLIC_CONNECTIVITY", raising=False)
+    monkeypatch.delenv("NETWORKX_DELETION_PROTECTION", raising=False)
     result = _get_create_instance_with_import_config(
         "test-graph",
         "s3://test-bucket/data",

@@ -716,6 +716,22 @@ async def update_na_instance_size(
         )
 
 
+def _log_connectivity_hint(config):
+    """Log a hint when a graph will be created without public connectivity.
+
+    A private graph is only reachable from within its VPC, so a caller that
+    creates one and then tries to connect from outside the VPC will hang until
+    the connection times out with no obvious cause. Surfacing the resolved
+    setting makes that failure diagnosable and points at the opt-in env var.
+    """
+    if not config.get("publicConnectivity"):
+        logger.info(
+            "Creating graph with publicConnectivity=false (private, VPC-only). "
+            "To connect from outside the VPC, set NETWORKX_PUBLIC_CONNECTIVITY=true "
+            "or pass publicConnectivity=True in config."
+        )
+
+
 def _get_create_instance_config(graph_name, config=None):
     """
     Build and sanitize the configuration dictionary for creating a graph instance.
@@ -752,6 +768,7 @@ def _get_create_instance_config(graph_name, config=None):
     config["graphName"] = graph_name
     config.setdefault("tags", {}).setdefault("agent", _PROJECT_IDENTIFIER)
 
+    _log_connectivity_hint(config)
     return config
 
 
@@ -808,6 +825,7 @@ def _get_create_instance_with_import_config(
     config["roleArn"] = role_arn
     config.setdefault("tags", {}).setdefault("agent", _PROJECT_IDENTIFIER)
 
+    _log_connectivity_hint(config)
     return config
 
 
