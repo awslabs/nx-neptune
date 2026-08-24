@@ -17,7 +17,7 @@ def _assert_managed(graph_name: str | None) -> None:
     than HTTPException because the pipeline runs as a background task where an
     HTTP response cannot be returned.
     """
-    prefix = Settings.from_env().graph_prefix
+    prefix = get_settings().graph_prefix
     if not graph_name or not graph_name.startswith(prefix):
         raise RuntimeError(
             f"Refusing to reset graph '{graph_name or ''}': not managed by this tool "
