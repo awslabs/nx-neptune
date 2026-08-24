@@ -913,6 +913,67 @@ async def test_delete_na_instance_success(mock_boto3_client):
     assert result == "test-123"
 
 
+def test_delete_clears_deletion_protection_before_delete():
+    """The teardown path must clear deletion protection (update_graph) before
+    delete_graph, otherwise Neptune rejects deleting a protected graph."""
+    from nx_neptune.instance_management import _delete_na_instance_task
+
+    client = MagicMock()
+    manager = MagicMock()
+    manager.attach_mock(client.update_graph, "update_graph")
+    manager.attach_mock(client.delete_graph, "delete_graph")
+
+    _delete_na_instance_task(client, "g-123")
+
+    client.update_graph.assert_called_once_with(
+        graphIdentifier="g-123", deletionProtection=False
+    )
+    client.delete_graph.assert_called_once_with(
+        graphIdentifier="g-123", skipSnapshot=True
+    )
+    # update_graph must come before delete_graph
+    order = [c[0] for c in manager.mock_calls]
+    assert order.index("update_graph") < order.index("delete_graph")
+
+
+def test_delete_proceeds_when_clearing_protection_fails():
+    """If clearing deletion protection errors (e.g. already unprotected), the
+    delete the caller asked for still proceeds."""
+    from nx_neptune.instance_management import _delete_na_instance_task
+
+    client = MagicMock()
+    client.update_graph.side_effect = ClientError(
+        error_response={"Error": {"Code": "ValidationException"}},
+        operation_name="UpdateGraph",
+    )
+
+    _delete_na_instance_task(client, "g-123")
+
+    client.delete_graph.assert_called_once_with(
+        graphIdentifier="g-123", skipSnapshot=True
+    )
+
+
+def test_private_graph_logs_connectivity_hint(caplog, monkeypatch):
+    """A private (default) graph logs a hint pointing at the opt-in env var."""
+    from nx_neptune.instance_management import _get_create_instance_config
+
+    monkeypatch.delenv("NETWORKX_PUBLIC_CONNECTIVITY", raising=False)
+    with caplog.at_level("INFO", logger="nx_neptune.instance_management"):
+        _get_create_instance_config("test")
+    assert "NETWORKX_PUBLIC_CONNECTIVITY=true" in caplog.text
+
+
+def test_public_graph_does_not_log_connectivity_hint(caplog, monkeypatch):
+    """A public graph (opt-in) does not emit the private-connectivity hint."""
+    from nx_neptune.instance_management import _get_create_instance_config
+
+    monkeypatch.setenv("NETWORKX_PUBLIC_CONNECTIVITY", "true")
+    with caplog.at_level("INFO", logger="nx_neptune.instance_management"):
+        _get_create_instance_config("test")
+    assert "publicConnectivity=false" not in caplog.text
+
+
 @pytest.mark.asyncio
 @patch("boto3.client")
 async def test_delete_na_instance_insufficient_permissions(mock_boto3_client):
@@ -950,13 +1011,16 @@ async def test_delete_na_instance_failure(mock_boto3_client):
 
 
 @pytest.mark.asyncio
-async def test_create_graph_config_base():
+async def test_create_graph_config_base(monkeypatch):
+    # Assert the secure defaults independent of the developer's environment.
+    monkeypatch.delenv("NETWORKX_PUBLIC_CONNECTIVITY", raising=False)
+    monkeypatch.delenv("NETWORKX_DELETION_PROTECTION", raising=False)
     result = _get_create_instance_config("test")
     expected = {
         "graphName": "test",
-        "publicConnectivity": True,
+        "publicConnectivity": False,
         "replicaCount": 0,
-        "deletionProtection": False,
+        "deletionProtection": True,
         "provisionedMemory": 16,
         "tags": {"agent": "nx-neptune"},
     }
@@ -964,7 +1028,10 @@ async def test_create_graph_config_base():
 
 
 @pytest.mark.asyncio
-async def test_create_graph_config_custom_parameters():
+async def test_create_graph_config_custom_parameters(monkeypatch):
+    # Assert the secure defaults independent of the developer's environment.
+    monkeypatch.delenv("NETWORKX_PUBLIC_CONNECTIVITY", raising=False)
+    monkeypatch.delenv("NETWORKX_DELETION_PROTECTION", raising=False)
     # Unrelated parameters will be discarded.
     config = {
         "custom_parameter": 123,
@@ -974,9 +1041,9 @@ async def test_create_graph_config_custom_parameters():
     result = _get_create_instance_config("test", config)
     expected = {
         "graphName": "test",
-        "publicConnectivity": True,
+        "publicConnectivity": False,
         "replicaCount": 0,
-        "deletionProtection": False,
+        "deletionProtection": True,
         "provisionedMemory": 16,
         "tags": {"agent": "nx-neptune"},
         "custom_parameter": 123,
@@ -1006,6 +1073,39 @@ async def test_create_graph_config_override_default_options():
         "tags": {"agent": "nx-neptune", "additional_tag": "test_value"},
     }
     assert expected == result
+
+
+@pytest.mark.asyncio
+async def test_create_graph_config_env_override(monkeypatch):
+    # Env vars flip the secure defaults when no explicit config is given.
+    monkeypatch.setenv("NETWORKX_PUBLIC_CONNECTIVITY", "true")
+    monkeypatch.setenv("NETWORKX_DELETION_PROTECTION", "false")
+    result = _get_create_instance_config("test")
+    assert result["publicConnectivity"] is True
+    assert result["deletionProtection"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_graph_config_explicit_beats_env(monkeypatch):
+    # Explicit config always wins over env vars.
+    monkeypatch.setenv("NETWORKX_PUBLIC_CONNECTIVITY", "true")
+    monkeypatch.setenv("NETWORKX_DELETION_PROTECTION", "false")
+    result = _get_create_instance_config(
+        "test", {"publicConnectivity": False, "deletionProtection": True}
+    )
+    assert result["publicConnectivity"] is False
+    assert result["deletionProtection"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_graph_config_unrecognized_env_keeps_secure(monkeypatch):
+    # A typo / unrecognized value must land on the secure side for both:
+    # public stays private, deletion stays protected.
+    monkeypatch.setenv("NETWORKX_PUBLIC_CONNECTIVITY", "yes")
+    monkeypatch.setenv("NETWORKX_DELETION_PROTECTION", "ture")
+    result = _get_create_instance_config("test")
+    assert result["publicConnectivity"] is False
+    assert result["deletionProtection"] is True
 
 
 @pytest.mark.asyncio
@@ -1240,10 +1340,13 @@ async def test_create_na_instance_with_s3_import_success(
     assert task_id == "test-task-id"
 
 
-def test_get_create_instance_with_import_config():
+def test_get_create_instance_with_import_config(monkeypatch):
     """Test _get_create_instance_with_import_config function."""
     from nx_neptune.instance_management import _get_create_instance_with_import_config
 
+    # Assert the secure defaults independent of the developer's environment.
+    monkeypatch.delenv("NETWORKX_PUBLIC_CONNECTIVITY", raising=False)
+    monkeypatch.delenv("NETWORKX_DELETION_PROTECTION", raising=False)
     result = _get_create_instance_with_import_config(
         "test-graph",
         "s3://test-bucket/data",
@@ -1254,7 +1357,8 @@ def test_get_create_instance_with_import_config():
     assert result["source"] == "s3://test-bucket/data"
     assert result["roleArn"] == "arn:aws:iam::123456789012:role/test-role"
     assert result["format"] == "CSV"
-    assert result["publicConnectivity"] is True
+    assert result["publicConnectivity"] is False
+    assert result["deletionProtection"] is True
     assert result["tags"]["agent"] == "nx-neptune"
 
 
