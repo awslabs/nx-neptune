@@ -208,7 +208,7 @@ environment, or a SageMaker notebook configured for that VPC — with a
 [Neptune Analytics private endpoint](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/vpc.html)
 reachable from the client's subnet and security group.
 
-### Working from a laptop (public connectivity)
+### Connecting to a public graph (local development)
 
 If you are developing locally and connecting directly to the graph from your
 machine, opt into a public endpoint and (optionally) relax deletion protection:
