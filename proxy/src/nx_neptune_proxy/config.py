@@ -47,8 +47,11 @@ class Settings:
             else []
         )
         trusted_hosts_raw = os.environ.get("TRUSTED_HOSTS", "")
+        # Hostnames are case-insensitive; normalize to lowercase so a
+        # mixed-case TRUSTED_HOSTS value (e.g. "Example.COM") matches the
+        # conventionally lowercase Host/Origin a client sends.
         extra_trusted = frozenset(
-            h.strip() for h in trusted_hosts_raw.split(",") if h.strip()
+            h.strip().lower() for h in trusted_hosts_raw.split(",") if h.strip()
         )
         allow_raw = os.environ.get("ALLOW_NON_LOOPBACK_BIND", "")
         return cls(

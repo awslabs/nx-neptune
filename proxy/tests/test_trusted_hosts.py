@@ -32,6 +32,15 @@ class TestTrustedHosts:
             "foo.local",
         }
 
+    def test_from_env_lowercases_trusted_hosts(self, monkeypatch):
+        """Hostnames are case-insensitive; a mixed-case TRUSTED_HOSTS entry is
+        normalized to lowercase so it matches the lowercase Host/Origin a
+        client sends."""
+        monkeypatch.setenv("TRUSTED_HOSTS", "Example.COM, Foo.Local")
+        settings = Settings.from_env()
+        assert settings.extra_trusted_hosts == {"example.com", "foo.local"}
+        assert "example.com" in settings.trusted_hosts
+
     def test_independent_of_cors_allowed_origins(self, monkeypatch):
         """trusted_hosts must not be affected by CORS_ALLOWED_ORIGINS in
         either direction — the two lists are unrelated."""
