@@ -17,7 +17,13 @@ from cymple import QueryBuilder
 
 from . import PARAM_MAX_DEPTH
 from .na_models import Edge, ImmutableEdgeGroupBy, Node
-from .neptune_constants import RESPONSE_SUCCESS
+from .neptune_constants import (
+    ALGO_PARAM_ENUM_VALUES,
+    ALGO_PARAM_IDENTIFIER_KEYS,
+    ALGO_PARAM_LIST_KEYS,
+    ALLOWED_ALGO_PARAM_KEYS,
+    RESPONSE_SUCCESS,
+)
 
 # Internal constants for reference names
 _SRC_NODE_REF = "a"
@@ -68,26 +74,151 @@ __all__ = [
 ]
 
 
+def _truncate_for_error(value: Any, limit: int = 40) -> str:
+    """Return a repr of ``value`` safe to embed in an error message.
+
+    Validation errors can carry attacker-supplied input; reflecting the whole
+    value verbatim into exceptions/logs is undesirable. Truncate long values so
+    the message stays useful for debugging without echoing an unbounded payload.
+    """
+    text = repr(value)
+    if len(text) > limit:
+        return text[:limit] + "…"
+    return text
+
+
+def _escape_labels(labels) -> list:
+    """Backtick-escape a list of node/edge labels.
+
+    Labels are interpolated into queries with escape=False (or directly into
+    f-strings), so each is backtick-quoted here to prevent injection through a
+    caller-supplied label. Returns a new list; accepts None.
+    """
+    if not labels:
+        return labels
+    if isinstance(labels, str):
+        return _escape_identifier(labels)
+    return [_escape_identifier(label) for label in labels]
+
+
+def _escape_identifier(value: str) -> str:
+    """Backtick-quote an openCypher identifier (label / property name).
+
+    openCypher permits almost any character in a backtick-quoted identifier, so
+    rather than matching against a narrow charset (which would reject legitimate
+    Neptune label/property names) we wrap the value in backticks and escape any
+    embedded backtick by doubling it — the openCypher-standard escape. This makes
+    it impossible to break out of the identifier and inject query syntax.
+
+    Example:
+        >>> _escape_identifier("pageRank")
+        '`pageRank`'
+        >>> _escape_identifier('a`) DETACH DELETE n //')
+        '`a``) DETACH DELETE n //`'
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"Expected a string identifier, got {type(value).__name__}")
+    return "`" + value.replace("`", "``") + "`"
+
+
+def _escape_string_literal(value: str) -> str:
+    """Encode a string as a double-quoted openCypher string literal.
+
+    Backslashes and double quotes are escaped so the value cannot terminate the
+    literal and inject query syntax. Used for list elements (e.g. edge labels).
+    """
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _render_list_element(value: Any) -> str:
+    """Render one element of a list-valued algorithm parameter safely."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return _escape_string_literal(value)
+    raise ValueError(f"Unsupported list element type: {type(value).__name__}")
+
+
+def _render_parameter_value(key: str, value: Any) -> str:
+    """Validate and safely encode a single algorithm parameter value.
+
+    Fail closed (raise ValueError) for closed-domain values (enums, numeric
+    types, wrong types); backtick-escape open-domain identifier values; and
+    encode list elements individually. This is the choke point that prevents
+    openCypher injection through algorithm parameters.
+    """
+    # Enum-valued string parameters: must be one of the documented values.
+    if key in ALGO_PARAM_ENUM_VALUES:
+        allowed = ALGO_PARAM_ENUM_VALUES[key]
+        if value not in allowed:
+            raise ValueError(
+                f"Invalid value {_truncate_for_error(value)} for parameter "
+                f"{key!r}; expected one of {sorted(allowed)}"
+            )
+        return _escape_string_literal(value)
+
+    # Identifier-valued string parameters (label / property names). Inside a
+    # neptune.algo.* config map these are passed as string VALUES, so they must
+    # be double-quoted string literals (backticks would be parsed as an
+    # undefined variable reference). Escaping the quote/backslash prevents the
+    # value from terminating the literal and injecting query syntax.
+    if key in ALGO_PARAM_IDENTIFIER_KEYS:
+        if not isinstance(value, str):
+            raise ValueError(
+                f"Parameter {key!r} must be a string, got {type(value).__name__}"
+            )
+        return _escape_string_literal(value)
+
+    # List-valued parameters: encode each element.
+    if key in ALGO_PARAM_LIST_KEYS:
+        if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+            raise ValueError(
+                f"Parameter {key!r} must be a list, got {type(value).__name__}"
+            )
+        return "[" + ", ".join(_render_list_element(v) for v in value) + "]"
+
+    # Everything else is expected to be numeric or boolean. Reject strings and
+    # other types so a value can never carry query syntax.
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+
+    raise ValueError(
+        f"Invalid value {_truncate_for_error(value)} for parameter "
+        f"{key!r}: expected a numeric value"
+    )
+
+
 def _to_parameter_list(parameters: Dict[str, Any]) -> str:
     """
     Convert a dictionary of parameters to a formatted parameter string for OpenCypher queries.
+
+    Each key is validated against the allowlist of known algorithm parameters and
+    each value is validated/encoded by type (see _render_parameter_value), so that
+    labels, property keys, and parameter values cannot inject openCypher syntax.
+    Unknown keys or values that fail validation raise ValueError (fail closed).
 
     :param parameters: Dictionary of algorithm parameters
     :return: Formatted parameter string for inclusion in OpenCypher query
 
     Example:
-        >>> _to_parameter_list({'dampingFactor': 0.9, 'maxIterations': 50})
-        'dampingFactor:0.9, maxIterations:50'
+        >>> _to_parameter_list({'dampingFactor': 0.9, 'numOfIterations': 50})
+        'dampingFactor:0.9, numOfIterations:50'
     """
     if not parameters:
         return ""
 
-    return ", ".join(
-        [
-            f'{key}:"{value}"' if isinstance(value, str) else f"{key}:{value}"
-            for key, value in parameters.items()
-        ]
-    )
+    rendered = []
+    for key, value in parameters.items():
+        if key not in ALLOWED_ALGO_PARAM_KEYS:
+            raise ValueError(f"Unknown algorithm parameter: {key!r}")
+        rendered.append(f"{key}:{_render_parameter_value(key, value)}")
+
+    return ", ".join(rendered)
 
 
 class ParameterMapBuilder:
@@ -225,7 +356,7 @@ def insert_node(node: Node) -> Tuple[str, Dict[str, Any]]:
         QueryBuilder()
         .create()
         .node(
-            labels=node.labels,
+            labels=_escape_labels(node.labels),
             properties=masked_properties,
             escape=False,
         )
@@ -283,14 +414,14 @@ def insert_edge(edge: Edge) -> Tuple[str, Dict[str, Any]]:
     qb = qb.merge().node(ref_name=_SRC_NODE_REF)
     if edge.is_directed:
         qb = qb.related_to(
-            label=edge.label,
+            label=_escape_identifier(edge.label),
             ref_name=_RELATION_REF,
             properties=masked_properties,
             escape=False,
         ).node(ref_name=_DEST_NODE_REF)
     else:
         qb = qb.related(
-            label=edge.label,
+            label=_escape_identifier(edge.label),
             ref_name=_RELATION_REF,
             properties=masked_properties,
             escape=False,
@@ -302,12 +433,12 @@ def insert_edge(edge: Edge) -> Tuple[str, Dict[str, Any]]:
 def get_edge_batch_query_str(group_by_key: ImmutableEdgeGroupBy):
     # TODO: Replace with cymple when it provide wider support of UNWIND.
     src_labels = (
-        ":" + ":".join(group_by_key.labels_src_node)
+        ":" + ":".join(_escape_labels(group_by_key.labels_src_node))
         if group_by_key.labels_src_node
         else ""
     )
     dest_labels = (
-        ":" + ":".join(group_by_key.labels_dest_node)
+        ":" + ":".join(_escape_labels(group_by_key.labels_dest_node))
         if group_by_key.labels_dest_node
         else ""
     )
@@ -315,19 +446,19 @@ def get_edge_batch_query_str(group_by_key: ImmutableEdgeGroupBy):
     if group_by_key.directed:
         return (
             f"UNWIND $relations AS rel MATCH (a{src_labels} {{`~id`: rel.from}}), (b{dest_labels} {{`~id`: rel.to}}) "
-            f"CREATE (a)-[r:{group_by_key.label}]->(b) SET r += rel.properties"
+            f"CREATE (a)-[r:{_escape_identifier(group_by_key.label)}]->(b) SET r += rel.properties"
         )
     else:
         return (
             f"UNWIND $relations AS rel MATCH (a{src_labels} {{`~id`: rel.from}}), (b{dest_labels} {{`~id`: rel.to}}) "
-            f"CREATE (a)-[r1:{group_by_key.label}]->(b), (b)-[r2:{group_by_key.label}]->(a)"
+            f"CREATE (a)-[r1:{_escape_identifier(group_by_key.label)}]->(b), (b)-[r2:{_escape_identifier(group_by_key.label)}]->(a)"
             f"SET r1 += rel.properties, r2 += rel.properties"
         )
 
 
 def get_node_batch_query_str(labels_tuple):
     # TODO: Replace with cymple when it provide wider support of UNWIND.
-    labels = ":" + ":".join(labels_tuple) if labels_tuple else ""
+    labels = ":" + ":".join(_escape_labels(labels_tuple)) if labels_tuple else ""
 
     return f"UNWIND $nodes as node CREATE (n{labels} {{`~id`: node.id}}) SET n += node"
 
@@ -384,7 +515,7 @@ def update_node(
     return (
         QueryBuilder()
         .match()
-        .node(labels=match_labels, ref_name=ref_name)
+        .node(labels=_escape_labels(match_labels), ref_name=ref_name, escape=False)
         .where_literal(literal_where_clause)
         .set(masked_properties_set, escape_values=False)
         .query
@@ -426,9 +557,9 @@ def update_edge(
     qb = QueryBuilder().match()
     qb = _append_node(qb, param_builder, edge.node_src, ref_name_src)
     if edge.is_directed:
-        qb = qb.related_to(label=edge.label, ref_name=ref_name_edge)
+        qb = qb.related_to(label=_escape_identifier(edge.label), ref_name=ref_name_edge)
     else:
-        qb = qb.relates(label=edge.label, ref_name=ref_name_edge)
+        qb = qb.relates(label=_escape_identifier(edge.label), ref_name=ref_name_edge)
     qb = _append_node(qb, param_builder, edge.node_dest, ref_name_des)
 
     masked_where_filters = param_builder.read_map(where_filters)
@@ -482,9 +613,9 @@ def delete_edge(edge: Edge) -> Tuple[str, Dict[str, Any]]:
     qb = QueryBuilder().match()
     qb = _append_node(qb, param_builder, edge.node_src, _SRC_NODE_REF)
     if edge.is_directed:
-        qb = qb.related_to(label=edge.label, ref_name=_RELATION_REF)
+        qb = qb.related_to(label=_escape_identifier(edge.label), ref_name=_RELATION_REF)
     else:
-        qb = qb.relates(label=edge.label, ref_name=_RELATION_REF)
+        qb = qb.relates(label=_escape_identifier(edge.label), ref_name=_RELATION_REF)
     qb = _append_node(qb, param_builder, edge.node_dest, _DEST_NODE_REF)
     qb = qb.delete(ref_name=_RELATION_REF)
 
@@ -1090,7 +1221,7 @@ def _append_node(
     # Append the node to the query builder
     query_builder = query_builder.node(
         ref_name=ref_name,
-        labels=node.labels,
+        labels=_escape_labels(node.labels),
         properties=masked_properties,
         escape=False,
     )
@@ -1110,7 +1241,7 @@ def _get_nodes_in_list(source_nodes: list[str]):
     nodes = [source_nodes] if isinstance(source_nodes, str) else source_nodes
     for node_id in nodes:
         if not _NODE_ID_RE.match(str(node_id)):
-            raise ValueError(f"Invalid node ID: {node_id!r}")
+            raise ValueError(f"Invalid node ID: {_truncate_for_error(node_id)}")
     return "[" + ",".join(f"'{s}'" for s in nodes) + "]"
 
 
