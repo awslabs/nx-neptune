@@ -6,6 +6,7 @@ ui:               ## Build frontend into ui/ directory.
 	cd ui-src && npm install && npm run build
 
 dev:              ## Run with auto-reload for development.
+	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
 	uvicorn nx_neptune_proxy.app:app --reload --host 127.0.0.1 --port 8080
 
 install:          ## Install proxy in editable mode with test deps.
@@ -25,6 +26,8 @@ run:              ## Run container with AWS credentials from environment.
 		-e AWS_DEFAULT_REGION \
 		-e CORS_ALLOWED_ORIGINS \
 		-e LOG_LEVEL \
+		-e NETWORKX_PUBLIC_CONNECTIVITY=true \
+		-e NETWORKX_DELETION_PROTECTION=false \
 		nx-neptune-proxy
 
 stop:             ## Stop running container.
@@ -35,6 +38,7 @@ clean:            ## Remove container and image.
 	@$(RUNTIME) rmi nx-neptune-proxy 2>/dev/null || true
 
 up:               ## Start proxy + Graph Explorer with compose.
+	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
 	$(RUNTIME) compose up --build --force-recreate -d
 
 up-ge:            ## Start only Graph Explorer.
