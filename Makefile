@@ -68,6 +68,17 @@ lint:             ## Run flake8, black, mypy linters.
 	$(ENV_PREFIX)black --check tests/
 	$(ENV_PREFIX)mypy --ignore-missing-imports nx_neptune/ nx_plugin/
 
+.PHONY: proxy-fmt
+proxy-fmt:        ## Format proxy module using black & isort.
+	$(ENV_PREFIX)isort proxy/src/ proxy/tests/
+	$(ENV_PREFIX)black proxy/src/ proxy/tests/
+
+.PHONY: proxy-lint
+proxy-lint:       ## Run flake8, black, mypy linters on the proxy module.
+	$(ENV_PREFIX)flake8 proxy/src/ proxy/tests/
+	$(ENV_PREFIX)black --check proxy/src/ proxy/tests/
+	$(ENV_PREFIX)mypy --ignore-missing-imports proxy/src/
+
 .PHONY: test
 test: lint        ## Run tests and generate coverage report.
 	$(ENV_PREFIX)pytest -v --cov-config=.coveragerc --cov=nx_neptune -l --tb=short --maxfail=1 --cov-fail-under=80 tests/
