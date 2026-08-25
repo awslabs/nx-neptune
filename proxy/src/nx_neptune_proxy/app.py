@@ -44,6 +44,21 @@ logger = logging.getLogger("nx_neptune_proxy")
 
 app = FastAPI(title="nx-neptune-proxy", version="0.1.0", docs_url=None, redoc_url=None)
 
+# --- Middleware ordering ---
+#
+# Starlette runs the LAST-registered middleware first (each registration wraps
+# the previous ones), so the registrations below produce this execution order,
+# outermost first:
+#
+#   csrf_protection -> origin_validation -> (logging) -> CORS -> TrustedHost
+#
+# TrustedHost is intentionally innermost: the Host check still applies to every
+# request that reaches the app, including CORS preflight OPTIONS. A request with
+# an untrusted Host is rejected with 400 regardless of method (verified for GET
+# and OPTIONS) — the preflight is not short-circuited past the Host check.
+# csrf/origin checks run first so cross-origin and CSRF-style requests are
+# rejected before any CORS handling.
+
 # --- TrustedHost middleware (blocks DNS rebinding) ---
 #
 # TODO: IPv6 is not supported until starlette#3471 is fixed
