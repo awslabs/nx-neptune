@@ -41,14 +41,14 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         origins_raw = os.environ.get("CORS_ALLOWED_ORIGINS", "")
-        trusted_hosts_raw = os.environ.get("TRUSTED_HOSTS", "")
-        extra_trusted = frozenset(
-            h.strip() for h in trusted_hosts_raw.split(",") if h.strip()
-        )
         origins = (
             [o.strip() for o in origins_raw.split(",") if o.strip()]
             if origins_raw
             else []
+        )
+        trusted_hosts_raw = os.environ.get("TRUSTED_HOSTS", "")
+        extra_trusted = frozenset(
+            h.strip() for h in trusted_hosts_raw.split(",") if h.strip()
         )
         allow_raw = os.environ.get("ALLOW_NON_LOOPBACK_BIND", "")
         return cls(
