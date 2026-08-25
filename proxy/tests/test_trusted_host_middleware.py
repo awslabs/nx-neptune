@@ -85,3 +85,80 @@ class TestIpv6ExclusionScope:
             headers={"Host": "localhost", "Origin": "http://[::1]:8080"},
         )
         assert resp.status_code == 200
+
+
+class TestHostHeaderEdgeCases:
+    """Edge cases for the Host header check.
+
+    These lock in the current behavior. Note that Starlette's
+    TrustedHostMiddleware compares the incoming Host against allowed_hosts
+    case-sensitively (it does not lowercase the header), so a Host that
+    differs only in case is rejected. Matching is exact, not substring, so
+    hostnames that merely share a prefix or suffix with a trusted host are
+    also rejected.
+    """
+
+    @pytest.mark.asyncio
+    async def test_uppercase_host_rejected(self, client):
+        """Host matching is case-sensitive: an upper/mixed-case variant of a
+        trusted host does not match the (lowercase) allowlist and is
+        rejected."""
+        resp = await client.get("/health", headers={"Host": "LOCALHOST:8080"})
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_mixed_case_host_rejected(self, client):
+        resp = await client.get("/health", headers={"Host": "LoCalHost"})
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_empty_host_rejected(self, client):
+        """An empty Host value is not on the allowlist and is rejected."""
+        resp = await client.get("/health", headers={"Host": ""})
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_whitespace_host_rejected(self, client):
+        """A whitespace-only Host is not trimmed into a trusted value; it is
+        rejected."""
+        resp = await client.get("/health", headers={"Host": "   "})
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_suffix_confusion_host_rejected(self, client):
+        """A host that has a trusted name as a *prefix* label
+        (localhost.attacker.com) must not be accepted — matching is exact,
+        not substring/suffix."""
+        resp = await client.get("/health", headers={"Host": "localhost.attacker.com"})
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_prefix_confusion_host_rejected(self, client):
+        """A host that ends with a trusted name (attacker.com.localhost) must
+        not be accepted either."""
+        resp = await client.get("/health", headers={"Host": "attacker.com.localhost"})
+        assert resp.status_code == 400
+
+
+class TestHostCheckCoversCatchAllRoute:
+    """The Host check must guard every route, not just /health — including
+    the SPA catch-all (GET /{path:path}), which is the most exposed surface.
+    """
+
+    @pytest.mark.asyncio
+    async def test_catch_all_root_allowed_with_trusted_host(self, client):
+        resp = await client.get("/", headers={"Host": "localhost"})
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_catch_all_root_rejected_with_untrusted_host(self, client):
+        resp = await client.get("/", headers={"Host": "attacker-controlled.com"})
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_catch_all_spa_route_rejected_with_untrusted_host(self, client):
+        """An arbitrary deep SPA path is still subject to the Host check."""
+        resp = await client.get(
+            "/some/spa/route", headers={"Host": "attacker-controlled.com"}
+        )
+        assert resp.status_code == 400
