@@ -53,9 +53,9 @@ class TestNoSecretsInDb:
         full_content = " ".join(all_values)
 
         for pattern in self.SENSITIVE_PATTERNS:
-            assert pattern.lower() not in full_content, (
-                f"Sensitive pattern '{pattern}' found in SQLite data"
-            )
+            assert (
+                pattern.lower() not in full_content
+            ), f"Sensitive pattern '{pattern}' found in SQLite data"
 
     def test_no_secrets_after_update_with_error(self):
         """Error messages stored in DB should not contain credentials."""
@@ -74,6 +74,6 @@ class TestNoSecretsInDb:
 
         error_text = row["error"].lower()
         for pattern in self.SENSITIVE_PATTERNS:
-            assert pattern.lower() not in error_text, (
-                f"Sensitive pattern '{pattern}' found in error message"
-            )
+            assert (
+                pattern.lower() not in error_text
+            ), f"Sensitive pattern '{pattern}' found in error message"

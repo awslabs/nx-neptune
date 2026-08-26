@@ -33,7 +33,9 @@ class ProjectStore:
 
     def get(self, project_id: str) -> Optional[Project]:
         conn = get_connection()
-        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM projects WHERE id = ?", (project_id,)
+        ).fetchone()
         conn.close()
         return self._row_to_project(row) if row else None
 
