@@ -35,6 +35,10 @@ class TestPathTraversal:
             "root_path": "",
             "query_string": b"",
             "headers": [(b"host", b"test")],
+            # A real request always has a client peer; the client_ip_guard
+            # rejects requests without a loopback client. Set loopback here so
+            # this scope represents a legitimate local request.
+            "client": ("127.0.0.1", 12345),
         }
         status = None
         body_parts = []
