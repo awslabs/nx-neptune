@@ -11,6 +11,15 @@ class TestTrustedHosts:
         settings = Settings()
         assert settings.trusted_hosts == {"127.0.0.1", "::1", "localhost"}
 
+    def test_extra_trusted_hosts_is_additive(self):
+        settings = Settings(extra_trusted_hosts=frozenset({"example.com"}))
+        assert settings.trusted_hosts == {
+            "127.0.0.1",
+            "::1",
+            "localhost",
+            "example.com",
+        }
+
     def test_trusted_hosts_can_be_constructed_directly(self):
         settings = Settings(
             trusted_hosts=frozenset({"127.0.0.1", "::1", "localhost", "example.com"})
@@ -42,6 +51,10 @@ class TestTrustedHosts:
         assert settings.trusted_hosts == {"127.0.0.1", "::1", "localhost"}
         assert settings.allowed_origins == ["https://example.com:888"]
 
+    def test_allowed_origins_still_defaults_to_empty(self):
+        """Unchanged pre-existing behaviour: no fallback/derivation."""
+        settings = Settings()
+        assert settings.allowed_origins == []
 
     def test_trusted_hosts_derived_from_origins(self, monkeypatch):
         """The Host allowlist derives its hostnames from the configured
