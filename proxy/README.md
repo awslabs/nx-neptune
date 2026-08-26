@@ -56,6 +56,6 @@ cd ui-src && npm run dev
 | Environment Variable | Default | Description |
 |---|---|---|
 | `PORT` | `8080` | Server port |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | Allowed CORS origins (dev) |
+| `CORS_ALLOWED_ORIGINS` | *(none)* | Comma-separated list of allowed browser origins (full `scheme://host[:port]`, e.g. `https://app.example.com`). This is the single source of truth for origins: it drives the CORS response headers, the server-side Origin check, and the hostnames trusted in the `Host` header. Loopback origins are always allowed, so no configuration is needed for local/Docker use. |
 | `LOG_LEVEL` | `info` | Logging level |
 | `NX_NEPTUNE_DB_PATH` | `~/.nx-neptune/proxy.db` | SQLite database path |
