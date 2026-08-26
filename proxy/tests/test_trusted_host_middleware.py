@@ -6,7 +6,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from nx_neptune_proxy.app import app
+from nx_neptune_proxy.app import UI_DIR, app
 
 
 @pytest.fixture
@@ -145,6 +145,10 @@ class TestHostCheckCoversCatchAllRoute:
     the SPA catch-all (GET /{path:path}), which is the most exposed surface.
     """
 
+    @pytest.mark.skipif(
+        not UI_DIR.exists(),
+        reason="ui/ directory not built — run 'make ui' first",
+    )
     @pytest.mark.asyncio
     async def test_catch_all_root_allowed_with_trusted_host(self, client):
         resp = await client.get("/", headers={"Host": "localhost"})
