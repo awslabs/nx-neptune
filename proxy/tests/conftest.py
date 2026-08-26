@@ -5,6 +5,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from nx_neptune_proxy.app import app
+from nx_neptune_proxy.auth import get_token
 from nx_neptune_proxy.services.db import get_connection
 
 
@@ -14,7 +15,10 @@ def client():
     return AsyncClient(
         transport=transport,
         base_url="http://localhost",
-        headers={"X-Requested-With": "nx-neptune"},
+        headers={
+            "X-Requested-With": "nx-neptune",
+            "Authorization": f"Bearer {get_token()}",
+        },
     )
 
 

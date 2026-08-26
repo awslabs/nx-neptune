@@ -9,12 +9,13 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from botocore.exceptions import ClientError
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from nx_neptune_proxy.auth import get_token, log_token_notice, require_token
 from nx_neptune_proxy.config import _LOOPBACK_HOSTS, get_settings, normalize_origin
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
@@ -38,6 +39,17 @@ logging.basicConfig(
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
 logger = logging.getLogger("nx_neptune_proxy")
+
+# --- Proxy access token (per-run bearer token) ---
+# Delivered via the launch URL below, not embedded in any response, so it
+# can't be scraped by reaching the port. In a container stdout hits the log
+# driver, so this URL is log-visible — an accepted tradeoff for a
+# localhost dev tool; the real boundary is the 127.0.0.1 bind + middlewares.
+print(
+    f"\nOpen the proxy UI (token valid for this run only):\n"
+    f"  http://127.0.0.1:{settings.port}/?token={get_token()}\n"
+)
+log_token_notice()
 
 
 # --- App ---
@@ -221,12 +233,12 @@ def info():
     return {"name": "nx-neptune-proxy", "version": "0.1.0"}
 
 
-# --- Routers ---
+# --- Routers (all /api/* routes require the per-run bearer token) ---
 
-app.include_router(metadata_router)
-app.include_router(projection_router)
-app.include_router(project_router)
-app.include_router(graph_router)
+app.include_router(metadata_router, dependencies=[Depends(require_token)])
+app.include_router(projection_router, dependencies=[Depends(require_token)])
+app.include_router(project_router, dependencies=[Depends(require_token)])
+app.include_router(graph_router, dependencies=[Depends(require_token)])
 
 
 # --- Startup: resume stuck deletions ---
@@ -276,6 +288,9 @@ if UI_DIR.exists():
         except ValueError:
             raise HTTPException(status_code=403)
 
+        # Serve a real file if present, else fall back to index.html (SPA
+        # routing). index.html is served as-is — the token is delivered via
+        # the launch URL, not embedded here, so this leaks nothing.
         if file_path.is_file():
             return FileResponse(file_path)
         return FileResponse(ui_root / "index.html")
