@@ -1,8 +1,35 @@
 const BASE = "/api/v0";
 
+// The proxy delivers this run's token via the launch URL's query string
+// (e.g. http://127.0.0.1:8080/?token=...). We read it once at module load,
+// strip it from the address bar (so it doesn't linger in history/referer),
+// and keep it in memory only — no cookie, no localStorage/sessionStorage.
+//
+// Consequences (intentional): in-app navigation keeps the token (the JS
+// runtime and this module variable persist); a full page reload clears it,
+// after which the operator must reopen the launch URL.
+const PROXY_TOKEN = (() => {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("token");
+  if (token) {
+    // Remove ?token=... from the URL without reloading the page.
+    params.delete("token");
+    const query = params.toString();
+    const newUrl =
+      window.location.pathname +
+      (query ? `?${query}` : "") +
+      window.location.hash;
+    window.history.replaceState(window.history.state, "", newUrl);
+  }
+  return token;
+})();
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set("X-Requested-With", "nx-neptune");
+  if (PROXY_TOKEN) {
+    headers.set("Authorization", `Bearer ${PROXY_TOKEN}`);
+  }
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
