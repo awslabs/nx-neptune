@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from nx_neptune_proxy.config import _LOOPBACK_HOSTS, get_settings
+from nx_neptune_proxy.config import _LOOPBACK_HOSTS, get_settings, normalize_origin
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
 from nx_neptune_proxy.routers.project import router as project_router
