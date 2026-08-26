@@ -3,6 +3,8 @@
 
 """Per-run bearer token enforcement on /api/* routes."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -51,7 +53,20 @@ class TestTokenRequiredOnApiRoutes:
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_correct_token_accepted_on_other_routers(self):
+    @patch("nx_neptune_proxy.routers.graph.ClientFactory")
+    async def test_correct_token_accepted_on_other_routers(self, mock_cf):
+        # Mock the Neptune client so the actions handler doesn't build a real
+        # boto client (which fails with NoRegionError when no AWS region is
+        # configured, e.g. in CI). This test only checks that auth lets the
+        # request reach the handler, not the AWS call itself. Mirrors the
+        # ClientFactory patch used throughout test_graph.py.
+        mock_neptune = MagicMock()
+        mock_neptune.get_graph.return_value = {
+            "status": "AVAILABLE",
+            "name": "nxp-test",
+        }
+        mock_cf.return_value.neptune.return_value = mock_neptune
+
         client = _client(
             {"X-Requested-With": "nx-neptune", "Authorization": f"Bearer {get_token()}"}
         )
