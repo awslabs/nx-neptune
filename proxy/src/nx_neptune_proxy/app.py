@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from nx_neptune_proxy.config import get_settings
+from nx_neptune_proxy.config import _LOOPBACK_HOSTS, get_settings
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
 from nx_neptune_proxy.routers.project import router as project_router
@@ -119,6 +119,27 @@ async def request_logging(request: Request, call_next):
     )
     response.headers["x-request-id"] = request_id
     return response
+
+
+# --- Client IP guard (network-level, defense-in-depth) ---
+#
+# Checks the TCP peer address (request.client.host), which a remote client
+# can't forge — unlike the Host/Origin/CORS header checks. Rejects non-loopback
+# clients unless ALLOW_NON_LOOPBACK_BIND is set. Enforced per-request, so it
+# holds however the app was launched (not just via the startup bind guard).
+@app.middleware("http")
+async def client_ip_guard(request: Request, call_next):
+    if not settings.allow_non_loopback_bind:
+        client = request.client.host if request.client else ""
+        if client not in _LOOPBACK_HOSTS:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "non_loopback_client",
+                    "message": "Client address is not loopback",
+                },
+            )
+    return await call_next(request)
 
 
 # --- Error handlers ---

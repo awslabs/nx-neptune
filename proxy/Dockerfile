@@ -7,6 +7,12 @@ COPY proxy/ ./proxy/
 RUN pip install --no-cache-dir ./nx_neptune_src ./proxy && useradd --create-home appuser
 USER appuser
 EXPOSE 8080
+# The container must bind 0.0.0.0 so Docker's published-port forwarding can
+# reach it (container-internal 127.0.0.1 is unreachable from the host). Real
+# network exposure is controlled by how the port is published (see the run
+# target's -p 127.0.0.1:8080:8080). ALLOW_NON_LOOPBACK_BIND acknowledges this
+# deliberate bind so the startup guard permits it.
+ENV HOST=0.0.0.0 ALLOW_NON_LOOPBACK_BIND=1
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
     CMD wget -qO /dev/null http://localhost:8080/health
-CMD ["uvicorn", "nx_neptune_proxy.app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["python", "-m", "nx_neptune_proxy"]
