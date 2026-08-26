@@ -43,9 +43,7 @@ def register_transition(action: str, transition: Transition) -> None:
 def available_actions(current_status: str) -> list[str]:
     """Return action names valid for the given graph status."""
     return [
-        action
-        for action, t in _TRANSITIONS.items()
-        if current_status in t.from_states
+        action for action, t in _TRANSITIONS.items() if current_status in t.from_states
     ]
 
 
@@ -76,9 +74,7 @@ async def execute_transition(
     if not transition:
         raise InvalidTransitionError(f"Unknown action: {action}")
     if current_status not in transition.from_states:
-        raise InvalidTransitionError(
-            f"Cannot {action} graph in {current_status} state"
-        )
+        raise InvalidTransitionError(f"Cannot {action} graph in {current_status} state")
 
     # Track in-flight
     _inflight[graph_id] = {"action": action, "error": None}
@@ -99,7 +95,10 @@ async def execute_transition(
                 logger.info(f"Graph {graph_id} transition {action} complete → {status}")
                 return
 
-            if status and status not in (transition.transient_state, *transition.from_states):
+            if status and status not in (
+                transition.transient_state,
+                *transition.from_states,
+            ):
                 raise TransitionFailed(
                     f"Graph entered unexpected state '{status}' during {action}"
                 )
@@ -116,9 +115,11 @@ async def execute_transition(
 
 class InvalidTransitionError(Exception):
     """Raised when an action is not valid for the current graph state."""
+
     pass
 
 
 class TransitionFailed(Exception):
     """Raised when a transition fails or times out."""
+
     pass

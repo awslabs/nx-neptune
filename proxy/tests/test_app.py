@@ -4,7 +4,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from nx_neptune_proxy.app import app, UI_DIR
+from nx_neptune_proxy.app import UI_DIR, app
 
 
 @pytest.fixture

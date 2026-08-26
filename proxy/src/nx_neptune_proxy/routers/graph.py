@@ -9,18 +9,19 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from nx_neptune.clients.client_factory import ClientFactory
+
+import nx_neptune_proxy.services.graph_ops  # noqa: F401 — registers transitions
+from nx_neptune_proxy.services.graph_state_machine import (
+    InvalidTransitionError,
+    available_actions,
+    clear_inflight,
+    execute_transition,
+    get_inflight,
+)
 from nx_neptune_proxy.utils.aws_helper import (
     assert_managed_graph,
     get_graph_or_exception,
 )
-from nx_neptune_proxy.services.graph_state_machine import (
-    InvalidTransitionError,
-    available_actions,
-    execute_transition,
-    get_inflight,
-    clear_inflight,
-)
-import nx_neptune_proxy.services.graph_ops  # noqa: F401 — registers transitions
 
 logger = logging.getLogger(__name__)
 

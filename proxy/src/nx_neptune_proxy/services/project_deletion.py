@@ -9,8 +9,9 @@ import time
 
 from botocore.exceptions import ClientError
 from nx_neptune.clients.client_factory import ClientFactory
-from nx_neptune_proxy.services.projection_store import store as projection_store
+
 from nx_neptune_proxy.services.project_store import store as project_store
+from nx_neptune_proxy.services.projection_store import store as projection_store
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ async def delete_project(project_id: str) -> None:
     # Delete all graphs in parallel
     graphs_to_delete = [p for p in projections if p.graph_id]
     results = await asyncio.gather(
-        *[_delete_graph(p.graph_id) for p in graphs_to_delete],
+        *[_delete_graph(p.graph_id) for p in graphs_to_delete],  # type: ignore[arg-type]
         return_exceptions=True,
     )
 
@@ -33,7 +34,9 @@ async def delete_project(project_id: str) -> None:
     failed_ids = set()
     for p, result in zip(graphs_to_delete, results):
         if isinstance(result, Exception):
-            logger.warning(f"Failed to delete graph {p.graph_id} for projection {p.id}: {result}")
+            logger.warning(
+                f"Failed to delete graph {p.graph_id} for projection {p.id}: {result}"
+            )
             failed_ids.add(p.id)
 
     for p in projections:
@@ -42,7 +45,10 @@ async def delete_project(project_id: str) -> None:
 
     # Only delete the project if all graphs were cleaned up
     if failed_ids:
-        logger.warning(f"Project {project_id} has {len(failed_ids)} projection(s) with failed graph deletion, keeping project in deleting state")
+        logger.warning(
+            f"Project {project_id} has {len(failed_ids)} projection(s) "
+            "with failed graph deletion, keeping project in deleting state"
+        )
         return
 
     project_store.delete(project_id)

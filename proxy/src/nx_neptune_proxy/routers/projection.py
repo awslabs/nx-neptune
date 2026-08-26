@@ -3,18 +3,23 @@
 
 import asyncio
 import time
-
 from dataclasses import asdict
+
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
-
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune.clients.response_utils import get_query_failure_reason, get_query_state
-from nx_neptune.instance_management import _execute_athena_query, get_athena_query_results
+from nx_neptune.instance_management import (
+    _execute_athena_query,
+    get_athena_query_results,
+)
 from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
-from nx_neptune.validators import check_athena_query, validate_resources, wrap_with_limit
-from nx_neptune_proxy.utils.aws_helper import assert_managed_graph, get_graph_or_exception
-from nx_neptune_proxy.utils.sanitize import sanitize_error_message
+from nx_neptune.validators import (
+    check_athena_query,
+    validate_resources,
+    wrap_with_limit,
+)
+
 from nx_neptune_proxy.routers.schemas import (
     PreviewResponse,
     ProjectionCreate,
@@ -26,6 +31,11 @@ from nx_neptune_proxy.routers.schemas import (
 from nx_neptune_proxy.services.pipeline import run_pipeline
 from nx_neptune_proxy.services.projection_store import store
 from nx_neptune_proxy.utils import unpack_query_results
+from nx_neptune_proxy.utils.aws_helper import (
+    assert_managed_graph,
+    get_graph_or_exception,
+)
+from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 router = APIRouter(prefix="/api/v0/projection", tags=["projection"])
 
@@ -37,7 +47,12 @@ def _get_projection_or_404(projection_id: str):
     return projection
 
 
-@router.post("", summary="Create a new projection", response_model=ProjectionResponse, status_code=201)
+@router.post(
+    "",
+    summary="Create a new projection",
+    response_model=ProjectionResponse,
+    status_code=201,
+)
 def create_projection(body: ProjectionCreate):
     """Create a new projection in draft state."""
     projection = store.create(**body.model_dump())
@@ -50,20 +65,30 @@ def list_projections():
     return [asdict(p) for p in store.list()]
 
 
-@router.get("/{projection_id}", summary="Get projection state", response_model=ProjectionResponse)
+@router.get(
+    "/{projection_id}",
+    summary="Get projection state",
+    response_model=ProjectionResponse,
+)
 def get_projection(projection_id: str):
     """Get full projection state including progress."""
     return asdict(_get_projection_or_404(projection_id))
 
 
-@router.put("/{projection_id}", summary="Update projection", response_model=ProjectionResponse)
+@router.put(
+    "/{projection_id}", summary="Update projection", response_model=ProjectionResponse
+)
 def update_projection(projection_id: str, body: ProjectionUpdate):
     _get_projection_or_404(projection_id)
     projection = store.update(projection_id, **body.model_dump(exclude_unset=True))
-    return asdict(projection)
+    return asdict(projection)  # type: ignore[arg-type]
 
 
-@router.get("/{projection_id}/status", summary="Get pipeline progress", response_model=ProjectionStatus)
+@router.get(
+    "/{projection_id}/status",
+    summary="Get pipeline progress",
+    response_model=ProjectionStatus,
+)
 def get_projection_status(projection_id: str):
     """Get pipeline progress (subset of full state)."""
     p = _get_projection_or_404(projection_id)
@@ -78,19 +103,27 @@ def get_projection_status(projection_id: str):
     }
 
 
-@router.post("/{projection_id}/validate", summary="Validate all resources", response_model=ValidateResponse)
+@router.post(
+    "/{projection_id}/validate",
+    summary="Validate all resources",
+    response_model=ValidateResponse,
+)
 def validate_projection(projection_id: str):
     """Run all validators against the projection's configuration."""
     p = _get_projection_or_404(projection_id)
     checks = validate_resources(
         s3_staging_bucket=p.s3_staging_bucket,
         athena_catalog=p.catalog,
-        athena_database=p.database
+        athena_database=p.database,
     )
     return {"valid": all(c["passed"] for c in checks), "checks": checks}
 
 
-@router.post("/{projection_id}/validate-query", summary="Validate query only", response_model=ValidateResponse)
+@router.post(
+    "/{projection_id}/validate-query",
+    summary="Validate query only",
+    response_model=ValidateResponse,
+)
 def validate_query(projection_id: str):
     """Validate node and edge queries individually"""
     p = _get_projection_or_404(projection_id)
@@ -105,12 +138,18 @@ def validate_query(projection_id: str):
             output_location=p.s3_staging_bucket,
             query_type="edge" if label == "edge_query" else "node",
         )
-        checks.append({"check": label, "passed": result.passed, "message": result.message})
+        checks.append(
+            {"check": label, "passed": result.passed, "message": result.message}
+        )
     valid = all(c["passed"] for c in checks) if checks else False
     return {"valid": valid, "checks": checks}
 
 
-@router.post("/{projection_id}/preview", summary="Preview first N rows", response_model=PreviewResponse)
+@router.post(
+    "/{projection_id}/preview",
+    summary="Preview first N rows",
+    response_model=PreviewResponse,
+)
 async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le=1000)):
     """Run the query with a LIMIT and return preview rows."""
     p = _get_projection_or_404(projection_id)
@@ -119,14 +158,18 @@ async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le
     queries = [q for q in [p.node_query, p.edge_query] if q]
     if not queries and p.sql_query:
         queries = [q.strip() for q in p.sql_query.split(";") if q.strip()]
-    all_results = []
+    all_results: list = []
 
     for q in queries:
         limited = wrap_with_limit(q, limit)
 
-        exec_id = _execute_athena_query(client, limited, p.s3_staging_bucket, catalog=p.catalog, database=p.database)
+        exec_id = _execute_athena_query(
+            client, limited, p.s3_staging_bucket, catalog=p.catalog, database=p.database
+        )
 
-        await wait_until_all_complete([exec_id], TaskType.EXPORT_ATHENA_TABLE, client, polling_interval=5)
+        await wait_until_all_complete(
+            [exec_id], TaskType.EXPORT_ATHENA_TABLE, client, polling_interval=5
+        )
 
         resp = client.get_query_execution(QueryExecutionId=exec_id)
         state = get_query_state(resp)
@@ -139,7 +182,9 @@ async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le
     return {"error": None, "results": all_results}
 
 
-@router.post("/{projection_id}/execute", summary="Start import pipeline", status_code=202)
+@router.post(
+    "/{projection_id}/execute", summary="Start import pipeline", status_code=202
+)
 def execute_projection(projection_id: str, background_tasks: BackgroundTasks):
     """Kick off the full import pipeline as a background task."""
     p = _get_projection_or_404(projection_id)
@@ -154,17 +199,25 @@ def delete_projection(projection_id: str):
     """Permanently remove the projection record from the database."""
     p = _get_projection_or_404(projection_id)
     if p.status == "deleting":
-        raise HTTPException(status_code=409, detail="Graph deletion in progress, cannot purge yet")
+        raise HTTPException(
+            status_code=409, detail="Graph deletion in progress, cannot purge yet"
+        )
     store.delete(projection_id)
     return {"id": p.id, "status": "deleted"}
 
 
-@router.post("/{projection_id}/delete-graph", summary="Delete associated graph and archive projection", status_code=202)
+@router.post(
+    "/{projection_id}/delete-graph",
+    summary="Delete associated graph and archive projection",
+    status_code=202,
+)
 def delete_projection_graph(projection_id: str, background_tasks: BackgroundTasks):
     """Delete the Neptune graph in background, then mark projection as archived."""
     p = _get_projection_or_404(projection_id)
     if not p.graph_id:
-        raise HTTPException(status_code=409, detail="No graph associated with this projection")
+        raise HTTPException(
+            status_code=409, detail="No graph associated with this projection"
+        )
     if p.status == "deleting":
         raise HTTPException(status_code=409, detail="Already deleting")
 
@@ -173,7 +226,12 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
     resp = get_graph_or_exception(client, p.graph_id)
     assert_managed_graph(resp.get("name"))
 
-    store.update(projection_id, status="deleting", step="graph_delete", step_label="Deleting graph")
+    store.update(
+        projection_id,
+        status="deleting",
+        step="graph_delete",
+        step_label="Deleting graph",
+    )
 
     async def _delete_graph():
         client = ClientFactory().neptune()
@@ -181,7 +239,9 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
             client.delete_graph(graphIdentifier=p.graph_id, skipSnapshot=True)
         except ClientError as e:
             if e.response["Error"]["Code"] != "ResourceNotFoundException":
-                store.update(projection_id, status="failed", error=sanitize_error_message(str(e)))
+                store.update(
+                    projection_id, status="failed", error=sanitize_error_message(str(e))
+                )
                 return
         # Poll until gone
         for _ in range(60):
@@ -191,10 +251,21 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
             except ClientError:
                 break
         else:
-            store.update(projection_id, status="failed", error="Timeout waiting for graph deletion")
+            store.update(
+                projection_id,
+                status="failed",
+                error="Timeout waiting for graph deletion",
+            )
             return
-        store.update(projection_id, status="archived", graph_id=None, graph_endpoint=None,
-                     step=None, step_label=None, progress=0)
+        store.update(
+            projection_id,
+            status="archived",
+            graph_id=None,
+            graph_endpoint=None,
+            step=None,
+            step_label=None,
+            progress=0,
+        )
 
     background_tasks.add_task(_delete_graph)
     return {"id": p.id, "status": "deleting"}

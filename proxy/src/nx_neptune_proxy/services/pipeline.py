@@ -31,7 +31,7 @@ async def run_pipeline(projection: Projection) -> None:
     from nx_neptune.session_manager import SessionManager
 
     graph_name = f"{get_settings().graph_prefix}{projection.graph_name}"
-    s3_location = projection.s3_staging_bucket.rstrip("/") + f"/{projection.id}/"
+    s3_location = projection.s3_staging_bucket.rstrip("/") + f"/{projection.id}/"  # type: ignore[union-attr]  # noqa: E501
 
     try:
         store.update(projection.id, status="importing")

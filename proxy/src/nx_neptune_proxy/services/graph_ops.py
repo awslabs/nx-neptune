@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 # --- Actions ---
 
+
 async def _stop_graph(graph_id: str) -> None:
     """Issue stop-graph API call."""
     client = ClientFactory().neptune()
@@ -39,6 +40,7 @@ async def _delete_graph(graph_id: str) -> None:
 
 
 # --- Probe ---
+
 
 async def _poll_graph_status(graph_id: str) -> str | None:
     """Check the current graph status. Returns None if graph is gone (deleted)."""

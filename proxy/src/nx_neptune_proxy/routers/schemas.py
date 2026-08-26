@@ -6,7 +6,6 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-
 # --- graph_name validation ---
 
 # Neptune Analytics graph names in this tool are formed as `{prefix}{graph_name}`.
