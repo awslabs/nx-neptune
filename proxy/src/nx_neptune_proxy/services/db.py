@@ -5,7 +5,9 @@ import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = os.environ.get("NX_NEPTUNE_DB_PATH", str(Path.home() / ".nx-neptune" / "proxy.db"))
+DB_PATH = os.environ.get(
+    "NX_NEPTUNE_DB_PATH", str(Path.home() / ".nx-neptune" / "proxy.db")
+)
 
 
 def get_connection() -> sqlite3.Connection:

@@ -17,13 +17,12 @@ from fastapi.staticfiles import StaticFiles
 from nx_neptune_proxy.config import get_settings
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
-from nx_neptune_proxy.utils.sanitize import sanitize_error_message
-
-from nx_neptune_proxy.routers.projection import router as projection_router
 from nx_neptune_proxy.routers.project import router as project_router
+from nx_neptune_proxy.routers.projection import router as projection_router
 from nx_neptune_proxy.services.db import init_db
-from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.project_deletion import delete_project
+from nx_neptune_proxy.services.project_store import store as project_store
+from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 settings = get_settings()
 
