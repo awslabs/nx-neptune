@@ -10,6 +10,9 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-west-2}
+      # Single source of truth for browser origins: drives CORS, the
+      # server-side Origin check, and the trusted Host hostnames. Loopback
+      # is always allowed; these entries cover the Graph Explorer sidecar.
       - CORS_ALLOWED_ORIGINS=http://localhost:8080,https://localhost:6373
       - LOG_LEVEL=info
       # Pass-through from the host env. If unset, the library applies its secure

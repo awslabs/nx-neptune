@@ -13,8 +13,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from nx_neptune_proxy.config import _LOOPBACK_HOSTS, get_settings
+from nx_neptune_proxy.config import _LOOPBACK_HOSTS, get_settings, normalize_origin
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
 from nx_neptune_proxy.routers.project import router as project_router
@@ -43,6 +44,34 @@ logger = logging.getLogger("nx_neptune_proxy")
 
 app = FastAPI(title="nx-neptune-proxy", version="0.1.0", docs_url=None, redoc_url=None)
 
+# --- Middleware ordering ---
+#
+# Starlette runs the LAST-registered middleware first (each registration wraps
+# the previous ones), so the registrations below produce this execution order,
+# outermost first:
+#
+#   csrf_protection -> origin_validation -> (logging) -> CORS -> TrustedHost
+#
+# TrustedHost is intentionally innermost: the Host check still applies to every
+# request that reaches the app, including CORS preflight OPTIONS. A request with
+# an untrusted Host is rejected with 400 regardless of method (verified for GET
+# and OPTIONS) — the preflight is not short-circuited past the Host check.
+# csrf/origin checks run first so cross-origin and CSRF-style requests are
+# rejected before any CORS handling.
+
+# --- TrustedHost middleware (blocks DNS rebinding) ---
+#
+# TODO: IPv6 is not supported until starlette#3471 is fixed
+# (Starlette can't parse IPv6 Host headers, so any IPv6 entry here is
+# dead code). Re-add "::1" once a fixed release is available. No security
+# leak: all IPv6 hosts are denied in the meantime, not allowed.
+_host_middleware_allowed_hosts = [
+    host
+    for host in settings.trusted_hosts
+    if not host.startswith("[") and ":" not in host
+]
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=_host_middleware_allowed_hosts)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -56,21 +85,22 @@ app.add_middleware(
 
 @app.middleware("http")
 async def origin_validation(request: Request, call_next):
-    """Reject requests with an Origin header not on the allowlist.
+    """Reject requests whose Origin isn't on the allowlist.
 
-    Browsers always send a truthful Origin header on cross-origin requests.
-    This enforces the allowlist server-side, rather than relying on the
-    browser to respect CORS.
+    Browsers always send a truthful Origin header on cross-origin requests,
+    so this enforces the allowlist server-side rather than relying on the
+    browser to respect CORS. Matches the full origin (scheme + host + port)
+    against the same normalized list CORS uses, so the two can't diverge.
+    Loopback origins are always allowed (local development).
     """
     origin = request.headers.get("origin")
     if origin:
-        # Parse origin to extract host (e.g. "http://localhost:8080" -> "localhost")
-        try:
-            parsed = urlparse(origin)
-            host = parsed.hostname or ""
-        except Exception:
-            host = ""
-        if host not in settings.trusted_hosts:
+        normalized = normalize_origin(origin)
+        parsed_host = urlparse(origin).hostname or ""
+        is_loopback = parsed_host in _LOOPBACK_HOSTS
+        if not is_loopback and (
+            normalized is None or normalized not in settings.allowed_origins
+        ):
             return JSONResponse(
                 status_code=403,
                 content={
