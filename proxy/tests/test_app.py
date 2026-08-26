@@ -12,7 +12,7 @@ def client():
     transport = ASGITransport(app=app)
     return AsyncClient(
         transport=transport,
-        base_url="http://test",
+        base_url="http://localhost",
         headers={"X-Requested-With": "nx-neptune"},
     )
 
