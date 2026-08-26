@@ -87,7 +87,7 @@ def _truncate_for_error(value: Any, limit: int = 40) -> str:
     return text
 
 
-def _escape_labels(labels) -> list:
+def _escape_labels(labels) -> list | str:
     """Backtick-escape a list of node/edge labels.
 
     Labels are interpolated into queries with escape=False (or directly into
@@ -451,7 +451,8 @@ def get_edge_batch_query_str(group_by_key: ImmutableEdgeGroupBy):
     else:
         return (
             f"UNWIND $relations AS rel MATCH (a{src_labels} {{`~id`: rel.from}}), (b{dest_labels} {{`~id`: rel.to}}) "
-            f"CREATE (a)-[r1:{_escape_identifier(group_by_key.label)}]->(b), (b)-[r2:{_escape_identifier(group_by_key.label)}]->(a)"
+            f"CREATE (a)-[r1:{_escape_identifier(group_by_key.label)}]->(b), "
+            f"(b)-[r2:{_escape_identifier(group_by_key.label)}]->(a) "
             f"SET r1 += rel.properties, r2 += rel.properties"
         )
 

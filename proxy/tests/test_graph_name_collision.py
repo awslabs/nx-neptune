@@ -21,13 +21,14 @@ import pytest
 from nx_neptune_proxy.services.pipeline import run_pipeline
 from nx_neptune_proxy.services.projection_store import store
 
-
 # --- Schema validation (defense-in-depth) ---
 
 
 class TestGraphNameSchemaValidation:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("bad_name", ["", "a", "ab", "-abc", "has space", "bad!char"])
+    @pytest.mark.parametrize(
+        "bad_name", ["", "a", "ab", "-abc", "has space", "bad!char"]
+    )
     async def test_rejects_invalid_graph_name(self, client, bad_name):
         """Empty, too-short, or illegal graph_name is rejected with 422."""
         resp = await client.post(
@@ -89,7 +90,9 @@ async def test_first_run_never_adopts_existing_graph(mock_sm_cls, mock_cf, clear
 @pytest.mark.asyncio
 @patch("nx_neptune.clients.client_factory.ClientFactory")
 @patch("nx_neptune.session_manager.SessionManager")
-async def test_retry_resets_only_the_recorded_graph_by_id(mock_sm_cls, mock_cf, clear_store):
+async def test_retry_resets_only_the_recorded_graph_by_id(
+    mock_sm_cls, mock_cf, clear_store
+):
     """With a recorded graph_id pointing at a managed AVAILABLE graph, the
     pipeline reuses that exact graph and resets it."""
     projection = _make_projection()
@@ -101,7 +104,9 @@ async def test_retry_resets_only_the_recorded_graph_by_id(mock_sm_cls, mock_cf, 
 
     sm = mock_sm_cls.return_value
     recorded = MagicMock(graph_id="g-mine")
-    recorded.name = "nxp-my-graph"  # .name must be set explicitly (reserved MagicMock kwarg)
+    recorded.name = (
+        "nxp-my-graph"  # .name must be set explicitly (reserved MagicMock kwarg)
+    )
     sm.get_graph.return_value = recorded
     sm.get_or_create_graph = AsyncMock()
     sm.reset_graph = AsyncMock()
@@ -119,7 +124,9 @@ async def test_retry_resets_only_the_recorded_graph_by_id(mock_sm_cls, mock_cf, 
 @pytest.mark.asyncio
 @patch("nx_neptune.clients.client_factory.ClientFactory")
 @patch("nx_neptune.session_manager.SessionManager")
-async def test_recorded_graph_not_managed_fails_without_reset(mock_sm_cls, mock_cf, clear_store):
+async def test_recorded_graph_not_managed_fails_without_reset(
+    mock_sm_cls, mock_cf, clear_store
+):
     """If the recorded graph does not carry the managed prefix, the pipeline
     refuses to reset it and marks the projection failed."""
     projection = _make_projection()

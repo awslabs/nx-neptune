@@ -14,14 +14,18 @@ class TestCsrfProtection:
     @pytest.mark.asyncio
     async def test_post_without_header_rejected(self, bare_client):
         """POST without X-Requested-With must be rejected."""
-        resp = await bare_client.post("/api/v0/projection", json={"database": "test", "graph_name": "g"})
+        resp = await bare_client.post(
+            "/api/v0/projection", json={"database": "test", "graph_name": "g"}
+        )
         assert resp.status_code == 403
         assert resp.json()["error"] == "csrf_rejected"
 
     @pytest.mark.asyncio
     async def test_put_without_header_rejected(self, bare_client):
         """PUT without X-Requested-With must be rejected."""
-        resp = await bare_client.put("/api/v0/projection/fake-id", json={"status": "done"})
+        resp = await bare_client.put(
+            "/api/v0/projection/fake-id", json={"status": "done"}
+        )
         assert resp.status_code == 403
         assert resp.json()["error"] == "csrf_rejected"
 

@@ -19,13 +19,17 @@ router = APIRouter(prefix="/api/v0/project", tags=["project"])
 class ProjectCreate(BaseModel):
     """Request body for creating a new project."""
 
-    name: str = Field(min_length=1, max_length=255, description="Display name for the project")
+    name: str = Field(
+        min_length=1, max_length=255, description="Display name for the project"
+    )
 
 
 class ProjectUpdate(BaseModel):
     """Request body for updating an existing project."""
 
-    name: Optional[str] = Field(default=None, min_length=1, max_length=255, description="New display name")
+    name: Optional[str] = Field(
+        default=None, min_length=1, max_length=255, description="New display name"
+    )
 
 
 class ProjectResponse(BaseModel):

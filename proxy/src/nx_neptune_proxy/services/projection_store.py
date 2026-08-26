@@ -9,9 +9,24 @@ from typing import Optional
 from .db import get_connection
 
 _FIELDS = [
-    "id", "status", "catalog", "database", "sql_query", "node_query", "edge_query",
-    "graph_name", "graph_memory_gb", "s3_staging_bucket", "graph_id", "graph_endpoint",
-    "project_id", "step", "step_label", "progress", "error", "created_at",
+    "id",
+    "status",
+    "catalog",
+    "database",
+    "sql_query",
+    "node_query",
+    "edge_query",
+    "graph_name",
+    "graph_memory_gb",
+    "s3_staging_bucket",
+    "graph_id",
+    "graph_endpoint",
+    "project_id",
+    "step",
+    "step_label",
+    "progress",
+    "error",
+    "created_at",
 ]
 
 
@@ -40,11 +55,18 @@ class Projection:
 
 
 class ProjectionStore:
-    def create(self, catalog: str = "AwsDataCatalog", database: str = None,
-               sql_query: str = None, node_query: str = None,
-               edge_query: str = None, graph_name: str = None,
-               graph_memory_gb: int = 16, s3_staging_bucket: str = None,
-               project_id: str = None) -> Projection:
+    def create(
+        self,
+        catalog: str = "AwsDataCatalog",
+        database: Optional[str] = None,
+        sql_query: Optional[str] = None,
+        node_query: Optional[str] = None,
+        edge_query: Optional[str] = None,
+        graph_name: Optional[str] = None,
+        graph_memory_gb: int = 16,
+        s3_staging_bucket: Optional[str] = None,
+        project_id: Optional[str] = None,
+    ) -> Projection:
         p = Projection(
             id=str(uuid.uuid4()),
             status="draft",
@@ -61,7 +83,10 @@ class ProjectionStore:
         conn = get_connection()
         conn.execute(
             f"INSERT INTO projections ({', '.join(_FIELDS)}) VALUES ({', '.join('?' for _ in _FIELDS)})",
-            [getattr(p, f) if f != "created_at" else p.created_at.isoformat() for f in _FIELDS],
+            [
+                getattr(p, f) if f != "created_at" else p.created_at.isoformat()
+                for f in _FIELDS
+            ],
         )
         conn.commit()
         conn.close()
@@ -69,20 +94,37 @@ class ProjectionStore:
 
     def get(self, projection_id: str) -> Optional[Projection]:
         conn = get_connection()
-        row = conn.execute("SELECT * FROM projections WHERE id = ?", (projection_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM projections WHERE id = ?", (projection_id,)
+        ).fetchone()
         conn.close()
         return self._row_to_projection(row) if row else None
 
     def list(self) -> list[Projection]:
         conn = get_connection()
-        rows = conn.execute("SELECT * FROM projections ORDER BY created_at DESC").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM projections ORDER BY created_at DESC"
+        ).fetchall()
         conn.close()
         return [self._row_to_projection(r) for r in rows]
 
     _ALLOWED_UPDATE_COLUMNS = {
-        "status", "catalog", "database", "sql_query", "node_query", "edge_query",
-        "graph_name", "graph_memory_gb", "s3_staging_bucket", "graph_id", "graph_endpoint",
-        "project_id", "step", "step_label", "progress", "error",
+        "status",
+        "catalog",
+        "database",
+        "sql_query",
+        "node_query",
+        "edge_query",
+        "graph_name",
+        "graph_memory_gb",
+        "s3_staging_bucket",
+        "graph_id",
+        "graph_endpoint",
+        "project_id",
+        "step",
+        "step_label",
+        "progress",
+        "error",
     }
 
     def update(self, projection_id: str, **kwargs) -> Optional[Projection]:
