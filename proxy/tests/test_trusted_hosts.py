@@ -24,8 +24,13 @@ class TestTrustedHosts:
         monkeypatch.setenv("TRUSTED_HOSTS", "example.com, foo.local")
         settings = Settings.from_env()
         assert settings.extra_trusted_hosts == {"example.com", "foo.local"}
-        assert "example.com" in settings.trusted_hosts
-        assert "foo.local" in settings.trusted_hosts
+        assert settings.trusted_hosts == {
+            "127.0.0.1",
+            "::1",
+            "localhost",
+            "example.com",
+            "foo.local",
+        }
 
     def test_independent_of_cors_allowed_origins(self, monkeypatch):
         """trusted_hosts must not be affected by CORS_ALLOWED_ORIGINS in
