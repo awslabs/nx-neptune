@@ -2,13 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from fastapi import APIRouter, HTTPException, Query
-
 from nx_neptune.clients.client_factory import ClientFactory
+
 from nx_neptune_proxy.config import get_settings
-from nx_neptune_proxy.utils.aws_helper import (
-    assert_managed_graph,
-    get_graph_or_exception,
-)
 from nx_neptune_proxy.routers.schemas import (
     BucketsResponse,
     CatalogsResponse,
@@ -18,6 +14,10 @@ from nx_neptune_proxy.routers.schemas import (
     TablesResponse,
 )
 from nx_neptune_proxy.utils import paginate_aws
+from nx_neptune_proxy.utils.aws_helper import (
+    assert_managed_graph,
+    get_graph_or_exception,
+)
 
 router = APIRouter(prefix="/api/v0/metadata", tags=["metadata"])
 
