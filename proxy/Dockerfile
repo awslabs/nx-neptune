@@ -12,7 +12,9 @@ EXPOSE 8080
 # network exposure is controlled by how the port is published (see the run
 # target's -p 127.0.0.1:8080:8080). ALLOW_NON_LOOPBACK_BIND acknowledges this
 # deliberate bind so the startup guard permits it.
-ENV HOST=0.0.0.0 ALLOW_NON_LOOPBACK_BIND=1
+# PYTHONUNBUFFERED=1: flush stdout immediately so the startup token launch URL
+# (printed once at startup) reaches the container log driver / `finch logs`.
+ENV HOST=0.0.0.0 ALLOW_NON_LOOPBACK_BIND=1 PYTHONUNBUFFERED=1
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
     CMD wget -qO /dev/null http://localhost:8080/health
 CMD ["python", "-m", "nx_neptune_proxy"]
