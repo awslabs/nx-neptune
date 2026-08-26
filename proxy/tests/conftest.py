@@ -13,7 +13,7 @@ def client():
     transport = ASGITransport(app=app)
     return AsyncClient(
         transport=transport,
-        base_url="http://test",
+        base_url="http://localhost",
         headers={"X-Requested-With": "nx-neptune"},
     )
 
@@ -22,7 +22,7 @@ def client():
 def bare_client():
     """Client without X-Requested-With header — for CSRF rejection tests."""
     transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://test")
+    return AsyncClient(transport=transport, base_url="http://localhost")
 
 
 @pytest.fixture(autouse=True)
