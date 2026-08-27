@@ -8,8 +8,8 @@ from httpx import ASGITransport, AsyncClient
 
 from nx_neptune_proxy.app import app
 from nx_neptune_proxy.auth import get_token
-from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.db import get_connection
+from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_store import store
 
 
@@ -96,10 +96,12 @@ async def test_update_projection(client):
     pid = create_resp.json()["id"]
 
     resp = await client.put(
-        f"/api/v0/projection/{pid}", json={
-        "node_query": "SELECT id FROM t",
-        "edge_query": "SELECT src, dst FROM edges",
-    })
+        f"/api/v0/projection/{pid}",
+        json={
+            "node_query": "SELECT id FROM t",
+            "edge_query": "SELECT src, dst FROM edges",
+        },
+    )
     assert resp.status_code == 200
     assert resp.json()["node_query"] == "SELECT id FROM t"
     assert resp.json()["edge_query"] == "SELECT src, dst FROM edges"
@@ -109,7 +111,9 @@ async def test_update_projection(client):
 
 @pytest.mark.asyncio
 async def test_update_projection_not_found(client):
-    resp = await client.put("/api/v0/projection/nonexistent", json={"node_query": "x", "edge_query": "y"})
+    resp = await client.put(
+        "/api/v0/projection/nonexistent", json={"node_query": "x", "edge_query": "y"}
+    )
     assert resp.status_code == 404
 
 

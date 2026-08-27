@@ -61,7 +61,9 @@ class TestNoSecretsInDb:
 
     def test_no_secrets_after_update_with_error(self, test_project_id):
         """Error messages stored in DB should not contain credentials."""
-        p = store.create(database="testdb", graph_name="test", project_id=test_project_id)
+        p = store.create(
+            database="testdb", graph_name="test", project_id=test_project_id
+        )
         store.update(
             p.id,
             status="failed",

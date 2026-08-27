@@ -4,10 +4,10 @@
 from typing import Any, Callable
 
 from botocore.exceptions import ClientError
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from nx_neptune_proxy.config import get_settings
-from fastapi import HTTPException, Request
+
 
 def get_graph_or_exception(client, graph_id: str) -> dict:
     """Fetch a graph from Neptune Analytics, raising HTTP exceptions on failure.
@@ -38,15 +38,16 @@ def assert_managed_graph(graph_name: str | None) -> None:
         )
 
 
-
-
 def check_content_length(request: Request, max_size: int) -> None:
     """Reject early if Content-Length header exceeds max_size."""
     content_length = request.headers.get("content-length")
     if content_length:
         try:
             if int(content_length) > max_size:
-                raise HTTPException(status_code=413, detail=f"Payload too large (max {max_size // (1024 * 1024)} MB)")
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Payload too large (max {max_size // (1024 * 1024)} MB)",
+                )
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid Content-Length header")
 
@@ -57,9 +58,10 @@ def require_name(value: str | None, max_length: int = 100) -> str:
     if not stripped:
         raise HTTPException(status_code=400, detail="Name is required")
     if len(stripped) > max_length:
-        raise HTTPException(status_code=400, detail=f"Name too long (max {max_length} characters)")
+        raise HTTPException(
+            status_code=400, detail=f"Name too long (max {max_length} characters)"
+        )
     return stripped
-
 
 
 def paginate_aws(method: Callable, result_key: str, **kwargs: Any) -> list:
@@ -113,13 +115,16 @@ def friendly_s3_error(e) -> str:
 def check_body_size(contents: bytes, max_size: int) -> None:
     """Reject if body bytes exceed max_size."""
     if len(contents) > max_size:
-        raise HTTPException(status_code=413, detail=f"Payload too large (max {max_size // (1024 * 1024)} MB)")
+        raise HTTPException(
+            status_code=413,
+            detail=f"Payload too large (max {max_size // (1024 * 1024)} MB)",
+        )
 
 
 def check_key_not_exists(s3, bucket: str, key: str) -> None:
     """Raise 409 if the S3 key already exists."""
-    from fastapi import HTTPException
     from botocore.exceptions import ClientError
+    from fastapi import HTTPException
 
     try:
         s3.head_object(Bucket=bucket, Key=key)

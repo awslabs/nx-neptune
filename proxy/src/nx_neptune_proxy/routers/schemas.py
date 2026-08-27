@@ -154,11 +154,23 @@ class ProjectionExport(BaseModel):
 
     catalog: str = Field("AwsDataCatalog", description="Athena catalog name")
     database: Optional[str] = Field(None, description="Athena database name")
-    node_query: Optional[str] = Field(None, description="SQL query that produces nodes (must include ~id and ~label columns)")
-    edge_query: Optional[str] = Field(None, description="SQL query that produces edges (must include ~from, ~to, and ~label columns)")
-    graph_name: Optional[str] = Field(None, description="Neptune Analytics graph name suffix (prefix is added automatically)")
+    node_query: Optional[str] = Field(
+        None,
+        description="SQL query that produces nodes (must include ~id and ~label columns)",
+    )
+    edge_query: Optional[str] = Field(
+        None,
+        description="SQL query that produces edges (must include ~from, ~to, and ~label columns)",
+    )
+    graph_name: Optional[str] = Field(
+        None,
+        description="Neptune Analytics graph name suffix (prefix is added automatically)",
+    )
     graph_memory_gb: int = Field(16, description="Graph memory allocation in GB")
-    s3_staging_bucket: Optional[str] = Field(None, description="S3 bucket path for staging Athena results (e.g. s3://bucket/prefix)")
+    s3_staging_bucket: Optional[str] = Field(
+        None,
+        description="S3 bucket path for staging Athena results (e.g. s3://bucket/prefix)",
+    )
 
     model_config = {"extra": "forbid"}
 

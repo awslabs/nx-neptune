@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
-from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -25,12 +25,15 @@ class TestExportToS3:
     @patch("nx_neptune_proxy.routers.project_io.ClientFactory")
     async def test_export_to_s3_success(self, mock_factory, mock_settings, client):
         """Exports project JSON to S3 with correct key format."""
-        mock_settings.return_value = MagicMock(config_bucket="my-bucket/exports", region="us-west-2")
+        mock_settings.return_value = MagicMock(
+            config_bucket="my-bucket/exports", region="us-west-2"
+        )
 
         mock_s3 = MagicMock()
         mock_factory.return_value.s3.return_value = mock_s3
         # head_object raises 404 (key doesn't exist)
         from botocore.exceptions import ClientError
+
         mock_s3.head_object.side_effect = ClientError(
             {"Error": {"Code": "404", "Message": "Not Found"}}, "HeadObject"
         )
@@ -57,9 +60,13 @@ class TestExportToS3:
     @pytest.mark.anyio
     @patch("nx_neptune_proxy.routers.project_io.Settings.from_env")
     @patch("nx_neptune_proxy.routers.project_io.ClientFactory")
-    async def test_export_to_s3_duplicate_key(self, mock_factory, mock_settings, client):
+    async def test_export_to_s3_duplicate_key(
+        self, mock_factory, mock_settings, client
+    ):
         """Returns 409 if S3 key already exists."""
-        mock_settings.return_value = MagicMock(config_bucket="my-bucket", region="us-west-2")
+        mock_settings.return_value = MagicMock(
+            config_bucket="my-bucket", region="us-west-2"
+        )
 
         mock_s3 = MagicMock()
         mock_factory.return_value.s3.return_value = mock_s3
@@ -74,13 +81,18 @@ class TestExportToS3:
     @pytest.mark.anyio
     @patch("nx_neptune_proxy.routers.project_io.Settings.from_env")
     @patch("nx_neptune_proxy.routers.project_io.ClientFactory")
-    async def test_export_to_s3_permission_denied(self, mock_factory, mock_settings, client):
+    async def test_export_to_s3_permission_denied(
+        self, mock_factory, mock_settings, client
+    ):
         """Returns 502 with friendly message on permission error."""
-        mock_settings.return_value = MagicMock(config_bucket="my-bucket", region="us-west-2")
+        mock_settings.return_value = MagicMock(
+            config_bucket="my-bucket", region="us-west-2"
+        )
 
         mock_s3 = MagicMock()
         mock_factory.return_value.s3.return_value = mock_s3
         from botocore.exceptions import ClientError
+
         mock_s3.head_object.side_effect = ClientError(
             {"Error": {"Code": "404", "Message": "Not Found"}}, "HeadObject"
         )
@@ -97,8 +109,12 @@ class TestExportToS3:
     @pytest.mark.anyio
     async def test_export_to_s3_project_not_found(self, client):
         """Returns 404 for non-existent project."""
-        with patch("nx_neptune_proxy.routers.project_io.Settings.from_env") as mock_settings:
-            mock_settings.return_value = MagicMock(config_bucket="my-bucket", region="us-west-2")
+        with patch(
+            "nx_neptune_proxy.routers.project_io.Settings.from_env"
+        ) as mock_settings:
+            mock_settings.return_value = MagicMock(
+                config_bucket="my-bucket", region="us-west-2"
+            )
             resp = await client.post("/api/v0/project/nonexistent/export/s3")
             assert resp.status_code == 404
 
@@ -113,9 +129,13 @@ class TestListS3Exports:
     @pytest.mark.anyio
     @patch("nx_neptune_proxy.routers.project_io.Settings.from_env")
     @patch("nx_neptune_proxy.routers.project_io.ClientFactory")
-    async def test_list_returns_json_files_sorted(self, mock_factory, mock_settings, client):
+    async def test_list_returns_json_files_sorted(
+        self, mock_factory, mock_settings, client
+    ):
         """Lists .json files sorted by last modified descending."""
-        mock_settings.return_value = MagicMock(config_bucket="my-bucket/exports", region="us-west-2")
+        mock_settings.return_value = MagicMock(
+            config_bucket="my-bucket/exports", region="us-west-2"
+        )
 
         mock_s3 = MagicMock()
         mock_factory.return_value.s3.return_value = mock_s3
@@ -145,7 +165,9 @@ class TestListS3Exports:
     @patch("nx_neptune_proxy.routers.project_io.ClientFactory")
     async def test_list_empty_bucket(self, mock_factory, mock_settings, client):
         """Returns empty list when no files in bucket."""
-        mock_settings.return_value = MagicMock(config_bucket="my-bucket", region="us-west-2")
+        mock_settings.return_value = MagicMock(
+            config_bucket="my-bucket", region="us-west-2"
+        )
 
         mock_s3 = MagicMock()
         mock_factory.return_value.s3.return_value = mock_s3
@@ -160,14 +182,19 @@ class TestListS3Exports:
     @patch("nx_neptune_proxy.routers.project_io.ClientFactory")
     async def test_list_caps_at_10(self, mock_factory, mock_settings, client):
         """Returns at most 10 files."""
-        mock_settings.return_value = MagicMock(config_bucket="my-bucket", region="us-west-2")
+        mock_settings.return_value = MagicMock(
+            config_bucket="my-bucket", region="us-west-2"
+        )
 
         mock_s3 = MagicMock()
         mock_factory.return_value.s3.return_value = mock_s3
 
         # 15 .json files
         objects = [
-            {"Key": f"file_{i}.json", "LastModified": datetime(2026, 7, 31, i, 0, 0, tzinfo=timezone.utc)}
+            {
+                "Key": f"file_{i}.json",
+                "LastModified": datetime(2026, 7, 31, i, 0, 0, tzinfo=timezone.utc),
+            }
             for i in range(15)
         ]
         mock_s3.list_objects_v2.return_value = {"Contents": objects}
@@ -181,7 +208,9 @@ class TestImportFromS3:
     @pytest.mark.anyio
     async def test_import_from_s3_no_bucket(self, client):
         """Returns 404 when export bucket not configured."""
-        resp = await client.post("/api/v0/project/import/s3", content=json.dumps({"key": "test.json"}))
+        resp = await client.post(
+            "/api/v0/project/import/s3", content=json.dumps({"key": "test.json"})
+        )
         assert resp.status_code == 404
 
     @pytest.mark.anyio
@@ -189,7 +218,9 @@ class TestImportFromS3:
     @patch("nx_neptune_proxy.routers.project_io.ClientFactory")
     async def test_import_from_s3_success(self, mock_factory, mock_settings, client):
         """Imports a project from S3 file."""
-        mock_settings.return_value = MagicMock(config_bucket="my-bucket/exports", region="us-west-2")
+        mock_settings.return_value = MagicMock(
+            config_bucket="my-bucket/exports", region="us-west-2"
+        )
 
         mock_s3 = MagicMock()
         mock_factory.return_value.s3.return_value = mock_s3
@@ -224,15 +255,26 @@ class TestImportFromS3:
     @pytest.mark.anyio
     @patch("nx_neptune_proxy.routers.project_io.Settings.from_env")
     @patch("nx_neptune_proxy.routers.project_io.ClientFactory")
-    async def test_import_from_s3_file_not_found(self, mock_factory, mock_settings, client):
+    async def test_import_from_s3_file_not_found(
+        self, mock_factory, mock_settings, client
+    ):
         """Returns 502 when S3 key doesn't exist."""
-        mock_settings.return_value = MagicMock(config_bucket="my-bucket", region="us-west-2")
+        mock_settings.return_value = MagicMock(
+            config_bucket="my-bucket", region="us-west-2"
+        )
 
         mock_s3 = MagicMock()
         mock_factory.return_value.s3.return_value = mock_s3
         from botocore.exceptions import ClientError
+
         mock_s3.get_object.side_effect = ClientError(
-            {"Error": {"Code": "NoSuchKey", "Message": "The specified key does not exist."}}, "GetObject"
+            {
+                "Error": {
+                    "Code": "NoSuchKey",
+                    "Message": "The specified key does not exist.",
+                }
+            },
+            "GetObject",
         )
 
         resp = await client.post(
@@ -245,9 +287,13 @@ class TestImportFromS3:
     @pytest.mark.anyio
     @patch("nx_neptune_proxy.routers.project_io.Settings.from_env")
     @patch("nx_neptune_proxy.routers.project_io.ClientFactory")
-    async def test_import_from_s3_invalid_json(self, mock_factory, mock_settings, client):
+    async def test_import_from_s3_invalid_json(
+        self, mock_factory, mock_settings, client
+    ):
         """Returns 400 when S3 file contains invalid JSON."""
-        mock_settings.return_value = MagicMock(config_bucket="my-bucket", region="us-west-2")
+        mock_settings.return_value = MagicMock(
+            config_bucket="my-bucket", region="us-west-2"
+        )
 
         mock_s3 = MagicMock()
         mock_factory.return_value.s3.return_value = mock_s3
@@ -265,9 +311,15 @@ class TestImportFromS3:
     @pytest.mark.anyio
     async def test_import_from_s3_missing_key_param(self, client):
         """Returns 400 when key is missing from request body."""
-        with patch("nx_neptune_proxy.routers.project_io.Settings.from_env") as mock_settings:
-            mock_settings.return_value = MagicMock(config_bucket="my-bucket", region="us-west-2")
-            resp = await client.post("/api/v0/project/import/s3", content=json.dumps({}))
+        with patch(
+            "nx_neptune_proxy.routers.project_io.Settings.from_env"
+        ) as mock_settings:
+            mock_settings.return_value = MagicMock(
+                config_bucket="my-bucket", region="us-west-2"
+            )
+            resp = await client.post(
+                "/api/v0/project/import/s3", content=json.dumps({})
+            )
             assert resp.status_code == 400
             assert "key" in resp.json()["detail"].lower()
 
@@ -275,30 +327,36 @@ class TestImportFromS3:
 class TestSanitizeName:
     def test_spaces_to_underscores(self):
         from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name
+
         assert sanitize_s3_key_name("Fraud Detection") == "Fraud_Detection"
 
     def test_special_characters_stripped(self):
         from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name
+
         assert sanitize_s3_key_name("My Project! (v2)") == "My_Project_v2"
 
     def test_hyphens_kept(self):
         from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name
+
         assert sanitize_s3_key_name("fraud-detection") == "fraud-detection"
 
     def test_underscores_kept(self):
         from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name
+
         assert sanitize_s3_key_name("my_project") == "my_project"
 
 
 class TestParseBucketConfig:
     def test_bucket_only(self):
         from nx_neptune.clients.iam_client import split_s3_arn_to_bucket_and_path
+
         bucket, prefix = split_s3_arn_to_bucket_and_path("s3://my-bucket")
         assert bucket == "my-bucket"
         assert prefix == ""
 
     def test_bucket_with_prefix(self):
         from nx_neptune.clients.iam_client import split_s3_arn_to_bucket_and_path
+
         bucket, prefix = split_s3_arn_to_bucket_and_path("s3://my-bucket/team/exports")
         assert bucket == "my-bucket"
         assert prefix == "team/exports"
