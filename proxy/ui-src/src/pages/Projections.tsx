@@ -431,14 +431,6 @@ export function Projections() {
             {selected.project_id && <div><span className="text-gray-500">Project:</span> {projects.get(selected.project_id)?.name || selected.project_id}</div>}
             <div><span className="text-gray-500">Catalog:</span> {selected.catalog || "—"}</div>
             <div><span className="text-gray-500">Database:</span> {selected.database || "—"}</div>
-            <div>
-              <span className="text-gray-500">Node Query:</span>
-              <pre className="mt-1 overflow-auto rounded bg-gray-50 p-2 font-mono text-xs">{selected.node_query || "—"}</pre>
-            </div>
-            <div>
-              <span className="text-gray-500">Edge Query:</span>
-              <pre className="mt-1 overflow-auto rounded bg-gray-50 p-2 font-mono text-xs">{selected.edge_query || "—"}</pre>
-            </div>
             <div><span className="text-gray-500">S3 Bucket:</span> {selected.s3_staging_bucket || "—"}</div>
             <div><span className="text-gray-500">Graph ID:</span> {selected.graph_id || "—"}</div>
             {selected.graph_id && graphStatuses.get(selected.graph_id) && (

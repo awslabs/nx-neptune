@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router";
-import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project } from "../api";
+import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
-import { Play, CheckCircle, Eye } from "lucide-react";
+import { Play, CheckCircle, Eye, Plus, Trash2 } from "lucide-react";
 
 export function Import() {
   const [searchParams] = useSearchParams();
@@ -20,11 +20,13 @@ export function Import() {
   // --- Form state ---
   const [catalog, setCatalog] = useState("AwsDataCatalog");
   const [database, setDatabase] = useState("");
-  const [nodeQuery, setNodeQuery] = useState("");
-  const [edgeQuery, setEdgeQuery] = useState("");
   const [bucket, setBucket] = useState("");
   const [graphName, setGraphName] = useState("");
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
+
+  // --- Multi-query state ---
+  const [nodeQueries, setNodeQueries] = useState<NodeQueryInput[]>([{ sql: "" }]);
+  const [edgeQueries, setEdgeQueries] = useState<EdgeQueryInput[]>([{ sql: "" }]);
 
   // --- Projection state ---
   const [projectionsList, setProjectionsList] = useState<Projection[]>([]);
@@ -59,19 +61,7 @@ export function Import() {
     if (wsParam) {
       setProjectId(wsParam);
       if (!projectionId) {
-        setCurrentId(null);
-        setStatus(null);
-        setPolling(false);
-        setChecks([]);
-        setPreview(null);
-        setError(null);
-        setCatalog("AwsDataCatalog");
-        setDatabase("");
-        setNodeQuery("");
-        setEdgeQuery("");
-        setBucket("");
-        setGraphName("");
-        setGraphMemoryGb(16);
+        resetForm();
       }
     }
     if (projectionId) {
@@ -84,21 +74,97 @@ export function Import() {
     metadata.databases(catalog).then((d) => { setDatabases(d.databases); setDbLoading(false); });
   }, [catalog]);
 
+  function resetForm() {
+    setCurrentId(null);
+    setStatus(null);
+    setPolling(false);
+    setChecks([]);
+    setPreview(null);
+    setError(null);
+    setCatalog("AwsDataCatalog");
+    setDatabase("");
+    setNodeQueries([{ sql: "" }]);
+    setEdgeQueries([{ sql: "" }]);
+    setBucket("");
+    setGraphName("");
+    setGraphMemoryGb(16);
+  }
+
   async function loadProjections() {
     const list = await projection.list();
     setProjectionsList(list);
   }
 
   // --- Projection management ---
+
+  // Auto-create projection once user starts filling the form
+  useEffect(() => {
+    if (currentId) return;
+    const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
+    if (!hasContent) return;
+    projection.create({
+      catalog,
+      database,
+      s3_staging_bucket: bucket,
+      graph_name: graphName,
+      graph_memory_gb: graphMemoryGb,
+      project_id: projectId || undefined,
+    }).then((p) => {
+      setCurrentId(p.id);
+      loadProjections();
+      window.dispatchEvent(new Event("projects-changed"));
+    });
+  }, [database, bucket, graphName, nodeQueries, edgeQueries]);
+
+  // Auto-create projection once user starts filling the form, then auto-save config on changes
+  const configTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
+    if (!hasContent) return;
+
+    const data = {
+      catalog,
+      database,
+      s3_staging_bucket: bucket,
+      graph_name: graphName,
+      graph_memory_gb: graphMemoryGb,
+      project_id: projectId || undefined,
+    };
+
+    if (!currentId) {
+      // First time — create
+      projection.create(data).then((p) => {
+        setCurrentId(p.id);
+        loadProjections();
+        window.dispatchEvent(new Event("projects-changed"));
+      });
+    } else {
+      // Subsequent changes — debounced update
+      if (configTimer.current) clearTimeout(configTimer.current);
+      configTimer.current = setTimeout(() => {
+        projection.update(currentId, data);
+      }, 1000);
+    }
+  }, [catalog, database, bucket, graphName, graphMemoryGb, projectId]);
+
   async function ensureProjection(): Promise<string> {
-    if (!projectId) throw new Error("Please select a project first");
-    const data = { catalog, database, node_query: nodeQuery || undefined, edge_query: edgeQuery || undefined, s3_staging_bucket: bucket, graph_name: graphName, graph_memory_gb: graphMemoryGb, project_id: projectId };
+    const data = {
+      catalog,
+      database,
+      s3_staging_bucket: bucket,
+      graph_name: graphName,
+      graph_memory_gb: graphMemoryGb,
+      project_id: projectId || undefined,
+    };
     if (currentId) {
       await projection.update(currentId, data);
+      await projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: edgeQueries });
       return currentId;
     }
     const p = await projection.create(data);
     setCurrentId(p.id);
+    await projection.saveQueries(p.id, { node_queries: nodeQueries, edge_queries: edgeQueries });
     await loadProjections();
     window.dispatchEvent(new Event("projects-changed"));
     return p.id;
@@ -106,17 +172,23 @@ export function Import() {
 
   function loadProjection(p: Projection) {
     setCurrentId(p.id);
-    if (p.project_id) setProjectId(p.project_id);
     if (p.catalog) setCatalog(p.catalog);
     if (p.database) setDatabase(p.database);
-    if (p.node_query) setNodeQuery(p.node_query);
-    if (p.edge_query) setEdgeQuery(p.edge_query);
     if (p.s3_staging_bucket) setBucket(p.s3_staging_bucket);
     if (p.graph_name) setGraphName(p.graph_name);
     if (p.graph_memory_gb) setGraphMemoryGb(p.graph_memory_gb);
     setChecks([]);
     setPreview(null);
     setError(null);
+
+    // Load multi-queries
+    projection.getQueries(p.id).then((res) => {
+      if (res.node_queries.length > 0) setNodeQueries(res.node_queries.map((q) => ({ id: q.id, sql: q.sql })));
+      else setNodeQueries([{ sql: "" }]);
+
+      if (res.edge_queries.length > 0) setEdgeQueries(res.edge_queries.map((q) => ({ id: q.id, sql: q.sql })));
+      else setEdgeQueries([{ sql: "" }]);
+    });
 
     if (p.status === "executing") startPolling(p.id);
     else if (p.status === "complete") {
@@ -125,6 +197,50 @@ export function Import() {
       setStatus(null);
       setPolling(false);
     }
+  }
+
+  // --- Query management ---
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function saveCurrentQueries() {
+    if (!currentId) return;
+    projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: edgeQueries });
+  }
+
+  function scheduleSave(nq: NodeQueryInput[], eq: EdgeQueryInput[]) {
+    if (!currentId) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      projection.saveQueries(currentId, { node_queries: nq, edge_queries: eq });
+    }, 1000);
+  }
+
+  function updateNodeQuery(index: number, sql: string) {
+    const updated = nodeQueries.map((q, i) => (i === index ? { ...q, sql } : q));
+    setNodeQueries(updated);
+    scheduleSave(updated, edgeQueries);
+  }
+  function addNodeQuery() {
+    setNodeQueries((prev) => [...prev, { sql: "" }]);
+  }
+  function removeNodeQuery(index: number) {
+    const updated = nodeQueries.filter((_, i) => i !== index);
+    setNodeQueries(updated);
+    if (currentId) projection.saveQueries(currentId, { node_queries: updated, edge_queries: edgeQueries });
+  }
+
+  function updateEdgeQuery(index: number, updates: Partial<EdgeQueryInput>) {
+    const updated = edgeQueries.map((q, i) => (i === index ? { ...q, ...updates } : q));
+    setEdgeQueries(updated);
+    scheduleSave(nodeQueries, updated);
+  }
+  function addEdgeQuery() {
+    setEdgeQueries((prev) => [...prev, { sql: "" }]);
+  }
+  function removeEdgeQuery(index: number) {
+    const updated = edgeQueries.filter((_, i) => i !== index);
+    setEdgeQueries(updated);
+    if (currentId) projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: updated });
   }
 
   // --- Actions ---
@@ -231,26 +347,29 @@ export function Import() {
               </Select>
             </label>
           <label className="block space-y-1">
-              <span className="text-sm font-medium text-gray-700">Copy config from</span>
-              <Select
-                value=""
-                onChange={(e) => {
-                  const s = projectionsList.find((s) => s.id === e.target.value);
-                  if (!s) return;
-                  if (s.catalog) setCatalog(s.catalog);
-                  if (s.database) setDatabase(s.database);
-                  if (s.node_query) setNodeQuery(s.node_query);
-                  if (s.edge_query) setEdgeQuery(s.edge_query);
-                  if (s.s3_staging_bucket) setBucket(s.s3_staging_bucket);
-                  if (s.graph_memory_gb) setGraphMemoryGb(s.graph_memory_gb);
-                }}
-              >
-                <option value="">Select a projection...</option>
-                {(projectId ? projectionsList.filter(s => s.project_id === projectId) : projectionsList).map((s) => (
-                  <option key={s.id} value={s.id}>{s.graph_name || s.id.slice(0, 8)}</option>
-                ))}
-              </Select>
-            </label>
+            <span className="text-sm font-medium text-gray-700">Copy config from</span>
+            <Select
+              value=""
+              onChange={(e) => {
+                const s = projectionsList.find((s) => s.id === e.target.value);
+                if (!s) return;
+                if (s.catalog) setCatalog(s.catalog);
+                if (s.database) setDatabase(s.database);
+                if (s.s3_staging_bucket) setBucket(s.s3_staging_bucket);
+                if (s.graph_memory_gb) setGraphMemoryGb(s.graph_memory_gb);
+                // Load queries from source projection
+                projection.getQueries(s.id).then((res) => {
+                  if (res.node_queries.length > 0) setNodeQueries(res.node_queries.map((q) => ({ sql: q.sql })));
+                  if (res.edge_queries.length > 0) setEdgeQueries(res.edge_queries.map((q) => ({ sql: q.sql })));
+                });
+              }}
+            >
+              <option value="">Select a projection...</option>
+              {(projectId ? projectionsList.filter(s => s.project_id === projectId) : projectionsList).map((s) => (
+                <option key={s.id} value={s.id}>{s.graph_name || s.id.slice(0, 8)}</option>
+              ))}
+            </Select>
+          </label>
           <div className="grid grid-cols-2 gap-4">
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">Catalog</span>
@@ -266,29 +385,6 @@ export function Import() {
               </Select>
             </label>
           </div>
-
-          <label className="block space-y-1">
-            <span className="text-sm font-medium text-gray-700">Node Query</span>
-            <textarea
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              rows={3}
-              placeholder="SELECT ~id, ~label, col1, col2 FROM nodes_table"
-              value={nodeQuery}
-              onChange={(e) => setNodeQuery(e.target.value)}
-            />
-          </label>
-
-          <label className="block space-y-1">
-            <span className="text-sm font-medium text-gray-700">Edge Query</span>
-            <textarea
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              rows={3}
-              placeholder="SELECT ~id, ~from, ~to, ~label FROM edges_table"
-              value={edgeQuery}
-              onChange={(e) => setEdgeQuery(e.target.value)}
-            />
-          </label>
-
           <div className="grid grid-cols-3 gap-4">
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">S3 Staging Bucket</span>
@@ -315,6 +411,70 @@ export function Import() {
               />
             </label>
           </div>
+        </div>
+      </Card>
+
+      {/* Node Queries */}
+      <Card>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Node Queries</h2>
+            <button onClick={addNodeQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+              <Plus className="h-3 w-3" /> Add
+            </button>
+          </div>
+          {nodeQueries.map((nq, i) => (
+            <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
+              <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
+                <span className="text-xs font-medium text-gray-700">Node {i + 1}</span>
+                {nodeQueries.length > 1 && (
+                  <button onClick={() => removeNodeQuery(i)} className="text-gray-400 hover:text-red-600">
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <textarea
+                className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-none"
+                rows={3}
+                placeholder="SELECT id AS &quot;~id&quot;, 'Label' AS &quot;~label&quot;, col1 FROM table"
+                value={nq.sql}
+                onChange={(e) => updateNodeQuery(i, e.target.value)}
+                onBlur={() => saveCurrentQueries()}
+              />
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Edge Queries */}
+      <Card>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Edge Queries</h2>
+            <button onClick={addEdgeQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+              <Plus className="h-3 w-3" /> Add
+            </button>
+          </div>
+          {edgeQueries.map((eq, i) => (
+            <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
+              <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
+                <span className="text-xs font-medium text-gray-700">Edge {i + 1}</span>
+                {edgeQueries.length > 1 && (
+                  <button onClick={() => removeEdgeQuery(i)} className="text-gray-400 hover:text-red-600">
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <textarea
+                className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-none"
+                rows={3}
+                placeholder="SELECT id AS &quot;~id&quot;, src AS &quot;~from&quot;, dst AS &quot;~to&quot;, 'Label' AS &quot;~label&quot; FROM table"
+                value={eq.sql}
+                onChange={(e) => updateEdgeQuery(i, { sql: e.target.value })}
+                onBlur={() => saveCurrentQueries()}
+              />
+            </div>
+          ))}
         </div>
       </Card>
 
@@ -345,25 +505,29 @@ export function Import() {
       {/* Preview */}
       {preview && (
         <div className="space-y-4">
-          {preview.map((result, i) => (
-            <Card key={i}>
-              <h2 className="mb-2 text-sm font-medium">{i === 0 ? "Node Preview" : "Edge Preview"}</h2>
-              <div className="overflow-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b bg-gray-50">
-                    <tr>{result.columns.map((col) => <th key={col} className="px-3 py-2 font-medium">{col}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {result.rows.map((row, ri) => (
-                      <tr key={ri} className="border-b last:border-0">
-                        {row.map((cell, ci) => <td key={ci} className="px-3 py-2">{cell}</td>)}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          ))}
+          {preview.map((result, i) => {
+            const activeNodeCount = nodeQueries.filter(q => q.sql.trim()).length;
+            const isNode = i < activeNodeCount;
+            return (
+              <Card key={i}>
+                <h2 className="mb-2 text-sm font-medium">{isNode ? `Node ${i + 1}` : `Edge ${i - activeNodeCount + 1}`} Preview</h2>
+                <div className="overflow-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="border-b bg-gray-50">
+                      <tr>{result.columns.map((col) => <th key={col} className="px-3 py-2 font-medium">{col}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {result.rows.map((row, ri) => (
+                        <tr key={ri} className="border-b last:border-0">
+                          {row.map((cell, ci) => <td key={ci} className="px-3 py-2">{cell}</td>)}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
 

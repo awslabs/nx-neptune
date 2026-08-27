@@ -4,6 +4,7 @@
 """SQL injection resistance via parameterized queries."""
 
 from nx_neptune_proxy.services.projection_store import store
+from nx_neptune_proxy.services.query_store import query_store
 
 
 class TestSqlInjection:
@@ -61,3 +62,24 @@ class TestSqlInjection:
         retrieved = store.get(p.id)
         assert retrieved is not None
         assert retrieved.graph_name == payload
+
+    def test_injection_in_edge_query_field(self, test_project_id):
+        payload = "SELECT * FROM t; DROP TABLE edge_queries;--"
+        p = store.create(
+            database="testdb", graph_name="test", project_id=test_project_id
+        )
+        query_store.save_edge_queries(p.id, [{"sql": payload}])
+        retrieved = query_store.list_edge_queries(p.id)
+        assert len(retrieved) == 1
+        assert retrieved[0].sql == payload
+
+    def test_query_isolation_across_projections(self, test_project_id):
+        """Queries saved to one projection must not leak to another."""
+        p1 = store.create(database="db1", graph_name="g1", project_id=test_project_id)
+        p2 = store.create(database="db2", graph_name="g2", project_id=test_project_id)
+        query_store.save_node_queries(p1.id, [{"sql": "SELECT secret FROM p1"}])
+        query_store.save_node_queries(p2.id, [{"sql": "SELECT public FROM p2"}])
+        assert len(query_store.list_node_queries(p1.id)) == 1
+        assert query_store.list_node_queries(p1.id)[0].sql == "SELECT secret FROM p1"
+        assert len(query_store.list_node_queries(p2.id)) == 1
+        assert query_store.list_node_queries(p2.id)[0].sql == "SELECT public FROM p2"

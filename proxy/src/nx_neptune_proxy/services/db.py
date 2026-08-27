@@ -67,4 +67,18 @@ def init_db() -> None:
             created_at TEXT NOT NULL,
             FOREIGN KEY (project_id) REFERENCES projects(id)
         );
+        CREATE TABLE IF NOT EXISTS node_queries (
+            id TEXT PRIMARY KEY,
+            projection_id TEXT NOT NULL,
+            sql TEXT NOT NULL DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (projection_id) REFERENCES projections(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS edge_queries (
+            id TEXT PRIMARY KEY,
+            projection_id TEXT NOT NULL,
+            sql TEXT NOT NULL DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (projection_id) REFERENCES projections(id) ON DELETE CASCADE
+        );
     """)
