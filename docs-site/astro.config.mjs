@@ -22,6 +22,7 @@ export default defineConfig({
             },
             andrewCarbonetto: { name: 'Andrew Carbonetto', url: 'https://github.com/acarbonetto' },
             andyKwok: { name: 'Andy Kwok (Hiu Fung)', url: 'https://github.com/andy-k-improving' },
+            ozanEken: { name: 'Ozan Eken' },
           },
         }),
       ],
