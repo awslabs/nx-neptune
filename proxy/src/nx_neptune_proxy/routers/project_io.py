@@ -9,23 +9,30 @@ and re-importing it to recreate the project in another environment.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import json
 from datetime import datetime, timezone
+from typing import Optional
+
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune.clients.iam_client import split_s3_arn_to_bucket_and_path
+from pydantic import BaseModel, Field
+
 from nx_neptune_proxy.config import Settings
-from nx_neptune_proxy.routers.schemas import ProjectionExport, ProjectExportPayload
+from nx_neptune_proxy.routers.schemas import ProjectExportPayload, ProjectionExport
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_store import store as projection_store
-from nx_neptune_proxy.utils.aws_helper import friendly_s3_error, check_content_length, check_body_size, check_key_not_exists, list_s3_json_objects, require_name
-from nx_neptune_proxy.utils.sanitize import sanitize_s3_key_name, sanitize_filename
+from nx_neptune_proxy.utils.aws_helper import (
+    check_body_size,
+    check_content_length,
+    check_key_not_exists,
+    friendly_s3_error,
+    list_s3_json_objects,
+    require_name,
+)
+from nx_neptune_proxy.utils.sanitize import sanitize_filename, sanitize_s3_key_name
 
 router = APIRouter(prefix="/api/v0/project", tags=["project-io"])
 
@@ -95,12 +102,14 @@ def _import_from_payload(payload: ProjectExportPayload) -> dict:
     return {"id": p.id, "name": p.name}
 
 
-
 # --- Export endpoints ---
 
 
-@router.get("/{project_id}/export", summary="Export a project as JSON",
-            response_description="JSON file containing the project configuration and its projections")
+@router.get(
+    "/{project_id}/export",
+    summary="Export a project as JSON",
+    response_description="JSON file containing the project configuration and its projections",
+)
 def export_project(project_id: str):
     """Export a project and all its projection configurations as a downloadable JSON file.
 
@@ -114,7 +123,9 @@ def export_project(project_id: str):
 
     return JSONResponse(
         content=payload,
-        headers={"Content-Disposition": f'attachment; filename="{sanitize_filename(name)}.json"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{sanitize_filename(name)}.json"'
+        },
     )
 
 
@@ -171,9 +182,7 @@ def list_s3_exports():
         json_objects.sort(key=lambda o: o["LastModified"], reverse=True)
         recent = json_objects[:10]
 
-        return {
-            "files": [_s3_object_to_entry(obj) for obj in recent]
-        }
+        return {"files": [_s3_object_to_entry(obj) for obj in recent]}
     except ClientError as e:
         raise HTTPException(status_code=502, detail=friendly_s3_error(e))
 

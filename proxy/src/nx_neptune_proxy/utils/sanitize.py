@@ -19,7 +19,9 @@ def sanitize_error_message(message: str) -> str:
     return message
 
 
-_SAFE_FILENAME_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ ")
+_SAFE_FILENAME_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "
+)
 
 
 def sanitize_filename(name: str) -> str:

@@ -43,7 +43,9 @@ class TestProjectExport:
             project_id=p.id,
         )
         # Simulate runtime state
-        projection_store.update(pr.id, status="running", step="import", progress=0.5, error="oops")
+        projection_store.update(
+            pr.id, status="running", step="import", progress=0.5, error="oops"
+        )
 
         resp = await client.get(f"/api/v0/project/{p.id}/export")
         data = resp.json()
@@ -135,7 +137,11 @@ class TestProjectImport:
     @pytest.mark.anyio
     async def test_import_too_large(self, client):
         # 6 MB of data
-        payload = {"version": "1.0", "project": {"name": "x" * (6 * 1024 * 1024)}, "projections": []}
+        payload = {
+            "version": "1.0",
+            "project": {"name": "x" * (6 * 1024 * 1024)},
+            "projections": [],
+        }
 
         resp = await client.post("/api/v0/project/import", content=json.dumps(payload))
         assert resp.status_code == 413
@@ -181,7 +187,9 @@ class TestRoundTrip:
         assert imported.name == "Round Trip"
 
         # Imported projection should match
-        projections = [pr for pr in projection_store.list() if pr.project_id == imported.id]
+        projections = [
+            pr for pr in projection_store.list() if pr.project_id == imported.id
+        ]
         assert len(projections) == 1
         assert projections[0].database == "rt_db"
         assert projections[0].graph_name == "nxp-roundtrip"
