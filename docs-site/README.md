@@ -19,7 +19,12 @@ Documentation pages live in `src/content/docs/`. The sidebar is configured in
 
 The blog is powered by the [`starlight-blog`](https://starlight-blog-docs.vercel.app/)
 plugin, registered in `astro.config.mjs`. Blog posts live in
-`src/content/docs/blog/` and are published at `/blog`. 
+`src/content/docs/blog/` and are published at `/blog`.
+
+> **Note:** the site is served under the base path `/nx-neptune` (set in
+> `astro.config.mjs`), so every path below is relative to that base. For example
+> `/blog` resolves to `https://awslabs.github.io/nx-neptune/blog` on the deployed
+> site, and to `http://localhost:4321/nx-neptune/blog` under `npm run dev`.
 
 ### Adding a new blog post
 
@@ -52,7 +57,7 @@ plugin, registered in `astro.config.mjs`. Blog posts live in
 3. Authors are defined once in the `starlightBlog({ authors: { ... } })` config in
    `astro.config.mjs`. To add a new author, add an entry there and reference its
    key from a post's `authors` field.
-4. Run `npm run dev` and visit `/blog` to preview your post.
+4. Run `npm run dev` and visit `/nx-neptune/blog` to preview your post.
 
 For the full list of supported frontmatter and configuration options, see the
 [starlight-blog documentation](https://starlight-blog-docs.vercel.app/).
