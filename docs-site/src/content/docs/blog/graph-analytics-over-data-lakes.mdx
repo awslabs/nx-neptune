@@ -191,7 +191,7 @@ FROM (
 
 #### Defining edges
 
-A Neptune Analytics edge (or relationship) connects two nodes by their `~id` — the `~from` and `~to` columns — with a relationship type given by `~label`. When you write the transform query, the `~from`, `~to`, and `~label` columns are required; every other column becomes a property on the edge. Property headers use a `propertyname:type` syntax, for example `amount:Float`. See [Neptune bulk loader data formats](https://docs.aws.amazon.com/neptune/latest/userguide/bulk-load-tutorial-format.html).
+A Neptune Analytics edge (or relationship) connects two nodes by their `~id` — the `~from` and `~to` columns — with a relationship type given by `~label`. When you write the transform query, the `~from`, `~to`, and `~label` columns are required; every other column becomes a property on the edge. Property headers use a `propertyname:type` syntax, for example `amount:Float`. See [Neptune Analytics data formats](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/loading-data-formats.html).
 
 Each transaction row is a directed relationship *from* the sending account *to* the receiving account. This query creates one edge per transaction, using the transaction type (for example, `CASH_OUT`, `TRANSFER`) as the `~label`:
 
