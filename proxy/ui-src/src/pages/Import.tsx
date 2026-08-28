@@ -423,26 +423,28 @@ export function Import() {
               <Plus className="h-3 w-3" /> Add
             </button>
           </div>
-          {nodeQueries.map((nq, i) => (
-            <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
-              <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
-                <span className="text-xs font-medium text-gray-700">Node {i + 1}</span>
-                {nodeQueries.length > 1 && (
-                  <button onClick={() => removeNodeQuery(i)} className="text-gray-400 hover:text-red-600">
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                )}
+          <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+            {nodeQueries.map((nq, i) => (
+              <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
+                  <span className="text-xs font-medium text-gray-700">Node {i + 1}</span>
+                  {nodeQueries.length > 1 && (
+                    <button onClick={() => removeNodeQuery(i)} className="text-gray-400 hover:text-red-600">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-none"
+                  rows={3}
+                  placeholder="SELECT id AS &quot;~id&quot;, 'Label' AS &quot;~label&quot;, col1 FROM table"
+                  value={nq.sql}
+                  onChange={(e) => updateNodeQuery(i, e.target.value)}
+                  onBlur={() => saveCurrentQueries()}
+                />
               </div>
-              <textarea
-                className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-none"
-                rows={3}
-                placeholder="SELECT id AS &quot;~id&quot;, 'Label' AS &quot;~label&quot;, col1 FROM table"
-                value={nq.sql}
-                onChange={(e) => updateNodeQuery(i, e.target.value)}
-                onBlur={() => saveCurrentQueries()}
-              />
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </Card>
 
@@ -455,26 +457,28 @@ export function Import() {
               <Plus className="h-3 w-3" /> Add
             </button>
           </div>
-          {edgeQueries.map((eq, i) => (
-            <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
-              <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
-                <span className="text-xs font-medium text-gray-700">Edge {i + 1}</span>
-                {edgeQueries.length > 1 && (
-                  <button onClick={() => removeEdgeQuery(i)} className="text-gray-400 hover:text-red-600">
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                )}
+          <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+            {edgeQueries.map((eq, i) => (
+              <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
+                  <span className="text-xs font-medium text-gray-700">Edge {i + 1}</span>
+                  {edgeQueries.length > 1 && (
+                    <button onClick={() => removeEdgeQuery(i)} className="text-gray-400 hover:text-red-600">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-none"
+                  rows={3}
+                  placeholder="SELECT id AS &quot;~id&quot;, src AS &quot;~from&quot;, dst AS &quot;~to&quot;, 'Label' AS &quot;~label&quot; FROM table"
+                  value={eq.sql}
+                  onChange={(e) => updateEdgeQuery(i, { sql: e.target.value })}
+                  onBlur={() => saveCurrentQueries()}
+                />
               </div>
-              <textarea
-                className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-none"
-                rows={3}
-                placeholder="SELECT id AS &quot;~id&quot;, src AS &quot;~from&quot;, dst AS &quot;~to&quot;, 'Label' AS &quot;~label&quot; FROM table"
-                value={eq.sql}
-                onChange={(e) => updateEdgeQuery(i, { sql: e.target.value })}
-                onBlur={() => saveCurrentQueries()}
-              />
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </Card>
 
