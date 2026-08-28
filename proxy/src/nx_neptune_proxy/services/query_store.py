@@ -4,7 +4,7 @@
 import uuid
 from dataclasses import dataclass
 
-from .db import get_connection, query
+from .db import connection, query
 
 
 @dataclass
@@ -67,23 +67,21 @@ class QueryStore:
         self, projection_id: str, queries: list[dict]
     ) -> list[NodeQuery]:
         """Replace all node queries for a projection."""
-        conn = get_connection()
-        conn.execute(
-            "DELETE FROM node_queries WHERE projection_id = ?", (projection_id,)
-        )
-        results = []
-        for i, q in enumerate(queries):
-            qid = q.get("id") or str(uuid.uuid4())
-            sql = q.get("sql", "")
+        with connection() as conn:
             conn.execute(
-                "INSERT INTO node_queries (id, projection_id, sql, position) VALUES (?, ?, ?, ?)",
-                (qid, projection_id, sql, i),
+                "DELETE FROM node_queries WHERE projection_id = ?", (projection_id,)
             )
-            results.append(
-                NodeQuery(id=qid, projection_id=projection_id, sql=sql, position=i)
-            )
-        conn.commit()
-        conn.close()
+            results = []
+            for i, q in enumerate(queries):
+                qid = q.get("id") or str(uuid.uuid4())
+                sql = q.get("sql", "")
+                conn.execute(
+                    "INSERT INTO node_queries (id, projection_id, sql, position) VALUES (?, ?, ?, ?)",
+                    (qid, projection_id, sql, i),
+                )
+                results.append(
+                    NodeQuery(id=qid, projection_id=projection_id, sql=sql, position=i)
+                )
         return results
 
     def save_node_from_payload(self, projection_id: str, models: list) -> None:
@@ -107,23 +105,21 @@ class QueryStore:
         self, projection_id: str, queries: list[dict]
     ) -> list[EdgeQuery]:
         """Replace all edge queries for a projection."""
-        conn = get_connection()
-        conn.execute(
-            "DELETE FROM edge_queries WHERE projection_id = ?", (projection_id,)
-        )
-        results = []
-        for i, q in enumerate(queries):
-            qid = q.get("id") or str(uuid.uuid4())
-            sql = q.get("sql", "")
+        with connection() as conn:
             conn.execute(
-                "INSERT INTO edge_queries (id, projection_id, sql, position) VALUES (?, ?, ?, ?)",
-                (qid, projection_id, sql, i),
+                "DELETE FROM edge_queries WHERE projection_id = ?", (projection_id,)
             )
-            results.append(
-                EdgeQuery(id=qid, projection_id=projection_id, sql=sql, position=i)
-            )
-        conn.commit()
-        conn.close()
+            results = []
+            for i, q in enumerate(queries):
+                qid = q.get("id") or str(uuid.uuid4())
+                sql = q.get("sql", "")
+                conn.execute(
+                    "INSERT INTO edge_queries (id, projection_id, sql, position) VALUES (?, ?, ?, ?)",
+                    (qid, projection_id, sql, i),
+                )
+                results.append(
+                    EdgeQuery(id=qid, projection_id=projection_id, sql=sql, position=i)
+                )
         return results
 
     def save_edge_from_payload(self, projection_id: str, models: list) -> None:

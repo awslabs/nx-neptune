@@ -38,6 +38,12 @@ def connection() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def query(sql: str, params: tuple = ()) -> list[sqlite3.Row]:
+    """Run a read query and return all rows, always closing the connection."""
+    with connection() as conn:
+        return conn.execute(sql, params).fetchall()
+
+
 def init_db() -> None:
     with connection() as conn:
         conn.executescript("""
