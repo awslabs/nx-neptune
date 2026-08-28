@@ -8,7 +8,7 @@ from httpx import ASGITransport, AsyncClient
 
 from nx_neptune_proxy.app import app
 from nx_neptune_proxy.auth import get_token
-from nx_neptune_proxy.services.db import get_connection
+from nx_neptune_proxy.services.db import connection
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_store import store
 
@@ -28,21 +28,17 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clear_store():
-    conn = get_connection()
-    conn.execute("DELETE FROM projections")
-    conn.execute("DELETE FROM projects")
-    conn.commit()
-    conn.close()
+    with connection() as conn:
+        conn.execute("DELETE FROM projections")
+        conn.execute("DELETE FROM projects")
     # Create a default project for tests
     p = project_store.create(name="Test Project")
     global _TEST_PROJECT_ID
     _TEST_PROJECT_ID = p.id
     yield
-    conn = get_connection()
-    conn.execute("DELETE FROM projections")
-    conn.execute("DELETE FROM projects")
-    conn.commit()
-    conn.close()
+    with connection() as conn:
+        conn.execute("DELETE FROM projections")
+        conn.execute("DELETE FROM projects")
 
 
 _TEST_PROJECT_ID = ""

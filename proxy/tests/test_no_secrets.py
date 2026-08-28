@@ -3,7 +3,7 @@
 
 """Absence of credentials or secrets in local storage."""
 
-from nx_neptune_proxy.services.db import get_connection
+from nx_neptune_proxy.services.db import connection
 from nx_neptune_proxy.services.projection_store import store
 
 
@@ -39,10 +39,9 @@ class TestNoSecretsInDb:
         )
 
         # Read the raw database content
-        conn = get_connection()
-        cursor = conn.execute("SELECT * FROM projections")
-        rows = cursor.fetchall()
-        conn.close()
+        with connection() as conn:
+            cursor = conn.execute("SELECT * FROM projections")
+            rows = cursor.fetchall()
 
         # Serialize all values to check for sensitive content
         all_values = []
@@ -70,11 +69,10 @@ class TestNoSecretsInDb:
             error="AccessDeniedException: User arn:aws:iam::123456789012:user/dev is not authorized",
         )
 
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT error FROM projections WHERE id = ?", (p.id,)
-        ).fetchone()
-        conn.close()
+        with connection() as conn:
+            row = conn.execute(
+                "SELECT error FROM projections WHERE id = ?", (p.id,)
+            ).fetchone()
 
         error_text = row["error"].lower()
         for pattern in self.SENSITIVE_PATTERNS:
