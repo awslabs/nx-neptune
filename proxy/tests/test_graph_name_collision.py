@@ -19,8 +19,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from nx_neptune_proxy.services.pipeline import run_pipeline
-from nx_neptune_proxy.services.projection_store import store
 from nx_neptune_proxy.services.project_store import store as project_store
+from nx_neptune_proxy.services.projection_store import store
 
 # --- Schema validation (defense-in-depth) ---
 
