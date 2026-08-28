@@ -31,9 +31,10 @@ from nx_neptune_proxy.routers.schemas import (
     ValidateResponse,
 )
 from nx_neptune_proxy.services.pipeline import run_pipeline
-from nx_neptune_proxy.services.projection_service import projection_service
-from nx_neptune_proxy.services.projection_store import store
-from nx_neptune_proxy.services.query_store import query_store
+from nx_neptune_proxy.services.projection_service import (
+    ProjectionNotFound,
+    projection_service,
+)
 from nx_neptune_proxy.utils import unpack_query_results
 from nx_neptune_proxy.utils.aws_helper import (
     assert_managed_graph,
@@ -45,10 +46,10 @@ router = APIRouter(prefix="/api/v0/projection", tags=["projection"])
 
 
 def _get_projection_or_404(projection_id: str):
-    projection = store.get(projection_id)
-    if projection is None:
+    try:
+        return projection_service.get_or_raise(projection_id)
+    except ProjectionNotFound:
         raise HTTPException(status_code=404, detail="Projection not found")
-    return projection
 
 
 @router.post(
@@ -59,14 +60,14 @@ def _get_projection_or_404(projection_id: str):
 )
 def create_projection(body: ProjectionCreate):
     """Create a new projection in draft state."""
-    projection = store.create(**body.model_dump())
+    projection = projection_service.create(**body.model_dump())
     return asdict(projection)
 
 
 @router.get("", summary="List all projections", response_model=list[ProjectionResponse])
 def list_projections():
     """List all projections."""
-    return [asdict(p) for p in store.list()]
+    return [asdict(p) for p in projection_service.list()]
 
 
 @router.get(
@@ -84,7 +85,9 @@ def get_projection(projection_id: str):
 )
 def update_projection(projection_id: str, body: ProjectionUpdate):
     _get_projection_or_404(projection_id)
-    projection = store.update(projection_id, **body.model_dump(exclude_unset=True))
+    projection = projection_service.update(
+        projection_id, **body.model_dump(exclude_unset=True)
+    )
     return asdict(projection)  # type: ignore[arg-type]
 
 
@@ -133,17 +136,7 @@ def validate_query(projection_id: str):
     p = _get_projection_or_404(projection_id)
     checks = []
 
-    node_queries_list = query_store.list_node_queries(projection_id)
-    edge_queries_list = query_store.list_edge_queries(projection_id)
-
-    queries_to_validate = []
-    for i, nq in enumerate(node_queries_list):
-        if nq.sql.strip():
-            queries_to_validate.append((f"node_query_{i+1}", nq.sql, "node"))
-
-    for i, eq in enumerate(edge_queries_list):
-        if eq.sql.strip():
-            queries_to_validate.append((f"edge_query_{i+1}", eq.sql, "edge"))
+    queries_to_validate = projection_service.list_labeled_queries(projection_id)
 
     for label, query, query_type in queries_to_validate:
         result = check_athena_query(
@@ -170,11 +163,7 @@ async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le
     p = _get_projection_or_404(projection_id)
     client = ClientFactory().athena()
 
-    node_queries_list = query_store.list_node_queries(projection_id)
-    edge_queries_list = query_store.list_edge_queries(projection_id)
-
-    queries = [nq.sql for nq in node_queries_list if nq.sql.strip()]
-    queries += [eq.sql for eq in edge_queries_list if eq.sql.strip()]
+    queries = projection_service.list_query_sql(projection_id)
 
     all_results: list = []
 
@@ -220,7 +209,7 @@ def delete_projection(projection_id: str):
         raise HTTPException(
             status_code=409, detail="Graph deletion in progress, cannot purge yet"
         )
-    store.delete(projection_id)
+    projection_service.delete(projection_id)
     return {"id": p.id, "status": "deleted"}
 
 
@@ -244,7 +233,7 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
     resp = get_graph_or_exception(client, p.graph_id)
     assert_managed_graph(resp.get("name"))
 
-    store.update(
+    projection_service.update(
         projection_id,
         status="deleting",
         step="graph_delete",
@@ -257,7 +246,7 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
             client.delete_graph(graphIdentifier=p.graph_id, skipSnapshot=True)
         except ClientError as e:
             if e.response["Error"]["Code"] != "ResourceNotFoundException":
-                store.update(
+                projection_service.update(
                     projection_id, status="failed", error=sanitize_error_message(str(e))
                 )
                 return
@@ -269,13 +258,13 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
             except ClientError:
                 break
         else:
-            store.update(
+            projection_service.update(
                 projection_id,
                 status="failed",
                 error="Timeout waiting for graph deletion",
             )
             return
-        store.update(
+        projection_service.update(
             projection_id,
             status="archived",
             graph_id=None,

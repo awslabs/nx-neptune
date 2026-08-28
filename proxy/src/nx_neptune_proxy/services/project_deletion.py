@@ -11,7 +11,7 @@ from botocore.exceptions import ClientError
 from nx_neptune.clients.client_factory import ClientFactory
 
 from nx_neptune_proxy.services.project_store import store as project_store
-from nx_neptune_proxy.services.projection_store import store as projection_store
+from nx_neptune_proxy.services.projection_service import projection_service
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ TIMEOUT = 600  # 10 min max wait per graph
 
 async def delete_project(project_id: str) -> None:
     """Delete all graphs for a project's projections, then remove records."""
-    projections = [p for p in projection_store.list() if p.project_id == project_id]
+    projections = projection_service.list_by_project(project_id)
 
     # Delete all graphs in parallel
     graphs_to_delete = [p for p in projections if p.graph_id]
@@ -41,7 +41,7 @@ async def delete_project(project_id: str) -> None:
 
     for p in projections:
         if p.id not in failed_ids:
-            projection_store.delete(p.id)
+            projection_service.delete(p.id)
 
     # Only delete the project if all graphs were cleaned up
     if failed_ids:

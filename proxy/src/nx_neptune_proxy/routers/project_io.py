@@ -23,8 +23,7 @@ from pydantic import BaseModel, Field
 from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.routers.schemas import ProjectExportPayload, ProjectionExport
 from nx_neptune_proxy.services.project_store import store as project_store
-from nx_neptune_proxy.services.projection_store import store as projection_store
-from nx_neptune_proxy.services.query_store import query_store
+from nx_neptune_proxy.services.projection_service import projection_service
 from nx_neptune_proxy.utils.aws_helper import (
     check_body_size,
     check_content_length,
@@ -68,14 +67,9 @@ def _build_export_payload(project_id: str) -> tuple[dict, str]:
     if p is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    projections = projection_store.list_by_project(project_id)
-    queries_by_projection = {
-        pr.id: (
-            [nq.sql for nq in query_store.list_node_queries(pr.id)],
-            [eq.sql for eq in query_store.list_edge_queries(pr.id)],
-        )
-        for pr in projections
-    }
+    projections, queries_by_projection = (
+        projection_service.list_projections_with_query_sql(project_id)
+    )
     payload = ProjectExportPayload.from_project(p, projections, queries_by_projection)
     return payload.model_dump(), p.name
 
@@ -106,15 +100,10 @@ def _import_from_payload(payload: ProjectExportPayload) -> dict:
 
     for pr_data in payload.projections:
         pr_dict = pr_data.model_dump(exclude={"node_queries", "edge_queries"})
-        pr = projection_store.create(**pr_dict, project_id=p.id)
-        if pr_data.node_queries:
-            query_store.save_node_queries(
-                pr.id, [{"sql": sql} for sql in pr_data.node_queries]
-            )
-        if pr_data.edge_queries:
-            query_store.save_edge_queries(
-                pr.id, [{"sql": sql} for sql in pr_data.edge_queries]
-            )
+        pr_dict["project_id"] = p.id
+        projection_service.create_with_queries(
+            pr_dict, pr_data.node_queries, pr_data.edge_queries
+        )
 
     return {"id": p.id, "name": p.name}
 
