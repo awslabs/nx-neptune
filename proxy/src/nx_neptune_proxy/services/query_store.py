@@ -4,7 +4,7 @@
 import uuid
 from dataclasses import dataclass
 
-from .db import connection, query
+from .db import connection
 
 
 @dataclass
@@ -53,10 +53,11 @@ class QueryStore:
     # --- Node Queries ---
 
     def list_node_queries(self, projection_id: str) -> list[NodeQuery]:
-        rows = query(
-            "SELECT * FROM node_queries WHERE projection_id = ? ORDER BY position",
-            (projection_id,),
-        )
+        with connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM node_queries WHERE projection_id = ? ORDER BY position",
+                (projection_id,),
+            ).fetchall()
         return [NodeQuery.from_row(r) for r in rows]
 
     def list_node_responses(self, projection_id: str) -> list[dict]:
@@ -91,10 +92,11 @@ class QueryStore:
     # --- Edge Queries ---
 
     def list_edge_queries(self, projection_id: str) -> list[EdgeQuery]:
-        rows = query(
-            "SELECT * FROM edge_queries WHERE projection_id = ? ORDER BY position",
-            (projection_id,),
-        )
+        with connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM edge_queries WHERE projection_id = ? ORDER BY position",
+                (projection_id,),
+            ).fetchall()
         return [EdgeQuery.from_row(r) for r in rows]
 
     def list_edge_responses(self, projection_id: str) -> list[dict]:
