@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 from .db import get_connection
 
@@ -98,7 +98,7 @@ class ProjectionStore:
         conn.close()
         return self._row_to_projection(row) if row else None
 
-    def list(self) -> list[Projection]:
+    def list(self) -> List[Projection]:
         conn = get_connection()
         rows = conn.execute(
             "SELECT * FROM projections ORDER BY created_at DESC"
@@ -106,7 +106,7 @@ class ProjectionStore:
         conn.close()
         return [self._row_to_projection(r) for r in rows]
 
-    def list_by_project(self, project_id: str) -> list[Projection]:
+    def list_by_project(self, project_id: str) -> List[Projection]:
         conn = get_connection()
         rows = conn.execute(
             "SELECT * FROM projections WHERE project_id = ? ORDER BY created_at DESC",
