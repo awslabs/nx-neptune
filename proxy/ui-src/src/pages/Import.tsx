@@ -435,7 +435,7 @@ export function Import() {
                   )}
                 </div>
                 <textarea
-                  className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-none"
+                  className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
                   rows={3}
                   placeholder="SELECT id AS &quot;~id&quot;, 'Label' AS &quot;~label&quot;, col1 FROM table"
                   value={nq.sql}
@@ -469,7 +469,7 @@ export function Import() {
                   )}
                 </div>
                 <textarea
-                  className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-none"
+                  className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
                   rows={3}
                   placeholder="SELECT id AS &quot;~id&quot;, src AS &quot;~from&quot;, dst AS &quot;~to&quot;, 'Label' AS &quot;~label&quot; FROM table"
                   value={eq.sql}
