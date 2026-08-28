@@ -31,6 +31,7 @@ from nx_neptune_proxy.routers.schemas import (
     ValidateResponse,
 )
 from nx_neptune_proxy.services.pipeline import run_pipeline
+from nx_neptune_proxy.services.projection_service import projection_service
 from nx_neptune_proxy.services.projection_store import store
 from nx_neptune_proxy.services.query_store import query_store
 from nx_neptune_proxy.utils import unpack_query_results
@@ -296,9 +297,10 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
 def get_queries(projection_id: str):
     """Return all node and edge queries for a projection."""
     _get_projection_or_404(projection_id)
+    node_queries, edge_queries = projection_service.get_queries(projection_id)
     return QueriesResponse(
-        node_queries=query_store.list_node_responses(projection_id),  # type: ignore[arg-type]
-        edge_queries=query_store.list_edge_responses(projection_id),  # type: ignore[arg-type]
+        node_queries=node_queries,  # type: ignore[arg-type]
+        edge_queries=edge_queries,  # type: ignore[arg-type]
     )
 
 
@@ -310,9 +312,10 @@ def get_queries(projection_id: str):
 def save_queries(projection_id: str, body: QueriesPayload):
     """Replace all node and edge queries for a projection."""
     _get_projection_or_404(projection_id)
-    query_store.save_node_from_payload(projection_id, body.node_queries)
-    query_store.save_edge_from_payload(projection_id, body.edge_queries)
+    node_queries, edge_queries = projection_service.save_queries(
+        projection_id, body.node_queries, body.edge_queries
+    )
     return QueriesResponse(
-        node_queries=query_store.list_node_responses(projection_id),  # type: ignore[arg-type]
-        edge_queries=query_store.list_edge_responses(projection_id),  # type: ignore[arg-type]
+        node_queries=node_queries,  # type: ignore[arg-type]
+        edge_queries=edge_queries,  # type: ignore[arg-type]
     )
