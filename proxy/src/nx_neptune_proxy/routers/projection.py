@@ -21,6 +21,8 @@ from nx_neptune.validators import (
 )
 
 from nx_neptune_proxy.routers.schemas import (
+    GraphQueryRequest,
+    GraphQueryResponse,
     PreviewResponse,
     ProjectionCreate,
     ProjectionResponse,
@@ -33,6 +35,8 @@ from nx_neptune_proxy.routers.schemas import (
 from nx_neptune_proxy.services.pipeline import run_pipeline
 from nx_neptune_proxy.services.projection_service import (
     ProjectionNotFound,
+    ProjectionNotQueryable,
+    ReadOnlyQueryViolation,
     projection_service,
 )
 from nx_neptune_proxy.utils import unpack_query_results
@@ -187,6 +191,35 @@ async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le
         all_results.append(unpack_query_results(rows))
 
     return {"error": None, "results": all_results}
+
+
+@router.post(
+    "/{projection_id}/graph-query",
+    summary="Run a read-only openCypher query against the projection's graph",
+    response_model=GraphQueryResponse,
+)
+async def graph_query(projection_id: str, body: GraphQueryRequest):
+    """Execute a read-only openCypher query and return ``{columns, rows}``.
+
+    Mirrors the ``/preview`` handler's conventions (same router, same auth,
+    tabular response). A missing projection returns 404; a non-queryable
+    projection or a disallowed mutation returns 400; execution failures are
+    returned as a sanitized ``{error}`` body.
+    """
+    kwargs = {} if body.limit is None else {"limit": body.limit}
+    try:
+        return projection_service.run_graph_query(projection_id, body.query, **kwargs)
+    except ProjectionNotFound:
+        raise HTTPException(status_code=404, detail="Projection not found")
+    except (ProjectionNotQueryable, ReadOnlyQueryViolation) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # noqa: BLE001 - surface a sanitized message, not a 500
+        return {
+            "error": {
+                "message": sanitize_error_message(str(e)),
+                "hint": "Check the query syntax and that the graph is available.",
+            }
+        }
 
 
 @router.post(
