@@ -15,7 +15,7 @@ import networkx as nx
 import pytest
 
 from nx_neptune import NeptuneGraph, NETWORKX_GRAPH_ID, SessionManager, CleanupTask, Node, Edge
-from nx_neptune.clients.iam_client import IamClient
+from nx_neptune.clients.iam_client import IamClientWrapper
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("nx_neptune").setLevel(logging.INFO)
@@ -48,7 +48,7 @@ def s3_client():
 def iam_client():
     """IAM client for permission checks."""
     sts_arn = boto3.client("sts").get_caller_identity()["Arn"]
-    return IamClient(role_arn=sts_arn, client=boto3.client("iam"))
+    return IamClientWrapper(role_arn=sts_arn, client=boto3.client("iam"))
 
 
 @pytest.fixture(scope="module")
