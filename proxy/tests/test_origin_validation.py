@@ -21,27 +21,32 @@ def client():
 
 class TestOriginValidation:
     @pytest.mark.asyncio
-    async def test_evil_origin_rejected(self, client):
-        resp = await client.get("/health", headers={"Origin": "http://evil.com"})
+    @pytest.mark.parametrize(
+        "origin",
+        [
+            pytest.param("http://localhost:8080", id="localhost"),
+            pytest.param("http://127.0.0.1:8080", id="127_0_0_1"),
+            # urlparse correctly strips IPv6 brackets before comparison, unlike
+            # Starlette's TrustedHostMiddleware, which cannot parse them at all.
+            pytest.param("http://[::1]:8080", id="ipv6_loopback"),
+        ],
+    )
+    async def test_loopback_origin_allowed(self, client, origin):
+        resp = await client.get("/health", headers={"Origin": origin})
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "origin",
+        [
+            pytest.param("http://evil.com", id="evil_host"),
+            pytest.param("not-a-valid-url", id="malformed"),
+        ],
+    )
+    async def test_untrusted_origin_rejected(self, client, origin):
+        resp = await client.get("/health", headers={"Origin": origin})
         assert resp.status_code == 403
         assert resp.json()["error"] == "origin_rejected"
-
-    @pytest.mark.asyncio
-    async def test_localhost_origin_allowed(self, client):
-        resp = await client.get("/health", headers={"Origin": "http://localhost:8080"})
-        assert resp.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_127_0_0_1_origin_allowed(self, client):
-        resp = await client.get("/health", headers={"Origin": "http://127.0.0.1:8080"})
-        assert resp.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_ipv6_loopback_origin_allowed(self, client):
-        """urlparse correctly strips IPv6 brackets before comparison, unlike
-        Starlette's TrustedHostMiddleware, which cannot parse them at all."""
-        resp = await client.get("/health", headers={"Origin": "http://[::1]:8080"})
-        assert resp.status_code == 200
 
     @pytest.mark.asyncio
     async def test_no_origin_allowed(self, client):
@@ -49,11 +54,6 @@ class TestOriginValidation:
         not subject to this check."""
         resp = await client.get("/health")
         assert resp.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_malformed_origin_rejected(self, client):
-        resp = await client.get("/health", headers={"Origin": "not-a-valid-url"})
-        assert resp.status_code == 403
 
 
 class TestOriginValidationFullOrigin:
@@ -75,24 +75,26 @@ class TestOriginValidationFullOrigin:
         )
 
     @pytest.mark.asyncio
-    async def test_configured_full_origin_allowed(self, client_with_allowed_origin):
+    @pytest.mark.parametrize(
+        "origin, expected_status",
+        [
+            pytest.param(
+                "https://app.example.com:8443", 200, id="configured_full_origin"
+            ),
+            # A trusted hostname on a non-configured port is rejected — matching
+            # is on the full origin, not the hostname alone.
+            pytest.param(
+                "https://app.example.com:9999", 403, id="same_host_wrong_port"
+            ),
+            pytest.param(
+                "http://app.example.com:8443", 403, id="same_host_wrong_scheme"
+            ),
+        ],
+    )
+    async def test_full_origin_matching(
+        self, client_with_allowed_origin, origin, expected_status
+    ):
         resp = await client_with_allowed_origin.get(
-            "/health", headers={"Origin": "https://app.example.com:8443"}
+            "/health", headers={"Origin": origin}
         )
-        assert resp.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_same_host_wrong_port_rejected(self, client_with_allowed_origin):
-        """A trusted hostname on a non-configured port is rejected — matching
-        is on the full origin, not the hostname alone."""
-        resp = await client_with_allowed_origin.get(
-            "/health", headers={"Origin": "https://app.example.com:9999"}
-        )
-        assert resp.status_code == 403
-
-    @pytest.mark.asyncio
-    async def test_same_host_wrong_scheme_rejected(self, client_with_allowed_origin):
-        resp = await client_with_allowed_origin.get(
-            "/health", headers={"Origin": "http://app.example.com:8443"}
-        )
-        assert resp.status_code == 403
+        assert resp.status_code == expected_status

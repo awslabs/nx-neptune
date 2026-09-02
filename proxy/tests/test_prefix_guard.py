@@ -20,29 +20,21 @@ def test_assert_managed_graph_passes_with_prefix(mock_get_settings):
     assert_managed_graph("nxp-my-graph")
 
 
+@pytest.mark.parametrize(
+    "graph_name",
+    [
+        pytest.param("other-graph", id="wrong_prefix_rejected"),
+        pytest.param(None, id="none_rejected"),
+        pytest.param("", id="empty_string_rejected"),
+    ],
+)
 @patch("nx_neptune_proxy.utils.aws_helper.get_settings")
-def test_assert_managed_graph_rejects_wrong_prefix(mock_get_settings):
+def test_assert_managed_graph_rejects(mock_get_settings, graph_name):
     mock_get_settings.return_value.graph_prefix = "nxp-"
     with pytest.raises(HTTPException) as exc_info:
-        assert_managed_graph("other-graph")
+        assert_managed_graph(graph_name)
     assert exc_info.value.status_code == 403
     assert "not managed" in exc_info.value.detail
-
-
-@patch("nx_neptune_proxy.utils.aws_helper.get_settings")
-def test_assert_managed_graph_rejects_none(mock_get_settings):
-    mock_get_settings.return_value.graph_prefix = "nxp-"
-    with pytest.raises(HTTPException) as exc_info:
-        assert_managed_graph(None)
-    assert exc_info.value.status_code == 403
-
-
-@patch("nx_neptune_proxy.utils.aws_helper.get_settings")
-def test_assert_managed_graph_rejects_empty_string(mock_get_settings):
-    mock_get_settings.return_value.graph_prefix = "nxp-"
-    with pytest.raises(HTTPException) as exc_info:
-        assert_managed_graph("")
-    assert exc_info.value.status_code == 403
 
 
 # --- get_graph_or_exception ---
