@@ -533,16 +533,16 @@ export function Projections() {
         </Card>
       )}
 
-      {/* Bottom-docked graph query console (UI mockup, dummy data) */}
+      {/* Bottom-docked graph query console (UI skeleton — Run not wired to backend) */}
       {consoleTarget && consoleOpen && (
         <GraphQueryConsole
           onClose={() => { setConsoleOpen(false); setConsoleTarget(null); }}
           meta={{
             graphName: consoleTarget.graph_name || consoleTarget.id.slice(0, 8),
-            graphId: consoleTarget.graph_id || "g-e2ddaz7nm0",
+            graphId: consoleTarget.graph_id || "",
             status:
               (consoleTarget.graph_id && graphStatuses.get(consoleTarget.graph_id)?.toLowerCase()) ||
-              "available",
+              "unknown",
           }}
         />
       )}

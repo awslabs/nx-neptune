@@ -8,12 +8,10 @@ import { Play, X, AlertTriangle, Loader2 } from "lucide-react";
  * docs/design-graph-query-console-full.md:
  *   compact meta header · editable query + Run | results
  *
- * SCOPE: This PR ships the UI skeleton only — the layout, the resizable panel,
- * the query editor, the Run button, and the results/error render shells.
- * Run is intentionally NOT wired to the backend yet: the backend endpoint
- * (POST /api/v0/projection/{id}/graph-query) ships separately, and wiring
- * `handleRun` to it — plus rendering real { columns, rows } — is the next PR.
- * There is deliberately no canned/dummy data here.
+ * SCOPE: UI skeleton only — the layout, the resizable panel, the query editor,
+ * the Run button, and the results/error render shells. Run is not wired to the
+ * backend (POST /api/v0/projection/{id}/graph-query) yet, and there is no
+ * canned/dummy data.
  */
 
 interface GraphMeta {
@@ -37,8 +35,8 @@ export function GraphQueryConsole({
   onClose: () => void;
 }) {
   const [query, setQuery] = useState(DEFAULT_QUERY);
-  // Result/error state and the render shells below are intentionally kept so the
-  // next PR only needs to populate them from the API response.
+  // Result/error state and the render shells below are kept so wiring the API
+  // response only needs to populate them.
   const [result] = useState<ResultTable | null>(null);
   const [error] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -64,11 +62,17 @@ export function GraphQueryConsole({
   }, [onDrag]);
 
   // --- run action ---
-  // TODO(next PR): call projection.graphQuery(meta.graphId, query) and set
-  // result / error from the { columns, rows } | { error } response.
+  // TODO: call projection.graphQuery(meta.graphId, query) and set result / error
+  // from the { columns, rows } | { error } response.
   function handleRun() {
     // Not wired yet — UI skeleton only.
   }
+
+  // Run is enabled only when there is a query to run AND the graph is available.
+  const canRun =
+    query.trim().length > 0 &&
+    meta.status.toLowerCase() === "available" &&
+    !running;
 
   return (
     <div
@@ -120,7 +124,14 @@ export function GraphQueryConsole({
             <div className="flex justify-end border-t border-gray-100 p-2">
               <button
                 onClick={handleRun}
-                disabled={running}
+                disabled={!canRun}
+                title={
+                  meta.status.toLowerCase() !== "available"
+                    ? "Graph is not available to query"
+                    : query.trim().length === 0
+                      ? "Enter a query to run"
+                      : "Run query"
+                }
                 className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
