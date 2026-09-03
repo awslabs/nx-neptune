@@ -20,6 +20,7 @@ import pytest
 
 from nx_neptune_proxy.services.pipeline import run_pipeline
 from nx_neptune_proxy.services.projection_store import store
+from nx_neptune_proxy.services.project_store import store as project_store
 
 # --- Schema validation (defense-in-depth) ---
 
@@ -29,21 +30,29 @@ class TestGraphNameSchemaValidation:
     @pytest.mark.parametrize(
         "bad_name", ["", "a", "ab", "-abc", "has space", "bad!char"]
     )
-    async def test_rejects_invalid_graph_name(self, client, bad_name):
+    async def test_rejects_invalid_graph_name(self, client, test_project_id, bad_name):
         """Empty, too-short, or illegal graph_name is rejected with 422."""
         resp = await client.post(
             "/api/v0/projection",
-            json={"database": "mydb", "graph_name": bad_name},
+            json={
+                "database": "mydb",
+                "graph_name": bad_name,
+                "project_id": test_project_id,
+            },
         )
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("ok_name", ["abc", "Test-Graph", "my_graph_1", "ABC123"])
-    async def test_accepts_valid_graph_name(self, client, ok_name):
+    async def test_accepts_valid_graph_name(self, client, test_project_id, ok_name):
         """Valid names (incl. uppercase and underscore) are accepted."""
         resp = await client.post(
             "/api/v0/projection",
-            json={"database": "mydb", "graph_name": ok_name},
+            json={
+                "database": "mydb",
+                "graph_name": ok_name,
+                "project_id": test_project_id,
+            },
         )
         assert resp.status_code == 201
         assert resp.json()["graph_name"] == ok_name
@@ -60,6 +69,8 @@ def _make_projection(**overrides):
         s3_staging_bucket="s3://bucket/staging/",
     )
     defaults.update(overrides)
+    if "project_id" not in defaults:
+        defaults["project_id"] = project_store.create(name="Test Project").id
     return store.create(**defaults)
 
 

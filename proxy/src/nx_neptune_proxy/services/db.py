@@ -3,7 +3,9 @@
 
 import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 DB_PATH = os.environ.get(
     "NX_NEPTUNE_DB_PATH", str(Path.home() / ".nx-neptune" / "proxy.db")
@@ -20,9 +22,25 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
-def init_db() -> None:
+@contextmanager
+def connection() -> Iterator[sqlite3.Connection]:
+    """Yield a connection, committing on success and always closing.
+
+    Using this instead of calling ``get_connection()`` directly guarantees the
+    connection is closed even when a query raises (e.g. an IntegrityError),
+    preventing leaked connections that hold SQLite locks.
+    """
     conn = get_connection()
-    conn.executescript("""
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def init_db() -> None:
+    with connection() as conn:
+        conn.executescript("""
         CREATE TABLE IF NOT EXISTS projects (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -50,5 +68,3 @@ def init_db() -> None:
             FOREIGN KEY (project_id) REFERENCES projects(id)
         );
     """)
-    conn.commit()
-    conn.close()
