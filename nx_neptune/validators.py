@@ -31,6 +31,7 @@ from nx_neptune.clients.response_utils import (
     is_not_found,
     is_versioning_enabled,
 )
+from nx_neptune.instance_management import _execute_athena_query
 from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
 
 logger = logging.getLogger(__name__)
@@ -215,8 +216,18 @@ def check_athena_table(
     )
 
 
+def wrap_with_limit(query: str, limit: int) -> str:
+    """Strip any existing LIMIT clause and append a new one."""
+    stripped = re.sub(r"\s+LIMIT\s+\d+\s*$", "", query.rstrip(), flags=re.IGNORECASE)
+    return f"{stripped} LIMIT {limit}"
+
+
 def check_athena_query(
-    sql_query: str, database: str, output_location: str, catalog: str = "AwsDataCatalog"
+    sql_query: str,
+    database: str,
+    output_location: str,
+    catalog: str = "AwsDataCatalog",
+    query_type: str = "node",
 ) -> CheckResult:
     """Validate SQL query by running with LIMIT 0 and checking required columns."""
     queries = [q.strip() for q in sql_query.split(";") if q.strip()]
@@ -226,19 +237,16 @@ def check_athena_query(
         athena = ClientFactory().athena()
 
         for i, q in enumerate(queries):
-            stripped = re.sub(
-                r"\s+LIMIT\s+\d+\s*$", "", q.rstrip(), flags=re.IGNORECASE
-            )
-            wrapped = f"{stripped} LIMIT 0"
+            wrapped = wrap_with_limit(q, 0)
 
-            exec_id = athena.start_query_execution(
-                QueryString=wrapped,
-                QueryExecutionContext={"Catalog": catalog, "Database": database},
-                ResultConfiguration={"OutputLocation": output_location},
-            )["QueryExecutionId"]
+            exec_id = _execute_athena_query(
+                athena, wrapped, output_location, catalog=catalog, database=database
+            )
 
             asyncio.run(
-                wait_until_all_complete([exec_id], TaskType.EXPORT_ATHENA_TABLE, athena)
+                wait_until_all_complete(
+                    [exec_id], TaskType.EXPORT_ATHENA_TABLE, athena, polling_interval=3
+                )
             )
 
             resp = athena.get_query_execution(QueryExecutionId=exec_id)
@@ -253,11 +261,20 @@ def check_athena_query(
             all_columns.append(get_query_result_columns(results))
 
         for i, columns in enumerate(all_columns):
-            if "~id" not in columns:
-                return CheckResult.fail(
-                    "athena_query",
-                    f"Query {i+1} missing required '~id' column. Got: {', '.join(columns)}",
-                )
+            if query_type == "edge":
+                missing = {"~from", "~to"} - set(columns)
+                if missing:
+                    return CheckResult.fail(
+                        "athena_query",
+                        f"Query {i+1} missing required edge column(s): "
+                        f"{', '.join(sorted(missing))}. Got: {', '.join(columns)}",
+                    )
+            else:
+                if "~id" not in columns:
+                    return CheckResult.fail(
+                        "athena_query",
+                        f"Query {i+1} missing required '~id' column. Got: {', '.join(columns)}",
+                    )
 
         combined = [c for cols in all_columns for c in cols]
         return CheckResult.ok(
