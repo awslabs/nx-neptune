@@ -2,13 +2,16 @@ import { useEffect, useState, useRef } from "react";
 import { useSearchParams, NavLink } from "react-router";
 import { projection, metadata, projectApi, graphActions, type Projection, type Project, type Inflight } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
-import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown, Download } from "lucide-react";
+import { GraphQueryConsole } from "../components/GraphQueryConsole";
+import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown, Download, Terminal } from "lucide-react";
 import { useNavigate } from "react-router";
 
 export function Projections() {
   const [searchParams] = useSearchParams();
   const [projections, setProjections] = useState<Projection[]>([]);
   const [selected, setSelected] = useState<Projection | null>(null);
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [consoleTarget, setConsoleTarget] = useState<Projection | null>(null);
   const [region, setRegion] = useState("");
   const [projects, setProjects] = useState<Map<string, Project>>(new Map());
   const [summaries, setSummaries] = useState<Map<string, { numNodes: number; numEdges: number }>>(new Map());
@@ -291,6 +294,16 @@ export function Projections() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
+                      {/* Query Graph (opens bottom console) */}
+                      <button
+                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-blue-600 disabled:opacity-30 disabled:hover:bg-transparent"
+                        disabled={!s.graph_id}
+                        title="Query graph"
+                        onClick={(e) => { e.stopPropagation(); setConsoleTarget(s); setConsoleOpen(true); }}
+                      >
+                        <Terminal className="h-4 w-4" />
+                      </button>
+
                       {/* Graph Explorer */}
                       <button
                         className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-blue-600 disabled:opacity-30 disabled:hover:bg-transparent"
@@ -425,7 +438,7 @@ export function Projections() {
         <Card className="w-80 shrink-0 space-y-3 self-start">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold">{selected.graph_name || selected.id.slice(0, 8)}</h2>
-            <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
+            <button onClick={() => { setSelected(null); setConsoleOpen(false); }} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
           </div>
           <div className="space-y-2 text-sm">
             {selected.project_id && <div><span className="text-gray-500">Project:</span> {projects.get(selected.project_id)?.name || selected.project_id}</div>}
@@ -472,6 +485,9 @@ export function Projections() {
               }}>
                 <ExternalLink className="h-3 w-3" /> Open in Graph Explorer
               </Button>
+              <Button variant="secondary" className="w-full" onClick={() => { setConsoleTarget(selected); setConsoleOpen(true); }}>
+                <Terminal className="h-3 w-3" /> Query Graph
+              </Button>
               <div className="flex gap-2">
                 <Button
                   variant="secondary"
@@ -515,6 +531,20 @@ export function Projections() {
             </div>
           )}
         </Card>
+      )}
+
+      {/* Bottom-docked graph query console (UI skeleton — Run not wired to backend) */}
+      {consoleTarget && consoleOpen && (
+        <GraphQueryConsole
+          onClose={() => { setConsoleOpen(false); setConsoleTarget(null); }}
+          meta={{
+            graphName: consoleTarget.graph_name || consoleTarget.id.slice(0, 8),
+            graphId: consoleTarget.graph_id || "",
+            status:
+              (consoleTarget.graph_id && graphStatuses.get(consoleTarget.graph_id)?.toLowerCase()) ||
+              "unknown",
+          }}
+        />
       )}
     </div>
   );

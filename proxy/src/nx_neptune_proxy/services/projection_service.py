@@ -16,10 +16,47 @@ tests). Routers translate ``ProjectionNotFound`` into a 404.
 
 from __future__ import annotations
 
-from typing import List, Optional
+import re
+from typing import Any, List, Optional
 
-from .projection_store import Projection, store as projection_store
+from nx_neptune.clients import NeptuneAnalyticsClient
+
+from .projection_store import Projection
+from .projection_store import store as projection_store
 from .query_store import EdgeQuery, NodeQuery, query_store
+
+# --- Read-only graph-query configuration ---
+
+# Projection status at which the backing Neptune graph exists and is queryable.
+QUERYABLE_STATUS = "complete"
+
+# Default LIMIT appended when a query has none, and the hard ceiling on rows
+# returned regardless of any user-supplied LIMIT. These are sensible defaults
+# and are expected to be revisited based on client feedback.
+DEFAULT_LIMIT = 100
+MAX_ROWS = 1000
+
+# Per-query timeout (seconds) applied to the Neptune Analytics client. The
+# service converts this to queryTimeoutMilliseconds natively.
+QUERY_TIMEOUT_SECONDS = 30
+
+# Best-effort read-only guard. This is NOT a parser — IAM (a read-only scoped
+# session) is the real control; this denylist is a coarse first line applied
+# server-side before execution. Case-insensitive, substring match.
+_MUTATION_KEYWORDS = (
+    "DETACH DELETE",
+    "CREATE",
+    "MERGE",
+    "DELETE",
+    "SET",
+    "REMOVE",
+)
+
+# Detect a trailing LIMIT clause so we only append one when missing.
+_LIMIT_RE = re.compile(r"\blimit\b\s+\d+\s*;?\s*$", re.IGNORECASE)
+
+
+# --- Exceptions ---
 
 
 class ProjectionNotFound(Exception):
@@ -28,6 +65,94 @@ class ProjectionNotFound(Exception):
     def __init__(self, projection_id: str):
         self.projection_id = projection_id
         super().__init__(f"Projection not found: {projection_id}")
+
+
+class ProjectionNotQueryable(Exception):
+    """Raised when a projection has no live, queryable graph.
+
+    Carries a human-readable message so the router can return a 400 with a
+    clear explanation rather than surfacing a 500.
+    """
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+
+
+class ReadOnlyQueryViolation(Exception):
+    """Raised when a query contains a disallowed mutation keyword."""
+
+    def __init__(self, keyword: str):
+        self.keyword = keyword
+        super().__init__(
+            f"Only read-only queries are allowed; disallowed keyword: {keyword}"
+        )
+
+
+# --- Internal Utils ---
+
+
+def _find_mutation_keyword(query: str) -> Optional[str]:
+    """Return the first disallowed mutation keyword found, else None.
+
+    This denylist is a best-effort, case-insensitive substring match — a coarse
+    first line of defense applied server-side before execution. It is NOT the
+    primary guard: the authoritative read-only enforcement is at the IAM level
+    (a read-only-scoped session/role for the Neptune data plane), which cannot
+    be bypassed by query phrasing. This check exists to fail obvious mutations
+    fast with a clear error, not to be a substitute for that IAM scoping.
+
+    ``DETACH DELETE`` is checked first so it is reported in preference to the
+    bare ``DELETE`` it contains.
+    """
+    upper = query.upper()
+    for keyword in _MUTATION_KEYWORDS:
+        if keyword in upper:
+            return keyword
+    return None
+
+
+def _ensure_limit(query: str, limit: int) -> str:
+    """Append ``LIMIT <limit>`` when the query has no trailing LIMIT clause.
+
+    A user-supplied LIMIT is left intact; the row ceiling is still enforced on
+    the results after execution as a belt-and-suspenders bound.
+    """
+    stripped = query.rstrip().rstrip(";").rstrip()
+    if _LIMIT_RE.search(query):
+        return query
+    return f"{stripped} LIMIT {limit}"
+
+
+# --- Result normalization ---
+
+
+def _normalize_cell(value: Any) -> Any:
+    """Normalize a single openCypher result value for the tabular response.
+
+    Only scalars pass through; everything else (nodes,
+    relationships, lists, maps) is stringified. Proper structured node/list
+    rendering is deferred; the outer ``{columns, rows}``
+    shape does not change when that lands.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def graph_result_from_records(
+    results: List[dict],
+) -> tuple[list[str], list[list[Any]]]:
+    """Build ``(columns, rows)`` from a list of openCypher record dicts.
+
+    Column order is derived from the first record's key order (which reflects
+    the query's RETURN order). An empty result set yields empty columns/rows.
+    """
+    if not results:
+        return [], []
+    columns = list(results[0].keys())
+    rows = [[_normalize_cell(record.get(col)) for col in columns] for record in results]
+    return columns, rows
 
 
 class ProjectionService:
@@ -46,6 +171,52 @@ class ProjectionService:
         if projection is None:
             raise ProjectionNotFound(projection_id)
         return projection
+
+    # --- Read-only graph query ---
+
+    def run_graph_query(
+        self, projection_id: str, query: str, limit: int = DEFAULT_LIMIT
+    ) -> dict:
+        """Run a read-only openCypher query against a projection's graph.
+
+        Returns ``{"columns": [...], "rows": [[...], ...]}``.
+
+        Raises:
+            ProjectionNotFound: unknown projection id (router -> 404).
+            ProjectionNotQueryable: no live/queryable graph (router -> 400).
+            ReadOnlyQueryViolation: query contains a mutation keyword (-> 400).
+            Exception: execution failures propagate for the router to sanitize.
+        """
+        projection = self.get_or_raise(projection_id)
+
+        if not projection.graph_id:
+            raise ProjectionNotQueryable(
+                "This projection has no graph yet. Run the import pipeline first."
+            )
+        if projection.status != QUERYABLE_STATUS:
+            raise ProjectionNotQueryable(
+                f"Projection is not queryable (status: {projection.status}). "
+                "The graph must finish importing before it can be queried."
+            )
+
+        keyword = _find_mutation_keyword(query)
+        if keyword is not None:
+            raise ReadOnlyQueryViolation(keyword)
+
+        capped_limit = min(limit, MAX_ROWS)
+        effective_query = _ensure_limit(query, capped_limit)
+
+        na_client = NeptuneAnalyticsClient(
+            graph_id=projection.graph_id,
+            timeout_seconds=QUERY_TIMEOUT_SECONDS,
+        )
+        results = na_client.execute_query(effective_query)
+
+        columns, rows = graph_result_from_records(results)
+        # Bound rows even if a user-supplied LIMIT was
+        # larger than the ceiling (or absent and ignored by the engine).
+        rows = rows[:MAX_ROWS]
+        return {"columns": columns, "rows": rows}
 
     def list(self) -> List[Projection]:
         return projection_store.list()

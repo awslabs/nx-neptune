@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -110,6 +110,24 @@ class PreviewQueryResult(BaseModel):
 class PreviewResponse(BaseModel):
     error: Optional[str] = None
     results: list[PreviewQueryResult]
+
+
+class GraphQueryRequest(BaseModel):
+    query: str = Field(..., description="Read-only openCypher query to execute")
+    limit: Optional[int] = Field(
+        None, ge=1, description="Max rows to return (capped by a server-side ceiling)"
+    )
+
+
+class GraphQueryError(BaseModel):
+    message: str
+    hint: Optional[str] = None
+
+
+class GraphQueryResponse(BaseModel):
+    columns: Optional[list[str]] = None
+    rows: Optional[list[list[Any]]] = None
+    error: Optional[GraphQueryError] = None
 
 
 class ProjectionStatus(BaseModel):
