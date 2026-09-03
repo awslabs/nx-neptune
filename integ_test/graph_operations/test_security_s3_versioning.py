@@ -27,7 +27,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from nx_neptune import NETWORKX_GRAPH_ID
-from nx_neptune.clients.iam_client import IamClient
+from nx_neptune.clients.iam_client import IamClientWrapper
 
 BUCKET_PREFIX = "nx-neptune-versioning-test"
 
@@ -43,7 +43,7 @@ def iam_client():
         pytest.skip('Environment Variable "NETWORKX_GRAPH_ID" is not defined')
 
     sts_arn = boto3.client("sts").get_caller_identity()["Arn"]
-    return IamClient(role_arn=sts_arn, client=boto3.client("iam"))
+    return IamClientWrapper(role_arn=sts_arn, client=boto3.client("iam"))
 
 
 @pytest.fixture(scope="module")
