@@ -27,8 +27,9 @@ class TestParameterMapBuilder:
 
         masked_params = builder.read_map(params)
 
-        # Check masked parameters
-        assert masked_params == {"name": "$0"}
+        # Keys are backtick-escaped at this choke point (injection guard);
+        # values are masked as $N placeholders.
+        assert masked_params == {"`name`": "$0"}
 
         # Check internal parameter values
         param_values = builder._param_values
@@ -44,8 +45,8 @@ class TestParameterMapBuilder:
 
         masked_params = builder.read_map(params)
 
-        # Check masked parameters
-        assert masked_params == {"name": "$0", "age": "$1", "city": "$2"}
+        # Keys are backtick-escaped; values masked as $N.
+        assert masked_params == {"`name`": "$0", "`age`": "$1", "`city`": "$2"}
 
         # Check internal parameter values
         param_values = builder._param_values
@@ -61,17 +62,17 @@ class TestParameterMapBuilder:
         # First read call
         params1 = {"name": "John"}
         masked_params1 = builder.read_map(params1)
-        assert masked_params1 == {"name": "$0"}
+        assert masked_params1 == {"`name`": "$0"}
 
         # Second read call
         params2 = {"age": 30}
         masked_params2 = builder.read_map(params2)
-        assert masked_params2 == {"age": "$1"}
+        assert masked_params2 == {"`age`": "$1"}
 
         # Third read call
         params3 = {"city": "Seattle"}
         masked_params3 = builder.read_map(params3)
-        assert masked_params3 == {"city": "$2"}
+        assert masked_params3 == {"`city`": "$2"}
 
         # Check all parameter values were accumulated
         param_values = builder.get_param_values()
