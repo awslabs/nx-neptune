@@ -10,6 +10,7 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
+import enum
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -24,6 +25,23 @@ from .neptune_constants import (
     ALLOWED_ALGO_PARAM_KEYS,
     RESPONSE_SUCCESS,
 )
+
+
+class KeyStyle(enum.Enum):
+    """How a property-map key is escaped in :meth:`ParameterMapBuilder.read_map`.
+
+    * ``PLAIN`` — the key is a bare property name (``CREATE``/``MERGE`` maps);
+      the whole key is backtick-escaped. Safe default for untrusted attribute
+      names.
+    * ``PATH`` — the key is a code-generated ``ref.prop`` path or a structural
+      predicate like ``id(n)`` (``SET``/``WHERE``); only the property segment is
+      escaped and ``func(ref)`` predicates pass through, so the reference stays
+      valid.
+    """
+
+    PLAIN = "plain"
+    PATH = "path"
+
 
 # Internal constants for reference names
 _SRC_NODE_REF = "a"
@@ -119,6 +137,70 @@ def _escape_identifier(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"Expected a string identifier, got {type(value).__name__}")
     return "`" + value.replace("`", "``") + "`"
+
+
+# Strict shapes for SET/WHERE key handling: a bare reference identifier
+# (``a``, ``movie``, ``n1``) and a structural predicate like ``id(n)``. Both
+# use plain ASCII identifiers only — an attacker-supplied key containing
+# injection characters will NOT fullmatch and is escaped wholesale instead.
+_BARE_REF_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_FUNC_PREDICATE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\([A-Za-z_][A-Za-z0-9_]*\)")
+
+
+def _escape_property_key(key: str) -> str:
+    """Backtick-escape a bare property name for use as a map/SET key.
+
+    The whole key is a single property name (e.g. ``name``, ``~id``, or an
+    untrusted attribute name that may contain dots), so it is escaped wholesale
+    via :func:`_escape_identifier`. This is the escaping used for property maps
+    in ``CREATE``/``MERGE`` node/edge construction.
+
+    Example:
+        >>> _escape_property_key("name")
+        '`name`'
+        >>> _escape_property_key("~id")
+        '`~id`'
+        >>> _escape_property_key('x: 1}) MATCH (m) DETACH DELETE m //')
+        '`x: 1}) MATCH (m) DETACH DELETE m //`'
+    """
+    return _escape_identifier(key)
+
+
+def _escape_property_path(key: str) -> str:
+    """Backtick-escape only the property segment of a ``ref.prop`` path.
+
+    ``SET`` and ``WHERE`` keys are code-generated in one of a few shapes where
+    only part of the key is a (potentially untrusted) property name:
+
+      * ``<ref>.<prop>`` — escape only ``<prop>`` (e.g. ``a.age`` -> ``a.`age```);
+        the reference prefix is code-controlled and left bare.
+      * ``<func>(<ref>)`` — a structural predicate such as ``id(n)``. It carries
+        no property name, so it is passed through unchanged, but ONLY when it
+        matches the strict ``identifier(identifier)`` shape — anything else
+        (e.g. an attacker-supplied key merely starting with ``id(``) falls
+        through to wholesale escaping and is neutralized.
+      * anything else / a bare key with no ``.`` — escaped wholesale via
+        :func:`_escape_identifier` (fail-safe).
+
+    Example:
+        >>> _escape_property_path("a.age")
+        'a.`age`'
+        >>> _escape_property_path("id(n)")
+        'id(n)'
+        >>> _escape_property_path('id(n) }) MATCH (m) DETACH DELETE m //')
+        '`id(n) }) MATCH (m) DETACH DELETE m //`'
+    """
+    # Structural predicate like ``id(n)`` — no property name to escape. Strict
+    # shape only; anything fancier is treated as untrusted and escaped below.
+    if _FUNC_PREDICATE_RE.fullmatch(key):
+        return key
+
+    ref, sep, prop = key.partition(".")
+    if not sep or not _BARE_REF_RE.fullmatch(ref):
+        # No reference prefix, or a ref segment that isn't a safe bare
+        # identifier — escape the whole key as a bare property name.
+        return _escape_identifier(key)
+    return f"{ref}.{_escape_identifier(prop)}"
 
 
 def _escape_string_literal(value: str) -> str:
@@ -236,26 +318,46 @@ class ParameterMapBuilder:
         self._counter = 0
         self._param_values = {}
 
-    def read_map(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
-        """
-        Process a dictionary and create a masked version with parameter placeholders.
-        If params is None or empty, returns an empty dictionary.
+    def read_map(
+        self,
+        params: Optional[Dict[str, Any]] = None,
+        key_style: KeyStyle = KeyStyle.PLAIN,
+    ) -> Dict[str, str]:
+        """Mask values as ``$N`` placeholders and backtick-escape the keys.
+
+        This is the single choke point where property-map keys are made safe:
+        the value of every entry is replaced with a ``$N`` parameter placeholder
+        (stored for later binding) and the key is backtick-escaped so an
+        untrusted attribute name cannot break out of the identifier and inject
+        openCypher syntax.
 
         Args:
-            params: A dictionary containing parameter names and values, or None
+            params: A dict of property name -> value, or None.
+            key_style: A :class:`KeyStyle` selecting how each key is escaped:
+                * :attr:`KeyStyle.PLAIN` (default) — bare property name
+                  (``CREATE``/``MERGE`` maps); escaped wholesale.
+                * :attr:`KeyStyle.PATH` — a code-generated ``ref.prop`` path or
+                  ``id(n)`` predicate (``SET``/``WHERE``); only the property
+                  segment is escaped and ``func(ref)`` predicates pass through.
 
         Returns:
-            A dictionary with the same keys but values replaced with parameter placeholders ($0, $1, etc.)
+            A dict mapping the escaped key to its ``$N`` placeholder.
         """
         if not params:
             return {}
+
+        escape_key = (
+            _escape_property_path
+            if key_style is KeyStyle.PATH
+            else _escape_property_key
+        )
 
         # handle a map of values
         masked_params = {}
         for key, value in params.items():
             param_name = str(self._counter)
             masked_param_name = f"${param_name}"
-            masked_params[key] = masked_param_name
+            masked_params[escape_key(key)] = masked_param_name
             self._param_values[param_name] = value
             self._counter += 1
 
@@ -341,13 +443,13 @@ def insert_node(node: Node) -> Tuple[str, Dict[str, Any]]:
     Examples:
         >>> node = Node(id='Alice', labels=['Person'], properties={'age': 15})
         >>> insert_node(node)
-        ('CREATE (:Person {'~id': $0, age: $1})', {'0': 'Alice', '1': '15'})
+        ('CREATE (:`Person` {`age`: $0, `~id`: $1})', {'0': '15', '1': 'Alice'})
     """
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
     updated_parameters = node.properties
-    updated_parameters["`~id`"] = str(node.id)
+    updated_parameters["~id"] = str(node.id)
 
     # Mask node properties
     masked_properties = param_builder.read_map(updated_parameters)
@@ -401,8 +503,8 @@ def insert_edge(edge: Edge) -> Tuple[str, Dict[str, Any]]:
         >>> dest = Node(id='Bob', labels=['Person'], properties={})
         >>> edge = Edge(label='FRIEND_WITH', properties={'since': '2020'}, node_src=src, node_dest=dest)
         >>> insert_edge(edge)
-        ('MERGE (a:Person {`~id`: $0}) MERGE (b:Person {`~id`: $1})
-        MERGE (a)-[r:FRIEND_WITH {since: $2}]->(b)', {'0': 'Alice', '1': 'Bob', '2': '2020'})
+        ('MERGE (a:`Person` {`~id`: $0}) MERGE (b:`Person` {`~id`: $1})
+        MERGE (a)-[r:`FRIEND_WITH` {`since`: $2}]->(b)', {'0': 'Alice', '1': 'Bob', '2': '2020'})
     """
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
@@ -502,7 +604,7 @@ def update_node(
 
     Example:
         >>> update_node('Person', 'a', ['Alice'], {'a.age': '25'})
-        ('MATCH (a:Person) WHERE id(a) = $0 SET a.age = $1', {'0': 'Alice', '1': '25'})
+        ('MATCH (a:`Person`) WHERE id(a) = $0 SET a.`age` = $1', {'0': 'Alice', '1': '25'})
     """
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
@@ -511,7 +613,9 @@ def update_node(
     literal_where_clause = " OR ".join(
         [f"id({ref_name})={node_id}" for node_id in masked_node_ids]
     )
-    masked_properties_set = param_builder.read_map(properties_set)
+    masked_properties_set = param_builder.read_map(
+        properties_set, key_style=KeyStyle.PATH
+    )
 
     return (
         QueryBuilder()
@@ -549,7 +653,7 @@ def update_edge(
         >>> update_edge('a', 'r', edge, 'b',
         ...                  {"a.name": "Alice", "b.name": "Bob"},
         ...                  {"r.since": "1997"})
-        ('MATCH (a:Person)-[r:FRIEND_WITH]->(b:Person) WHERE id(a) = $0 AND id(b) = $1 SET r.since = $2',
+        ('MATCH (a:`Person`)-[r:`FRIEND_WITH`]->(b:`Person`) WHERE a.`name` = $0 AND b.`name` = $1 SET r.`since` = $2',
          {'0': 'Alice', '1': 'Bob', '2': '1997'})
     """
     # Initialize parameter map builder
@@ -563,8 +667,12 @@ def update_edge(
         qb = qb.relates(label=_escape_identifier(edge.label), ref_name=ref_name_edge)
     qb = _append_node(qb, param_builder, edge.node_dest, ref_name_des)
 
-    masked_where_filters = param_builder.read_map(where_filters)
-    masked_properties_set = param_builder.read_map(properties_set)
+    masked_where_filters = param_builder.read_map(
+        where_filters, key_style=KeyStyle.PATH
+    )
+    masked_properties_set = param_builder.read_map(
+        properties_set, key_style=KeyStyle.PATH
+    )
     qb = qb.where_multiple(masked_where_filters, escape=False).set(
         masked_properties_set, escape_values=False
     )
@@ -665,7 +773,9 @@ def bfs_query(
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
-    masked_where_filters = param_builder.read_map(where_filters)
+    masked_where_filters = param_builder.read_map(
+        where_filters, key_style=KeyStyle.PATH
+    )
 
     bfs_params = f"{source_node}"
     if parameters:
@@ -714,7 +824,9 @@ def descendants_at_distance_query(
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
-    masked_where_filters = param_builder.read_map(where_filters)
+    masked_where_filters = param_builder.read_map(
+        where_filters, key_style=KeyStyle.PATH
+    )
 
     distance_params = f"{source_node}"
     if parameters:
@@ -761,7 +873,9 @@ def bfs_layers_query(
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
-    masked_where_filters = param_builder.read_map(where_in_filters)
+    masked_where_filters = param_builder.read_map(
+        where_in_filters, key_style=KeyStyle.PATH
+    )
 
     bfs_params = f"{source_node}"
     if parameters:
@@ -1210,7 +1324,7 @@ def _append_node(
     """
     # Mask node properties
     updated_parameters = node.properties
-    updated_parameters["`~id`"] = str(node.id)
+    updated_parameters["~id"] = str(node.id)
 
     # Mask node properties
     masked_properties = param_builder.read_map(updated_parameters)
@@ -1270,8 +1384,12 @@ def jaccard_coefficient_query(
     """
     param_builder = ParameterMapBuilder()
 
-    masked_first = param_builder.read_map({"id(n1)": first_node})
-    masked_second = param_builder.read_map({"id(n2)": second_node})
+    masked_first = param_builder.read_map(
+        {"id(n1)": first_node}, key_style=KeyStyle.PATH
+    )
+    masked_second = param_builder.read_map(
+        {"id(n2)": second_node}, key_style=KeyStyle.PATH
+    )
 
     jaccard_params = "n1, n2"
     if parameters:
