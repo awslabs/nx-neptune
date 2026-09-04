@@ -128,6 +128,22 @@ class QueryStore:
         """Variant that accepts Pydantic models directly (calls model_dump internally)."""
         self.save_edge_queries(projection_id, [m.model_dump() for m in models])
 
+    # --- Shared-transaction helpers ---
+
+    @staticmethod
+    def delete_node_and_edge_queries_on(conn, projection_id: str) -> None:
+        """Delete all node AND edge queries for a projection on an existing connection.
+
+        Runs on a caller-supplied connection so it can participate in a larger
+        transaction (e.g. deleting a projection and its queries atomically).
+        """
+        conn.execute(
+            "DELETE FROM node_queries WHERE projection_id = ?", (projection_id,)
+        )
+        conn.execute(
+            "DELETE FROM edge_queries WHERE projection_id = ?", (projection_id,)
+        )
+
 
 # Singleton
 query_store = QueryStore()

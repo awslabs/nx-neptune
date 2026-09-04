@@ -379,3 +379,98 @@ async def test_save_queries_replaces_previous(client):
     data = get_resp.json()
     assert len(data["node_queries"]) == 1
     assert data["node_queries"][0]["sql"] == "new query only"
+
+
+# --- Delete clears queries (regression) ---
+
+
+@pytest.mark.asyncio
+async def test_delete_projection_clears_queries(client):
+    """Deleting a projection must remove its node/edge queries (no orphans)."""
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "SELECT id FROM nodes"}],
+            "edge_queries": [{"sql": "SELECT src, dst FROM edges"}],
+        },
+    )
+
+    # Sanity: rows exist before delete.
+    with connection() as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM node_queries WHERE projection_id = ?",
+                (pid,),
+            ).fetchone()["c"]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM edge_queries WHERE projection_id = ?",
+                (pid,),
+            ).fetchone()["c"]
+            == 1
+        )
+
+    del_resp = await client.delete(f"/api/v0/projection/{pid}")
+    assert del_resp.status_code == 200
+    assert del_resp.json()["status"] == "deleted"
+
+    # No orphaned query rows remain after the projection is gone.
+    with connection() as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM node_queries WHERE projection_id = ?",
+                (pid,),
+            ).fetchone()["c"]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM edge_queries WHERE projection_id = ?",
+                (pid,),
+            ).fetchone()["c"]
+            == 0
+        )
+
+
+@pytest.mark.asyncio
+async def test_fk_cascade_backstop_clears_queries(client):
+    """Deleting the projection row directly must cascade to query rows.
+
+    Guards the ``PRAGMA foreign_keys = ON`` + ``ON DELETE CASCADE`` backstop so
+    a future direct deletion path can't silently re-orphan query rows.
+    """
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "SELECT id FROM nodes"}],
+            "edge_queries": [{"sql": "SELECT src, dst FROM edges"}],
+        },
+    )
+
+    # Delete only the projection row — rely on the FK cascade, not the service.
+    with connection() as conn:
+        conn.execute("DELETE FROM projections WHERE id = ?", (pid,))
+
+    with connection() as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM node_queries WHERE projection_id = ?",
+                (pid,),
+            ).fetchone()["c"]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM edge_queries WHERE projection_id = ?",
+                (pid,),
+            ).fetchone()["c"]
+            == 0
+        )

@@ -18,7 +18,12 @@ def get_connection() -> sqlite3.Connection:
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    # Fetch the result so the pragma statement doesn't stay pending and
+    # swallow the next pragma on some SQLite builds.
+    conn.execute("PRAGMA journal_mode=WAL").fetchone()
+    # Enforce FKs per-connection (off by default), so the ON DELETE CASCADE
+    # in init_db() acts as a real backstop for the explicit query cleanup.
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 

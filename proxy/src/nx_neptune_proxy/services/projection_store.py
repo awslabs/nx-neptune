@@ -146,6 +146,16 @@ class ProjectionStore:
             return cur.rowcount > 0
 
     @staticmethod
+    def delete_on(conn, projection_id: str) -> bool:
+        """Delete a projection row on an existing connection.
+
+        Runs on a caller-supplied connection so it can participate in a larger
+        transaction (e.g. deleting a projection and its queries atomically).
+        """
+        cur = conn.execute("DELETE FROM projections WHERE id = ?", (projection_id,))
+        return cur.rowcount > 0
+
+    @staticmethod
     def _row_to_projection(row) -> Projection:
         return Projection(
             id=row["id"],

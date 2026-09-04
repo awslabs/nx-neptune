@@ -20,6 +20,7 @@ from typing import List, Optional
 
 from .projection_store import Projection, store as projection_store
 from .query_store import EdgeQuery, NodeQuery, query_store
+from .db import connection
 
 
 class ProjectionNotFound(Exception):
@@ -57,12 +58,15 @@ class ProjectionService:
         return projection_store.update(projection_id, **data)
 
     def delete(self, projection_id: str) -> bool:
-        """Delete a projection and its associated node/edge queries."""
-        # Remove child queries first so nothing is orphaned regardless of
-        # whether SQLite FK cascade is enabled.
-        query_store.save_node_queries(projection_id, [])
-        query_store.save_edge_queries(projection_id, [])
-        return projection_store.delete(projection_id)
+        """Delete a projection and its associated node/edge queries atomically.
+
+        All deletes run in a single transaction so a crash mid-sequence cannot
+        leave a partial state. Child queries are removed explicitly (rather than
+        relying solely on the ON DELETE CASCADE) as defense-in-depth.
+        """
+        with connection() as conn:
+            query_store.delete_node_and_edge_queries_on(conn, projection_id)
+            return projection_store.delete_on(conn, projection_id)
 
     # --- Queries (child of a projection) ---
 
