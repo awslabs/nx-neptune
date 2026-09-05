@@ -74,8 +74,6 @@ export interface Projection {
   status: string;
   catalog: string;
   database?: string;
-  node_query?: string;
-  edge_query?: string;
   graph_name?: string;
   graph_id?: string;
   graph_endpoint?: string;
@@ -109,9 +107,45 @@ export const projection = {
   validateQuery: (id: string) => request<{ valid: boolean; checks: { check: string; passed: boolean; message?: string }[] }>(`/projection/${id}/validate-query`, { method: "POST" }),
   preview: (id: string, limit = 10) => request<{ error?: string; results: { columns: string[]; rows: string[][] }[] }>(`/projection/${id}/preview?limit=${limit}`, { method: "POST" }),
   execute: (id: string) => request<{ message: string }>(`/projection/${id}/execute`, { method: "POST" }),
+  getQueries: (id: string) => request<QueriesResponse>(`/projection/${id}/queries`),
+  saveQueries: (id: string, data: QueriesPayload) => request<QueriesResponse>(`/projection/${id}/queries`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
   delete: (id: string) => request<{ id: string; status: string }>(`/projection/${id}`, { method: "DELETE" }),
   deleteGraph: (id: string) => request<{ id: string; status: string }>(`/projection/${id}/delete-graph`, { method: "POST" }),
 };
+
+// --- Multi-Query ---
+
+export interface NodeQueryInput {
+  id?: string;
+  sql: string;
+}
+
+export interface EdgeQueryInput {
+  id?: string;
+  sql: string;
+}
+
+export interface NodeQueryResponse {
+  id: string;
+  sql: string;
+  position: number;
+}
+
+export interface EdgeQueryResponse {
+  id: string;
+  sql: string;
+  position: number;
+}
+
+export interface QueriesPayload {
+  node_queries: NodeQueryInput[];
+  edge_queries: EdgeQueryInput[];
+}
+
+export interface QueriesResponse {
+  node_queries: NodeQueryResponse[];
+  edge_queries: EdgeQueryResponse[];
+}
 
 // --- Project ---
 

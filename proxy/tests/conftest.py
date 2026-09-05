@@ -6,7 +6,7 @@ from httpx import ASGITransport, AsyncClient
 
 from nx_neptune_proxy.app import app
 from nx_neptune_proxy.auth import get_token
-from nx_neptune_proxy.services.db import get_connection
+from nx_neptune_proxy.services.db import connection
 from nx_neptune_proxy.services.project_store import store as project_store
 
 
@@ -32,17 +32,13 @@ def bare_client():
 
 @pytest.fixture(autouse=True)
 def clear_store():
-    conn = get_connection()
-    conn.execute("DELETE FROM projections")
-    conn.execute("DELETE FROM projects")
-    conn.commit()
-    conn.close()
+    with connection() as conn:
+        conn.execute("DELETE FROM projections")
+        conn.execute("DELETE FROM projects")
     yield
-    conn = get_connection()
-    conn.execute("DELETE FROM projections")
-    conn.execute("DELETE FROM projects")
-    conn.commit()
-    conn.close()
+    with connection() as conn:
+        conn.execute("DELETE FROM projections")
+        conn.execute("DELETE FROM projects")
 
 
 @pytest.fixture

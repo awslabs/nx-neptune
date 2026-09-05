@@ -4,7 +4,8 @@
 import logging
 
 from nx_neptune_proxy.config import get_settings
-from nx_neptune_proxy.services.projection_store import Projection, store
+from nx_neptune_proxy.services.projection_service import projection_service
+from nx_neptune_proxy.services.projection_store import Projection
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ async def run_pipeline(projection: Projection) -> None:
     s3_location = projection.s3_staging_bucket.rstrip("/") + f"/{projection.id}/"  # type: ignore[union-attr]  # noqa: E501
 
     try:
-        store.update(projection.id, status="importing")
+        projection_service.update(projection.id, status="importing")
 
         # Step 1: Create or reuse graph
         _update(
@@ -69,7 +70,7 @@ async def run_pipeline(projection: Projection) -> None:
         if existing:
             # Reuse existing graph (retry scenario) — reset data
             graph = existing
-            store.update(
+            projection_service.update(
                 projection.id,
                 graph_id=graph.graph_id,
                 graph_endpoint=f"https://{graph.graph_id}.neptune-graph.amazonaws.com",
@@ -86,7 +87,7 @@ async def run_pipeline(projection: Projection) -> None:
             graph = await sm.get_or_create_graph(
                 config={"provisionedMemory": projection.graph_memory_gb}
             )
-            store.update(
+            projection_service.update(
                 projection.id,
                 graph_id=graph.graph_id,
                 graph_endpoint=f"https://{graph.graph_id}.neptune-graph.amazonaws.com",
@@ -99,7 +100,7 @@ async def run_pipeline(projection: Projection) -> None:
             label="Running Athena query and importing data",
             progress=45,
         )
-        sql_queries = [q for q in [projection.node_query, projection.edge_query] if q]
+        sql_queries = projection_service.list_query_sql(projection.id)
         await sm.import_from_table(
             graph=graph,
             s3_location=s3_location,
@@ -114,7 +115,7 @@ async def run_pipeline(projection: Projection) -> None:
 
         # Step 3: Done
         _update(projection.id, step="ready", label="Graph ready", progress=100)
-        store.update(projection.id, status="complete")
+        projection_service.update(projection.id, status="complete")
 
     except Exception as e:
         logger.exception("Pipeline failed")
@@ -125,10 +126,12 @@ async def run_pipeline(projection: Projection) -> None:
             error_msg = str(e)
 
         # Sanitize before persisting — strip ARNs, account IDs
-        store.update(
+        projection_service.update(
             projection.id, status="failed", error=sanitize_error_message(error_msg)
         )
 
 
 def _update(projection_id: str, step: str, label: str, progress: float) -> None:
-    store.update(projection_id, step=step, step_label=label, progress=progress)
+    projection_service.update(
+        projection_id, step=step, step_label=label, progress=progress
+    )

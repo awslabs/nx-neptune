@@ -18,7 +18,12 @@ def get_connection() -> sqlite3.Connection:
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    # Fetch the result so the pragma statement doesn't stay pending and
+    # swallow the next pragma on some SQLite builds.
+    conn.execute("PRAGMA journal_mode=WAL").fetchone()
+    # Enforce FKs per-connection (off by default), so the ON DELETE CASCADE
+    # in init_db() acts as a real backstop for the explicit query cleanup.
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -66,5 +71,19 @@ def init_db() -> None:
             error TEXT,
             created_at TEXT NOT NULL,
             FOREIGN KEY (project_id) REFERENCES projects(id)
+        );
+        CREATE TABLE IF NOT EXISTS node_queries (
+            id TEXT PRIMARY KEY,
+            projection_id TEXT NOT NULL,
+            sql TEXT NOT NULL DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (projection_id) REFERENCES projections(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS edge_queries (
+            id TEXT PRIMARY KEY,
+            projection_id TEXT NOT NULL,
+            sql TEXT NOT NULL DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (projection_id) REFERENCES projections(id) ON DELETE CASCADE
         );
     """)
