@@ -104,6 +104,27 @@
         ]
       }
     },
+    "AthenaWorkGroup": {
+      "Type": "AWS::Athena::WorkGroup",
+      "Properties": {
+        "Name": { "Fn::Sub": "${ApplicationId}-workgroup" },
+        "State": "ENABLED",
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "PublishCloudWatchMetricsEnabled": false,
+          "ResultConfiguration": {
+            "OutputLocation": { "Fn::Sub": "s3://${StagingBucket}/athena-results/" },
+            "EncryptionConfiguration": {
+              "EncryptionOption": "SSE_KMS",
+              "KmsKey": { "Fn::GetAtt": ["S3BucketKey", "Arn"] }
+            }
+          }
+        },
+        "Tags": [
+          { "Key": "Stack", "Value": { "Fn::Sub": "${AWS::Region}-${AWS::StackName}" } }
+        ]
+      }
+    },
     "NotebookRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
@@ -132,6 +153,24 @@
           "Version": "2012-10-17",
           "Statement": [
             {
+              "Sid": "NeptuneGraphList",
+              "Effect": "Allow",
+              "Action": "neptune-graph:ListGraphs",
+              "Resource": "*"
+            },
+            {
+              "Sid": "NeptuneGraphCreate",
+              "Effect": "Allow",
+              "Action": [
+                "neptune-graph:CreateGraph",
+                "neptune-graph:CreateGraphUsingImportTask"
+              ],
+              "Resource": "*",
+              "Condition": {
+                "StringEquals": { "aws:RequestTag/agent": "nx-neptune" }
+              }
+            },
+            {
               "Sid": "NeptuneGraphOps",
               "Effect": "Allow",
               "Action": [
@@ -139,17 +178,19 @@
                 "neptune-graph:WriteDataViaQuery",
                 "neptune-graph:DeleteDataViaQuery",
                 "neptune-graph:GetGraph",
-                "neptune-graph:ListGraphs",
                 "neptune-graph:ResetGraph",
-                "neptune-graph:CreateGraph",
-                "neptune-graph:CreateGraphUsingImportTask",
                 "neptune-graph:DeleteGraph",
                 "neptune-graph:UpdateGraph",
                 "neptune-graph:StartGraph",
                 "neptune-graph:StopGraph",
                 "neptune-graph:TagResource"
               ],
-              "Resource": "*"
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:graph/*"
+              },
+              "Condition": {
+                "StringEquals": { "aws:ResourceTag/agent": "nx-neptune" }
+              }
             },
             {
               "Sid": "NeptuneImportExportTasks",
@@ -176,7 +217,10 @@
                 "neptune-graph:RestoreGraphFromSnapshot",
                 "neptune-graph:TagResource"
               ],
-              "Resource": "*"
+              "Resource": [
+                { "Fn::Sub": "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:snapshot/*" },
+                { "Fn::Sub": "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:graph/*" }
+              ]
             },
             {
               "Sid": "CloudWatchLogs",
@@ -239,10 +283,20 @@
               "Resource": { "Fn::GetAtt": ["NotebookRole", "Arn"] }
             },
             {
-              "Sid": "AthenaQueryExecution",
+              "Sid": "AthenaStartQuery",
               "Effect": "Allow",
-              "Action": ["athena:StartQueryExecution", "athena:GetQueryExecution", "athena:GetQueryResults"],
-              "Resource": "*"
+              "Action": "athena:StartQueryExecution",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${AthenaWorkGroup}"
+              }
+            },
+            {
+              "Sid": "AthenaReadResults",
+              "Effect": "Allow",
+              "Action": ["athena:GetQueryExecution", "athena:GetQueryResults"],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${AthenaWorkGroup}"
+              }
             },
             {
               "Sid": "GlueDataCatalog",
@@ -360,6 +414,9 @@
                     "/import/'\n",
                     "os.environ['NETWORKX_STAGING_BUCKET'] = 's3://",
                     { "Ref": "StagingBucket" },
+                    "'\n",
+                    "os.environ['NETWORKX_ATHENA_WORKGROUP'] = '",
+                    { "Ref": "AthenaWorkGroup" },
                     "'\n",
                     "os.environ['NETWORKX_S3_TABLES_CATALOG'] = 'AwsDataCatalog'\n",
                     "os.environ['NETWORKX_S3_TABLES_DATABASE'] = 'default'\n",

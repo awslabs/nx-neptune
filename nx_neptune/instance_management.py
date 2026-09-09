@@ -1631,6 +1631,9 @@ def _execute_athena_query(
         "QueryString": sql_statement,
         "ResultConfiguration": {"OutputLocation": output_location},
     }
+    work_group = os.getenv("NETWORKX_ATHENA_WORKGROUP", "").strip()
+    if work_group:
+        query_execution_params["WorkGroup"] = work_group
     if catalog or database:
         query_execution_context = {}
         if catalog:
