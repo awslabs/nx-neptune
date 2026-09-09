@@ -23,10 +23,13 @@ import pytest
 from nx_neptune.clients import Edge, Node
 from nx_neptune.clients.opencypher_builder import (
     _escape_identifier,
+    _escape_property_key,
+    _escape_property_path,
     _to_parameter_list,
     insert_edge,
     insert_node,
     pagerank_query,
+    update_edge,
     update_node,
     wcc_query,
 )
@@ -167,7 +170,6 @@ class TestLabelInjection:
         assert "`Person`" in query
 
     def test_update_node_match_label_escaped(self):
-        node = Node(id="a", labels=[], properties={})
         query, _ = update_node(IDENTIFIER_INJECTION_PAYLOAD, "a", ["a"], {"a.x": "1"})
         assert "`X``}) MATCH (m) DETACH DELETE m //`" in query
 
@@ -180,3 +182,99 @@ class TestEscapeIdentifierHelper:
     def test_rejects_non_string(self):
         with pytest.raises(ValueError):
             _escape_identifier(123)
+
+
+# A property KEY (attribute name) crafted to break out of the ``{key: $N}``
+# map and inject a destructive clause, with the trailing ``//`` swallowing the
+# rest of the generated query. This is the exact primitive from the finding.
+KEY_INJECTION_PAYLOAD = "x: 1}) MATCH (m) DETACH DELETE m //"
+
+
+class TestPropertyKeyInjection:
+    """Prove node/edge property KEYS cannot inject openCypher syntax.
+
+    Property values and node IDs are parameterized ($N); these tests cover the
+    remaining key (attribute name) side, at every singular write/update sink.
+    """
+
+    def test_insert_node_property_key_backtick_escaped(self):
+        node = Node(id="a", labels=["Person"], properties={KEY_INJECTION_PAYLOAD: 1})
+        query, _ = insert_node(node)
+        # The malicious key is confined inside a backtick identifier: the payload
+        # appears backtick-wrapped, and there is no bare `}) MATCH` breakout.
+        assert f"`{KEY_INJECTION_PAYLOAD}`" in query
+        assert "1}) MATCH (m) DETACH DELETE m //`" in query  # inside backticks
+        # The dangerous unquoted breakout must NOT appear.
+        assert "{x: 1}) MATCH (m) DETACH DELETE m //" not in query
+        # ~id is present and single-escaped (not double-escaped).
+        assert "`~id`" in query
+        assert "``~id``" not in query
+
+    def test_insert_edge_property_key_backtick_escaped(self):
+        src = Node(id="a", labels=["Person"], properties={})
+        dest = Node(id="b", labels=["Person"], properties={})
+        edge = Edge(
+            label="FRIEND_WITH",
+            properties={KEY_INJECTION_PAYLOAD: 1},
+            node_src=src,
+            node_dest=dest,
+        )
+        query, _ = insert_edge(edge)
+        assert f"`{KEY_INJECTION_PAYLOAD}`" in query
+        assert "{x: 1}) MATCH (m) DETACH DELETE m //" not in query
+
+    def test_update_node_set_key_escaped_ref_preserved(self):
+        # A dotted SET key: only the property segment is escaped, the code-
+        # generated reference prefix (``a``) stays bare so the SET is valid.
+        node_query = update_node(
+            "Person", "a", ["Alice"], {f"a.{KEY_INJECTION_PAYLOAD}": "1"}
+        )
+        query = node_query[0]
+        assert f"a.`{KEY_INJECTION_PAYLOAD}`" in query
+        assert "SET a.x: 1}) MATCH (m) DETACH DELETE m //" not in query
+
+    def test_update_edge_set_and_where_keys_escaped(self):
+        src = Node(id="a", labels=["Person"], properties={})
+        dest = Node(id="b", labels=["Person"], properties={})
+        edge = Edge(label="FRIEND_WITH", properties={}, node_src=src, node_dest=dest)
+        query, _ = update_edge(
+            "a",
+            "r",
+            edge,
+            "b",
+            {f"a.{KEY_INJECTION_PAYLOAD}": "Alice"},  # WHERE filter key
+            {f"r.{KEY_INJECTION_PAYLOAD}": "1"},  # SET key
+        )
+        assert f"a.`{KEY_INJECTION_PAYLOAD}`" in query
+        assert f"r.`{KEY_INJECTION_PAYLOAD}`" in query
+        assert "MATCH (m) DETACH DELETE m //}" not in query
+        assert "= 1}) MATCH (m) DETACH DELETE m //" not in query
+
+
+class TestEscapePropertyKeyHelpers:
+    def test_plain_key_wrapped_and_doubled(self):
+        assert _escape_property_key("name") == "`name`"
+        assert _escape_property_key("~id") == "`~id`"
+        # An embedded backtick is doubled so it can't terminate the identifier.
+        assert (
+            _escape_property_key("a`) DETACH DELETE n //")
+            == "`a``) DETACH DELETE n //`"
+        )
+
+    def test_path_escapes_only_property_segment(self):
+        assert _escape_property_path("a.age") == "a.`age`"
+        assert _escape_property_path("r.since") == "r.`since`"
+
+    def test_path_passes_through_structural_predicate(self):
+        # id(n) carries no property name — left intact so the WHERE stays valid.
+        assert _escape_property_path("id(n)") == "id(n)"
+
+    def test_path_neutralizes_malicious_predicate_lookalike(self):
+        # A key that merely starts like id(...) but carries a payload does NOT
+        # match the strict shape and is escaped wholesale.
+        payload = "id(n) }) MATCH (m) DETACH DELETE m //"
+        assert _escape_property_path(payload) == f"`{payload}`"
+
+    def test_path_neutralizes_malicious_bare_key(self):
+        payload = "x }) DETACH DELETE m //"
+        assert _escape_property_path(payload) == f"`{payload}`"
