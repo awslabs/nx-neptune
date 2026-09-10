@@ -1442,10 +1442,6 @@ async def create_iceberg_table_from_table(
 
     select_columns = "*"
     if table_columns:
-        # table_columns is caller-supplied and interpolated into the SELECT
-        # list below. _validate_sql_identifier rejects the interior quote/`;`
-        # an injection would need (e.g. a column named 'a" FROM other_db --'),
-        # so validating each name before the join closes the sink.
         for c in table_columns:
             _validate_sql_identifier(c)
         select_columns = '"' + '","'.join(table_columns) + '"'
