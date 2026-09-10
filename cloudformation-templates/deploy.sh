@@ -8,6 +8,14 @@ if [ ${#STACK_NAME} -gt 16 ]; then
   echo "Error: STACK_NAME '${STACK_NAME}' exceeds 16 characters (ApplicationId limit)." >&2
   exit 1
 fi
+
+# Must match the template's ApplicationId AllowedPattern ([a-z][a-z0-9-]*, 3-16 chars).
+# Validate here so we fail fast before building/uploading assets, rather than
+# surfacing a cryptic CloudFormation rejection after the work is done.
+if ! printf '%s' "$STACK_NAME" | grep -Eq '^[a-z][a-z0-9-]{2,15}$'; then
+  echo "Error: STACK_NAME '${STACK_NAME}' is invalid. Use 3-16 chars: lowercase letter first, then lowercase letters, digits, or hyphens." >&2
+  exit 1
+fi
 BUILD_WHEEL="${3:-false}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
