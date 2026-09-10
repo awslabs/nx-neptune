@@ -1209,7 +1209,6 @@ async def create_csv_table_from_s3(
     table_name: str,
     catalog: Optional[str] = None,
     database: Optional[str] = None,
-    table_columns: Optional[list[str]] = None,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     athena_client: Optional[BaseClient] = None,
@@ -1225,7 +1224,6 @@ async def create_csv_table_from_s3(
         :param table_name: the table name to create iceberg-formatted data
         :param catalog: (str, optional) catalog namespace to run the sql_query
         :param database: (str, optional) the database to run the sql_query
-        :param table_columns: (list, optional) table columns to include in the newly created query
         :param sts_client: (optional) Pre-configured STS client
         :param iam_client: (optional) Pre-configured IAM client
         :param athena_client: (optional) Pre-configured Athena client
@@ -1444,6 +1442,12 @@ async def create_iceberg_table_from_table(
 
     select_columns = "*"
     if table_columns:
+        # table_columns is caller-supplied and interpolated into the SELECT
+        # list below. _validate_sql_identifier rejects the interior quote/`;`
+        # an injection would need (e.g. a column named 'a" FROM other_db --'),
+        # so validating each name before the join closes the sink.
+        for c in table_columns:
+            _validate_sql_identifier(c)
         select_columns = '"' + '","'.join(table_columns) + '"'
 
     _validate_sql_identifier(table_name)
