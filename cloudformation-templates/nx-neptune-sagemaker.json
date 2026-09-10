@@ -29,7 +29,8 @@
     "AssetsS3Prefix": {
       "Description": "S3 prefix containing notebooks.zip and optionally a .whl file (e.g. s3://bucket/prefix)",
       "Type": "String",
-      "AllowedPattern": "s3://.+"
+      "AllowedPattern": "^s3://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9](/[A-Za-z0-9!_.*'()/-]*)?$",
+      "ConstraintDescription": "Must be a valid S3 URI (s3://bucket or s3://bucket/prefix); shell metacharacters are not allowed."
     },
     "CustomNotebooks": {
       "Description": "If true, load notebooks from AssetsS3Prefix. If false, download from the latest GitHub Release.",
@@ -365,9 +366,14 @@
                     "if [ \"$CUSTOM_NOTEBOOKS\" = \"true\" ] && [ -f /tmp/nx-assets/notebooks.zip ]; then\n",
                     "  unzip -o /tmp/nx-assets/notebooks.zip -d .\n",
                     "else\n",
-                    "  curl -sL https://github.com/awslabs/nx-neptune/releases/latest/download/notebooks.zip -o /tmp/notebooks.zip\n",
+                    "  NB_URL=https://github.com/awslabs/nx-neptune/releases/latest/download\n",
+                    "  curl -fsSL \"$NB_URL/notebooks.zip\" -o /tmp/notebooks.zip || { echo 'ERROR: failed to download notebooks.zip' >&2; exit 1; }\n",
+                    "  curl -fsSL \"$NB_URL/SHA256SUMS\" -o /tmp/SHA256SUMS || { echo 'ERROR: failed to download SHA256SUMS' >&2; exit 1; }\n",
+                    "  SUM_LINE=$(cd /tmp && grep ' notebooks.zip$' SHA256SUMS || true)\n",
+                    "  if [ -z \"$SUM_LINE\" ]; then echo 'ERROR: no notebooks.zip entry in SHA256SUMS' >&2; exit 1; fi\n",
+                    "  ( cd /tmp && printf '%s\\n' \"$SUM_LINE\" | sha256sum -c - ) || { echo 'ERROR: notebooks.zip checksum mismatch' >&2; exit 1; }\n",
                     "  unzip -o /tmp/notebooks.zip -d notebooks\n",
-                    "  rm -f /tmp/notebooks.zip\n",
+                    "  rm -f /tmp/notebooks.zip /tmp/SHA256SUMS\n",
                     "fi\n",
                     "rm -rf /tmp/nx-assets\n",
                     "conda deactivate\n",
