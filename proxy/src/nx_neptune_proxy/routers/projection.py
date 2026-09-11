@@ -26,10 +26,15 @@ from nx_neptune_proxy.routers.schemas import (
     ProjectionResponse,
     ProjectionStatus,
     ProjectionUpdate,
+    QueriesPayload,
+    QueriesResponse,
     ValidateResponse,
 )
 from nx_neptune_proxy.services.pipeline import run_pipeline
-from nx_neptune_proxy.services.projection_store import store
+from nx_neptune_proxy.services.projection_service import (
+    ProjectionNotFound,
+    projection_service,
+)
 from nx_neptune_proxy.utils import unpack_query_results
 from nx_neptune_proxy.utils.aws_helper import (
     assert_managed_graph,
@@ -41,10 +46,10 @@ router = APIRouter(prefix="/api/v0/projection", tags=["projection"])
 
 
 def _get_projection_or_404(projection_id: str):
-    projection = store.get(projection_id)
-    if projection is None:
+    try:
+        return projection_service.get_or_raise(projection_id)
+    except ProjectionNotFound:
         raise HTTPException(status_code=404, detail="Projection not found")
-    return projection
 
 
 @router.post(
@@ -55,14 +60,14 @@ def _get_projection_or_404(projection_id: str):
 )
 def create_projection(body: ProjectionCreate):
     """Create a new projection in draft state."""
-    projection = store.create(**body.model_dump())
+    projection = projection_service.create(**body.model_dump())
     return asdict(projection)
 
 
 @router.get("", summary="List all projections", response_model=list[ProjectionResponse])
 def list_projections():
     """List all projections."""
-    return [asdict(p) for p in store.list()]
+    return [asdict(p) for p in projection_service.list()]
 
 
 @router.get(
@@ -80,7 +85,9 @@ def get_projection(projection_id: str):
 )
 def update_projection(projection_id: str, body: ProjectionUpdate):
     _get_projection_or_404(projection_id)
-    projection = store.update(projection_id, **body.model_dump(exclude_unset=True))
+    projection = projection_service.update(
+        projection_id, **body.model_dump(exclude_unset=True)
+    )
     return asdict(projection)  # type: ignore[arg-type]
 
 
@@ -128,15 +135,16 @@ def validate_query(projection_id: str):
     """Validate node and edge queries individually"""
     p = _get_projection_or_404(projection_id)
     checks = []
-    for label, query in [("node_query", p.node_query), ("edge_query", p.edge_query)]:
-        if not query:
-            continue
+
+    queries_to_validate = projection_service.list_labeled_queries(projection_id)
+
+    for label, query, query_type in queries_to_validate:
         result = check_athena_query(
             sql_query=query,
             catalog=p.catalog,
             database=p.database,
             output_location=p.s3_staging_bucket,
-            query_type="edge" if label == "edge_query" else "node",
+            query_type=query_type,
         )
         checks.append(
             {"check": label, "passed": result.passed, "message": result.message}
@@ -155,9 +163,8 @@ async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le
     p = _get_projection_or_404(projection_id)
     client = ClientFactory().athena()
 
-    queries = [q for q in [p.node_query, p.edge_query] if q]
-    if not queries and p.sql_query:
-        queries = [q.strip() for q in p.sql_query.split(";") if q.strip()]
+    queries = projection_service.list_query_sql(projection_id)
+
     all_results: list = []
 
     for q in queries:
@@ -202,7 +209,7 @@ def delete_projection(projection_id: str):
         raise HTTPException(
             status_code=409, detail="Graph deletion in progress, cannot purge yet"
         )
-    store.delete(projection_id)
+    projection_service.delete(projection_id)
     return {"id": p.id, "status": "deleted"}
 
 
@@ -226,7 +233,7 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
     resp = get_graph_or_exception(client, p.graph_id)
     assert_managed_graph(resp.get("name"))
 
-    store.update(
+    projection_service.update(
         projection_id,
         status="deleting",
         step="graph_delete",
@@ -239,7 +246,7 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
             client.delete_graph(graphIdentifier=p.graph_id, skipSnapshot=True)
         except ClientError as e:
             if e.response["Error"]["Code"] != "ResourceNotFoundException":
-                store.update(
+                projection_service.update(
                     projection_id, status="failed", error=sanitize_error_message(str(e))
                 )
                 return
@@ -251,13 +258,13 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
             except ClientError:
                 break
         else:
-            store.update(
+            projection_service.update(
                 projection_id,
                 status="failed",
                 error="Timeout waiting for graph deletion",
             )
             return
-        store.update(
+        projection_service.update(
             projection_id,
             status="archived",
             graph_id=None,
@@ -269,3 +276,35 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
 
     background_tasks.add_task(_delete_graph)
     return {"id": p.id, "status": "deleting"}
+
+
+@router.get(
+    "/{projection_id}/queries",
+    summary="Get node and edge queries for a projection",
+    response_model=QueriesResponse,
+)
+def get_queries(projection_id: str):
+    """Return all node and edge queries for a projection."""
+    _get_projection_or_404(projection_id)
+    node_queries, edge_queries = projection_service.get_queries(projection_id)
+    return QueriesResponse(
+        node_queries=node_queries,  # type: ignore[arg-type]
+        edge_queries=edge_queries,  # type: ignore[arg-type]
+    )
+
+
+@router.put(
+    "/{projection_id}/queries",
+    summary="Save node and edge queries for a projection",
+    response_model=QueriesResponse,
+)
+def save_queries(projection_id: str, body: QueriesPayload):
+    """Replace all node and edge queries for a projection."""
+    _get_projection_or_404(projection_id)
+    node_queries, edge_queries = projection_service.save_queries(
+        projection_id, body.node_queries, body.edge_queries
+    )
+    return QueriesResponse(
+        node_queries=node_queries,  # type: ignore[arg-type]
+        edge_queries=edge_queries,  # type: ignore[arg-type]
+    )

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from nx_neptune_proxy.services.project_deletion import delete_project
 from nx_neptune_proxy.services.project_store import store
-from nx_neptune_proxy.services.projection_store import store as projection_store
+from nx_neptune_proxy.services.projection_service import projection_service
 
 router = APIRouter(prefix="/api/v0/project", tags=["project"])
 
@@ -76,12 +76,12 @@ def delete_project_endpoint(project_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=409, detail="Already deleting")
 
     # If no graphs to delete, do it immediately
-    projections = [pr for pr in projection_store.list() if pr.project_id == project_id]
+    projections = projection_service.list_by_project(project_id)
     has_graphs = any(pr.graph_id for pr in projections)
 
     if not has_graphs:
         for pr in projections:
-            projection_store.delete(pr.id)
+            projection_service.delete(pr.id)
         store.delete(project_id)
         return Response(status_code=204)
 

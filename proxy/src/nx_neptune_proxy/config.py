@@ -55,6 +55,7 @@ class Settings:
     extra_trusted_hosts: frozenset[str] = field(default_factory=frozenset)
     region: str = ""
     graph_prefix: str = "nxp-"
+    config_bucket: str = ""
 
     def __post_init__(self) -> None:
         if self.allowed_origins is None:
@@ -104,6 +105,7 @@ class Settings:
                 "AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "")
             ),
             graph_prefix=os.environ.get("GRAPH_PREFIX", "nxp-"),
+            config_bucket=os.environ.get("NX_NEPTUNE_CONFIG_BUCKET", ""),
         )
 
     def validate(self) -> None:

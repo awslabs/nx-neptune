@@ -704,11 +704,12 @@ class IamClientWrapper:
 def split_s3_arn_to_bucket_and_path(s3_arn: str) -> tuple:
     """
     Splits out the s3 arn as a bucket and path
-    :param s3_arn:
+    :param s3_arn: S3 URI (e.g., 's3://bucket-name/prefix/') or plain path (e.g., 'bucket-name/prefix')
     :return: (str, str) - a tuple containing the bucket and path
     """
 
-    bucket_path = s3_arn.replace("s3://", "").split("/")
+    raw = s3_arn.replace("s3://", "") if s3_arn.startswith("s3://") else s3_arn
+    bucket_path = raw.split("/")
     bucket_name = bucket_path.pop(0)
     bucket_path_str = "/".join(bucket_path)
 

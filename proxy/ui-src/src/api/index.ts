@@ -42,7 +42,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // --- Metadata ---
 
 export const metadata = {
-  config: () => request<{ region: string; graph_prefix: string }>("/metadata/config"),
+  config: () => request<{ region: string; graph_prefix: string; config_bucket: string }>("/metadata/config"),
   catalogs: () => request<{ catalogs: { name: string; status: string }[] }>("/metadata/athena/catalogs"),
   databases: (catalog: string) => request<{ databases: string[] }>(`/metadata/athena/databases?catalog=${encodeURIComponent(catalog)}`),
   tables: (database: string, catalog: string) => request<{ tables: string[] }>(`/metadata/athena/tables?database=${encodeURIComponent(database)}&catalog=${encodeURIComponent(catalog)}`),
@@ -74,15 +74,12 @@ export interface Projection {
   status: string;
   catalog: string;
   database?: string;
-  sql_query?: string;
-  node_query?: string;
-  edge_query?: string;
   graph_name?: string;
   graph_id?: string;
   graph_endpoint?: string;
   graph_memory_gb: number;
   s3_staging_bucket?: string;
-  project_id?: string;
+  project_id: string;
   step?: string;
   step_label?: string;
   progress: number;
@@ -110,9 +107,45 @@ export const projection = {
   validateQuery: (id: string) => request<{ valid: boolean; checks: { check: string; passed: boolean; message?: string }[] }>(`/projection/${id}/validate-query`, { method: "POST" }),
   preview: (id: string, limit = 10) => request<{ error?: string; results: { columns: string[]; rows: string[][] }[] }>(`/projection/${id}/preview?limit=${limit}`, { method: "POST" }),
   execute: (id: string) => request<{ message: string }>(`/projection/${id}/execute`, { method: "POST" }),
+  getQueries: (id: string) => request<QueriesResponse>(`/projection/${id}/queries`),
+  saveQueries: (id: string, data: QueriesPayload) => request<QueriesResponse>(`/projection/${id}/queries`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
   delete: (id: string) => request<{ id: string; status: string }>(`/projection/${id}`, { method: "DELETE" }),
   deleteGraph: (id: string) => request<{ id: string; status: string }>(`/projection/${id}/delete-graph`, { method: "POST" }),
 };
+
+// --- Multi-Query ---
+
+export interface NodeQueryInput {
+  id?: string;
+  sql: string;
+}
+
+export interface EdgeQueryInput {
+  id?: string;
+  sql: string;
+}
+
+export interface NodeQueryResponse {
+  id: string;
+  sql: string;
+  position: number;
+}
+
+export interface EdgeQueryResponse {
+  id: string;
+  sql: string;
+  position: number;
+}
+
+export interface QueriesPayload {
+  node_queries: NodeQueryInput[];
+  edge_queries: EdgeQueryInput[];
+}
+
+export interface QueriesResponse {
+  node_queries: NodeQueryResponse[];
+  edge_queries: EdgeQueryResponse[];
+}
 
 // --- Project ---
 
@@ -127,4 +160,9 @@ export const projectApi = {
   list: () => request<Project[]>("/project"),
   create: (name: string) => request<Project>("/project", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }),
   delete: (id: string) => request<{ id: string; status: string }>(`/project/${id}`, { method: "DELETE" }),
+  export: (id: string) => request<unknown>(`/project/${id}/export`),
+  importProject: (data: unknown) => request<{ imported: { id: string; name: string } }>("/project/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
+  exportToS3: (id: string) => request<{ filename: string; key: string }>(`/project/${id}/export/s3`, { method: "POST" }),
+  listS3Exports: () => request<{ files: { key: string; filename: string; last_modified: string }[] }>("/project/import/s3/list"),
+  importFromS3: (key: string) => request<{ imported: { id: string; name: string } }>("/project/import/s3", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) }),
 };

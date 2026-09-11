@@ -26,7 +26,11 @@ router = APIRouter(prefix="/api/v0/metadata", tags=["metadata"])
 def get_config():
     """Get server-side configuration"""
     settings = get_settings()
-    return {"region": settings.region or "", "graph_prefix": settings.graph_prefix}
+    return {
+        "region": settings.region or "",
+        "graph_prefix": settings.graph_prefix,
+        "config_bucket": settings.config_bucket or "",
+    }
 
 
 @router.get(

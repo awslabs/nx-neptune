@@ -1,19 +1,20 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+from __future__ import annotations
+
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
-from .db import get_connection
+from .db import connection
 
 _FIELDS = [
     "id",
     "status",
     "catalog",
     "database",
-    "sql_query",
     "node_query",
     "edge_query",
     "graph_name",
@@ -38,7 +39,6 @@ class Projection:
     status: str
     catalog: str = "AwsDataCatalog"
     database: Optional[str] = None
-    sql_query: Optional[str] = None
     node_query: Optional[str] = None
     edge_query: Optional[str] = None
     graph_name: Optional[str] = None
@@ -59,7 +59,6 @@ class ProjectionStore:
         self,
         catalog: str = "AwsDataCatalog",
         database: Optional[str] = None,
-        sql_query: Optional[str] = None,
         node_query: Optional[str] = None,
         edge_query: Optional[str] = None,
         graph_name: Optional[str] = None,
@@ -72,7 +71,6 @@ class ProjectionStore:
             status="draft",
             catalog=catalog,
             database=database,
-            sql_query=sql_query,
             node_query=node_query,
             edge_query=edge_query,
             graph_name=graph_name,
@@ -80,39 +78,42 @@ class ProjectionStore:
             s3_staging_bucket=s3_staging_bucket,
             project_id=project_id,
         )
-        conn = get_connection()
-        conn.execute(
-            f"INSERT INTO projections ({', '.join(_FIELDS)}) VALUES ({', '.join('?' for _ in _FIELDS)})",
-            [
-                getattr(p, f) if f != "created_at" else p.created_at.isoformat()
-                for f in _FIELDS
-            ],
-        )
-        conn.commit()
-        conn.close()
+        with connection() as conn:
+            conn.execute(
+                f"INSERT INTO projections ({', '.join(_FIELDS)}) VALUES ({', '.join('?' for _ in _FIELDS)})",
+                [
+                    getattr(p, f) if f != "created_at" else p.created_at.isoformat()
+                    for f in _FIELDS
+                ],
+            )
         return p
 
     def get(self, projection_id: str) -> Optional[Projection]:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT * FROM projections WHERE id = ?", (projection_id,)
-        ).fetchone()
-        conn.close()
+        with connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM projections WHERE id = ?", (projection_id,)
+            ).fetchone()
         return self._row_to_projection(row) if row else None
 
-    def list(self) -> list[Projection]:
-        conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM projections ORDER BY created_at DESC"
-        ).fetchall()
-        conn.close()
+    def list(self) -> List[Projection]:
+        with connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM projections ORDER BY created_at DESC"
+            ).fetchall()
+        return [self._row_to_projection(r) for r in rows]
+
+    def list_by_project(self, project_id: str) -> List[Projection]:
+        with connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM projections WHERE project_id = ? ORDER BY created_at DESC",
+                (project_id,),
+            ).fetchall()
         return [self._row_to_projection(r) for r in rows]
 
     _ALLOWED_UPDATE_COLUMNS = {
         "status",
         "catalog",
         "database",
-        "sql_query",
         "node_query",
         "edge_query",
         "graph_name",
@@ -135,17 +136,23 @@ class ProjectionStore:
             raise ValueError(f"Invalid column(s): {invalid}")
         sets = ", ".join(f"{k} = ?" for k in kwargs)
         vals = list(kwargs.values()) + [projection_id]
-        conn = get_connection()
-        conn.execute(f"UPDATE projections SET {sets} WHERE id = ?", vals)
-        conn.commit()
-        conn.close()
+        with connection() as conn:
+            conn.execute(f"UPDATE projections SET {sets} WHERE id = ?", vals)
         return self.get(projection_id)
 
     def delete(self, projection_id: str) -> bool:
-        conn = get_connection()
+        with connection() as conn:
+            cur = conn.execute("DELETE FROM projections WHERE id = ?", (projection_id,))
+            return cur.rowcount > 0
+
+    @staticmethod
+    def delete_on(conn, projection_id: str) -> bool:
+        """Delete a projection row on an existing connection.
+
+        Runs on a caller-supplied connection so it can participate in a larger
+        transaction (e.g. deleting a projection and its queries atomically).
+        """
         cur = conn.execute("DELETE FROM projections WHERE id = ?", (projection_id,))
-        conn.commit()
-        conn.close()
         return cur.rowcount > 0
 
     @staticmethod
@@ -155,7 +162,6 @@ class ProjectionStore:
             status=row["status"],
             catalog=row["catalog"],
             database=row["database"],
-            sql_query=row["sql_query"],
             node_query=row["node_query"],
             edge_query=row["edge_query"],
             graph_name=row["graph_name"],
