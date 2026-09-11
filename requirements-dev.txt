@@ -4,7 +4,7 @@
 #
 #    pip-compile --extra=developer --extra=test --no-index --output-file=requirements-dev.txt --strip-extras pyproject.toml
 #
-ast-serialize==0.9.0
+ast-serialize==0.11.0
     # via mypy
 black==26.5.1
     # via nx-neptune (pyproject.toml)
