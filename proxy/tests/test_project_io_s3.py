@@ -209,7 +209,7 @@ class TestImportFromS3:
     async def test_import_from_s3_no_bucket(self, client):
         """Returns 404 when export bucket not configured."""
         resp = await client.post(
-            "/api/v0/project/import/s3", content=json.dumps({"key": "test.json"})
+            "/api/v0/project/import/s3", json={"key": "test.json"}
         )
         assert resp.status_code == 404
 
@@ -236,7 +236,7 @@ class TestImportFromS3:
 
         resp = await client.post(
             "/api/v0/project/import/s3",
-            content=json.dumps({"key": "exports/test.json"}),
+            json={"key": "exports/test.json"},
         )
         assert resp.status_code == 201
 
@@ -279,7 +279,7 @@ class TestImportFromS3:
 
         resp = await client.post(
             "/api/v0/project/import/s3",
-            content=json.dumps({"key": "nonexistent.json"}),
+            json={"key": "nonexistent.json"},
         )
         assert resp.status_code == 502
         assert "not found" in resp.json()["detail"].lower()
@@ -304,7 +304,7 @@ class TestImportFromS3:
 
         resp = await client.post(
             "/api/v0/project/import/s3",
-            content=json.dumps({"key": "bad.json"}),
+            json={"key": "bad.json"},
         )
         assert resp.status_code == 400
 
@@ -318,7 +318,7 @@ class TestImportFromS3:
                 config_bucket="my-bucket", region="us-west-2"
             )
             resp = await client.post(
-                "/api/v0/project/import/s3", content=json.dumps({})
+                "/api/v0/project/import/s3", json={}
             )
             assert resp.status_code == 400
             assert "key" in resp.json()["detail"].lower()
