@@ -3,15 +3,17 @@ const BASE = "/api/v0";
 // The proxy delivers this run's token via the launch URL's query string
 // (e.g. http://127.0.0.1:8080/?token=...). We read it once at module load,
 // strip it from the address bar (so it doesn't linger in history/referer),
-// and keep it in memory only — no cookie, no localStorage/sessionStorage.
+// and cache it in sessionStorage so a full page reload in the same tab keeps
+// working without reopening the launch URL.
 //
-// Consequences (intentional): in-app navigation keeps the token (the JS
-// runtime and this module variable persist); a full page reload clears it,
-// after which the operator must reopen the launch URL.
+// sessionStorage (not localStorage) scopes the token to this tab session: it
+// survives reloads but is cleared when the tab closes and is not shared with
+// other tabs. No cookie is set. The token is never sent cross-origin.
+const TOKEN_KEY = "nx-neptune-proxy-token";
 const PROXY_TOKEN = (() => {
   const params = new URLSearchParams(window.location.search);
-  const token = params.get("token");
-  if (token) {
+  const urlToken = params.get("token");
+  if (urlToken) {
     // Remove ?token=... from the URL without reloading the page.
     params.delete("token");
     const query = params.toString();
@@ -20,8 +22,19 @@ const PROXY_TOKEN = (() => {
       (query ? `?${query}` : "") +
       window.location.hash;
     window.history.replaceState(window.history.state, "", newUrl);
+    try {
+      sessionStorage.setItem(TOKEN_KEY, urlToken);
+    } catch {
+      // sessionStorage unavailable (e.g. private mode); fall back to memory.
+    }
+    return urlToken;
   }
-  return token;
+  // No token in the URL (e.g. a page reload) — reuse the cached one.
+  try {
+    return sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
 })();
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

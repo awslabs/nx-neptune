@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
-import { Play, CheckCircle, Eye, Plus, Trash2 } from "lucide-react";
+import { Play, CheckCircle, Eye, Plus, Trash2, Sparkles, Send, Bot, User, X, Maximize2, Minimize2 } from "lucide-react";
 
 export function Import() {
   const [searchParams] = useSearchParams();
@@ -27,6 +27,23 @@ export function Import() {
   // --- Multi-query state ---
   const [nodeQueries, setNodeQueries] = useState<NodeQueryInput[]>([{ sql: "" }]);
   const [edgeQueries, setEdgeQueries] = useState<EdgeQueryInput[]>([{ sql: "" }]);
+
+  // --- Post-import openCypher graph queries (visual-only prototype) ---
+  const [graphQueries, setGraphQueries] = useState<{ cypher: string }[]>([{ cypher: "" }]);
+  const [graphQueriesRan, setGraphQueriesRan] = useState(false);
+
+  // --- AI assistant (visual-only prototype: canned responses, no backend) ---
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantExpanded, setAssistantExpanded] = useState(false);
+  const [bedrockModel, setBedrockModel] = useState("us.anthropic.claude-sonnet-4-5");
+  const [chatInput, setChatInput] = useState("");
+  const [chatThinking, setChatThinking] = useState(false);
+  const [chat, setChat] = useState<{ role: "assistant" | "user"; text: string; applied?: string[] }[]>([
+    {
+      role: "assistant",
+      text: "Hi! Describe the graph you want to build from your data lake and I'll fill in the form below — catalog, database, staging bucket, graph name, and the node/edge SQL. I can also suggest openCypher queries to run after import.",
+    },
+  ]);
 
   // --- Projection state ---
   const [projectionsList, setProjectionsList] = useState<Projection[]>([]);
@@ -243,6 +260,67 @@ export function Import() {
     if (currentId) projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: updated });
   }
 
+  // --- Graph query management (visual-only prototype: local state, no backend) ---
+  function updateGraphQuery(index: number, cypher: string) {
+    setGraphQueries((prev) => prev.map((q, i) => (i === index ? { cypher } : q)));
+  }
+  function addGraphQuery() {
+    setGraphQueries((prev) => [...prev, { cypher: "" }]);
+  }
+  function removeGraphQuery(index: number) {
+    setGraphQueries((prev) => prev.filter((_, i) => i !== index));
+  }
+  function runGraphQueries() {
+    // Visual-only prototype: a results viewer is a future enhancement, so we
+    // just acknowledge the run rather than rendering mocked output.
+    setGraphQueriesRan(true);
+  }
+
+  // --- AI assistant (visual-only prototype) ---
+  // Sending a message appends a canned assistant turn and fills the form so
+  // stakeholders can see the intended end-to-end flow. No Bedrock call is made.
+  function sendChat() {
+    const text = chatInput.trim();
+    if (!text) return;
+    setChat((prev) => [...prev, { role: "user", text }]);
+    setChatInput("");
+    setChatThinking(true);
+    setTimeout(() => {
+      // Populate the form with a worked example (MITRE ATT&CK → PageRank).
+      setCatalog("AwsDataCatalog");
+      // Ensure the option exists so the <select> shows it as selected (the
+      // dropdown only renders databases fetched from the API).
+      setDatabases((prev) => (prev.includes("mitre_attack") ? prev : [...prev, "mitre_attack"]));
+      setDatabase("mitre_attack");
+      setBucket(bucket || "s3://my-neptune-staging/");
+      setGraphName(graphName || "malware-threat-graph");
+      setNodeQueries([
+        { sql: `SELECT id AS "~id", 'Malware' AS "~label", name, attack_id, platforms FROM malware` },
+        { sql: `SELECT id AS "~id", 'Campaign' AS "~label", name, attack_id, first_seen FROM campaigns` },
+        { sql: `SELECT id AS "~id", 'Mitigation' AS "~label", name, attack_id, description FROM mitigations` },
+        { sql: `SELECT id AS "~id", 'Tool' AS "~label", name, attack_id, platforms FROM tools` },
+      ]);
+      setEdgeQueries([
+        { sql: `SELECT id AS "~id", source_ref AS "~from", target_ref AS "~to", 'uses' AS "~label"\nFROM relationships WHERE relationship_type = 'uses'` },
+        { sql: `SELECT id AS "~id", source_ref AS "~from", target_ref AS "~to", 'mitigates' AS "~label"\nFROM relationships WHERE relationship_type = 'mitigates'` },
+        { sql: `SELECT id AS "~id", source_ref AS "~from", target_ref AS "~to", 'attributed-to' AS "~label"\nFROM relationships WHERE relationship_type = 'attributed-to'` },
+      ]);
+      setGraphQueries([
+        { cypher: `CALL neptune.algo.pageRank.mutate({\n  writeProperty: "pagerank"\n})\nYIELD success\nRETURN success` },
+        { cypher: `MATCH (n)\nWHERE 'Malware' IN labels(n)\nRETURN n.name AS malware, n.pagerank AS pagerank\nORDER BY pagerank DESC\nLIMIT 10` },
+      ]);
+      setChat((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: "I inspected your catalog with SHOW CREATE TABLE. I mapped `malware`, `campaigns`, `mitigations`, and `tools` as node tables, and split `relationships(source_ref, target_ref, relationship_type)` into edge queries per relationship type (uses / mitigates / attributed-to). I've left out `groups` and `techniques` for now. After import, the first openCypher query runs pageRank.mutate to write a `pagerank` property onto every node, and the second reads that property to return the top 10 malware by PageRank. Want me to add `groups` and `techniques` as nodes too?",
+          applied: ["Catalog", "Database", "S3 Staging Bucket", "Graph Name", "Node Queries", "Edge Queries", "Graph Queries"],
+        },
+      ]);
+      setChatThinking(false);
+    }, 700);
+  }
+
   // --- Actions ---
   async function handleValidate() {
     setChecks([]);
@@ -312,6 +390,12 @@ export function Import() {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Import</h1>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setAssistantOpen((v) => !v)}
+            className="inline-flex items-center gap-2 rounded-md bg-purple-800 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-purple-900"
+          >
+            <Sparkles className="h-4 w-4" /> Generate
+          </button>
           <Select
             className="w-56"
             value={currentId || ""}
@@ -330,6 +414,86 @@ export function Import() {
           <RefreshButton onClick={loadProjections} />
         </div>
       </div>
+
+      {/* AI Assistant chat panel (expands above the Project field) */}
+      {assistantOpen && (
+        <Card className={`${assistantExpanded ? "h-[88vh]" : "h-[75vh]"} flex flex-col border-purple-200 bg-purple-50/40 p-0`}>
+          <div className="flex shrink-0 items-center justify-between border-b border-purple-200 bg-purple-800 px-4 py-2.5 rounded-t-lg">
+            <div className="flex items-center gap-2 text-white">
+              <Sparkles className="h-4 w-4" />
+              <span className="text-sm font-semibold">AI Assistant</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={bedrockModel}
+                onChange={(e) => setBedrockModel(e.target.value)}
+                className="rounded border border-purple-400 bg-purple-700 px-2 py-1 text-xs text-white focus:outline-none"
+                title="Bedrock model"
+              >
+                <option value="us.anthropic.claude-sonnet-4-5">Claude Sonnet 4.5</option>
+                <option value="us.anthropic.claude-opus-4-1">Claude Opus 4.1</option>
+                <option value="us.anthropic.claude-haiku-4-5">Claude Haiku 4.5</option>
+              </select>
+              <button
+                onClick={() => setAssistantExpanded((v) => !v)}
+                className="text-purple-100 hover:text-white"
+                title={assistantExpanded ? "Shrink" : "Expand"}
+              >
+                {assistantExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </button>
+              <button onClick={() => setAssistantOpen(false)} className="text-purple-100 hover:text-white" title="Close">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 space-y-3 overflow-y-auto px-4 py-3">
+            {chat.map((m, i) => (
+              <div key={i} className={`flex gap-2 ${m.role === "user" ? "flex-row-reverse" : ""}`}>
+                <div className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${m.role === "user" ? "bg-gray-200 text-gray-600" : "bg-purple-800 text-white"}`}>
+                  {m.role === "user" ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
+                </div>
+                <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${m.role === "user" ? "bg-blue-600 text-white" : "border border-purple-200 bg-white text-gray-700"}`}>
+                  <p className="whitespace-pre-wrap">{m.text}</p>
+                  {m.applied && m.applied.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {m.applied.map((f) => (
+                        <span key={f} className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-medium text-purple-800">
+                          <CheckCircle className="h-3 w-3" /> {f}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {chatThinking && (
+              <div className="flex gap-2">
+                <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-purple-800 text-white">
+                  <Bot className="h-3.5 w-3.5" />
+                </div>
+                <div className="rounded-lg border border-purple-200 bg-white px-3 py-2 text-sm text-gray-400">Thinking…</div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2 border-t border-purple-200 px-4 py-3">
+            <input
+              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+              placeholder='e.g. "get the page rank from all malware in my database"'
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }}
+            />
+            <button
+              onClick={sendChat}
+              className="inline-flex items-center gap-2 rounded-md bg-purple-800 px-4 py-2 text-sm font-medium text-white hover:bg-purple-900"
+            >
+              <Send className="h-4 w-4" /> Send
+            </button>
+          </div>
+        </Card>
+      )}
 
       <Card>
         <div className="space-y-4">
@@ -479,6 +643,58 @@ export function Import() {
               </div>
             ))}
           </div>
+        </div>
+      </Card>
+
+      {/* Graph Queries (openCypher) — run against the graph after import */}
+      <Card>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold">Graph Queries (openCypher)</h2>
+              <p className="text-xs text-gray-500">Query or mutate the graph after import. Runs in sequence.</p>
+            </div>
+            <button onClick={addGraphQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+              <Plus className="h-3 w-3" /> Add
+            </button>
+          </div>
+          <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+            {graphQueries.map((gq, i) => (
+              <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
+                  <span className="text-xs font-medium text-gray-700">Query {i + 1}</span>
+                  {graphQueries.length > 1 && (
+                    <button onClick={() => removeGraphQuery(i)} className="text-gray-400 hover:text-red-600">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
+                  rows={3}
+                  placeholder="MATCH (n) RETURN n LIMIT 10"
+                  value={gq.cypher}
+                  onChange={(e) => updateGraphQuery(i, e.target.value)}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-400">Available once the graph import is complete.</p>
+            <Button
+              variant="secondary"
+              onClick={runGraphQueries}
+              disabled={status?.status !== "complete"}
+              title={status?.status !== "complete" ? "Import a graph first" : undefined}
+            >
+              <Play className="h-4 w-4" /> Run Queries
+            </Button>
+          </div>
+          {graphQueriesRan && (
+            <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-center text-xs text-gray-500">
+              Queries submitted. A results viewer is a planned future enhancement.
+            </div>
+          )}
         </div>
       </Card>
 
