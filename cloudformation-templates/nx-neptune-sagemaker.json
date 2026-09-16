@@ -323,22 +323,29 @@
               }
             },
             {
-              "Sid": "GlueDataCatalog",
+              "Sid": "GlueReadCatalog",
               "Effect": "Allow",
               "Action": [
                 "glue:GetDatabase",
+                "glue:GetDatabases",
                 "glue:GetTable",
                 "glue:GetTables",
-                "glue:CreateTable",
-                "glue:UpdateTable",
-                "glue:DeleteTable",
-                "glue:GetPartitions",
-                "glue:CreateDatabase"
+                "glue:GetPartitions"
               ],
               "Resource": [
                 { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog" },
                 { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/*" },
                 { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/*" }
+              ]
+            },
+            {
+              "Sid": "GlueCreateTable",
+              "Effect": "Allow",
+              "Action": ["glue:CreateTable"],
+              "Resource": [
+                { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog" },
+                { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${ApplicationId}*" },
+                { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${ApplicationId}*/*" }
               ]
             },
             {
@@ -469,6 +476,7 @@
       "Properties": {
         "InstanceType": { "Ref": "NotebookInstanceType" },
         "PlatformIdentifier": "notebook-al2023-v1",
+        "RootAccess": "Disabled",
         "NotebookInstanceName": { "Fn::Sub": "aws-neptune-${ApplicationId}" },
         "RoleArn": { "Fn::GetAtt": ["NotebookRole", "Arn"] },
         "LifecycleConfigName": {
