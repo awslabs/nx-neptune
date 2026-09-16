@@ -16,7 +16,13 @@
       "AllowedValues": ["16", "32", "64"]
     },
     "PublicConnectivity": {
-      "Description": "Enable public connectivity for the graph",
+      "Description": "Enable public connectivity for the graph (default false = private, VPC-only)",
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": ["true", "false"]
+    },
+    "DeletionProtection": {
+      "Description": "Protect the graph from deletion (default true). Set false for ephemeral/demo graphs.",
       "Type": "String",
       "Default": "true",
       "AllowedValues": ["true", "false"]
@@ -40,14 +46,15 @@
     }
   },
   "Conditions": {
-    "UseCustomNotebooks": { "Fn::Equals": [{ "Ref": "CustomNotebooks" }, "true"] }
+    "UseCustomNotebooks": { "Fn::Equals": [{ "Ref": "CustomNotebooks" }, "true"] },
+    "EnableDeletionProtection": { "Fn::Equals": [{ "Ref": "DeletionProtection" }, "true"] }
   },
   "Resources": {
     "Graph": {
       "Type": "AWS::NeptuneGraph::Graph",
       "Properties": {
         "GraphName": { "Fn::Sub": "${ApplicationId}-graph" },
-        "DeletionProtection": false,
+        "DeletionProtection": { "Fn::If": ["EnableDeletionProtection", true, false] },
         "ProvisionedMemory": { "Ref": "ProvisionedMemory" },
         "PublicConnectivity": { "Ref": "PublicConnectivity" },
         "Tags": [
