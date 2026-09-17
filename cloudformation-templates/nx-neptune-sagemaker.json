@@ -483,7 +483,6 @@
       "Properties": {
         "InstanceType": { "Ref": "NotebookInstanceType" },
         "PlatformIdentifier": "notebook-al2023-v1",
-        "RootAccess": "Disabled",
         "NotebookInstanceName": { "Fn::Sub": "aws-neptune-${ApplicationId}" },
         "RoleArn": { "Fn::GetAtt": ["NotebookRole", "Arn"] },
         "LifecycleConfigName": {
