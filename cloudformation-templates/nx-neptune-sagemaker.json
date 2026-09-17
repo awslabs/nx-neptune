@@ -142,12 +142,28 @@
             {
               "Effect": "Allow",
               "Principal": { "Service": "sagemaker.amazonaws.com" },
-              "Action": "sts:AssumeRole"
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": { "aws:SourceAccount": { "Ref": "AWS::AccountId" } },
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:notebook-instance/*"
+                  }
+                }
+              }
             },
             {
               "Effect": "Allow",
               "Principal": { "Service": "neptune-graph.amazonaws.com" },
-              "Action": "sts:AssumeRole"
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": { "aws:SourceAccount": { "Ref": "AWS::AccountId" } },
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:*"
+                  }
+                }
+              }
             }
           ]
         },
