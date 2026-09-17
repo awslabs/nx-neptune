@@ -188,3 +188,8 @@ dependency-reduced-pom.xml
 
 # CloudFormation deploy artifacts
 cloudformation-templates/build/
+
+# Frontend
+proxy/ui-src/node_modules/
+proxy/ui/
+proxy/docker-compose.override.yml

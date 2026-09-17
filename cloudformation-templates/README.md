@@ -84,9 +84,17 @@ These are the `--parameter-overrides` accepted by the CloudFormation template:
 |-----------|-------------|---------|
 | ApplicationId | Application id used to name all resources (max 16 characters) | `nx-neptune` |
 | ProvisionedMemory | Number of m-NCUs for the graph (16, 32, 64) | `16` |
-| PublicConnectivity | Enable public connectivity for the graph | `true` |
+| GlueDatabaseScope | Glue database the notebook may create/update Iceberg export tables in. Scopes `glue:CreateTable`/`glue:UpdateTable` and sets `NETWORKX_S3_TABLES_DATABASE`. | `default` |
+| PublicConnectivity | Enable public connectivity for the graph. `false` = private (VPC-only); the bundled notebook is **not** placed in the graph's VPC, so set `true` to run the demo today. | `false` |
+| DeletionProtection | Protect the graph from deletion (`false` for ephemeral/demo graphs) | `true` |
 | NotebookInstanceType | SageMaker instance type | `ml.t3.medium` |
 | AssetsS3Prefix | S3 prefix containing `notebooks.zip` and optionally a `.whl` | _(required)_ |
+
+> **Note on `PublicConnectivity`.** The `false` default is the secure posture, but
+> this template doesn't place the notebook in the graph's VPC — so with `false` the
+> notebook can't reach the graph. Set `PublicConnectivity=true` to run the demo today
+> (a deliberate opt-in). A VPC-placed variant is planned, after which `false` becomes
+> the working secure default.
 
 ### Example with all parameters
 
@@ -98,10 +106,14 @@ aws cloudformation deploy \
   --parameter-overrides \
     ApplicationId=my-custom-name \
     ProvisionedMemory=32 \
-    PublicConnectivity=false \
+    PublicConnectivity=true \
     NotebookInstanceType=ml.t3.large \
     AssetsS3Prefix=s3://your-bucket/nx-neptune
 ```
+
+> The example sets `PublicConnectivity=true` because the bundled notebook is not
+> placed in the graph's VPC yet (see the note above). Use `false` only once the
+> client can reach the graph privately.
 
 ## Outputs
 
