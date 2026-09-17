@@ -84,6 +84,7 @@ These are the `--parameter-overrides` accepted by the CloudFormation template:
 |-----------|-------------|---------|
 | ApplicationId | Application id used to name all resources (max 16 characters) | `nx-neptune` |
 | ProvisionedMemory | Number of m-NCUs for the graph (16, 32, 64) | `16` |
+| GlueDatabaseScope | Glue database the notebook may create/update Iceberg export tables in. Scopes `glue:CreateTable`/`glue:UpdateTable` and sets `NETWORKX_S3_TABLES_DATABASE`. | `default` |
 | PublicConnectivity | Enable public connectivity for the graph (`false` = private, VPC-only) | `false` |
 | DeletionProtection | Protect the graph from deletion (`false` for ephemeral/demo graphs) | `true` |
 | NotebookInstanceType | SageMaker instance type | `ml.t3.medium` |

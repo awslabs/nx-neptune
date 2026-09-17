@@ -15,6 +15,11 @@
       "Default": "16",
       "AllowedValues": ["16", "32", "64"]
     },
+    "GlueDatabaseScope": {
+      "Description": "Glue database the notebook may create/update tables in (Iceberg export target). Scopes glue:CreateTable/UpdateTable and sets NETWORKX_S3_TABLES_DATABASE.",
+      "Type": "String",
+      "Default": "default"
+    },
     "PublicConnectivity": {
       "Description": "Enable public connectivity for the graph (default false = private, VPC-only)",
       "Type": "String",
@@ -323,22 +328,29 @@
               }
             },
             {
-              "Sid": "GlueDataCatalog",
+              "Sid": "GlueReadCatalog",
               "Effect": "Allow",
               "Action": [
                 "glue:GetDatabase",
+                "glue:GetDatabases",
                 "glue:GetTable",
                 "glue:GetTables",
-                "glue:CreateTable",
-                "glue:UpdateTable",
-                "glue:DeleteTable",
-                "glue:GetPartitions",
-                "glue:CreateDatabase"
+                "glue:GetPartitions"
               ],
               "Resource": [
                 { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog" },
                 { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/*" },
                 { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/*" }
+              ]
+            },
+            {
+              "Sid": "GlueWriteTable",
+              "Effect": "Allow",
+              "Action": ["glue:CreateTable", "glue:UpdateTable"],
+              "Resource": [
+                { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog" },
+                { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabaseScope}" },
+                { "Fn::Sub": "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabaseScope}/*" }
               ]
             },
             {
@@ -451,7 +463,9 @@
                     { "Ref": "AthenaWorkGroup" },
                     "'\n",
                     "os.environ['NETWORKX_S3_TABLES_CATALOG'] = 'AwsDataCatalog'\n",
-                    "os.environ['NETWORKX_S3_TABLES_DATABASE'] = 'default'\n",
+                    "os.environ['NETWORKX_S3_TABLES_DATABASE'] = '",
+                    { "Ref": "GlueDatabaseScope" },
+                    "'\n",
                     "os.environ['NETWORKX_S3_TABLES_TABLENAME'] = 'paysim_transactions'\n",
                     "ENVEOF\n",
                     "# Restart jupyter to pick up the config\n",
