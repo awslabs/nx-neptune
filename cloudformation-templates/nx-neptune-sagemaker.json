@@ -153,7 +153,7 @@
                 "StringEquals": { "aws:SourceAccount": { "Ref": "AWS::AccountId" } },
                 "ArnLike": {
                   "aws:SourceArn": {
-                    "Fn::Sub": "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:graph/*"
+                    "Fn::Sub": "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:*"
                   }
                 }
               }
