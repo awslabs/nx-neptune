@@ -1,0 +1,176 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+"""Supervisor orchestration (spec §9.2/§9.9, Group E): the agents-as-tools
+layer, generate_import chaining + discovery cache, and reply assembly. The
+Strands supervisor LLM is faked; the specialist agents are mocked."""
+
+from unittest.mock import MagicMock, patch
+
+from nx_neptune_proxy.assistant.schemas import (
+    ChatAction,
+    DiscoveryResult,
+    JumpAction,
+    PageContext,
+    QueryPlanResult,
+    SqlMappingResult,
+    SqlQuery,
+)
+from nx_neptune_proxy.assistant.session import SessionStore
+from nx_neptune_proxy.assistant.supervisor import Supervisor, TurnContext
+
+
+def _supervisor_with_mock_specialists():
+    sup = Supervisor(bedrock_model=None, session_store=SessionStore())
+    sup._navigation = MagicMock()
+    sup._discovery = MagicMock()
+    sup._sql_mapping = MagicMock()
+    sup._query_planner = MagicMock()
+    sup._page_action = MagicMock()
+
+    sup._navigation.navigate.return_value = [
+        JumpAction(kind="new-import", label="New import")
+    ]
+    sup._discovery.discover.return_value = DiscoveryResult(tables=[])
+    sup._sql_mapping.map_schema.return_value = SqlMappingResult(
+        node_queries=[SqlQuery(sql='SELECT 1 AS "~id"')], edge_queries=[]
+    )
+    sup._query_planner.plan.return_value = QueryPlanResult(graph_queries=[])
+    sup._page_action.suggest.return_value = [
+        ChatAction(kind="page-action", page="import", label="Execute", action_key="x")
+    ]
+    return sup
+
+
+def _tools(sup, ctx):
+    return {f.__name__: f for f in sup._make_tools(ctx)}
+
+
+# --- individual tools -----------------------------------------------------
+
+
+def test_navigate_tool_records_jumps_and_passes_project_id():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(page="graphs", project_id="p1"),
+    )
+    tools = _tools(sup, ctx)
+
+    tools["navigate"]("open projections")
+    assert len(ctx.jumps) == 1
+    sup._navigation.navigate.assert_called_once_with("open projections", "p1")
+
+
+def test_generate_import_chains_and_builds_proposal():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(session=sup._sessions.create())
+    tools = _tools(sup, ctx)
+
+    tools["generate_import"]("import it", "AwsDataCatalog", "tpch", graph_name="g")
+
+    assert ctx.proposal.catalog == "AwsDataCatalog"
+    assert ctx.proposal.database == "tpch"
+    assert ctx.proposal.graph_name == "g"
+    assert len(ctx.proposal.node_queries) == 1
+    assert ctx.proposal.edge_queries is None  # empty list collapses to None
+    sup._discovery.discover.assert_called_once()
+    sup._sql_mapping.map_schema.assert_called_once()
+    sup._query_planner.plan.assert_called_once()
+
+
+def test_generate_import_reuses_discovery_cache_within_session():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(session=sup._sessions.create())
+    tools = _tools(sup, ctx)
+
+    tools["generate_import"]("first", "cat", "db")
+    tools["generate_import"]("second", "cat", "db")  # same DB → cache hit
+
+    assert sup._discovery.discover.call_count == 1
+    assert sup._sql_mapping.map_schema.call_count == 2  # mapping still re-runs
+
+
+def test_generate_import_reruns_discovery_when_database_changes():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(session=sup._sessions.create())
+    tools = _tools(sup, ctx)
+
+    tools["generate_import"]("a", "cat", "db1")
+    tools["generate_import"]("b", "cat", "db2")
+
+    assert sup._discovery.discover.call_count == 2
+
+
+def test_generate_import_asks_when_catalog_or_database_missing():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(session=sup._sessions.create())
+    tools = _tools(sup, ctx)
+
+    tools["generate_import"]("import something", "", "")
+
+    assert ctx.question is not None
+    assert ctx.proposal is None
+    sup._discovery.discover.assert_not_called()
+
+
+def test_suggest_page_actions_requires_context():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(session=sup._sessions.create(), page_context=None)
+    tools = _tools(sup, ctx)
+
+    tools["suggest_page_actions"]("do something")
+    assert ctx.actions == []
+    sup._page_action.suggest.assert_not_called()
+
+
+def test_suggest_page_actions_records_actions():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(), page_context=PageContext(page="import")
+    )
+    tools = _tools(sup, ctx)
+
+    tools["suggest_page_actions"]("what can I do")
+    assert len(ctx.actions) == 1
+
+
+# --- handle_message assembly ---------------------------------------------
+
+
+def test_handle_message_assembles_reply_and_records_history():
+    sup = _supervisor_with_mock_specialists()
+
+    def fake_build(ctx):
+        tools = _tools(sup, ctx)
+
+        def run(prompt):
+            tools["navigate"]("go")
+            return "Here are your options."
+
+        return run
+
+    with patch.object(sup, "_build_supervisor", side_effect=fake_build):
+        reply = sup.handle_message(
+            "take me to a new import", "s1", PageContext(page="import")
+        )
+
+    assert reply.text == "Here are your options."
+    assert len(reply.jumps) == 1
+    assert reply.proposal is None
+    session = sup._sessions.get("s1")
+    assert [t["role"] for t in session.history] == ["user", "assistant"]
+
+
+# --- session store --------------------------------------------------------
+
+
+def test_session_store_create_and_get_or_create():
+    store = SessionStore()
+    s = store.create()
+    assert store.get(s.session_id) is s
+    assert store.get_or_create(s.session_id) is s
+    # unknown id becomes a new session keyed by that id
+    made = store.get_or_create("brand-new")
+    assert made.session_id == "brand-new"
+    assert store.get("brand-new") is made

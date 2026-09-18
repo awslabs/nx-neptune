@@ -3,15 +3,17 @@ const BASE = "/api/v0";
 // The proxy delivers this run's token via the launch URL's query string
 // (e.g. http://127.0.0.1:8080/?token=...). We read it once at module load,
 // strip it from the address bar (so it doesn't linger in history/referer),
-// and keep it in memory only — no cookie, no localStorage/sessionStorage.
+// and cache it in sessionStorage so a full page reload in the same tab keeps
+// working without reopening the launch URL.
 //
-// Consequences (intentional): in-app navigation keeps the token (the JS
-// runtime and this module variable persist); a full page reload clears it,
-// after which the operator must reopen the launch URL.
+// sessionStorage (not localStorage) scopes the token to this tab session: it
+// survives reloads but is cleared when the tab closes and is not shared with
+// other tabs. No cookie is set. The token is never sent cross-origin.
+const TOKEN_KEY = "nx-neptune-proxy-token";
 const PROXY_TOKEN = (() => {
   const params = new URLSearchParams(window.location.search);
-  const token = params.get("token");
-  if (token) {
+  const urlToken = params.get("token");
+  if (urlToken) {
     // Remove ?token=... from the URL without reloading the page.
     params.delete("token");
     const query = params.toString();
@@ -20,8 +22,19 @@ const PROXY_TOKEN = (() => {
       (query ? `?${query}` : "") +
       window.location.hash;
     window.history.replaceState(window.history.state, "", newUrl);
+    try {
+      sessionStorage.setItem(TOKEN_KEY, urlToken);
+    } catch {
+      // sessionStorage unavailable (e.g. private mode); fall back to memory.
+    }
+    return urlToken;
   }
-  return token;
+  // No token in the URL (e.g. a page reload) — reuse the cached one.
+  try {
+    return sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
 })();
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -155,6 +168,83 @@ export interface Project {
   status: string;
   created_at: string;
 }
+
+// --- AI Assistant (agent backend, spec §9) ---
+//
+// Wire contracts are snake_case (matching the proxy API); the client maps the
+// reply into its camelCase JumpAction/ChatAction shapes in assistant/remote.ts.
+
+export interface AssistantSqlQuery {
+  sql: string;
+}
+
+export interface AssistantCypherQuery {
+  cypher: string;
+}
+
+export interface AssistantProposal {
+  catalog?: string | null;
+  database?: string | null;
+  bucket?: string | null;
+  graph_name?: string | null;
+  node_queries?: AssistantSqlQuery[] | null;
+  edge_queries?: AssistantSqlQuery[] | null;
+  graph_queries?: AssistantCypherQuery[] | null;
+}
+
+export interface AssistantJump {
+  kind: "new-import" | "new-project" | "open-projections";
+  label: string;
+  project_id?: string | null;
+}
+
+export interface AssistantAction {
+  kind: "page-action" | "graph-action";
+  page: string;
+  label: string;
+  action_key?: string | null;
+  enabled?: boolean | null;
+  destructive?: boolean | null;
+  graph_id?: string | null;
+  graph_action?: string | null;
+}
+
+export interface AssistantReply {
+  text: string;
+  proposal?: AssistantProposal | null;
+  jumps?: AssistantJump[];
+  actions?: AssistantAction[];
+  question?: string | null;
+}
+
+export interface AssistantPageContext {
+  page: string;
+  project_id?: string | null;
+  // Import page's selected Athena catalog/database, so the agent can generate an
+  // import without re-asking for what the form already shows.
+  catalog?: string | null;
+  database?: string | null;
+  actions?: { key: string; label: string; enabled?: boolean }[];
+  graph_targets?: { id: string; name: string; actions: string[] }[];
+}
+
+export interface AssistantMessagePayload {
+  text: string;
+  session_id?: string | null;
+  page_context?: AssistantPageContext | null;
+  model?: string | null;
+}
+
+export const assistantApi = {
+  session: () => request<{ session_id: string }>("/assistant/session", { method: "POST" }),
+  message: (payload: AssistantMessagePayload) =>
+    request<AssistantReply>("/assistant/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  models: () => request<{ models: string[]; default: string }>("/assistant/models"),
+};
 
 export const projectApi = {
   list: () => request<Project[]>("/project"),

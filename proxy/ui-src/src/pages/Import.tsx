@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
-import { Play, CheckCircle, Eye, Plus, Trash2 } from "lucide-react";
+import { useAssistant, usePageBridge } from "../assistant/context";
+import { Play, CheckCircle, Eye, Plus, Trash2, Sparkles } from "lucide-react";
 
 export function Import() {
   const [searchParams] = useSearchParams();
@@ -27,6 +28,13 @@ export function Import() {
   // --- Multi-query state ---
   const [nodeQueries, setNodeQueries] = useState<NodeQueryInput[]>([{ sql: "" }]);
   const [edgeQueries, setEdgeQueries] = useState<EdgeQueryInput[]>([{ sql: "" }]);
+
+  // --- Post-import openCypher graph queries (visual-only prototype) ---
+  const [graphQueries, setGraphQueries] = useState<{ cypher: string }[]>([{ cypher: "" }]);
+  const [graphQueriesRan, setGraphQueriesRan] = useState(false);
+
+  // --- AI assistant (global drawer) ---
+  const { setOpen: setAssistantOpen } = useAssistant();
 
   // --- Projection state ---
   const [projectionsList, setProjectionsList] = useState<Projection[]>([]);
@@ -106,7 +114,7 @@ export function Import() {
       catalog,
       database,
       s3_staging_bucket: bucket,
-      graph_name: graphName,
+      graph_name: graphName || undefined,
       graph_memory_gb: graphMemoryGb,
       project_id: projectId || undefined,
     }).then((p) => {
@@ -127,7 +135,7 @@ export function Import() {
       catalog,
       database,
       s3_staging_bucket: bucket,
-      graph_name: graphName,
+      graph_name: graphName || undefined,
       graph_memory_gb: graphMemoryGb,
       project_id: projectId || undefined,
     };
@@ -153,7 +161,7 @@ export function Import() {
       catalog,
       database,
       s3_staging_bucket: bucket,
-      graph_name: graphName,
+      graph_name: graphName || undefined,
       graph_memory_gb: graphMemoryGb,
       project_id: projectId || undefined,
     };
@@ -243,6 +251,46 @@ export function Import() {
     if (currentId) projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: updated });
   }
 
+  // --- Graph query management (visual-only prototype: local state, no backend) ---
+  function updateGraphQuery(index: number, cypher: string) {
+    setGraphQueries((prev) => prev.map((q, i) => (i === index ? { cypher } : q)));
+  }
+  function addGraphQuery() {
+    setGraphQueries((prev) => [...prev, { cypher: "" }]);
+  }
+  function removeGraphQuery(index: number) {
+    setGraphQueries((prev) => prev.filter((_, i) => i !== index));
+  }
+  function runGraphQueries() {
+    // Visual-only prototype: a results viewer is a future enhancement, so we
+    // just acknowledge the run rather than rendering mocked output.
+    setGraphQueriesRan(true);
+  }
+
+  // Expose the Import form to the global assistant: current field values, the
+  // setters the mock fills, the page actions the assistant can surface as chat
+  // buttons, and the active project for cross-page jumps.
+  usePageBridge({
+    page: "import",
+    fields: { catalog, database, bucket, graphName, nodeQueries, edgeQueries, graphQueries },
+    setters: {
+      catalog: setCatalog,
+      databases: setDatabases,
+      database: setDatabase,
+      bucket: setBucket,
+      graphName: setGraphName,
+      nodeQueries: setNodeQueries,
+      edgeQueries: setEdgeQueries,
+      graphQueries: setGraphQueries,
+    },
+    actions: {
+      execute: { label: "Execute", run: handleExecute, enabled: !polling && !loading },
+      validateQuery: { label: "Validate Query", run: handleValidateQuery, enabled: !loading },
+      preview: { label: "Preview Schema", run: handlePreview, enabled: !loading },
+    },
+    jumpContext: { projectId: searchParams.get("project") },
+  });
+
   // --- Actions ---
   async function handleValidate() {
     setChecks([]);
@@ -309,9 +357,15 @@ export function Import() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pr-32">
         <h1 className="text-lg font-semibold">Import</h1>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setAssistantOpen(true)}
+            className="inline-flex items-center gap-2 rounded-md bg-purple-800 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-purple-900"
+          >
+            <Sparkles className="h-4 w-4" /> Generate
+          </button>
           <Select
             className="w-56"
             value={currentId || ""}
@@ -479,6 +533,58 @@ export function Import() {
               </div>
             ))}
           </div>
+        </div>
+      </Card>
+
+      {/* Graph Queries (openCypher) — run against the graph after import */}
+      <Card>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold">Graph Queries (openCypher)</h2>
+              <p className="text-xs text-gray-500">Query or mutate the graph after import. Runs in sequence.</p>
+            </div>
+            <button onClick={addGraphQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+              <Plus className="h-3 w-3" /> Add
+            </button>
+          </div>
+          <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+            {graphQueries.map((gq, i) => (
+              <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
+                  <span className="text-xs font-medium text-gray-700">Query {i + 1}</span>
+                  {graphQueries.length > 1 && (
+                    <button onClick={() => removeGraphQuery(i)} className="text-gray-400 hover:text-red-600">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
+                  rows={3}
+                  placeholder="MATCH (n) RETURN n LIMIT 10"
+                  value={gq.cypher}
+                  onChange={(e) => updateGraphQuery(i, e.target.value)}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-400">Available once the graph import is complete.</p>
+            <Button
+              variant="secondary"
+              onClick={runGraphQueries}
+              disabled={status?.status !== "complete"}
+              title={status?.status !== "complete" ? "Import a graph first" : undefined}
+            >
+              <Play className="h-4 w-4" /> Run Queries
+            </Button>
+          </div>
+          {graphQueriesRan && (
+            <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-center text-xs text-gray-500">
+              Queries submitted. A results viewer is a planned future enhancement.
+            </div>
+          )}
         </div>
       </Card>
 

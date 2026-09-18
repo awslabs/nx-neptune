@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useSearchParams, NavLink } from "react-router";
 import { projection, metadata, projectApi, graphActions, type Projection, type Project, type Inflight } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
+import { usePageBridge } from "../assistant/context";
 import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown, Download } from "lucide-react";
 import { useNavigate } from "react-router";
 
@@ -81,6 +82,7 @@ export function Projections() {
 
   async function performGraphAction(graphId: string, action: string, graphName: string) {
     if (action === "stop" && !confirm(`Stop graph ${graphName}? It will become unavailable until restarted.`)) return;
+    if (action === "delete" && !confirm(`Delete graph ${graphName}? This cannot be undone.`)) return;
     try {
       await graphActions.perform(graphId, action);
       load();
@@ -116,6 +118,26 @@ export function Projections() {
     setAlerts(prev => prev.filter(a => a.graphId !== graphId));
     graphActions.dismissInflight(graphId).catch(() => {});
   }
+
+  // Expose this project's graphs to the assistant as per-graph Stop/Delete
+  // Instance targets. performGraphAction owns confirmation + refresh. Jumps use
+  // the project currently filtered in the URL.
+  usePageBridge({
+    page: "projections",
+    graphTargets: allFiltered
+      .filter(s => s.status !== "archived" && s.graph_id)
+      .map(s => ({
+        id: s.graph_id!,
+        name: s.graph_name || s.graph_id!,
+        status: graphStatuses.get(s.graph_id!) ?? "",
+        actions: actionStates[s.graph_id!]?.actions ?? [],
+      })),
+    runGraphAction: (id, action) => {
+      const t = allFiltered.find(s => s.graph_id === id);
+      return performGraphAction(id, action, t?.graph_name || id);
+    },
+    jumpContext: { projectId: filterProjectId },
+  });
 
   // Poll every 30s when any graph is in a transient state
   const hasTransient = [...graphStatuses.values()].some(s =>
@@ -163,7 +185,7 @@ export function Projections() {
   return (
     <div className="flex gap-4">
       <div className="flex-1 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between pr-32">
           <h1 className="text-lg font-semibold">{projectName ? `${projectName} — Projections` : "Projections"}</h1>
           <div className="flex items-center gap-2">
             {filterProjectId && (
