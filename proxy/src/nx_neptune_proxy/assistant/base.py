@@ -19,6 +19,7 @@ from typing import Optional, Type, TypeVar
 
 from pydantic import BaseModel
 
+from nx_neptune_proxy.assistant.debug_trace import log_invocation, log_result
 from nx_neptune_proxy.assistant.json_utils import extract_json
 
 logger = logging.getLogger(__name__)
@@ -93,10 +94,13 @@ class BaseAgent:
         it through :meth:`extract_json` to get a structured contract.
         """
         attempt = 0
+        log_invocation(self._name, self._safe_prompt(**kwargs))
         while True:
             try:
                 self._result = self._execute_agent(**kwargs)
-                return str(self._result)
+                result_text = str(self._result)
+                log_result(self._name, result_text, self.get_statistics())
+                return result_text
             except Exception as exc:  # noqa: BLE001 (retry then re-raise)
                 if attempt < self.max_retries and self._is_retryable(exc):
                     delay = min(self.max_delay, self.base_delay * (2**attempt))
@@ -117,6 +121,20 @@ class BaseAgent:
     def _execute_agent(self, **kwargs):
         """Invoke the wrapped agent. Subclasses must implement this."""
         raise NotImplementedError("Subclasses must implement '_execute_agent'.")
+
+    def _safe_prompt(self, **kwargs) -> str:
+        """Best-effort render of the formatted prompt for debug tracing.
+
+        Never raises: if a subclass has no ``_format_prompt`` or it errors, fall
+        back to the raw kwargs so tracing can't break a real run.
+        """
+        fmt = getattr(self, "_format_prompt", None)
+        if callable(fmt):
+            try:
+                return fmt(**kwargs)
+            except Exception:  # noqa: BLE001 (tracing must not fail the run)
+                pass
+        return repr(kwargs)
 
     # --- Helpers ----------------------------------------------------------
 

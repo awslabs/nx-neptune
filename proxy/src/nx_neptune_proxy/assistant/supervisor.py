@@ -26,6 +26,11 @@ from nx_neptune_proxy.assistant.agents.page_action import PageActionAgent
 from nx_neptune_proxy.assistant.agents.query_planner import QueryPlannerAgent
 from nx_neptune_proxy.assistant.agents.sql_mapping import SqlMappingAgent
 from nx_neptune_proxy.assistant.athena_tools import list_catalogs as _list_catalogs
+from nx_neptune_proxy.assistant.debug_trace import (
+    log_history,
+    log_invocation,
+    log_result,
+)
 from nx_neptune_proxy.assistant.schemas import (
     AssistantReply,
     ChatAction,
@@ -105,9 +110,13 @@ class Supervisor:
         session = self._sessions.get_or_create(session_id)
         ctx = TurnContext(session=session, page_context=page_context)
 
+        log_history(self.NAME, session.history)
         agent = self._build_supervisor(ctx)
-        result = agent(self._format_prompt(text, page_context, session))
+        prompt = self._format_prompt(text, page_context, session)
+        log_invocation(self.NAME, prompt)
+        result = agent(prompt)
         reply_text = str(result)
+        log_result(self.NAME, reply_text)
 
         session.add_turn("user", text)
         session.add_turn("assistant", reply_text)
