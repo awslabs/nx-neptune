@@ -75,9 +75,9 @@ export function AssistantDrawer() {
             className="rounded border border-purple-400 bg-purple-700 px-2 py-1 text-xs text-white focus:outline-none"
             title="Bedrock model"
           >
-            <option value="us.anthropic.claude-sonnet-4-5">Claude Sonnet 4.5</option>
-            <option value="us.anthropic.claude-opus-4-1">Claude Opus 4.1</option>
-            <option value="us.anthropic.claude-haiku-4-5">Claude Haiku 4.5</option>
+            <option value="us.anthropic.claude-sonnet-4-5-20250929-v1:0">Claude Sonnet 4.5</option>
+            <option value="us.anthropic.claude-opus-4-1-20250805-v1:0">Claude Opus 4.1</option>
+            <option value="us.anthropic.claude-haiku-4-5-20251001-v1:0">Claude Haiku 4.5</option>
           </select>
           <button
             onClick={() => setExpanded(!expanded)}

@@ -114,3 +114,16 @@ When using the Vite dev server (`npm run dev`), open the proxy launch URL with t
 | `LOG_LEVEL` | `info` | Logging level |
 | `NX_NEPTUNE_DB_PATH` | `~/.nx-neptune/proxy.db` | SQLite database path |
 | `NX_DEBUG` | *(unset)* | When truthy (`1`/`true`/`yes`/`on`), use a fixed access token (`nx-debug-local-token`) instead of a random per-run one, giving a stable launch URL. **Local development only** — see [Access token](#access-token). |
+| `BEDROCK_MODEL` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | Default Bedrock model ID (cross-region inference profile) for the AI assistant agent pipeline. Overridable per request via the chat panel's model selector. |
+| `BEDROCK_REGION` | *(falls back to `AWS_DEFAULT_REGION`/`AWS_REGION`)* | AWS region for Bedrock calls, if Bedrock runs in a different region than Athena/Neptune. |
+| `BEDROCK_AGENT_ROLE_ARN` | *(unset → uses the proxy's process role)* | Optional scoped, **read-only** IAM role for the AI assistant's agent path (spec §9.11). When set, the proxy assumes it via STS and runs the agent's Bedrock/Athena calls under the resulting short-lived credentials, so "the agent can only read/propose" holds at the AWS layer. Set this in any environment where the proxy's own role carries write/destructive permissions. |
+
+## IAM Permissions
+
+Beyond the Athena / S3 / Neptune Analytics permissions used by the core proxy, the AI assistant (spec §9) needs:
+
+- **Bedrock** — `bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream` on the configured model(s).
+- **Athena** — schema discovery reuses the existing Athena **metadata** calls (`GetTableMetadata`, `ListTableMetadata`) already required for the metadata endpoints; the optional data-sampling tool runs `SELECT ... LIMIT 10`, covered by existing Athena query + S3 result permissions.
+- **Neptune Analytics** — `neptune-graph:ExecuteQuery` for running the generated post-import openCypher queries/mutations.
+
+When splitting the agent path onto a scoped role via `BEDROCK_AGENT_ROLE_ARN`, the proxy's own role additionally needs `sts:AssumeRole` on that role, and the scoped role grants only the read-only subset above (`bedrock:InvokeModel`, Athena metadata + `StartQueryExecution`/`GetQueryResults` + the sampling S3 output location, and `neptune-graph:ReadDataViaQuery`) — no write, delete, or mutation permissions.

@@ -211,14 +211,14 @@ Request: *"get the page rank from all malware in my database"* with the given `S
 
 ### Phase 2 — Assistant backend (agents)
 
-> **Revised by §9.11** — the Agent A/B/C list below is superseded by the supervisor (agents-as-tools) roster: Schema Discovery, SQL Mapping, Query Planner, Navigation, Page-Action, and a Supervisor. Use §9.11's checklist. Original bullets kept for history.
+> **Revised by §9.11** — the Agent A/B/C list below is superseded by the supervisor (agents-as-tools) roster: Schema Discovery, SQL Mapping, Query Planner, Navigation, Page-Action, and a Supervisor. Use §9.12's checklist. Original bullets kept for history.
 
-- [ ] `BaseAgent` wrapper (retry + Strands metrics), ported/trimmed from the sample.
+- [x] `BaseAgent` wrapper (retry + Strands metrics), ported/trimmed from the sample.
 - [ ] ~~Agent A — Ontology Builder~~ → replaced by **Schema Discovery agent** (Athena metadata API, §9.6).
 - [ ] Agent B — SQL Property Mapper (→ **SQL Mapping agent**, §9.5).
 - [ ] Agent C — Graph Query Planner (→ **Query Planner agent**, §9.5).
 - [ ] Orchestrator: session store (in-memory), probing-question loop, structured proposal assembly (→ **Supervisor**, §9.2/9.9).
-- [ ] `POST /assistant/session`, `POST /assistant/message`, `GET /assistant/models`.
+- [x] `POST /assistant/session`, `POST /assistant/message`, `GET /assistant/models`.
 
 ### Phase 3 — Assistant UI (Requirements 1, 2, 3, 5)
 - [ ] "Generate" button — dark purple, white text, `Sparkles` prefix — in Import header/config card.
@@ -443,17 +443,33 @@ Client wiring: `assistant/context.tsx` `sendChat` replaces `await cannedRespond(
 - Discovery/sample data and all generated SQL/openCypher are **untrusted**: surfaced in the editable form, executed only through the Phase 1 run endpoints (guarded to `status == complete`, explicit `confirm()` for mutations).
 - Navigation and Page-Action agents are constrained to the page snapshot's registered keys/targets — they cannot surface an action the current page didn't register.
 
-### 9.11 TODO (revises Phase 2 of §6)
+### 9.11 Authentication & credentials
+
+**Single credential holder.** The agents run in-process inside the proxy (they are plain Python objects, not a separate service or subprocess). They hold **no AWS credentials of their own** — no access keys, no session, no token. All resource/data-plane calls (Athena metadata + guarded sampling, S3, Neptune) go through the proxy's existing `ClientFactory()`, which resolves credentials from the proxy's own environment/role. Bedrock model inference is the one AWS call the Strands runtime makes directly, and it too uses the proxy's ambient process credentials (`bedrock.py` passes no keys — boto3 resolves them like every other client). Nothing is credentialed from the browser or an external agent process.
+
+- **Tool functions take no credential parameters.** Group C tools accept only data args (`catalog`/`database`/`table`) and reach for `ClientFactory()` internally, so there is no path to inject or leak credentials through the agent layer.
+- The proxy's IAM role is therefore the **union** of what the agents need (Bedrock invoke; Athena metadata + guarded query; Neptune read) and what the deterministic Phase 1 endpoints need (import execution, projection lifecycle, S3 writes, Neptune mutations). The §9.10 guardrails are what keep the agents from exercising that role beyond intent.
+
+**Future consideration — splitting credentials (two IAM roles).** Because the agent path is LLM-driven and *suggest-only*, it is a higher-risk surface than the deterministic endpoints (prompt-injection or model error could attempt calls the design never intended). We may want to scope the agent path to a **separate, read-only IAM role** distinct from the proxy's primary role. Mechanically, since the agents are in-process, this is the `sts:AssumeRole` pattern — **not** a second base credential set:
+
+- The proxy keeps the single base identity; per request it assumes a scoped role via STS and hands the resulting **short-lived, auto-expiring** credentials to the boto3 clients the agent tools use. The agent still holds nothing persistent — consistent with the single-holder model above.
+- The scoped role grants only what a suggest-only agent needs: `bedrock:InvokeModel` on the allowed model(s), Athena metadata + `StartQueryExecution`/`GetQueryResults` for guarded sampling (plus the sampling S3 output location), and `neptune-graph:ReadDataViaQuery`. **No write, delete, pipeline-execution, or mutation permissions.**
+- This makes "the agent can never mutate" true at the **AWS layer**, not only the application layer — genuine defense-in-depth. Writes still happen only after human confirmation, executed by the *deterministic* proxy endpoint under the proxy's own (broader) primary role. Two roles map onto the two-phase trust model: agent reads/proposes under the read-only role; human confirms; proxy writes under the primary role.
+
+**Recommendation.** Keep one credential *holder* (the proxy). Make the agent-path role **configurable** via an env var (e.g. `BEDROCK_AGENT_ROLE_ARN`): when set, the agent's `ClientFactory` uses an assumed-role session; when unset, it falls back to the process role. Ship with the fallback so it works day one, and enable the scoped role in any environment where the proxy's primary role carries write/destructive permissions. **Worth doing specifically when the proxy role holds write permissions; deferrable if the proxy role is already effectively read-only** (the app-layer guardrails then already cover it and STS/refresh complexity buys little).
+
+### 9.12 TODO (revises Phase 2 of §6)
 
 Replaces the Agent-A/B/C bullets under **Phase 2 — Assistant backend**:
 
-- [ ] `BaseAgent` wrapper (retry + `extract_json` + Strands metrics), ported/trimmed from the sample.
-- [ ] **Schema Discovery agent** + tools over existing `ClientFactory().athena()` metadata (`list_table_metadata`, `get_table_metadata`); optional guarded `sample_table` (`LIMIT 10`).
-- [ ] **SQL Mapping agent** (discovery context + request → node/edge SQL with `~id/~label/~from/~to`).
-- [ ] **Query Planner agent** (discovery context + request → openCypher list, or "none").
-- [ ] **Navigation agent** (request + `projectId` → `JumpAction[]`; resolve named project via `projectApi.list`).
-- [ ] **Page-Action agent** (request + page snapshot → `ChatAction[]`, constrained to snapshot keys).
-- [ ] **Supervisor agent** registering the four tools (`navigate`, `generate_import`, `suggest_page_actions`); `generate_import` chains Discovery → Mapping → Planner.
-- [ ] Session store (in-memory): discovery cache per catalog+database + history; clarifying-question loop; `AssistantReply` assembly.
-- [ ] `POST /assistant/session`, `POST /assistant/message` (accepts `pageContext`), `GET /assistant/models`.
-- [ ] Client: `sendChat` calls `assistantApi.message(...)` with a serialized `pageContext`; keep `mock.ts` as offline fallback.
+- [x] `BaseAgent` wrapper (retry + `extract_json` + Strands metrics), ported/trimmed from the sample.
+- [x] **Schema Discovery agent** + tools over existing `ClientFactory().athena()` metadata (`list_table_metadata`, `get_table_metadata`); optional guarded `sample_table` (`LIMIT 10`).
+- [x] **SQL Mapping agent** (discovery context + request → node/edge SQL with `~id/~label/~from/~to`).
+- [x] **Query Planner agent** (discovery context + request → openCypher list, or "none").
+- [x] **Navigation agent** (request + `projectId` → `JumpAction[]`; resolve named project via `projectApi.list`).
+- [x] **Page-Action agent** (request + page snapshot → `ChatAction[]`, constrained to snapshot keys).
+- [x] **Supervisor agent** registering the four tools (`navigate`, `generate_import`, `suggest_page_actions`); `generate_import` chains Discovery → Mapping → Planner.
+- [x] Session store (in-memory): discovery cache per catalog+database + history; clarifying-question loop; `AssistantReply` assembly.
+- [x] `POST /assistant/session`, `POST /assistant/message` (accepts `pageContext`), `GET /assistant/models`.
+- [x] Client: `sendChat` calls `assistantApi.message(...)` with a serialized `pageContext`; keep `mock.ts` as offline fallback.
+- [x] Agent-path credentials (§9.11): tools take no credential args; the Athena/Bedrock clients resolve internally via `agent_aws.py`. Optional `BEDROCK_AGENT_ROLE_ARN` → STS-assumed read-only role for the agent path (cached + refreshed before expiry), falling back to the process role when unset.

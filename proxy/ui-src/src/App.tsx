@@ -7,6 +7,8 @@ import { Projections } from "./pages/Projections";
 import { Graphs } from "./pages/Graphs";
 import { Projects } from "./pages/Projects";
 import { Landing } from "./pages/Landing";
+import { AssistantProvider } from "./assistant/context";
+import { AssistantDrawer, AssistantLauncher } from "./assistant/AssistantDrawer";
 import { useKeyboard } from "./hooks/useKeyboard";
 
 export default function App() {
@@ -21,18 +23,22 @@ export default function App() {
   useKeyboard(handlers);
 
   return (
-    <div className="flex h-screen">
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(c => !c)} />
-      <main className="flex-1 overflow-auto p-6">
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/import" element={<Import />} />
-          <Route path="/projections" element={<Projections />} />
-          <Route path="/graphs" element={<Graphs />} />
-          <Route path="/projects" element={<Projects />} />
-        </Routes>
-      </main>
-      <S3ImportDialog />
-    </div>
+    <AssistantProvider>
+      <div className="flex h-screen">
+        <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(c => !c)} />
+        <main className="flex-1 overflow-auto p-6">
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/import" element={<Import />} />
+            <Route path="/projections" element={<Projections />} />
+            <Route path="/graphs" element={<Graphs />} />
+            <Route path="/projects" element={<Projects />} />
+          </Routes>
+        </main>
+        <S3ImportDialog />
+        <AssistantLauncher />
+        <AssistantDrawer />
+      </div>
+    </AssistantProvider>
   );
 }

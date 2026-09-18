@@ -8,16 +8,9 @@ from dataclasses import asdict
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from nx_neptune.clients.client_factory import ClientFactory
-from nx_neptune.clients.response_utils import get_query_failure_reason, get_query_state
-from nx_neptune.instance_management import (
-    _execute_athena_query,
-    get_athena_query_results,
-)
-from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
 from nx_neptune.validators import (
     check_athena_query,
     validate_resources,
-    wrap_with_limit,
 )
 
 from nx_neptune_proxy.routers.schemas import (
@@ -30,12 +23,12 @@ from nx_neptune_proxy.routers.schemas import (
     QueriesResponse,
     ValidateResponse,
 )
+from nx_neptune_proxy.services.athena_query import AthenaQueryError, execute_query_rows
 from nx_neptune_proxy.services.pipeline import run_pipeline
 from nx_neptune_proxy.services.projection_service import (
     ProjectionNotFound,
     projection_service,
 )
-from nx_neptune_proxy.utils import unpack_query_results
 from nx_neptune_proxy.utils.aws_helper import (
     assert_managed_graph,
     get_graph_or_exception,
@@ -168,23 +161,19 @@ async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le
     all_results: list = []
 
     for q in queries:
-        limited = wrap_with_limit(q, limit)
-
-        exec_id = _execute_athena_query(
-            client, limited, p.s3_staging_bucket, catalog=p.catalog, database=p.database
-        )
-
-        await wait_until_all_complete(
-            [exec_id], TaskType.EXPORT_ATHENA_TABLE, client, polling_interval=5
-        )
-
-        resp = client.get_query_execution(QueryExecutionId=exec_id)
-        state = get_query_state(resp)
-        if state != "SUCCEEDED":
-            return {"error": get_query_failure_reason(resp), "results": all_results}
-
-        rows = get_athena_query_results(query_execution_id=exec_id, client=client)
-        all_results.append(unpack_query_results(rows))
+        try:
+            all_results.append(
+                await execute_query_rows(
+                    client,
+                    q,
+                    p.s3_staging_bucket,
+                    catalog=p.catalog,
+                    database=p.database,
+                    limit=limit,
+                )
+            )
+        except AthenaQueryError as e:
+            return {"error": e.reason, "results": all_results}
 
     return {"error": None, "results": all_results}
 

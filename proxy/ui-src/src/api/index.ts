@@ -169,6 +169,83 @@ export interface Project {
   created_at: string;
 }
 
+// --- AI Assistant (agent backend, spec §9) ---
+//
+// Wire contracts are snake_case (matching the proxy API); the client maps the
+// reply into its camelCase JumpAction/ChatAction shapes in assistant/remote.ts.
+
+export interface AssistantSqlQuery {
+  sql: string;
+}
+
+export interface AssistantCypherQuery {
+  cypher: string;
+}
+
+export interface AssistantProposal {
+  catalog?: string | null;
+  database?: string | null;
+  bucket?: string | null;
+  graph_name?: string | null;
+  node_queries?: AssistantSqlQuery[] | null;
+  edge_queries?: AssistantSqlQuery[] | null;
+  graph_queries?: AssistantCypherQuery[] | null;
+}
+
+export interface AssistantJump {
+  kind: "new-import" | "new-project" | "open-projections";
+  label: string;
+  project_id?: string | null;
+}
+
+export interface AssistantAction {
+  kind: "page-action" | "graph-action";
+  page: string;
+  label: string;
+  action_key?: string | null;
+  enabled?: boolean | null;
+  destructive?: boolean | null;
+  graph_id?: string | null;
+  graph_action?: string | null;
+}
+
+export interface AssistantReply {
+  text: string;
+  proposal?: AssistantProposal | null;
+  jumps?: AssistantJump[];
+  actions?: AssistantAction[];
+  question?: string | null;
+}
+
+export interface AssistantPageContext {
+  page: string;
+  project_id?: string | null;
+  // Import page's selected Athena catalog/database, so the agent can generate an
+  // import without re-asking for what the form already shows.
+  catalog?: string | null;
+  database?: string | null;
+  actions?: { key: string; label: string; enabled?: boolean }[];
+  graph_targets?: { id: string; name: string; actions: string[] }[];
+}
+
+export interface AssistantMessagePayload {
+  text: string;
+  session_id?: string | null;
+  page_context?: AssistantPageContext | null;
+  model?: string | null;
+}
+
+export const assistantApi = {
+  session: () => request<{ session_id: string }>("/assistant/session", { method: "POST" }),
+  message: (payload: AssistantMessagePayload) =>
+    request<AssistantReply>("/assistant/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  models: () => request<{ models: string[]; default: string }>("/assistant/models"),
+};
+
 export const projectApi = {
   list: () => request<Project[]>("/project"),
   create: (name: string) => request<Project>("/project", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }),

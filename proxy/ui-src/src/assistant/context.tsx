@@ -9,6 +9,8 @@ import {
 } from "react";
 import { useNavigate } from "react-router";
 import { cannedRespond } from "./mock";
+import { remoteRespond } from "./remote";
+import { assistantApi } from "../api";
 
 // --- Types --------------------------------------------------------------
 // A single page action the assistant can surface as an inline chat button.
@@ -126,7 +128,7 @@ const GREETING: ChatMessage = {
 export function AssistantProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [bedrockModel, setBedrockModel] = useState("us.anthropic.claude-sonnet-4-5");
+  const [bedrockModel, setBedrockModel] = useState("us.anthropic.claude-sonnet-4-5-20250929-v1:0");
   const [chat, setChat] = useState<ChatMessage[]>([GREETING]);
   const [thinking, setThinking] = useState(false);
   const navigate = useNavigate();
@@ -137,6 +139,10 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
   // page changes.
   const bridgeRef = useRef<PageBridge | null>(null);
   const [bridgePage, setBridgePage] = useState<string | null>(null);
+
+  // Assistant session id (holds server-side history + discovery cache). Minted
+  // lazily on the first message; reused for the rest of the conversation.
+  const sessionIdRef = useRef<string | null>(null);
 
   const registerBridge = useCallback((reg: PageBridge) => {
     bridgeRef.current = reg;
@@ -154,20 +160,42 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
 
   const toggle = useCallback(() => setOpen((v) => !v), []);
 
-  // Canned mock response (spec §8.2 decision 3: replies stay canned in this
-  // phase). All page mutations run through the active page's bridge setters —
-  // see assistant/mock.ts.
-  const sendChat = useCallback((raw: string) => {
-    const text = raw.trim();
-    if (!text) return;
-    setChat((prev) => [...prev, { role: "user", text }]);
-    setThinking(true);
-    setTimeout(async () => {
-      const reply = await cannedRespond(text, bridgeRef.current);
-      setChat((prev) => [...prev, reply]);
-      setThinking(false);
-    }, 600);
-  }, []);
+  // Send one turn to the assistant agent backend (spec §9). The active page is
+  // serialized into a PageContext and sent with the message; the reply's import
+  // proposal is applied through the page bridge setters and its jumps/actions
+  // become inline buttons (see assistant/remote.ts). If the backend is
+  // unavailable (offline, or strands-agents not installed), we fall back to the
+  // deterministic offline mock so the prototype still works.
+  const sendChat = useCallback(
+    (raw: string) => {
+      const text = raw.trim();
+      if (!text) return;
+      setChat((prev) => [...prev, { role: "user", text }]);
+      setThinking(true);
+      void (async () => {
+        const bridge = bridgeRef.current;
+        try {
+          if (!sessionIdRef.current) {
+            const { session_id } = await assistantApi.session();
+            sessionIdRef.current = session_id;
+          }
+          const reply = await remoteRespond(
+            text,
+            bridge,
+            sessionIdRef.current,
+            bedrockModel,
+          );
+          setChat((prev) => [...prev, reply]);
+        } catch {
+          const reply = await cannedRespond(text, bridge);
+          setChat((prev) => [...prev, reply]);
+        } finally {
+          setThinking(false);
+        }
+      })();
+    },
+    [bedrockModel],
+  );
 
   // Inline jump buttons (spec §8.2 decision 7). All targets are resolved before
   // the button is rendered (the mock suggests a single project by name), so a

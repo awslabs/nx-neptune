@@ -30,6 +30,8 @@ def get_config():
         "region": settings.region or "",
         "graph_prefix": settings.graph_prefix,
         "config_bucket": settings.config_bucket or "",
+        "bedrock_model": settings.bedrock_model,
+        "bedrock_region": settings.bedrock_region or "",
     }
 
 
