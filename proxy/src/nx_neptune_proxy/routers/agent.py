@@ -66,7 +66,12 @@ async def chat(req: ChatRequest) -> ChatResponse:
             logger.error("Agent chat failed: %s", sanitize_error_message(str(e)))
             raise HTTPException(status_code=502, detail="Agent request failed")
 
-    return ChatResponse(reply=str(result))
+    reply = str(result)
+    # Log the reply server-side so a turn can be verified from the logs. Kept as
+    # a single structured line (not the raw token stream) so it doesn't interleave
+    # with other output. INFO so it shows at the default log level.
+    logger.info("Agent reply (request): %s", reply)
+    return ChatResponse(reply=reply)
 
 
 @router.post("/reset", summary="Clear the conversation and start fresh")
