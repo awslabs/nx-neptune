@@ -37,10 +37,15 @@ init_db()
 
 logging.basicConfig(
     level=settings.log_level,
-    format='{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","message":"%(message)s"}',
+    format="%(asctime)s %(levelname)-5s %(name)s: %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
 logger = logging.getLogger("nx_neptune_proxy")
+# basicConfig is a no-op if the root logger already has handlers (uvicorn
+# installs its own), which would leave our level at uvicorn's default and
+# silently drop DEBUG traces. Set the level on our named logger explicitly so
+# LOG_LEVEL=DEBUG reliably turns on the assistant trace logging.
+logger.setLevel(settings.log_level)
 
 # --- Proxy access token (per-run bearer token) ---
 # Delivered via the launch URL below, not embedded in any response, so it
