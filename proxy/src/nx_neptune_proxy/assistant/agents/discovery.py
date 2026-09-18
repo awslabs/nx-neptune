@@ -13,6 +13,7 @@ from typing import Optional
 from nx_neptune_proxy.assistant.agents.base_specialist import SpecialistAgent, as_tools
 from nx_neptune_proxy.assistant.athena_tools import (
     get_columns,
+    list_catalogs,
     list_databases,
     list_tables,
     sample_table,
@@ -23,6 +24,8 @@ SYSTEM_PROMPT = """You inspect Amazon Athena and report its schema for a \
 graph-import task.
 
 Tools (call only within the given catalog):
+- list_catalogs(): available Athena data catalogs as [{name, type}]. Metadata \
+only, no query cost. Use only when NO catalog is given and you must find one.
 - list_databases(catalog): database names in the catalog. Metadata only, no \
 query cost.
 - list_tables(catalog, database): table names in a database. Metadata only.
@@ -70,7 +73,9 @@ class DiscoveryAgent(SpecialistAgent):
     SYSTEM_PROMPT = SYSTEM_PROMPT
 
     def _tools(self):
-        return as_tools([list_databases, list_tables, get_columns, sample_table])
+        return as_tools(
+            [list_catalogs, list_databases, list_tables, get_columns, sample_table]
+        )
 
     def _format_prompt(self, **kwargs) -> str:
         return USER_PROMPT.format(

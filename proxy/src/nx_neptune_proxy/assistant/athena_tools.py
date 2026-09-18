@@ -36,6 +36,21 @@ class AthenaToolError(Exception):
     """A precondition for an assistant Athena tool was not met."""
 
 
+def list_catalogs() -> list[dict]:
+    """Return the Athena data catalogs as ``[{"name", "type"}]``.
+
+    Uses the ``ListDataCatalogs`` metadata API — no query, no scan cost. The
+    ``type`` (e.g. ``GLUE``, ``FEDERATED``, ``LAMBDA``) helps the discovery
+    agent pick the right catalog before it enumerates databases within one.
+    """
+    client = agent_athena_client()
+    items = paginate_aws(
+        client.list_data_catalogs,
+        "DataCatalogsSummary",
+    )
+    return [{"name": c["CatalogName"], "type": c.get("Type")} for c in items]
+
+
 def list_databases(catalog: str) -> list[str]:
     """Return the database names in ``catalog`` (metadata API, no query cost)."""
     client = agent_athena_client()

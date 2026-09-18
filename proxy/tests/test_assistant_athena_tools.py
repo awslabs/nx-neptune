@@ -13,6 +13,7 @@ from nx_neptune_proxy.assistant.athena_tools import (
     MAX_SAMPLE_ROWS,
     AthenaToolError,
     get_columns,
+    list_catalogs,
     list_tables,
     sample_table,
 )
@@ -23,6 +24,36 @@ QUERY = "nx_neptune_proxy.services.athena_query"
 
 
 # --- metadata tools (no query cost) --------------------------------------
+
+
+@patch(f"{TOOLS}.agent_athena_client")
+def test_list_catalogs_paginates_and_maps(mock_client):
+    athena = MagicMock()
+    athena.list_data_catalogs.side_effect = [
+        {
+            "DataCatalogsSummary": [{"CatalogName": "AwsDataCatalog", "Type": "GLUE"}],
+            "NextToken": "t",
+        },
+        {"DataCatalogsSummary": [{"CatalogName": "fed", "Type": "FEDERATED"}]},
+    ]
+    mock_client.return_value = athena
+
+    assert list_catalogs() == [
+        {"name": "AwsDataCatalog", "type": "GLUE"},
+        {"name": "fed", "type": "FEDERATED"},
+    ]
+    athena.list_data_catalogs.assert_called_with(NextToken="t")
+
+
+@patch(f"{TOOLS}.agent_athena_client")
+def test_list_catalogs_type_optional(mock_client):
+    athena = MagicMock()
+    athena.list_data_catalogs.return_value = {
+        "DataCatalogsSummary": [{"CatalogName": "only-name"}]
+    }
+    mock_client.return_value = athena
+
+    assert list_catalogs() == [{"name": "only-name", "type": None}]
 
 
 @patch(f"{TOOLS}.agent_athena_client")
