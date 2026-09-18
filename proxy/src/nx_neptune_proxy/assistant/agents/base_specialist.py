@@ -11,17 +11,23 @@ these as supervisor tools via ``as_tools``.
 """
 
 from nx_neptune_proxy.assistant.base import BaseAgent
+from nx_neptune_proxy.assistant.debug_trace import make_callback_handler
 
 
 def build_agent(name: str, system_prompt: str, model, tools=None):
-    """Construct a Strands ``Agent`` (lazy import of ``strands``)."""
+    """Construct a Strands ``Agent`` (lazy import of ``strands``).
+
+    The callback handler is normally ``None`` (Strands' stdout streaming stays
+    suppressed); when DEBUG logging is on, a tool-tracing handler is attached so
+    each tool the model calls is logged, tagged with this agent's name.
+    """
     from strands import Agent  # noqa: PLC0415 (lazy: optional dep)
 
     return Agent(
         name=name,
         system_prompt=system_prompt,
         model=model,
-        callback_handler=None,
+        callback_handler=make_callback_handler(name),
         tools=tools or [],
     )
 
