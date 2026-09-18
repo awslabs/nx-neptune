@@ -22,8 +22,9 @@ classifiers = [
 ]
 
 dependencies = [
-    "fastapi==0.115.12",
+    "fastapi==0.141.1",
     "uvicorn[standard]==0.34.2",
+    "strands-agents==1.55.1",
     "nx-neptune",
 ]
 

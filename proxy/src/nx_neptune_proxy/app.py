@@ -5,6 +5,7 @@ import asyncio
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -17,6 +18,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from nx_neptune_proxy.auth import get_token, log_token_notice, require_token
 from nx_neptune_proxy.config import _LOOPBACK_HOSTS, get_settings, normalize_origin
+from nx_neptune_proxy.routers.agent import router as agent_router
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
 from nx_neptune_proxy.routers.project import router as project_router
@@ -55,7 +57,27 @@ log_token_notice()
 
 # --- App ---
 
-app = FastAPI(title="nx-neptune-proxy", version="0.1.0", docs_url=None, redoc_url=None)
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Startup: resume any project deletions left in-flight by a prior run.
+
+    Replaces the deprecated @app.on_event("startup") handler; lifespan is the
+    supported pattern in current FastAPI/Starlette.
+    """
+    for p in project_store.list():
+        if p.status == "deleting":
+            logger.info(f"Resuming deletion of project {p.id} ({p.name})")
+            asyncio.create_task(delete_project(p.id))
+    yield
+
+
+app = FastAPI(
+    title="nx-neptune-proxy",
+    version="0.1.0",
+    docs_url=None,
+    redoc_url=None,
+    lifespan=lifespan,
+)
 
 # --- Middleware ordering ---
 #
@@ -241,17 +263,7 @@ app.include_router(projection_router, dependencies=[Depends(require_token)])
 app.include_router(project_router, dependencies=[Depends(require_token)])
 app.include_router(graph_router, dependencies=[Depends(require_token)])
 app.include_router(project_io_router, dependencies=[Depends(require_token)])
-
-
-# --- Startup: resume stuck deletions ---
-
-
-@app.on_event("startup")
-async def resume_pending_deletions():
-    for p in project_store.list():
-        if p.status == "deleting":
-            logger.info(f"Resuming deletion of project {p.id} ({p.name})")
-            asyncio.create_task(delete_project(p.id))
+app.include_router(agent_router, dependencies=[Depends(require_token)])
 
 
 # --- Static UI (must be last — catch-all) ---
