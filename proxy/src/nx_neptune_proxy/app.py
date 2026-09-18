@@ -17,6 +17,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from nx_neptune_proxy.auth import get_token, log_token_notice, require_token
 from nx_neptune_proxy.config import _LOOPBACK_HOSTS, get_settings, normalize_origin
+from nx_neptune_proxy.routers.assistant import router as assistant_router
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
 from nx_neptune_proxy.routers.project import router as project_router
@@ -241,6 +242,7 @@ app.include_router(projection_router, dependencies=[Depends(require_token)])
 app.include_router(project_router, dependencies=[Depends(require_token)])
 app.include_router(graph_router, dependencies=[Depends(require_token)])
 app.include_router(project_io_router, dependencies=[Depends(require_token)])
+app.include_router(assistant_router, dependencies=[Depends(require_token)])
 
 
 # --- Startup: resume stuck deletions ---

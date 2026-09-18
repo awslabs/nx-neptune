@@ -195,8 +195,8 @@ async def test_validate_query(mock_check, client):
 
 
 @pytest.mark.asyncio
-@patch("nx_neptune_proxy.routers.projection.get_athena_query_results")
-@patch("nx_neptune_proxy.routers.projection.wait_until_all_complete")
+@patch("nx_neptune_proxy.services.athena_query.get_athena_query_results")
+@patch("nx_neptune_proxy.services.athena_query.wait_until_all_complete")
 @patch("nx_neptune_proxy.routers.projection.ClientFactory")
 async def test_preview(mock_cf, mock_wait, mock_results, client):
     mock_athena = MagicMock()

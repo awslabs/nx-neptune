@@ -1,0 +1,122 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+"""Athena tool layer for the assistant agents (spec §9, Group C).
+
+Plain functions the Schema Discovery agent calls to inspect a selected
+database. ``list_tables`` / ``get_columns`` reuse Athena's metadata API (the
+same calls behind ``/metadata/athena/{tables,columns}``) — no query, no scan
+cost. ``sample_table`` runs a guarded ``SELECT ... LIMIT`` through the shared
+Athena execution helper.
+
+Per spec §9.11, these take **only data args** and resolve their Athena client
+internally via ``agent_athena_client()`` — no credential parameters, so there is
+no path to inject or leak credentials through the agent layer. That client is
+scoped to the assumed read-only role when ``BEDROCK_AGENT_ROLE_ARN`` is set, and
+falls back to the proxy's process role otherwise. They are kept free of any
+Strands import so the package stays importable without ``strands-agents``;
+Group D wraps them as ``@tool`` when building the agent.
+"""
+
+import asyncio
+import re
+
+from nx_neptune_proxy.assistant.agent_aws import agent_athena_client
+from nx_neptune_proxy.config import get_settings
+from nx_neptune_proxy.services.athena_query import execute_query_rows
+from nx_neptune_proxy.utils import paginate_aws
+
+# Server-side hard cap on sampled rows: a model-supplied ``limit`` is clamped to
+# this regardless of what the model asks for (spec §9.10 guardrail).
+MAX_SAMPLE_ROWS = 100
+DEFAULT_SAMPLE_ROWS = 10
+
+
+class AthenaToolError(Exception):
+    """A precondition for an assistant Athena tool was not met."""
+
+
+def list_databases(catalog: str) -> list[str]:
+    """Return the database names in ``catalog`` (metadata API, no query cost)."""
+    client = agent_athena_client()
+    items = paginate_aws(
+        client.list_databases,
+        "DatabaseList",
+        CatalogName=catalog,
+    )
+    return [d["Name"] for d in items]
+
+
+def list_tables(catalog: str, database: str) -> list[str]:
+    """Return the table names in ``database`` (metadata API, no query cost)."""
+    client = agent_athena_client()
+    items = paginate_aws(
+        client.list_table_metadata,
+        "TableMetadataList",
+        CatalogName=catalog,
+        DatabaseName=database,
+    )
+    return [t["Name"] for t in items]
+
+
+def get_columns(catalog: str, database: str, table: str) -> list[dict]:
+    """Return ``[{"name", "type"}]`` for ``table`` (metadata API, no query cost)."""
+    client = agent_athena_client()
+    resp = client.get_table_metadata(
+        CatalogName=catalog, DatabaseName=database, TableName=table
+    )
+    columns = resp["TableMetadata"].get("Columns", [])
+    return [{"name": c["Name"], "type": c["Type"]} for c in columns]
+
+
+def sample_table(
+    catalog: str,
+    database: str,
+    table: str,
+    limit: int = DEFAULT_SAMPLE_ROWS,
+) -> dict:
+    """Return up to ``limit`` sample rows from ``table`` as ``{columns, rows}``.
+
+    Guarded (spec §9.10): ``limit`` is clamped to ``[1, MAX_SAMPLE_ROWS]``, and
+    ``table`` is validated against the database's actual table list before it is
+    interpolated into SQL — so a model cannot smuggle arbitrary SQL through the
+    table name. The query runs against a server-resolved staging location.
+    """
+    limit = max(1, min(int(limit), MAX_SAMPLE_ROWS))
+
+    known = list_tables(catalog, database)
+    if table not in known:
+        raise AthenaToolError(
+            f"Table {table!r} not found in {database!r}; cannot sample."
+        )
+
+    output_location = _staging_location()
+    quoted = _quote_ident(table)
+    sql = f'SELECT * FROM {quoted}'
+
+    return asyncio.run(
+        execute_query_rows(
+            agent_athena_client(),
+            sql,
+            output_location,
+            catalog=catalog,
+            database=database,
+            limit=limit,
+        )
+    )
+
+
+def _quote_ident(identifier: str) -> str:
+    """Quote a validated Athena identifier, escaping embedded double quotes."""
+    return '"' + identifier.replace('"', '""') + '"'
+
+
+def _staging_location() -> str:
+    """Resolve the S3 staging URI for sample queries from settings."""
+    raw = get_settings().config_bucket
+    if not raw:
+        raise AthenaToolError(
+            "No Athena staging location configured (set NX_NEPTUNE_CONFIG_BUCKET)."
+        )
+    base = raw if raw.startswith("s3://") else f"s3://{raw}"
+    return re.sub(r"/+$", "", base) + "/assistant-samples"
