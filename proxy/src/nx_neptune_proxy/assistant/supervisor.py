@@ -25,6 +25,7 @@ from nx_neptune_proxy.assistant.agents.navigation import NavigationAgent
 from nx_neptune_proxy.assistant.agents.page_action import PageActionAgent
 from nx_neptune_proxy.assistant.agents.query_planner import QueryPlannerAgent
 from nx_neptune_proxy.assistant.agents.sql_mapping import SqlMappingAgent
+from nx_neptune_proxy.assistant.athena_tools import list_catalogs as _list_catalogs
 from nx_neptune_proxy.assistant.schemas import (
     AssistantReply,
     ChatAction,
@@ -60,14 +61,18 @@ an action.
 Tools (call only the ones a request needs):
 - navigate(request): propose cross-page navigation (e.g. "start a new import", \
 "open the TPCH projections").
+- list_catalogs(): list the Athena data catalogs available to import from. Use \
+this when the user asks what catalogs/data sources are available, or has no \
+catalog in mind — name the real options instead of telling them to look it up \
+elsewhere.
 - generate_import(request, catalog, database, bucket, graph_name): propose the \
 import mapping (schema discovery → node/edge SQL → optional graph queries). You \
 MUST know the Athena catalog first. When the current page context includes a \
 catalog (and database), use those values unless the user names different ones; \
-only ask if no catalog is available at all — do not call this tool with an empty \
-catalog. database is optional: pass it to target one database, or leave it empty \
-to search every database in the catalog for relevant tables. bucket and \
-graph_name are optional.
+if no catalog is available at all, call list_catalogs() to offer options rather \
+than calling this tool with an empty catalog. database is optional: pass it to \
+target one database, or leave it empty to search every database in the catalog \
+for relevant tables. bucket and graph_name are optional.
 - suggest_page_actions(request): surface actions available on the current page \
 (e.g. stopping a graph, executing an import).
 
@@ -121,6 +126,21 @@ class Supervisor:
             ctx.jumps.extend(jumps)
             return f"Proposed {len(jumps)} navigation option(s)."
 
+        def list_catalogs() -> str:
+            """List the Athena data catalogs available to import from.
+
+            Use this when the user asks what catalogs/data sources exist, or has
+            no catalog in mind yet — so you can name real options instead of
+            asking them to look it up elsewhere. Metadata only, no query cost."""
+            catalogs = _list_catalogs()
+            if not catalogs:
+                return "No Athena catalogs are available."
+            named = ", ".join(
+                f'{c["name"]} ({c["type"]})' if c.get("type") else c["name"]
+                for c in catalogs
+            )
+            return f"Available Athena catalogs: {named}."
+
         def generate_import(
             request: str,
             catalog: str,
@@ -166,7 +186,7 @@ class Supervisor:
             ctx.actions.extend(actions)
             return f"Surfaced {len(actions)} page action(s)."
 
-        return [navigate, generate_import, suggest_page_actions]
+        return [navigate, list_catalogs, generate_import, suggest_page_actions]
 
     def _build_supervisor(self, ctx: "TurnContext"):
         return build_agent(
