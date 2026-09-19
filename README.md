@@ -26,6 +26,32 @@ What previously required complex ETL pipelines to get data into a graph database
 
 For data already in S3-compatible formats (CSV, Parquet), Neptune Analytics also supports [native S3 import](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/import-s3.html) without Athena.
 
+**Declaring the graph with `CREATE PROPERTY GRAPH`:**
+
+Rather than hand-writing the Athena `SELECT` statements that alias source columns into Neptune's load format (`~id`/`~label` for vertices, `~from`/`~to`/`~label` for edges), you can declare a property-graph schema with the standard SQL/PGQ (SQL:2023) `CREATE PROPERTY GRAPH` DDL. `nx-neptune` translates it into those projection queries and runs the unchanged Athena → S3 → Neptune import path:
+
+```python
+DDL = """
+CREATE PROPERTY GRAPH financial
+  VERTEX TABLES (
+    accounts AS customer KEY (name) LABEL customer PROPERTIES (name)
+  )
+  EDGE TABLES (
+    transactions
+      SOURCE KEY (nameOrig) REFERENCES customer
+      DESTINATION KEY (nameDest) REFERENCES customer
+      LABEL transfer
+      PROPERTIES (step:Int, amount:Float, isFraud:Int)
+  )
+"""
+
+await session.import_from_graph_schema(
+    graph, s3_location, DDL, catalog=catalog, database=database
+)
+```
+
+The optional `:Type` suffix on a property (e.g. `amount:Float`) matches Neptune's load-format header convention; without it the property loads as a string. `LABEL` defaults to the table name/alias when omitted. To see the generated SQL without importing, call `nx_neptune.property_graph_to_sql(DDL)`.
+
 **Use cases demonstrated in the notebooks:**
 
 - **Fraud detection** — project financial transactions as a graph, run community detection (Louvain) to identify fraud rings ([S3 Tables demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_table_demo.ipynb), [Databricks demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_databricks_demo.ipynb))
