@@ -49,6 +49,12 @@ from .instance_management import (
     validate_permissions,
 )
 from .interface import BackendInterface
+from .property_graph import (
+    PropertyGraph,
+    PropertyGraphSyntaxError,
+    parse_property_graph,
+    property_graph_to_sql,
+)
 from .na_graph import (
     NETWORKX_GRAPH_ID,
     NETWORKX_S3_IAM_ROLE_ARN,
@@ -86,6 +92,11 @@ __all__ = [
     # decorators
     "configure_if_nx_active",
     "BackendInterface",
+    # property graph front-end
+    "PropertyGraph",
+    "PropertyGraphSyntaxError",
+    "parse_property_graph",
+    "property_graph_to_sql",
     # instance management
     "validate_permissions",
     "create_na_instance",

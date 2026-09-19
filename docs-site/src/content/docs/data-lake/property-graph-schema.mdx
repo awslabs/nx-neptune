@@ -1,0 +1,89 @@
+---
+title: Property Graph Schema
+---
+
+Declare how your source tables map to a graph using the standard SQL/PGQ (SQL:2023) `CREATE PROPERTY GRAPH` DDL, instead of hand-writing the Athena projection queries.
+
+## Overview
+
+The [Session Manager](/data-lake/session-manager/) import path expects Athena `SELECT` statements that alias source columns into Neptune Analytics' Gremlin CSV load format — `~id`/`~label` for vertices and `~from`/`~to`/`~label` for edges. Writing those by hand is repetitive and easy to get subtly wrong.
+
+`import_from_graph_schema` lets you declare the mapping declaratively. The DDL is parsed and translated into the same projection queries, which run through the unchanged Athena → S3 → Neptune import path — so only the front-end differs from `import_from_table`.
+
+## Example
+
+```python
+DDL = """
+CREATE PROPERTY GRAPH financial
+  VERTEX TABLES (
+    accounts AS customer
+      KEY (name)
+      LABEL customer
+      PROPERTIES (name)
+  )
+  EDGE TABLES (
+    transactions
+      SOURCE KEY (nameOrig) REFERENCES customer
+      DESTINATION KEY (nameDest) REFERENCES customer
+      LABEL transfer
+      PROPERTIES (step:Int, amount:Float, isFraud:Int)
+  )
+"""
+
+await session.import_from_graph_schema(
+    graph, s3_location, DDL, catalog=catalog, database=database
+)
+```
+
+This translates to two projection queries — one per vertex table, then one per edge table:
+
+```sql
+SELECT DISTINCT "name" AS "~id", 'customer' AS "~label", "name" AS "name"
+FROM "accounts" WHERE "name" IS NOT NULL;
+
+SELECT "nameOrig" AS "~from", "nameDest" AS "~to", 'transfer' AS "~label",
+       "step" AS "step:Int", "amount" AS "amount:Float", "isFraud" AS "isFraud:Int"
+FROM "transactions"
+WHERE "nameOrig" IS NOT NULL AND "nameDest" IS NOT NULL;
+```
+
+## Syntax
+
+```
+CREATE PROPERTY GRAPH <name>
+  VERTEX TABLES (
+    <table> [ [AS] <alias> ]
+      KEY ( <column> )
+      [ LABEL <label> ]
+      [ PROPERTIES ( <prop> [, <prop>]* ) | NO PROPERTIES ]
+    [, ...]
+  )
+  [ EDGE TABLES (
+    <table> [ [AS] <alias> ]
+      [ KEY ( <column> ) ]
+      SOURCE      [ KEY ( <column> ) ] REFERENCES <vertex> [ ( <column> ) ]
+      DESTINATION [ KEY ( <column> ) ] REFERENCES <vertex> [ ( <column> ) ]
+      [ LABEL <label> ]
+      [ PROPERTIES ( <prop> [, <prop>]* ) | NO PROPERTIES ]
+    [, ...]
+  ) ]
+```
+
+- A `<prop>` is `<column> [AS <name>] [: <NeptuneType>]`. The optional `:Type` suffix (e.g. `amount:Float`) matches Neptune's load-format header convention; without it the property loads as a string.
+- `LABEL` defaults to the table's alias, then its name, when omitted.
+- Vertex `KEY` becomes `~id`; edge `SOURCE`/`DESTINATION` become `~from`/`~to`.
+
+## Inspecting generated SQL
+
+To see the translated queries without running an import:
+
+```python
+from nx_neptune import property_graph_to_sql
+
+for query in property_graph_to_sql(DDL):
+    print(query)
+```
+
+## Limitations
+
+See [Known Considerations](/reference/limitations/) — notably, keys must be single-column and `PROPERTIES ARE ALL COLUMNS` is not supported.

@@ -13,6 +13,7 @@ from botocore.exceptions import ClientError
 from . import NeptuneGraph, instance_management
 from .clients import IamClientWrapper, NeptuneAnalyticsClient
 from .clients.client_factory import ClientFactory
+from .property_graph import property_graph_to_sql
 
 logger = logging.getLogger(__name__)
 
@@ -418,6 +419,52 @@ class SessionManager:
             f"Graph data imported to graph {graph.graph_id} using task {task_id}"
         )
         return task_id
+
+    async def import_from_graph_schema(
+        self,
+        graph: NeptuneAnalyticsClient,
+        s3_location: str,
+        property_graph: str,
+        catalog=None,
+        database=None,
+        remove_buckets=True,
+    ) -> str:
+        """Import data described by a ``CREATE PROPERTY GRAPH`` statement.
+
+        A schema-first front-end over :meth:`import_from_table`: instead of
+        hand-writing the Athena ``SELECT`` projections that alias source columns
+        into Neptune's ``~id``/``~label``/``~from``/``~to`` load format, declare
+        the mapping with the standard SQL/PGQ (SQL:2023) ``CREATE PROPERTY
+        GRAPH`` DDL. The DDL is translated into those projection queries and
+        imported through the unchanged Athena -> S3 -> Neptune path.
+
+        Args:
+            graph (NeptuneAnalyticsClient): Graph to import into.
+            s3_location (str): S3 location to store intermediate CSV data.
+            property_graph (str): A ``CREATE PROPERTY GRAPH`` statement.
+            catalog (str, optional): Athena catalog name. Defaults to None.
+            database (str, optional): Athena database name. Defaults to None.
+            remove_buckets (bool): Delete intermediate S3 CSV data after a
+                successful import if True.
+
+        Returns:
+            str: Graph ID of the target graph.
+
+        Raises:
+            PropertyGraphSyntaxError: If the DDL cannot be parsed.
+        """
+        sql_queries = property_graph_to_sql(property_graph)
+        logger.info(
+            f"Translated property graph into {len(sql_queries)} projection queries"
+        )
+        return await self.import_from_table(
+            graph,
+            s3_location,
+            sql_queries,
+            catalog=catalog,
+            database=database,
+            remove_buckets=remove_buckets,
+        )
 
     async def export_to_table(
         self,
