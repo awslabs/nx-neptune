@@ -187,8 +187,8 @@ async def test_list_s3_buckets_no_region(mock_cf, mock_get_settings, client):
     mock_get_settings.return_value.region = ""
 
     resp = await client.get("/api/v0/metadata/s3/buckets")
-    assert resp.status_code == 200
-    assert resp.json() == {"buckets": []}
+    assert resp.status_code == 400
+    assert "region is not configured" in resp.json()["message"]
 
 
 # --- Neptune graphs ---
@@ -276,7 +276,7 @@ async def test_delete_neptune_graph_rejects_unmanaged(mock_cf, client):
         "DELETE", "/api/v0/metadata/neptune/graph-analytics/g-456"
     )
     assert resp.status_code == 403
-    assert "not managed" in resp.json()["detail"]
+    assert "not managed" in resp.json()["message"]
     mock_neptune.delete_graph.assert_not_called()
 
 
@@ -294,4 +294,4 @@ async def test_delete_neptune_graph_not_found(mock_cf, client):
         "DELETE", "/api/v0/metadata/neptune/graph-analytics/g-999"
     )
     assert resp.status_code == 404
-    assert "not found" in resp.json()["detail"].lower()
+    assert "not found" in resp.json()["message"].lower()

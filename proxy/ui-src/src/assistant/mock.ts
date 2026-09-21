@@ -118,21 +118,34 @@ function importDemo(bridge: PageBridge): ChatMessage {
   s.database?.("mitre_attack");
   s.bucket?.((prev: string) => prev || "s3://my-neptune-staging/");
   s.graphName?.((prev: string) => prev || "malware-threat-graph");
-  s.nodeQueries?.([
+  const nodeQueries = [
     { sql: `SELECT id AS "~id", 'Malware' AS "~label", name, attack_id, platforms FROM malware` },
     { sql: `SELECT id AS "~id", 'Campaign' AS "~label", name, attack_id, first_seen FROM campaigns` },
     { sql: `SELECT id AS "~id", 'Mitigation' AS "~label", name, attack_id, description FROM mitigations` },
     { sql: `SELECT id AS "~id", 'Tool' AS "~label", name, attack_id, platforms FROM tools` },
-  ]);
-  s.edgeQueries?.([
+  ];
+  s.nodeQueries?.(nodeQueries);
+  const edgeQueries = [
     { sql: `SELECT id AS "~id", source_ref AS "~from", target_ref AS "~to", 'uses' AS "~label"\nFROM relationships WHERE relationship_type = 'uses'` },
     { sql: `SELECT id AS "~id", source_ref AS "~from", target_ref AS "~to", 'mitigates' AS "~label"\nFROM relationships WHERE relationship_type = 'mitigates'` },
     { sql: `SELECT id AS "~id", source_ref AS "~from", target_ref AS "~to", 'attributed-to' AS "~label"\nFROM relationships WHERE relationship_type = 'attributed-to'` },
-  ]);
-  s.graphQueries?.([
+  ];
+  s.edgeQueries?.(edgeQueries);
+  const graphQueries = [
     { cypher: `CALL neptune.algo.pageRank.mutate({\n  writeProperty: "pagerank"\n})\nYIELD success\nRETURN success` },
     { cypher: `MATCH (n)\nWHERE 'Malware' IN labels(n)\nRETURN n.name AS malware, n.pagerank AS pagerank\nORDER BY pagerank DESC\nLIMIT 10` },
-  ]);
+  ];
+  s.graphQueries?.(graphQueries);
+  // Mirror the remote path: persist the demo as a projection so it behaves like
+  // a real assistant fill (creating the projection and saving its queries).
+  void bridge.persistImport?.({
+    catalog: "AwsDataCatalog",
+    database: "mitre_attack",
+    bucket: "s3://my-neptune-staging/",
+    graphName: "malware-threat-graph",
+    nodeQueries,
+    edgeQueries,
+  });
   return {
     role: "assistant",
     text:

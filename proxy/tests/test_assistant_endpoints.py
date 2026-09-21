@@ -76,7 +76,7 @@ async def test_message_maps_agent_failure_to_502(client):
             )
 
     assert resp.status_code == 502
-    assert "bedrock exploded" in resp.json()["detail"]
+    assert "bedrock exploded" in resp.json()["message"]
 
 
 @pytest.mark.asyncio

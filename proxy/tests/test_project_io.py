@@ -230,7 +230,7 @@ class TestImportValidation:
         payload = {"version": "1.0", "project": {"name": "   "}, "projections": []}
         resp = await client.post("/api/v0/project/import", content=json.dumps(payload))
         assert resp.status_code == 400
-        assert "name" in resp.json()["detail"].lower()
+        assert "name" in resp.json()["message"].lower()
 
     @pytest.mark.anyio
     async def test_import_missing_project_name(self, client):
@@ -245,7 +245,7 @@ class TestImportValidation:
         payload = {"version": "1.0", "project": {"name": "x" * 101}, "projections": []}
         resp = await client.post("/api/v0/project/import", content=json.dumps(payload))
         assert resp.status_code == 400
-        assert "too long" in resp.json()["detail"].lower()
+        assert "too long" in resp.json()["message"].lower()
 
     @pytest.mark.anyio
     async def test_import_invalid_content_length(self, client):
@@ -257,7 +257,7 @@ class TestImportValidation:
             headers={"content-length": "not-a-number"},
         )
         assert resp.status_code == 400
-        assert "Content-Length" in resp.json()["detail"]
+        assert "Content-Length" in resp.json()["message"]
 
 
 class TestExportFilename:

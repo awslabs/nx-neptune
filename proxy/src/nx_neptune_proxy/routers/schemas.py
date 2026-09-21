@@ -112,6 +112,18 @@ class PreviewResponse(BaseModel):
     results: list[PreviewQueryResult]
 
 
+class RunQueryPayload(BaseModel):
+    """openCypher queries to run against the projection's graph, in sequence."""
+
+    queries: list[str]
+
+
+class RunQueryResponse(BaseModel):
+    error: Optional[str] = None
+    # One entry per query executed (the Neptune Analytics `results` array).
+    results: list = Field(default_factory=list)
+
+
 class ProjectionStatus(BaseModel):
     id: str
     status: str

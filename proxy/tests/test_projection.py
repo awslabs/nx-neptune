@@ -4,6 +4,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 from httpx import ASGITransport, AsyncClient
 
 from nx_neptune_proxy.app import app
@@ -249,6 +250,78 @@ async def test_execute_conflict_if_already_running(client):
 
     resp = await client.post(f"/api/v0/projection/{pid}/execute")
     assert resp.status_code == 409
+
+
+# --- Run graph queries ---
+
+
+@pytest.mark.asyncio
+async def test_run_query_returns_results(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+    store.update(pid, graph_id="g-abc123")
+
+    mock_na = MagicMock()
+    mock_na.execute_query.return_value = [{"n": {"~id": "1"}}]
+    with patch(
+        "nx_neptune_proxy.routers.projection.NeptuneAnalyticsClient",
+        return_value=mock_na,
+    ) as mock_cls:
+        resp = await client.post(
+            f"/api/v0/projection/{pid}/run-query",
+            json={"queries": ["MATCH (n) RETURN n LIMIT 1", "  "]},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["error"] is None
+    # Blank query is skipped, so exactly one result set is returned.
+    assert body["results"] == [[{"n": {"~id": "1"}}]]
+    mock_cls.assert_called_once_with(graph_id="g-abc123")
+    mock_na.execute_query.assert_called_once_with("MATCH (n) RETURN n LIMIT 1")
+
+
+@pytest.mark.asyncio
+async def test_run_query_no_graph_returns_409(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    resp = await client.post(
+        f"/api/v0/projection/{pid}/run-query",
+        json={"queries": ["MATCH (n) RETURN n"]},
+    )
+    assert resp.status_code == 409
+    assert "No graph" in resp.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_query_client_error_returns_partial(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+    store.update(pid, graph_id="g-abc123")
+
+    mock_na = MagicMock()
+    mock_na.execute_query.side_effect = [
+        [{"ok": True}],
+        ClientError(
+            {"Error": {"Code": "InvalidParameterException", "Message": "bad cypher"}},
+            "ExecuteQuery",
+        ),
+    ]
+    with patch(
+        "nx_neptune_proxy.routers.projection.NeptuneAnalyticsClient",
+        return_value=mock_na,
+    ):
+        resp = await client.post(
+            f"/api/v0/projection/{pid}/run-query",
+            json={"queries": ["MATCH (n) RETURN n", "BROKEN"]},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["error"] is not None
+    # First query's result is preserved before the failure.
+    assert body["results"] == [[{"ok": True}]]
 
 
 # --- List projections ---

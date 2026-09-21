@@ -107,7 +107,12 @@ def list_s3_buckets():
     """List S3 buckets in the configured region"""
     filter_region = get_settings().region
     if not filter_region:
-        return {"buckets": []}
+        raise HTTPException(
+            status_code=400,
+            detail="AWS region is not configured, so S3 buckets cannot be "
+            "listed. Set AWS_REGION (or AWS_DEFAULT_REGION) and restart the "
+            "proxy.",
+        )
     client = ClientFactory().s3()
     buckets = [
         b["Name"]

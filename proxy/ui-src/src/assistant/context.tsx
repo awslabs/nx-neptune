@@ -47,8 +47,26 @@ export interface PageBridge {
   graphTargets?: GraphTarget[];
   // Runs a graph action; the owning page handles confirmation + refresh.
   runGraphAction?: (graphId: string, action: string) => void | Promise<void>;
+  // Persist the just-applied import as a projection (creating one if none
+  // exists) after the assistant fills the form. The applied values are passed
+  // in directly because the setters above are async — React state has not
+  // re-rendered yet when this is called (see spec §9.5).
+  persistImport?: (data: ImportPersistData) => void | Promise<void>;
   // Current project context from the URL (null when none), used by jumps.
   jumpContext?: { projectId: string | null };
+}
+
+// The import fields the assistant just applied, forwarded to persistImport so
+// the created/updated projection matches the proposal exactly. Omitted fields
+// are left untouched (a follow-up turn editing only graph queries, say, must
+// not clobber previously saved SQL).
+export interface ImportPersistData {
+  catalog?: string;
+  database?: string;
+  bucket?: string;
+  graphName?: string;
+  nodeQueries?: { sql: string }[];
+  edgeQueries?: { sql: string }[];
 }
 
 // A cross-page navigation the assistant can offer as an inline chat button

@@ -8,6 +8,7 @@ from dataclasses import asdict
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from nx_neptune.clients.client_factory import ClientFactory
+from nx_neptune.clients.na_client import NeptuneAnalyticsClient
 from nx_neptune.validators import (
     check_athena_query,
     validate_resources,
@@ -21,6 +22,8 @@ from nx_neptune_proxy.routers.schemas import (
     ProjectionUpdate,
     QueriesPayload,
     QueriesResponse,
+    RunQueryPayload,
+    RunQueryResponse,
     ValidateResponse,
 )
 from nx_neptune_proxy.services.athena_query import AthenaQueryError, execute_query_rows
@@ -188,6 +191,39 @@ def execute_projection(projection_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=409, detail="Pipeline already running")
     background_tasks.add_task(run_pipeline, p)
     return {"id": p.id, "status": "accepted"}
+
+
+@router.post(
+    "/{projection_id}/run-query",
+    summary="Run openCypher queries against the projection's graph",
+    response_model=RunQueryResponse,
+)
+def run_query(projection_id: str, body: RunQueryPayload):
+    """Execute the supplied openCypher queries in sequence against the
+    projection's Neptune Analytics graph and return each query's results.
+
+    Stops at the first failing query, returning any results gathered so far
+    alongside the error message.
+    """
+    p = _get_projection_or_404(projection_id)
+    if not p.graph_id:
+        raise HTTPException(
+            status_code=409,
+            detail="No graph associated with this projection — run the import first.",
+        )
+
+    na_client = NeptuneAnalyticsClient(graph_id=p.graph_id)
+    results: list = []
+    for cypher in body.queries:
+        if not cypher.strip():
+            continue
+        try:
+            results.append(na_client.execute_query(cypher))
+        except ClientError as e:
+            return RunQueryResponse(
+                error=sanitize_error_message(str(e)), results=results
+            )
+    return RunQueryResponse(error=None, results=results)
 
 
 @router.delete("/{projection_id}", summary="Delete projection record", status_code=200)
