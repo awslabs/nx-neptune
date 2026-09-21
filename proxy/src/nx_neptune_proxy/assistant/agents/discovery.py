@@ -16,6 +16,7 @@ from nx_neptune_proxy.assistant.athena_tools import (
     list_catalogs,
     list_databases,
     list_tables,
+    list_tables_with_columns,
     sample_table,
 )
 from nx_neptune_proxy.assistant.schemas import DiscoveryResult
@@ -28,19 +29,33 @@ Tools (call only within the given catalog):
 only, no query cost. Use only when NO catalog is given and you must find one.
 - list_databases(catalog): database names in the catalog. Metadata only, no \
 query cost.
-- list_tables(catalog, database): table names in a database. Metadata only.
-- get_columns(catalog, database, table): [{name, type}]. Metadata only.
+- list_tables(catalog, database): table names in a database. Metadata only. \
+Returns names ONLY (no columns) — use it to see what exists so you can choose \
+the relevant tables.
+- list_tables_with_columns(catalog, database, tables): name + columns \
+([{name, columns:[{name,type}]}]) for the SPECIFIC tables you pass. Metadata \
+only. This is the primary way to get columns: pass the handful of tables you \
+judged relevant in ONE call — do not fetch columns one table at a time.
+- get_columns(catalog, database, table): columns for a SINGLE table. Metadata \
+only. Prefer list_tables_with_columns for a batch; use this only for a lone \
+follow-up table.
 - sample_table(catalog, database, table, limit): a few real rows. This runs a \
 real query, so use it ONLY when a column's role (identifier vs. label vs. \
 relationship endpoint) is ambiguous from its name/type — never routinely.
 
 Workflow:
-1. If a database is given, work within it. If NO database is given, call \
-list_databases(catalog) and search EVERY database in the catalog.
-2. list_tables for each database in scope.
-3. Pick the tables relevant to the user's request (not the whole catalog).
-4. get_columns for each relevant table.
-5. Sample only if genuinely ambiguous.
+1. Choose the database. If a database is given, work within it. If NO database \
+is given, call list_databases(catalog) ONCE, then make an EDUCATED GUESS: from \
+the returned names, pick the SINGLE database whose name best matches the user's \
+request. Do not call list_tables on more than one database up front.
+2. Call list_tables(catalog, database) on ONLY that one guessed database, then \
+pick the relevant tables. Only if that database has no relevant tables may you \
+try the next most likely database — one at a time, stopping as soon as you find \
+relevant tables. Never fan out list_tables across many databases at once.
+3. Call list_tables_with_columns(catalog, database, <relevant tables>) ONCE per \
+database to get the columns for just those tables. Do not loop get_columns per \
+table.
+4. Sample only if a column's role is genuinely ambiguous.
 
 When you searched more than one database, set each table's "database" field so \
 the mapping step can qualify names. Omit it (null) when a single database was \
@@ -64,8 +79,8 @@ Request:
 """
 
 # Placeholder shown for the database line when generate_import omitted it, so
-# the agent sweeps every database in the catalog (see SYSTEM_PROMPT step 1).
-_ALL_DATABASES = "(not specified — search all databases in the catalog)"
+# the agent picks the most relevant database(s) itself (see SYSTEM_PROMPT step 1).
+_ALL_DATABASES = "(not specified — list databases and pick the most relevant)"
 
 
 class DiscoveryAgent(SpecialistAgent):
@@ -74,7 +89,14 @@ class DiscoveryAgent(SpecialistAgent):
 
     def _tools(self):
         return as_tools(
-            [list_catalogs, list_databases, list_tables, get_columns, sample_table]
+            [
+                list_catalogs,
+                list_databases,
+                list_tables,
+                list_tables_with_columns,
+                get_columns,
+                sample_table,
+            ]
         )
 
     def _format_prompt(self, **kwargs) -> str:
@@ -88,7 +110,7 @@ class DiscoveryAgent(SpecialistAgent):
         self, catalog: str, database: Optional[str], request: str
     ) -> DiscoveryResult:
         """Discover the schema for ``catalog``. When ``database`` is falsy, the
-        agent enumerates and searches every database in the catalog."""
+        agent picks the most relevant database in the catalog itself."""
         raw = self.execute_task(
             catalog=catalog, database=database or "", request=request
         )

@@ -82,8 +82,8 @@ MUST know the Athena catalog first. When the current page context includes a \
 catalog (and database), use those values unless the user names different ones; \
 if no catalog is available at all, call list_catalogs() to offer options rather \
 than calling this tool with an empty catalog. database is optional: pass it to \
-target one database, or leave it empty to search every database in the catalog \
-for relevant tables. bucket and graph_name are optional — if the user needs to \
+target one database, or leave it empty to let discovery pick the most relevant \
+database in the catalog. bucket and graph_name are optional — if the user needs to \
 pick a bucket, call list_buckets() to offer the real options.
 - suggest_page_actions(request): surface actions available on the current page \
 (e.g. stopping a graph, executing an import).
@@ -180,8 +180,8 @@ class Supervisor:
         ) -> str:
             """Propose the import mapping for the given Athena catalog:
             schema discovery, node/edge SQL, and optional openCypher graph
-            queries. ``database`` is optional — when empty, discovery searches
-            every database in the catalog for relevant tables."""
+            queries. ``database`` is optional — when empty, discovery picks the
+            most relevant database in the catalog for the request."""
             if not catalog:
                 ctx.question = "Which Athena catalog should I import from?"
                 return "Need the catalog before generating an import."

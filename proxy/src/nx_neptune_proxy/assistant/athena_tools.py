@@ -101,6 +101,42 @@ def get_columns(catalog: str, database: str, table: str) -> list[dict]:
     return [{"name": c["Name"], "type": c["Type"]} for c in columns]
 
 
+def list_tables_with_columns(
+    catalog: str, database: str, tables: list[str]
+) -> list[dict]:
+    """Return name + columns for each requested table in one call.
+
+    Given a set of tables the agent has already judged relevant, fetch their
+    column definitions together — ``[{"name", "columns": [{"name", "type"}]}]``
+    — instead of a separate ``get_columns`` round-trip per table. Metadata API
+    only, no query/scan cost.
+
+    Use this after narrowing to the relevant tables (via ``list_tables``); do
+    NOT call it for every table in a database. A table name not present in the
+    database is skipped rather than raising, so one bad guess does not fail the
+    whole batch.
+    """
+    if not tables:
+        return []
+    client = agent_athena_client()
+    known = set(list_tables(catalog, database))
+    result: list[dict] = []
+    for table in tables:
+        if table not in known:
+            continue
+        resp = client.get_table_metadata(
+            CatalogName=catalog, DatabaseName=database, TableName=table
+        )
+        columns = resp["TableMetadata"].get("Columns", [])
+        result.append(
+            {
+                "name": table,
+                "columns": [{"name": c["Name"], "type": c["Type"]} for c in columns],
+            }
+        )
+    return result
+
+
 def sample_table(
     catalog: str,
     database: str,
