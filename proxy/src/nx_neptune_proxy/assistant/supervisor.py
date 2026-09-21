@@ -39,6 +39,7 @@ from nx_neptune_proxy.assistant.schemas import (
     PageContext,
 )
 from nx_neptune_proxy.assistant.session import Session, SessionStore
+from nx_neptune_proxy.assistant.skills import CAPABILITY_HINTS
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,9 @@ for relevant tables. bucket and graph_name are optional.
 A pure navigation request must not trigger import generation, and vice versa. \
 Keep your final reply short: the proposed jumps, form fields, and actions are \
 attached to your message automatically, so summarize rather than repeat them.
-"""
+
+# When a graph is worth it
+""" + CAPABILITY_HINTS
 
 
 class Supervisor:
@@ -165,13 +168,31 @@ class Supervisor:
                 ctx.question = "Which Athena catalog should I import from?"
                 return "Need the catalog before generating an import."
 
+            # An import always belongs to a project (the projection is created
+            # under one). Without a project in context there is nowhere to save
+            # the import, so ask the user to create a project first and offer the
+            # jump rather than generating a proposal that cannot be saved.
+            project_id = ctx.page_context.project_id if ctx.page_context else None
+            if not project_id:
+                ctx.question = (
+                    "You'll need a project before I can set up an import. "
+                    "Create a new project first, then ask me again."
+                )
+                ctx.jumps.append(
+                    JumpAction(kind="new-project", label="Create a new project")
+                )
+                return "No project in context; asked the user to create one first."
+
             discovery = ctx.session.get_discovery(catalog, database)
             if discovery is None:
                 discovery = self._discovery.discover(catalog, database, request)
                 ctx.session.cache_discovery(catalog, database, discovery)
 
             mapping = self._sql_mapping.map_schema(discovery, request)
-            plan = self._query_planner.plan(discovery, request)
+            # The mapping's node/edge queries define the graph model (labels,
+            # properties, edge types); pass them to the planner so its openCypher
+            # targets the same model rather than re-deriving it from discovery.
+            plan = self._query_planner.plan(discovery, mapping, request)
 
             ctx.proposal = FieldProposal(
                 catalog=catalog,

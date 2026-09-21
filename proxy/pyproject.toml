@@ -59,6 +59,12 @@ include-package-data = false
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# Vendored Neptune skill references (§9.13) — snapshot copy of Apache-2.0 files
+# from aws/agent-toolkit-for-aws; ship in the wheel so load_neptune_skill can
+# read them via importlib.resources. See references/PROVENANCE.md.
+"nx_neptune_proxy.assistant.skills" = ["references/*.md"]
+
 [tool.isort]
 profile = "black"
 

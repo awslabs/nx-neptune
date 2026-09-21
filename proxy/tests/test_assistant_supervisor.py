@@ -62,9 +62,17 @@ def test_navigate_tool_records_jumps_and_passes_project_id():
     sup._navigation.navigate.assert_called_once_with("open projections", "p1")
 
 
+def _import_ctx(sup):
+    """A turn on the import page with a project in context (imports require one)."""
+    return TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(page="import", project_id="p1"),
+    )
+
+
 def test_generate_import_chains_and_builds_proposal():
     sup = _supervisor_with_mock_specialists()
-    ctx = TurnContext(session=sup._sessions.create())
+    ctx = _import_ctx(sup)
     tools = _tools(sup, ctx)
 
     tools["generate_import"]("import it", "AwsDataCatalog", "tpch", graph_name="g")
@@ -81,7 +89,7 @@ def test_generate_import_chains_and_builds_proposal():
 
 def test_generate_import_reuses_discovery_cache_within_session():
     sup = _supervisor_with_mock_specialists()
-    ctx = TurnContext(session=sup._sessions.create())
+    ctx = _import_ctx(sup)
     tools = _tools(sup, ctx)
 
     tools["generate_import"]("first", "cat", "db")
@@ -93,7 +101,7 @@ def test_generate_import_reuses_discovery_cache_within_session():
 
 def test_generate_import_reruns_discovery_when_database_changes():
     sup = _supervisor_with_mock_specialists()
-    ctx = TurnContext(session=sup._sessions.create())
+    ctx = _import_ctx(sup)
     tools = _tools(sup, ctx)
 
     tools["generate_import"]("a", "cat", "db1")
@@ -111,6 +119,23 @@ def test_generate_import_asks_when_catalog_or_database_missing():
 
     assert ctx.question is not None
     assert ctx.proposal is None
+    sup._discovery.discover.assert_not_called()
+
+
+def test_generate_import_asks_for_project_when_missing():
+    sup = _supervisor_with_mock_specialists()
+    # Catalog is known but there is no project in the page context.
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(page="import"),
+    )
+    tools = _tools(sup, ctx)
+
+    tools["generate_import"]("import it", "AwsDataCatalog", "tpch")
+
+    assert ctx.question is not None
+    assert ctx.proposal is None
+    assert [j.kind for j in ctx.jumps] == ["new-project"]
     sup._discovery.discover.assert_not_called()
 
 
