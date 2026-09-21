@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
-import { useAssistant, usePageBridge } from "../assistant/context";
+import { useAssistant, usePageBridge, type ImportPersistData } from "../assistant/context";
 import { Play, CheckCircle, Eye, Plus, Trash2, Sparkles } from "lucide-react";
 
 export function Import() {
@@ -29,9 +29,10 @@ export function Import() {
   const [nodeQueries, setNodeQueries] = useState<NodeQueryInput[]>([{ sql: "" }]);
   const [edgeQueries, setEdgeQueries] = useState<EdgeQueryInput[]>([{ sql: "" }]);
 
-  // --- Post-import openCypher graph queries (visual-only prototype) ---
+  // --- Post-import openCypher graph queries ---
   const [graphQueries, setGraphQueries] = useState<{ cypher: string }[]>([{ cypher: "" }]);
-  const [graphQueriesRan, setGraphQueriesRan] = useState(false);
+  const [graphResults, setGraphResults] = useState<unknown[] | null>(null);
+  const [graphQueryError, setGraphQueryError] = useState<string | null>(null);
 
   // --- AI assistant (global drawer) ---
   const { setOpen: setAssistantOpen } = useAssistant();
@@ -51,7 +52,7 @@ export function Import() {
   // --- Load metadata ---
   useEffect(() => {
     metadata.catalogs().then((d) => setCatalogs(d.catalogs));
-    metadata.buckets().then((d) => setBuckets(d.buckets));
+    metadata.buckets().then((d) => setBuckets(d.buckets)).catch((e) => setError(e.message));
     projectApi.list().then(setProjects);
     loadProjections().then(() => {
       const projectionId = searchParams.get("projection");
@@ -105,23 +106,45 @@ export function Import() {
 
   // --- Projection management ---
 
-  // Auto-create projection once user starts filling the form
-  useEffect(() => {
-    if (currentId) return;
-    const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
-    if (!hasContent) return;
-    projection.create({
+  // Guards projection creation so the several triggers that can fire in the
+  // same tick — the two auto-create effects below, an assistant apply, and a
+  // manual Validate/Execute — create exactly one row instead of racing (setId
+  // is async, so a plain `!currentId` check is not enough).
+  const creatingRef = useRef(false);
+
+  async function createProjectionOnce(
+    data: Record<string, unknown>,
+  ): Promise<string | null> {
+    if (currentId || creatingRef.current) return currentId;
+    creatingRef.current = true;
+    try {
+      const p = await projection.create(data);
+      setCurrentId(p.id);
+      await loadProjections();
+      window.dispatchEvent(new Event("projects-changed"));
+      return p.id;
+    } finally {
+      creatingRef.current = false;
+    }
+  }
+
+  function configData() {
+    return {
       catalog,
       database,
       s3_staging_bucket: bucket,
       graph_name: graphName || undefined,
       graph_memory_gb: graphMemoryGb,
       project_id: projectId || undefined,
-    }).then((p) => {
-      setCurrentId(p.id);
-      loadProjections();
-      window.dispatchEvent(new Event("projects-changed"));
-    });
+    };
+  }
+
+  // Auto-create projection once user starts filling the form
+  useEffect(() => {
+    if (currentId) return;
+    const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
+    if (!hasContent) return;
+    createProjectionOnce(configData());
   }, [database, bucket, graphName, nodeQueries, edgeQueries]);
 
   // Auto-create projection once user starts filling the form, then auto-save config on changes
@@ -131,51 +154,60 @@ export function Import() {
     const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
     if (!hasContent) return;
 
-    const data = {
-      catalog,
-      database,
-      s3_staging_bucket: bucket,
-      graph_name: graphName || undefined,
-      graph_memory_gb: graphMemoryGb,
-      project_id: projectId || undefined,
-    };
-
     if (!currentId) {
-      // First time — create
-      projection.create(data).then((p) => {
-        setCurrentId(p.id);
-        loadProjections();
-        window.dispatchEvent(new Event("projects-changed"));
-      });
+      // First time — create (deduped against the effect above)
+      createProjectionOnce(configData());
     } else {
       // Subsequent changes — debounced update
       if (configTimer.current) clearTimeout(configTimer.current);
       configTimer.current = setTimeout(() => {
-        projection.update(currentId, data);
+        projection.update(currentId, configData());
       }, 1000);
     }
   }, [catalog, database, bucket, graphName, graphMemoryGb, projectId]);
 
   async function ensureProjection(): Promise<string> {
-    const data = {
-      catalog,
-      database,
-      s3_staging_bucket: bucket,
-      graph_name: graphName || undefined,
-      graph_memory_gb: graphMemoryGb,
-      project_id: projectId || undefined,
-    };
+    const data = configData();
     if (currentId) {
       await projection.update(currentId, data);
       await projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: edgeQueries });
       return currentId;
     }
-    const p = await projection.create(data);
-    setCurrentId(p.id);
-    await projection.saveQueries(p.id, { node_queries: nodeQueries, edge_queries: edgeQueries });
-    await loadProjections();
-    window.dispatchEvent(new Event("projects-changed"));
-    return p.id;
+    const id = await createProjectionOnce(data);
+    if (!id) throw new Error("Could not create the projection");
+    await projection.saveQueries(id, { node_queries: nodeQueries, edge_queries: edgeQueries });
+    return id;
+  }
+
+  // Persist the import the assistant just applied. Called from the page bridge
+  // right after the proposal fills the form, with the applied values passed in
+  // directly (state has not re-rendered yet). Creates the projection if none
+  // exists — the whole point of this hook — then saves any node/edge queries,
+  // which the raw setters do not persist on their own.
+  async function persistImport(data: ImportPersistData): Promise<void> {
+    const config: Record<string, unknown> = {
+      graph_memory_gb: graphMemoryGb,
+      project_id: projectId || undefined,
+    };
+    if (data.catalog != null) config.catalog = data.catalog;
+    if (data.database != null) config.database = data.database;
+    if (data.bucket != null) config.s3_staging_bucket = data.bucket;
+    if (data.graphName != null) config.graph_name = data.graphName;
+
+    let id = currentId;
+    if (!id) {
+      id = await createProjectionOnce({ catalog: data.catalog ?? catalog, ...config });
+      if (!id) return; // a create is already in flight; it will carry the fields
+    } else {
+      await projection.update(id, config);
+    }
+
+    if (data.nodeQueries || data.edgeQueries) {
+      await projection.saveQueries(id, {
+        node_queries: (data.nodeQueries ?? nodeQueries).map((q) => ({ sql: q.sql })),
+        edge_queries: (data.edgeQueries ?? edgeQueries).map((q) => ({ sql: q.sql })),
+      });
+    }
   }
 
   function loadProjection(p: Projection) {
@@ -261,10 +293,23 @@ export function Import() {
   function removeGraphQuery(index: number) {
     setGraphQueries((prev) => prev.filter((_, i) => i !== index));
   }
-  function runGraphQueries() {
-    // Visual-only prototype: a results viewer is a future enhancement, so we
-    // just acknowledge the run rather than rendering mocked output.
-    setGraphQueriesRan(true);
+  async function runGraphQueries() {
+    setGraphResults(null);
+    setGraphQueryError(null);
+    setError(null);
+    setLoading("run-queries");
+    try {
+      const id = await ensureProjection();
+      const queries = graphQueries.map((q) => q.cypher).filter((c) => c.trim());
+      if (!queries.length) return;
+      const res = await projection.runQuery(id, queries);
+      setGraphResults(res.results);
+      if (res.error) setGraphQueryError(res.error);
+    } catch (e: any) {
+      setGraphQueryError(e.message);
+    } finally {
+      setLoading(null);
+    }
   }
 
   // Expose the Import form to the global assistant: current field values, the
@@ -288,6 +333,7 @@ export function Import() {
       validateQuery: { label: "Validate Query", run: handleValidateQuery, enabled: !loading },
       preview: { label: "Preview Schema", run: handlePreview, enabled: !loading },
     },
+    persistImport,
     jumpContext: { projectId: searchParams.get("project") },
   });
 
@@ -574,16 +620,21 @@ export function Import() {
             <Button
               variant="secondary"
               onClick={runGraphQueries}
-              disabled={status?.status !== "complete"}
+              disabled={status?.status !== "complete" || loading === "run-queries"}
               title={status?.status !== "complete" ? "Import a graph first" : undefined}
             >
-              <Play className="h-4 w-4" /> Run Queries
+              <Play className="h-4 w-4" /> {loading === "run-queries" ? "Running..." : "Run Queries"}
             </Button>
           </div>
-          {graphQueriesRan && (
-            <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-center text-xs text-gray-500">
-              Queries submitted. A results viewer is a planned future enhancement.
+          {graphQueryError && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {graphQueryError}
             </div>
+          )}
+          {graphResults && (
+            <pre className="max-h-96 overflow-auto rounded-md border border-gray-200 bg-gray-900 px-3 py-2 text-xs text-gray-100">
+              {JSON.stringify(graphResults, null, 2)}
+            </pre>
           )}
         </div>
       </Card>

@@ -215,6 +215,18 @@ async def aws_exception_handler(request: Request, exc: ClientError):
     )
 
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    # FastAPI's default envelope is {"detail": ...}, but the UI (and our other
+    # handlers) read {"message": ...}. Remap so raised detail text actually
+    # reaches the client instead of a bare "Request failed: <status>".
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": "http_error", "message": exc.detail},
+        headers=getattr(exc, "headers", None),
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.exception(f"Unhandled error on {request.method} {request.url.path}")

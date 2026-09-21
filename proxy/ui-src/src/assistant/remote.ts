@@ -138,6 +138,22 @@ function applyProposal(proposal: AssistantProposal, bridge: PageBridge | null): 
     s.graphQueries?.(proposal.graph_queries.map((q) => ({ cypher: q.cypher })));
     applied.push("Graph Queries");
   }
+
+  // Persist the applied fields as a projection so the assistant's work survives
+  // (and so Validate/Execute has a real projection id). Pass the proposal values
+  // directly — the setters above are async, so page state is still stale here.
+  // Fire-and-forget: creation happens in the background like the page's own
+  // auto-save, and errors surface through the page's normal error handling.
+  if (applied.length) {
+    void bridge.persistImport?.({
+      catalog: proposal.catalog ?? undefined,
+      database: proposal.database ?? undefined,
+      bucket: proposal.bucket ?? undefined,
+      graphName: proposal.graph_name ?? undefined,
+      nodeQueries: proposal.node_queries?.map((q) => ({ sql: q.sql })),
+      edgeQueries: proposal.edge_queries?.map((q) => ({ sql: q.sql })),
+    });
+  }
   return applied;
 }
 
