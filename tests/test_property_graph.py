@@ -64,29 +64,25 @@ def test_paysim_generates_vertex_and_edge_queries():
 
 
 def test_label_defaults_to_alias_then_table():
-    graph = parse_property_graph(
-        """
+    graph = parse_property_graph("""
         CREATE PROPERTY GRAPH g
           VERTEX TABLES ( people AS person KEY (id) )
           EDGE TABLES (
             knows SOURCE KEY (a) REFERENCES person
                   DESTINATION KEY (b) REFERENCES person
           )
-        """
-    )
+        """)
     assert graph.vertex_tables[0].label == "person"  # alias wins
     assert graph.edge_tables[0].label == "knows"  # falls back to table name
 
 
 def test_property_rename_and_no_properties():
-    graph = parse_property_graph(
-        """
+    graph = parse_property_graph("""
         CREATE PROPERTY GRAPH g
           VERTEX TABLES (
             t KEY (id) LABEL n PROPERTIES (raw_name AS name, score:Double)
           )
-        """
-    )
+        """)
     props = graph.vertex_tables[0].properties
     assert props[0].column == "raw_name" and props[0].name == "name"
     assert props[0].header() == "name"
@@ -102,15 +98,13 @@ def test_no_properties_clause():
 
 def test_source_destination_key_keyword_optional():
     # KEY keyword may be omitted after SOURCE / DESTINATION.
-    queries = property_graph_to_sql(
-        """
+    queries = property_graph_to_sql("""
         CREATE PROPERTY GRAPH g
           VERTEX TABLES ( v KEY (id) )
           EDGE TABLES (
             e SOURCE (src) REFERENCES v DESTINATION (dst) REFERENCES v
           )
-        """
-    )
+        """)
     assert '"src" AS "~from"' in queries[1]
     assert '"dst" AS "~to"' in queries[1]
 
@@ -137,20 +131,16 @@ def test_quoted_identifier_with_embedded_quote():
 
 
 def test_comments_are_ignored():
-    queries = property_graph_to_sql(
-        """
+    queries = property_graph_to_sql("""
         -- a line comment
         CREATE PROPERTY GRAPH g /* block */ VERTEX TABLES ( t KEY (id) )
-        """
-    )
+        """)
     assert len(queries) == 1
 
 
 def test_composite_key_rejected():
     with pytest.raises(PropertyGraphSyntaxError, match="Composite keys"):
-        parse_property_graph(
-            "CREATE PROPERTY GRAPH g VERTEX TABLES ( t KEY (a, b) )"
-        )
+        parse_property_graph("CREATE PROPERTY GRAPH g VERTEX TABLES ( t KEY (a, b) )")
 
 
 def test_unknown_property_type_rejected():
@@ -163,16 +153,14 @@ def test_unknown_property_type_rejected():
 
 def test_dangling_reference_rejected():
     with pytest.raises(PropertyGraphSyntaxError, match="REFERENCES 'ghost'"):
-        parse_property_graph(
-            """
+        parse_property_graph("""
             CREATE PROPERTY GRAPH g
               VERTEX TABLES ( v KEY (id) )
               EDGE TABLES (
                 e SOURCE KEY (a) REFERENCES ghost
                   DESTINATION KEY (b) REFERENCES v
               )
-            """
-        )
+            """)
 
 
 def test_missing_vertex_tables_rejected():
@@ -187,16 +175,14 @@ def test_garbage_input_rejected():
 
 def test_reference_by_table_name_when_no_alias():
     # REFERENCES may target the table name when no alias/label is given.
-    graph = parse_property_graph(
-        """
+    graph = parse_property_graph("""
         CREATE PROPERTY GRAPH g
           VERTEX TABLES ( accounts KEY (id) )
           EDGE TABLES (
             e SOURCE KEY (a) REFERENCES accounts
               DESTINATION KEY (b) REFERENCES accounts
           )
-        """
-    )
+        """)
     assert graph.edge_tables[0].source_ref == "accounts"
 
 
