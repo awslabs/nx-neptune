@@ -18,8 +18,7 @@ DEBUG (opt-in via ``LOG_LEVEL=DEBUG``) adds the finest detail:
 - the full conversation history for a supervisor turn.
 
 Untrusted values (prompts, tool inputs, model text) are logged as data via
-``%`` args, never used as format strings, and clipped so a turn can't flood the
-log (short clip at INFO, larger clip at DEBUG).
+``%`` args, never used as format strings, and printed in full (no truncation).
 """
 
 from __future__ import annotations
@@ -30,29 +29,18 @@ from typing import Any, Optional
 
 logger = logging.getLogger("nx_neptune_proxy")
 
-# Truncate very large payloads so a single turn can't flood the log.
-_MAX_CHARS = 4000
-
-
 def debug_enabled() -> bool:
     """True when the assistant logger is emitting DEBUG (finest detail)."""
     return logger.isEnabledFor(logging.DEBUG)
 
 
 def _clip(text: str) -> str:
-    if len(text) > _MAX_CHARS:
-        return text[:_MAX_CHARS] + f"... [+{len(text) - _MAX_CHARS} chars]"
+    # Log the full payload — no truncation.
     return text
 
 
-# Short clip for INFO-level one-liners (routing story, not full payloads).
-_INFO_CHARS = 200
-
-
 def _clip_short(text: str) -> str:
-    text = " ".join(text.split())  # collapse newlines for a tidy one-liner
-    if len(text) > _INFO_CHARS:
-        return text[:_INFO_CHARS] + "..."
+    # Log the full reply — no truncation.
     return text
 
 

@@ -56,6 +56,9 @@ class DiscoveryResult(BaseModel):
 
 
 class SqlMappingResult(BaseModel):
+    # A short plain-language summary of the graph model these queries build and
+    # why — surfaced to the user so they understand the mapping's intent.
+    description: Optional[str] = None
     node_queries: list[SqlQuery] = Field(default_factory=list)
     edge_queries: list[SqlQuery] = Field(default_factory=list)
 
@@ -63,7 +66,29 @@ class SqlMappingResult(BaseModel):
 # --- Query Planner agent (§9.5) -------------------------------------------
 
 
+class GraphSchema(BaseModel):
+    """Live schema of an imported Neptune Analytics graph.
+
+    Sourced from ``get_graph_summary(mode="DETAILED")`` and used as the
+    *authoritative* data model for query planning once a graph exists — it
+    reflects what actually loaded (labels, edge types, and the property
+    vocabulary), so the planner can reference exact names rather than the
+    predicted node/edge SQL model."""
+
+    node_labels: list[str] = Field(default_factory=list)
+    edge_labels: list[str] = Field(default_factory=list)
+    node_properties: list[str] = Field(default_factory=list)
+    edge_properties: list[str] = Field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        return not (self.node_labels or self.edge_labels)
+
+
 class QueryPlanResult(BaseModel):
+    # A short plain-language summary of what these openCypher queries help the
+    # user explore or analyze — surfaced to the user alongside the queries.
+    description: Optional[str] = None
     graph_queries: list[CypherQuery] = Field(default_factory=list)
 
 
@@ -151,8 +176,24 @@ class PageContext(BaseModel):
     # what the form already shows. None on pages that have no such selection.
     catalog: Optional[str] = None
     database: Optional[str] = None
+    # Import-page state so the supervisor knows a projection/graph already
+    # exists and need not be regenerated: the loaded projection id, its import
+    # status (draft / executing / complete / failed), the created graph id, and
+    # the node/edge queries that define the current graph model. All None/empty
+    # on a fresh form or a page that carries no projection.
+    projection_id: Optional[str] = None
+    graph_status: Optional[str] = None
+    graph_id: Optional[str] = None
+    node_queries: list[SqlQuery] = Field(default_factory=list)
+    edge_queries: list[SqlQuery] = Field(default_factory=list)
     actions: list[PageContextAction] = Field(default_factory=list)
     graph_targets: list[PageContextGraphTarget] = Field(default_factory=list)
+
+    @property
+    def graph_available(self) -> bool:
+        """True when an imported graph is ready to query — the import finished
+        or a graph id has been recorded."""
+        return self.graph_status == "complete" or bool(self.graph_id)
 
 
 # --- Assembled reply (§9.8) -----------------------------------------------
