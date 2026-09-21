@@ -2,8 +2,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
-import { useAssistant, usePageBridge, type ImportPersistData } from "../assistant/context";
-import { Play, CheckCircle, Eye, Plus, Trash2, Sparkles } from "lucide-react";
+import { usePageBridge, type ImportPersistData } from "../assistant/context";
+import { Play, CheckCircle, Eye, Plus, Trash2 } from "lucide-react";
 
 export function Import() {
   const [searchParams] = useSearchParams();
@@ -33,9 +33,6 @@ export function Import() {
   const [graphQueries, setGraphQueries] = useState<{ cypher: string }[]>([{ cypher: "" }]);
   const [graphResults, setGraphResults] = useState<unknown[] | null>(null);
   const [graphQueryError, setGraphQueryError] = useState<string | null>(null);
-
-  // --- AI assistant (global drawer) ---
-  const { setOpen: setAssistantOpen } = useAssistant();
 
   // --- Projection state ---
   const [projectionsList, setProjectionsList] = useState<Projection[]>([]);
@@ -406,12 +403,6 @@ export function Import() {
       <div className="flex items-center justify-between pr-32">
         <h1 className="text-lg font-semibold">Import</h1>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setAssistantOpen(true)}
-            className="inline-flex items-center gap-2 rounded-md bg-purple-800 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-purple-900"
-          >
-            <Sparkles className="h-4 w-4" /> Generate
-          </button>
           <Select
             className="w-56"
             value={currentId || ""}
