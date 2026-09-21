@@ -21,7 +21,7 @@ Group D wraps them as ``@tool`` when building the agent.
 import asyncio
 import re
 
-from nx_neptune_proxy.assistant.agent_aws import agent_athena_client
+from nx_neptune_proxy.assistant.agent_aws import agent_athena_client, agent_s3_client
 from nx_neptune_proxy.config import get_settings
 from nx_neptune_proxy.services.athena_query import execute_query_rows
 from nx_neptune_proxy.utils import paginate_aws
@@ -34,6 +34,23 @@ DEFAULT_SAMPLE_ROWS = 10
 
 class AthenaToolError(Exception):
     """A precondition for an assistant Athena tool was not met."""
+
+
+def list_buckets() -> list[str]:
+    """Return the S3 bucket names in the configured region.
+
+    Mirrors the import page's ``GET /metadata/s3/buckets`` endpoint: filters to
+    ``settings.region`` and returns an empty list when no region is configured.
+    Lets the assistant propose a real export/staging bucket for an import (the
+    ``bucket`` field of a proposal) instead of asking the user to type one.
+    Read-only, under the scoped agent role.
+    """
+    region = get_settings().region
+    if not region:
+        return []
+    client = agent_s3_client()
+    resp = client.list_buckets(BucketRegion=region)
+    return [b["Name"] for b in resp.get("Buckets", [])]
 
 
 def list_catalogs() -> list[dict]:
@@ -82,6 +99,42 @@ def get_columns(catalog: str, database: str, table: str) -> list[dict]:
     )
     columns = resp["TableMetadata"].get("Columns", [])
     return [{"name": c["Name"], "type": c["Type"]} for c in columns]
+
+
+def list_tables_with_columns(
+    catalog: str, database: str, tables: list[str]
+) -> list[dict]:
+    """Return name + columns for each requested table in one call.
+
+    Given a set of tables the agent has already judged relevant, fetch their
+    column definitions together — ``[{"name", "columns": [{"name", "type"}]}]``
+    — instead of a separate ``get_columns`` round-trip per table. Metadata API
+    only, no query/scan cost.
+
+    Use this after narrowing to the relevant tables (via ``list_tables``); do
+    NOT call it for every table in a database. A table name not present in the
+    database is skipped rather than raising, so one bad guess does not fail the
+    whole batch.
+    """
+    if not tables:
+        return []
+    client = agent_athena_client()
+    known = set(list_tables(catalog, database))
+    result: list[dict] = []
+    for table in tables:
+        if table not in known:
+            continue
+        resp = client.get_table_metadata(
+            CatalogName=catalog, DatabaseName=database, TableName=table
+        )
+        columns = resp["TableMetadata"].get("Columns", [])
+        result.append(
+            {
+                "name": table,
+                "columns": [{"name": c["Name"], "type": c["Type"]} for c in columns],
+            }
+        )
+    return result
 
 
 def sample_table(

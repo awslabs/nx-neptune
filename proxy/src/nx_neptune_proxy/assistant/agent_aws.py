@@ -99,6 +99,19 @@ def agent_athena_client():
     return session.client("athena", region_name=get_settings().region or None)
 
 
+def agent_s3_client():
+    """S3 client for the agent path: assumed-role-scoped when configured, else
+    the proxy's process-role client via ``ClientFactory``.
+
+    Used by the assistant's bucket-listing tool so the agent can propose a real
+    export/staging bucket — read-only, under the same scoped role as its other
+    AWS calls."""
+    session = agent_boto_session()
+    if session is None:
+        return ClientFactory().s3()
+    return session.client("s3", region_name=get_settings().region or None)
+
+
 def reset_agent_credentials_cache() -> None:
     """Clear the cached assumed-role session (tests / on configuration change)."""
     global _cached_session, _cached_expiry

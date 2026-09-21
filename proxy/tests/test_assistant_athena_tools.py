@@ -13,8 +13,10 @@ from nx_neptune_proxy.assistant.athena_tools import (
     MAX_SAMPLE_ROWS,
     AthenaToolError,
     get_columns,
+    list_buckets,
     list_catalogs,
     list_tables,
+    list_tables_with_columns,
     sample_table,
 )
 from nx_neptune_proxy.services.athena_query import AthenaQueryError, execute_query_rows
@@ -24,6 +26,26 @@ QUERY = "nx_neptune_proxy.services.athena_query"
 
 
 # --- metadata tools (no query cost) --------------------------------------
+
+
+@patch(f"{TOOLS}.agent_s3_client")
+@patch(f"{TOOLS}.get_settings")
+def test_list_buckets_region_filtered(mock_settings, mock_s3):
+    mock_settings.return_value = SimpleNamespace(region="us-west-1")
+    client = MagicMock()
+    client.list_buckets.return_value = {"Buckets": [{"Name": "b1"}, {"Name": "b2"}]}
+    mock_s3.return_value = client
+
+    assert list_buckets() == ["b1", "b2"]
+    client.list_buckets.assert_called_once_with(BucketRegion="us-west-1")
+
+
+@patch(f"{TOOLS}.agent_s3_client")
+@patch(f"{TOOLS}.get_settings")
+def test_list_buckets_empty_without_region(mock_settings, mock_s3):
+    mock_settings.return_value = SimpleNamespace(region="")
+    assert list_buckets() == []
+    mock_s3.assert_not_called()  # no client built, no S3 call when no region
 
 
 @patch(f"{TOOLS}.agent_athena_client")
@@ -83,6 +105,55 @@ def test_get_columns_maps_name_and_type(mock_client):
     athena.get_table_metadata.assert_called_once_with(
         CatalogName="cat", DatabaseName="db", TableName="t"
     )
+
+
+@patch(f"{TOOLS}.list_tables")
+@patch(f"{TOOLS}.agent_athena_client")
+def test_list_tables_with_columns_batches_requested_tables(mock_client, mock_list):
+    mock_list.return_value = ["orders", "customers", "unused"]
+    athena = MagicMock()
+    athena.get_table_metadata.side_effect = [
+        {"TableMetadata": {"Columns": [{"Name": "oid", "Type": "int"}]}},
+        {"TableMetadata": {"Columns": [{"Name": "cid", "Type": "string"}]}},
+    ]
+    mock_client.return_value = athena
+
+    result = list_tables_with_columns("cat", "db", ["orders", "customers"])
+
+    assert result == [
+        {"name": "orders", "columns": [{"name": "oid", "type": "int"}]},
+        {"name": "customers", "columns": [{"name": "cid", "type": "string"}]},
+    ]
+    # one metadata call per requested table, not for the whole database
+    assert athena.get_table_metadata.call_count == 2
+
+
+@patch(f"{TOOLS}.list_tables")
+@patch(f"{TOOLS}.agent_athena_client")
+def test_list_tables_with_columns_skips_unknown_tables(mock_client, mock_list):
+    mock_list.return_value = ["orders"]
+    athena = MagicMock()
+    athena.get_table_metadata.return_value = {
+        "TableMetadata": {"Columns": [{"Name": "oid", "Type": "int"}]}
+    }
+    mock_client.return_value = athena
+
+    # "ghost" is not in the database -> skipped, no raise
+    result = list_tables_with_columns("cat", "db", ["orders", "ghost"])
+
+    assert result == [{"name": "orders", "columns": [{"name": "oid", "type": "int"}]}]
+    athena.get_table_metadata.assert_called_once_with(
+        CatalogName="cat", DatabaseName="db", TableName="orders"
+    )
+
+
+@patch(f"{TOOLS}.list_tables")
+@patch(f"{TOOLS}.agent_athena_client")
+def test_list_tables_with_columns_empty_input_makes_no_calls(mock_client, mock_list):
+    result = list_tables_with_columns("cat", "db", [])
+    assert result == []
+    mock_list.assert_not_called()
+    mock_client.assert_not_called()
 
 
 # --- sample_table guardrails ---------------------------------------------
