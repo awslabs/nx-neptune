@@ -18,8 +18,8 @@
     "GlueDatabaseScope": {
       "Description": "REQUIRED. Glue database the notebook may create/update/drop Iceberg export tables in; also set as NETWORKX_S3_TABLES_DATABASE. Scopes glue:CreateTable/UpdateTable/DeleteTable to this one database. No default on purpose: defaulting to the shared 'default' database would let the notebook's UpdateTable repoint unrelated tables' LOCATION, so name the intended database explicitly.",
       "Type": "String",
-      "AllowedPattern": ".+",
-      "ConstraintDescription": "GlueDatabaseScope is required and must name the Glue database the notebook should be scoped to."
+      "AllowedPattern": "[a-zA-Z0-9_-]+",
+      "ConstraintDescription": "GlueDatabaseScope is required and must be a Glue/Athena database name: letters, digits, underscores, and hyphens only."
     },
     "PublicConnectivity": {
       "Description": "Enable public connectivity for the graph (default false = private, VPC-only)",
@@ -447,7 +447,7 @@
                     "/tmp/graph_notebook/install_jl4x.sh\n",
                     "EOF\n",
                     "# Set env vars via os.environ so all child processes (kernels) inherit them\n",
-                    "cat >> /home/ec2-user/.jupyter/jupyter_notebook_config.py <<ENVEOF\n",
+                    "cat >> /home/ec2-user/.jupyter/jupyter_notebook_config.py <<'ENVEOF'\n",
                     "import os\n",
                     "os.environ['NETWORKX_GRAPH_ID'] = '", { "Fn::GetAtt": ["Graph", "GraphId"] }, "'\n",
                     "os.environ['AWS_REGION'] = '", { "Ref": "AWS::Region" }, "'\n",
