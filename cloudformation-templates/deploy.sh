@@ -56,7 +56,7 @@ aws cloudformation deploy \
   --template-file "$SCRIPT_DIR/nx-neptune-sagemaker.json" \
   --capabilities CAPABILITY_NAMED_IAM \
   --region "$REGION" \
-  --parameter-overrides "ApplicationId=${STACK_NAME}" "AssetsS3Prefix=s3://${ASSETS_BUCKET}" "CustomNotebooks=true" "PublicConnectivity=${PUBLIC_CONNECTIVITY}" "DeletionProtection=${DELETION_PROTECTION}"
+  --parameter-overrides "ApplicationId=${STACK_NAME}" "AssetsS3Prefix=s3://${ASSETS_BUCKET}" "CustomNotebooks=true" "PublicConnectivity=${PUBLIC_CONNECTIVITY}" "DeletionProtection=${DELETION_PROTECTION}" "GlueDatabaseScope=${STACK_NAME}"
 
 echo ""
 aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs' --output table
