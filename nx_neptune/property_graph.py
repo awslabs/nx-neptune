@@ -52,7 +52,7 @@ name/alias.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, cast
 
 from lark import Lark, Transformer
 from lark.exceptions import LarkError, VisitError
@@ -412,7 +412,9 @@ _PARSER = Lark(_GRAMMAR, parser="lalr", transformer=_Builder())
 def parse_property_graph(ddl: str) -> PropertyGraph:
     """Parse a ``CREATE PROPERTY GRAPH`` statement into a :class:`PropertyGraph`."""
     try:
-        return _PARSER.parse(ddl)
+        # The embedded _Builder transformer turns the parse tree into a
+        # PropertyGraph, but Lark.parse is typed as returning a Tree.
+        return cast(PropertyGraph, _PARSER.parse(ddl))
     except PropertyGraphSyntaxError:
         raise
     except VisitError as exc:
