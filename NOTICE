@@ -1,1 +1,14 @@
 Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+------------------------------------------------------------------------------
+
+This product includes vendored reference documentation from the AWS
+`amazon-neptune` agent skill, distributed under the Apache License 2.0:
+
+  aws/agent-toolkit-for-aws
+  https://github.com/aws/agent-toolkit-for-aws
+  Copyright Amazon.com, Inc. or its affiliates.
+
+The copied files (querying.md, use-cases.md, graphrag.md, data-modeling.md)
+live under proxy/src/nx_neptune_proxy/assistant/skills/references/; see the
+PROVENANCE.md in that directory for the pinned commit and snapshot details.

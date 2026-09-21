@@ -22,6 +22,7 @@ from nx_neptune_proxy.assistant.schemas import (
     PageContext,
     PageContextAction,
     PageContextGraphTarget,
+    SqlMappingResult,
 )
 
 
@@ -71,13 +72,14 @@ def test_sql_mapping_parses_node_and_edge_queries():
 def test_query_planner_parses_queries_and_empty():
     agent = QueryPlannerAgent(bedrock_model=None)
     discovery = DiscoveryResult.model_validate({"tables": []})
+    mapping = SqlMappingResult()
 
     with _canned(agent, '{"graph_queries": [{"cypher": "MATCH (n) RETURN n"}]}'):
-        result = agent.plan(discovery, "show everything")
+        result = agent.plan(discovery, mapping, "show everything")
     assert result.graph_queries[0].cypher == "MATCH (n) RETURN n"
 
     with _canned(agent, '{"graph_queries": []}'):
-        assert agent.plan(discovery, "just import").graph_queries == []
+        assert agent.plan(discovery, mapping, "just import").graph_queries == []
 
 
 # --- Navigation -----------------------------------------------------------

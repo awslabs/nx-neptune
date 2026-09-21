@@ -259,6 +259,8 @@ Cross-cutting (all requirements): Phase 0 scaffolding (Strands/Bedrock deps, con
 - Persist assistant sessions (SQLite) and allow resuming a conversation.
 - Data-preview-driven type inference and cardinality hints in the ontology.
 - Query optimization pass on generated openCypher (borrow the sample's Explain + Tuning agents).
+- Vendor/adapt the Neptune skill's `scripts/*.py` (§9.13): `graphrag_pipeline.py` as a post-import GraphRAG demo over a finished graph, and cross-check `input_validator.py` against our openCypher guardrails (§9.10). Not wired in the prototype — the agents are suggest-only and never run code.
+- **Periodic skill refresh** (§9.13): the vendored reference files are a manual snapshot copy pinned to an upstream commit SHA (recorded in `assistant/skills/references/PROVENANCE.md`). Automate refreshing them from `aws/agent-toolkit-for-aws` — e.g. a small `make refresh-skills` script or scheduled CI job that re-copies the three references at a chosen tag/SHA and updates `PROVENANCE.md` — so the snapshot doesn't silently drift from upstream.
 
 ### Ontology (deferred from the prototype)
 - **Ontology-driven import.** Re-introduce an Ontology Builder agent that emits a lightweight ontology (JSON-LD / `.owl`/`.rdf`) of the source catalog and use it as an explicit import parameter, instead of the prototype's direct schema-discovery → mapping flow (§9). Dropped from the prototype because it added a modeling artifact without improving the demo path.
@@ -267,7 +269,8 @@ Cross-cutting (all requirements): Phase 0 scaffolding (Strands/Bedrock deps, con
 - Multi-database / cross-catalog ontologies and joins.
 
 ### Graph Enhancements
-- OpenCypher validation — add a validation option, or fold openCypher checks into the existing "Validate Query" button.
+- OpenCypher validation — add a validation option, or fold openCypher checks into the existing "Validate Query" button. Includes the deferred **graph-model validation guard** (§9.14 option #3): reject/flag post-import openCypher that cites labels/properties/edge types absent from the mapping's graph model.
+- Typed **`GraphModel`** artifact (§9.14 option #2): promote the mapping's implicit model (`nodes:[{label,idColumn,properties[]}]`, `edges:[{label,from,to}]`) to an explicit object consumed by the Query Planner and a future schema-preview UI, instead of both parsing the node/edge SQL.
 - Auto-suggest graph memory (m-NCU) sizing from estimated node/edge counts.
 - RDF/SPARQL target support (sample currently property-graph only).
 
@@ -398,14 +401,14 @@ The Navigation and Page-Action agents may reference **only** keys/targets presen
 
 | Agent | Role | Input | Output (JSON contract) | Tools |
 |---|---|---|---|---|
-| **Supervisor** | Route the turn, assemble the reply | user text + page snapshot + history | `AssistantReply` (§9.8) | the four tools below |
+| **Supervisor** | Route the turn, assemble the reply | user text + page snapshot + history + **trimmed capability hints** (§9.13) | `AssistantReply` (§9.8) | the four tools below |
 | **Navigation** | Choose cross-page jump(s) | user text + `projectId` from snapshot | `JumpAction[]` — `new-import` / `new-project` / `open-projections` | `projectApi.list` (resolve a project named in the text) |
 | **Schema Discovery** | Read the selected DB's schema | catalog + database + user text | `{ tables: [ { name, columns:[{name,type}], sampleRows? } ] }` | Athena **metadata** (`list_table_metadata`, `get_table_metadata`); optional guarded `sample_table` (§9.6) |
-| **SQL Mapping** | Schema → node/edge SQL | discovery output + user text | `{ nodeQueries:[…], edgeQueries:[…] }` with `~id`/`~label`/`~from`/`~to` aliases | none (pure LLM over discovery context) |
-| **Query Planner** | Post-import openCypher (Req 5) | discovery output + user text | `{ graphQueries:[…] }` or `none` | none (openCypher validated at run time by the Phase 1 endpoint) |
+| **SQL Mapping** | Schema → node/edge SQL | discovery output + user text | `{ nodeQueries:[…], edgeQueries:[…] }` with `~id`/`~label`/`~from`/`~to` aliases | none (pure LLM over discovery context; **data-modeling guidance** from the Neptune skill — labels, edge direction, supernode avoidance — is distilled into its system prompt, §9.13) |
+| **Query Planner** | Post-import openCypher (Req 5) | discovery output + **SQL Mapping's node/edge queries** (the graph model, §9.14) + user text + **capability catalog** (§9.13) | `{ graphQueries:[…] }` or `none` | `load_neptune_skill(topic)` — on-demand load of a vendored Neptune skill reference (`querying` / `use-cases` / `graphrag`, §9.13); openCypher validated at run time by the Phase 1 endpoint |
 | **Page-Action** | Surface the current page's actions | user text + page snapshot | `ChatAction[]` — `page-action` / `graph-action` | none (constrained to snapshot keys) |
 
-`generate_import` = Discovery → SQL Mapping → Query Planner, merged into one field proposal (`catalog`, `database`, `bucket`, `graphName`, `nodeQueries[]`, `edgeQueries[]`, `graphQueries[]`). Any stage may short-circuit the turn with a clarifying question (e.g. "Include `groups` as nodes too?").
+`generate_import` = Discovery → SQL Mapping → Query Planner, merged into one field proposal (`catalog`, `database`, `bucket`, `graphName`, `nodeQueries[]`, `edgeQueries[]`, `graphQueries[]`). Any stage may short-circuit the turn with a clarifying question (e.g. "Include `groups` as nodes too?"). The **Neptune capability skill** (§9.13) grounds the analytics side of this chain: it feeds the Query Planner (and the Supervisor's routing) an inventory of what a graph *achieves*, so `graphQueries[]` proposals cite real Neptune Analytics procedures and the assistant can explain *why* the data is worth moving into a graph.
 
 ### 9.6 Schema discovery mechanism
 
@@ -436,12 +439,14 @@ Client wiring: `assistant/context.tsx` `sendChat` replaces `await cannedRespond(
 - Supervisor and specialists are built on `BaseAgent` (§4.4.2: retry on Bedrock throttling, `extract_json` recovery, token/latency metrics). Model id from `BEDROCK_MODEL`, overridable per request via the drawer's model selector (already wired in `AssistantDrawer.tsx`).
 - Per-session in-memory store keyed by `sessionId`: a **discovery cache** (per catalog+database) plus conversation history. Discovery re-runs when the target database changes; Mapping/Planner run each relevant turn against the cached schema + the new request.
 - Agents run sequentially within a turn (latency dominated by discovery, which is cached) — no thread pool needed for the prototype.
+- The Query Planner's capability catalog is **static** (compiled into `assistant/skills.py`, §9.13) — no runtime cost. Any `load_neptune_skill(topic)` result is cached per session so the same reference is read from disk at most once across turns.
 
 ### 9.10 Guardrails
 
 - **Suggest-only (§9.3) is the primary guardrail**: no agent can mutate the form, navigate, or run a destructive action — only propose.
 - Discovery/sample data and all generated SQL/openCypher are **untrusted**: surfaced in the editable form, executed only through the Phase 1 run endpoints (guarded to `status == complete`, explicit `confirm()` for mutations).
 - Navigation and Page-Action agents are constrained to the page snapshot's registered keys/targets — they cannot surface an action the current page didn't register.
+- The Neptune capability skill (§9.13) is **trusted, read-only reference content** — vendored at a pinned commit, not user-supplied and not executable, so it adds no injection surface. It informs suggestions only; the skill's own create/modify/delete confirmation layer (`action-safety`) is **not adopted** because §9.3 (suggest-only) already forbids the agents from executing anything.
 
 ### 9.11 Authentication & credentials
 
@@ -473,3 +478,66 @@ Replaces the Agent-A/B/C bullets under **Phase 2 — Assistant backend**:
 - [x] `POST /assistant/session`, `POST /assistant/message` (accepts `pageContext`), `GET /assistant/models`.
 - [x] Client: `sendChat` calls `assistantApi.message(...)` with a serialized `pageContext`; keep `mock.ts` as offline fallback.
 - [x] Agent-path credentials (§9.11): tools take no credential args; the Athena/Bedrock clients resolve internally via `agent_aws.py`. Optional `BEDROCK_AGENT_ROLE_ARN` → STS-assumed read-only role for the agent path (cached + refreshed before expiry), falling back to the process role when unset.
+- [x] **Shared graph model** (§9.14): Query Planner consumes SQL Mapping's node/edge queries so post-import openCypher targets the same labels/properties/edges.
+- [x] **Neptune capability skill** (§9.13): capability catalog + `load_neptune_skill` loader wired into the Query Planner / Supervisor / SQL Mapping prompts. **See the §9.13.1 checklist for the analysis + per-agent implementation detail.**
+
+### 9.13 Neptune capability skill (what the graph can achieve)
+
+Status: **Implemented.** Adds a knowledge layer to the §9 agents so the assistant can reason about *what moving relational data into a graph unlocks* — not just how to write the SQL. The Query Planner decides which post-import openCypher reads/algorithms to propose (Req 5); grounding it in real Neptune Analytics capability makes those proposals concrete and lets the assistant explain the *why* of a graph.
+
+**Source material.** The AWS **`amazon-neptune` agent skill** in [`aws/agent-toolkit-for-aws`](https://github.com/aws/agent-toolkit-for-aws/tree/main/skills/specialized-skills/database-skills/amazon-neptune) (Apache-2.0) — a `SKILL.md` plus `references/*.md` and `scripts/*.py`. It is designed for **progressive disclosure** (load a reference on demand into agent context). We reuse **four** references — `querying`, `use-cases`, `graphrag`, and `data-modeling` (the last a dedicated modeling reference that turned out to be a better `DATA_MODELING_GUIDANCE` source than distilling from `use-cases`/`graphrag`) — and leave the provisioning/migration set (`connectivity`, `migration`, `security`, `decision-guide`, `analytics-vs-database`, `action-safety`, …) upstream-only, since our path is fixed to Athena → Neptune Analytics and suggest-only. Its `scripts/*.py` are out of scope (→ §7 Future).
+
+**Two-tier use (hybrid).**
+
+1. **Always-on capability catalog.** A distilled, ~1-screen catalog of graph capabilities lives as a constant in the new `assistant/skills` package (`skills/__init__.py`), injected into the **Query Planner** system prompt every turn (and a trimmed version into the **Supervisor** as routing hints — "does this request warrant graph analytics at all?"). It is authored from **two** sources and reconciled: the skill's `use-cases`/`graphrag` framing ("what a graph achieves": fraud rings, identity resolution, recommendations, GraphRAG, centrality/community/path analytics) **cross-checked against** the repo's [`neptune-algorithms-cross-reference.md`](neptune-algorithms-cross-reference.md), so the planner only ever cites `neptune.algo.*` procedures that Neptune Analytics / nx-neptune actually expose — including the `.mutate` ⇄ `write_property` mapping and the SSSP constraints documented there.
+
+2. **On-demand reference loader.** A `load_neptune_skill(topic)` tool (Query Planner only, exposed to the LLM as `neptune_skill_reference`) returns the full text of one vendored reference for deep dives. Topic enum: `querying` | `use-cases` | `graphrag` | `data-modeling`. The planner calls it only when the distilled catalog is insufficient (e.g. exact openCypher idioms), keeping default turns cheap.
+
+**Vendoring — snapshot copy (not a submodule).** The upstream repo is large, so we do **not** submodule or clone it. Instead we take a **snapshot copy** of only the four reference files into the package at `assistant/skills/references/{querying,use-cases,graphrag,data-modeling}.md`, alongside a `PROVENANCE.md` recording the upstream repo URL, the exact commit SHA the snapshot was taken from (`764fd35`, snapshotted 2026-09-21), and the Apache-2.0 license; attribution is also recorded in the repo-root `NOTICE`. The loader reads these via `importlib.resources`, so the files ship inside the wheel like any other package data (declared in `[tool.setuptools.package-data]` in `pyproject.toml`). Refreshing the snapshot is a manual re-copy at a newer SHA — see the periodic-sync Future item (§7).
+
+**Graceful degradation.** Because the references are package data (shipped in the wheel) and the capability catalog is a compiled-in constant, both tiers work in every deployment — there is no submodule/wheel gap. The loader still fails soft: an unknown topic or a missing resource returns a short "reference unavailable" note rather than raising, so a bad snapshot can never break a turn.
+
+**Authority & guardrails (extends §9.10).** The skill is trusted read-only reference content — not executable, not user-supplied — so it carries no injection risk of its own, and it does not change the authority model: skill-informed proposals still land as **editable** `graphQueries[]` + assistant text, and any openCypher executes only through the guarded Phase 1 run endpoint (`status == complete`, `confirm()` on mutations). The skill's `action-safety` layer (confirm-before-create/modify/delete) is **not adopted** — §9.3 already forbids the agents from executing anything.
+
+**Client contract.** Unchanged — no new UI, no new endpoints. Richer, algorithm-backed `graphQueries[]` proposals and skill-informed explanatory `text` flow through the existing `AssistantReply` (§9.8).
+
+#### 9.13.1 skill analysis & wiring
+
+*Analysis ("analyze the provided skills"):*
+- [x] Assess the candidate references against a suggest-only Athena→Analytics planner; confirm the excluded references stay out of scope. (Added `data-modeling` as a fourth reference — a dedicated modeling source.)
+- [x] Extract the capability inventory from `use-cases`/`graphrag` and **reconcile each capability against `neptune-algorithms-cross-reference.md`** — the catalog names only the implemented algorithms (`pageRank`, `degree`, `closenessCentrality`, `louvain`, `labelPropagation`, `bfs`), captures the `.mutate` ⇄ `write_property` mapping, and lists SSSP / `wcc` / `scc` / similarity / vectors explicitly as **not available** so the planner won't propose them. Also folded in the Neptune-openCypher subset gotchas from `querying.md` (no `shortestPath()`, label predicates dropped in `CASE`/`WHEN` → use `labels(n)[0]`, parameterize).
+- [x] Decide the catalog-vs-loader split: use-case framing + algorithm inventory + gotchas are distilled into the always-on `CAPABILITY_CATALOG`; full reference text stays behind `load_neptune_skill`.
+- [x] Extract the data-modeling guidance (labels, edge direction, supernode avoidance) into `DATA_MODELING_GUIDANCE` for the **SQL Mapping** prompt.
+
+*Implementation — vendoring & shared module:*
+- [x] Snapshot-copied `references/{querying,use-cases,graphrag,data-modeling}.md` from `aws/agent-toolkit-for-aws` (pinned `764fd35`) into `assistant/skills/references/`; added `references/PROVENANCE.md` (repo URL + SHA + Apache-2.0), the repo-root `NOTICE` attribution, and the `[tool.setuptools.package-data]` entry so the files ship in the wheel.
+- [x] New `assistant/skills/` package — `skills/__init__.py` (no `strands` import) exposing `CAPABILITY_CATALOG`, `CAPABILITY_HINTS`, `DATA_MODELING_GUIDANCE`, the `SkillTopic` literal `{"querying","use-cases","graphrag","data-modeling"}`, and `load_neptune_skill(topic) -> str` (reads `references/{topic}.md` via `importlib.resources`; fails soft to a "reference unavailable" string for an unknown topic or missing file).
+
+*Implementation — per agent:*
+- [x] **Query Planner** (`agents/query_planner.py`): `CAPABILITY_CATALOG` prepended to `SYSTEM_PROMPT`; `_tools()` wraps the module-level `neptune_skill_reference` (→ `load_neptune_skill`) via `as_tools`. Planner still takes the graph model from SQL Mapping (§9.14) — the catalog informs *which* analytics to propose, the model fixes *what* labels/props they run against.
+- [x] **SQL Mapping** (`agents/sql_mapping.py`): `DATA_MODELING_GUIDANCE` folded into `SYSTEM_PROMPT` (no tool, no new input).
+- [x] **Supervisor** (`supervisor.py`): `CAPABILITY_HINTS` folded into `SUPERVISOR_SYSTEM_PROMPT`. Discovery / Navigation / Page-Action agents untouched.
+- [x] Cache `load_neptune_skill` reads. **Deviation:** implemented as a process-level `functools.lru_cache` over the read-only packaged files rather than a per-session topic→text map on the session store — the files are local package data, so a process cache is simpler and the per-session threading through the Strands tool closure isn't worth it for the prototype.
+
+*Implementation — verification:*
+- [x] Tests (`tests/test_assistant_skills.py`, 11 cases): catalog in the Query Planner prompt, hints in the Supervisor prompt, modeling guidance in the SQL Mapping prompt; `load_neptune_skill` returns text for each topic and the graceful fallback for an unknown topic; catalog cites only implemented algorithms and flags the gaps; `SkillTopic` matches the vendored set; package still imports without `strands-agents`. Full proxy suite: 308 passed.
+- [ ] Demo: extend the MITRE ATT&CK PageRank demo (§6 Phase 4) with a skill-informed follow-up (e.g. a GraphRAG or centrality suggestion drawn from the catalog). *(Not yet done — requires a live graph.)*
+
+### 9.14 Shared graph model (SQL Mapping ↔ Query Planner handshake)
+
+Status: **Implemented.** SQL Mapping and Query Planner must agree on **one** graph model — the labels, node properties, edge types, and endpoints — or the post-import openCypher references nodes/properties that the import never created and matches nothing.
+
+**Problem.** In the original §9.5, both agents took only *discovery output + user text* and inferred the model independently. `generate_import` ran them off the same schema but did **not** pass the mapping to the planner, so SQL Mapping could emit `'Malware' AS "~label"` with a `name` property while the Query Planner, re-deriving from discovery, wrote `MATCH (n:malware) WHERE n.customer_name …` — divergent casing / property / edge names → dead queries.
+
+**Handshake (forward the model).** The SQL Mapping output *is* the graph model: its node/edge `SELECT`s encode every label (`~label`), property (the other projected columns), edge type (`~label`), and connection (`~from`/`~to`). So `generate_import` now feeds that output into the planner:
+
+```
+discovery ─▶ SQL Mapping ─▶ node/edge queries ─┐  (the graph model)
+                                               ▼
+discovery + node/edge queries + request ─▶ Query Planner ─▶ graphQueries
+```
+
+- `QueryPlannerAgent.plan(discovery, mapping, request)` receives the `SqlMappingResult`; its prompt is instructed to use **exactly** the labels, property names, and edge types those import queries define (same spelling/case) and to **not** invent labels/properties from the raw schema that the import did not create.
+- SQL Mapping stays the single source of truth; the planner is a strict consumer. No new schema type — the existing `SqlMappingResult` is the contract.
+
+**Not done for the prototype:** a post-hoc validation guard that rejects openCypher citing labels/properties absent from the model (proposed option #3) — the forward-dependency above is sufficient for demo scope; the guard is a future hardening step. A typed `GraphModel` artifact (proposed option #2) is likewise deferred (→ §7 Future) — useful if a schema-preview UI or the client needs to consume the model directly.

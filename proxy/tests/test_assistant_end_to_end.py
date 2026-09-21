@@ -85,7 +85,7 @@ async def test_generate_import_end_to_end(client):
             resp = await c.post(
                 "/api/v0/assistant/message",
                 json={"text": "import the malware table", "session_id": "e2e-1",
-                      "page_context": {"page": "import"}},
+                      "page_context": {"page": "import", "project_id": "p1"}},
             )
 
     assert resp.status_code == 200
@@ -166,8 +166,10 @@ async def test_discovery_cache_reused_across_turns(client):
 
         async with client as c:
             await c.post("/api/v0/assistant/message",
-                         json={"text": "one", "session_id": "e2e-3"})
+                         json={"text": "one", "session_id": "e2e-3",
+                               "page_context": {"page": "import", "project_id": "p1"}})
             await c.post("/api/v0/assistant/message",
-                         json={"text": "two", "session_id": "e2e-3"})
+                         json={"text": "two", "session_id": "e2e-3",
+                               "page_context": {"page": "import", "project_id": "p1"}})
 
     assert disc.call_count == 1  # discovery cached across the two turns
