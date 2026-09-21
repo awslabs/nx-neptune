@@ -21,7 +21,7 @@ Group D wraps them as ``@tool`` when building the agent.
 import asyncio
 import re
 
-from nx_neptune_proxy.assistant.agent_aws import agent_athena_client
+from nx_neptune_proxy.assistant.agent_aws import agent_athena_client, agent_s3_client
 from nx_neptune_proxy.config import get_settings
 from nx_neptune_proxy.services.athena_query import execute_query_rows
 from nx_neptune_proxy.utils import paginate_aws
@@ -34,6 +34,23 @@ DEFAULT_SAMPLE_ROWS = 10
 
 class AthenaToolError(Exception):
     """A precondition for an assistant Athena tool was not met."""
+
+
+def list_buckets() -> list[str]:
+    """Return the S3 bucket names in the configured region.
+
+    Mirrors the import page's ``GET /metadata/s3/buckets`` endpoint: filters to
+    ``settings.region`` and returns an empty list when no region is configured.
+    Lets the assistant propose a real export/staging bucket for an import (the
+    ``bucket`` field of a proposal) instead of asking the user to type one.
+    Read-only, under the scoped agent role.
+    """
+    region = get_settings().region
+    if not region:
+        return []
+    client = agent_s3_client()
+    resp = client.list_buckets(BucketRegion=region)
+    return [b["Name"] for b in resp.get("Buckets", [])]
 
 
 def list_catalogs() -> list[dict]:

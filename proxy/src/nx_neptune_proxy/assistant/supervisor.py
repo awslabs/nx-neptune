@@ -25,6 +25,7 @@ from nx_neptune_proxy.assistant.agents.navigation import NavigationAgent
 from nx_neptune_proxy.assistant.agents.page_action import PageActionAgent
 from nx_neptune_proxy.assistant.agents.query_planner import QueryPlannerAgent
 from nx_neptune_proxy.assistant.agents.sql_mapping import SqlMappingAgent
+from nx_neptune_proxy.assistant.athena_tools import list_buckets as _list_buckets
 from nx_neptune_proxy.assistant.athena_tools import list_catalogs as _list_catalogs
 from nx_neptune_proxy.assistant.debug_trace import (
     log_history,
@@ -71,6 +72,10 @@ Tools (call only the ones a request needs):
 this when the user asks what catalogs/data sources are available, or has no \
 catalog in mind — name the real options instead of telling them to look it up \
 elsewhere.
+- list_buckets(): list the S3 buckets available for an import's export/staging \
+(the same list the import page's bucket selector shows). Use this when the user \
+asks which buckets/output locations exist, or needs to choose a bucket — name \
+real options instead of asking them to type one.
 - generate_import(request, catalog, database, bucket, graph_name): propose the \
 import mapping (schema discovery → node/edge SQL → optional graph queries). You \
 MUST know the Athena catalog first. When the current page context includes a \
@@ -78,7 +83,8 @@ catalog (and database), use those values unless the user names different ones; \
 if no catalog is available at all, call list_catalogs() to offer options rather \
 than calling this tool with an empty catalog. database is optional: pass it to \
 target one database, or leave it empty to search every database in the catalog \
-for relevant tables. bucket and graph_name are optional.
+for relevant tables. bucket and graph_name are optional — if the user needs to \
+pick a bucket, call list_buckets() to offer the real options.
 - suggest_page_actions(request): surface actions available on the current page \
 (e.g. stopping a graph, executing an import).
 
@@ -153,6 +159,18 @@ class Supervisor:
             )
             return f"Available Athena catalogs: {named}."
 
+        def list_buckets() -> str:
+            """List the S3 buckets available for an import's export/staging.
+
+            Use this when the user asks which buckets/output locations exist, or
+            needs to pick a bucket for an import — so you can name real options
+            (the same list the import page's bucket selector shows) instead of
+            asking them to type one. Read-only, region-filtered."""
+            buckets = _list_buckets()
+            if not buckets:
+                return "No S3 buckets are available in the configured region."
+            return f"Available S3 buckets: {', '.join(buckets)}."
+
         def generate_import(
             request: str,
             catalog: str,
@@ -216,7 +234,13 @@ class Supervisor:
             ctx.actions.extend(actions)
             return f"Surfaced {len(actions)} page action(s)."
 
-        return [navigate, list_catalogs, generate_import, suggest_page_actions]
+        return [
+            navigate,
+            list_catalogs,
+            list_buckets,
+            generate_import,
+            suggest_page_actions,
+        ]
 
     def _build_supervisor(self, ctx: "TurnContext"):
         return build_agent(

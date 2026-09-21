@@ -13,6 +13,7 @@ from nx_neptune_proxy.assistant.athena_tools import (
     MAX_SAMPLE_ROWS,
     AthenaToolError,
     get_columns,
+    list_buckets,
     list_catalogs,
     list_tables,
     sample_table,
@@ -24,6 +25,26 @@ QUERY = "nx_neptune_proxy.services.athena_query"
 
 
 # --- metadata tools (no query cost) --------------------------------------
+
+
+@patch(f"{TOOLS}.agent_s3_client")
+@patch(f"{TOOLS}.get_settings")
+def test_list_buckets_region_filtered(mock_settings, mock_s3):
+    mock_settings.return_value = SimpleNamespace(region="us-west-1")
+    client = MagicMock()
+    client.list_buckets.return_value = {"Buckets": [{"Name": "b1"}, {"Name": "b2"}]}
+    mock_s3.return_value = client
+
+    assert list_buckets() == ["b1", "b2"]
+    client.list_buckets.assert_called_once_with(BucketRegion="us-west-1")
+
+
+@patch(f"{TOOLS}.agent_s3_client")
+@patch(f"{TOOLS}.get_settings")
+def test_list_buckets_empty_without_region(mock_settings, mock_s3):
+    mock_settings.return_value = SimpleNamespace(region="")
+    assert list_buckets() == []
+    mock_s3.assert_not_called()  # no client built, no S3 call when no region
 
 
 @patch(f"{TOOLS}.agent_athena_client")
