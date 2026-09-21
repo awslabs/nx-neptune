@@ -25,8 +25,11 @@ from nx_neptune_proxy.assistant.agents.navigation import NavigationAgent
 from nx_neptune_proxy.assistant.agents.page_action import PageActionAgent
 from nx_neptune_proxy.assistant.agents.query_planner import QueryPlannerAgent
 from nx_neptune_proxy.assistant.agents.sql_mapping import SqlMappingAgent
+from nx_neptune_proxy.assistant import athena_tools as _athena
 from nx_neptune_proxy.assistant.athena_tools import list_buckets as _list_buckets
 from nx_neptune_proxy.assistant.athena_tools import list_catalogs as _list_catalogs
+from nx_neptune_proxy.assistant.athena_tools import list_databases as _list_databases
+from nx_neptune_proxy.assistant.athena_tools import get_schema as _get_schema
 from nx_neptune_proxy.assistant.debug_trace import (
     log_history,
     log_invocation,
@@ -57,6 +60,80 @@ class TurnContext:
     question: Optional[str] = None
 
 
+# Data-exploration guidance: how to help a user turn a data-lake schema into a
+# graph projection by reasoning about their business QUESTION, not tables/joins.
+# Kept as its own block so it can be edited independently and concatenated onto
+# the supervisor system prompt (see SUPERVISOR_SYSTEM_PROMPT below).
+EXPLORATION_GUIDANCE = """
+# Data exploration & schema-to-graph mapping
+- You help a user turn a data-lake schema into an nx-neptune graph projection.
+- The user thinks in QUESTIONS about their data (e.g. "which suppliers ship
+  which goods", "what accounts form a fraud ring", "what's most central") — not
+  in tables and joins.
+- Your GOAL: produce node SQL and edge SQL that (1) comply with the SQL CONTRACT
+  format and (2) answer the user's business question. This is a best-effort
+  mapping, not a right/wrong exercise — aim for a high hit rate, propose it, and
+  let the user correct it.
+- This is a DRAFT stage: nothing runs and nothing costs money, so always favor a
+  concrete proposal over asking the user for direction.
+
+## STYLE
+- Keep every reply to 2-3 sentences. Be conversational, not a report. (The one
+  exception is the PROPOSE step, where you also show the relationship line and
+  the ASCII property table — keep the surrounding prose short, but the table
+  itself is expected.)
+- Never ask the user for direction with empty hands. Do the lookup first and
+  come back with a concrete proposal, then ask them to review/confirm.
+- Make an educated guess and ask for confirmation, rather than asking the user
+  to make choices for you.
+- Talk in plain data terms (tables, columns, "linking suppliers to the goods
+  they ship"), not graph jargon ("bipartite edge projection").
+
+## FLOW
+1. OPEN. You may ask if the user has a particular database/tables in mind — but
+   go look regardless, so you always return with something concrete. If they
+   name a source, use it; otherwise pick the best fit yourself.
+2. DISCOVER + INSPECT (autonomously). Call list_databases, pick the database
+   that best fits the question (assume the AwsDataCatalog catalog unless told
+   otherwise), then call get_schema. The catalog/database are NOT parameters and
+   the user should not have to choose. NEVER invent table or column names — use
+   only what get_schema returned.
+3. PROPOSE (confirm the schema BEFORE drafting). Present two things:
+   a) The relationship on one line, e.g.
+        Supplier --[SUPPLIES]--> Product
+   b) A short ASCII table per element (each node label and the edge), titled by
+      the element name, listing just the properties the user will get. Users
+      don't care about the underlying column mapping, so do NOT show source
+      columns — only the property names. Use this shape:
+
+        Supplier (node)
+        | Property |
+        |----------|
+        | name     |
+        | country  |
+
+        Product (node)
+        | Property |
+        |----------|
+        | name     |
+        | price    |
+
+        SUPPLIES (edge)
+        | Property |
+        |----------|
+        | since    |
+        | quantity |
+
+   Then ask if that matches what they want. Keep prose to 2-3 sentences around
+   the tables.
+4. CONFIRM. Let the user correct tables, joins, labels, or which properties to
+   keep/drop. Adjust and re-show the line + table until they approve.
+5. DRAFT. Only AFTER approval, hand the confirmed mapping to the import-setup
+   job (generate_import) to produce the node/edge SQL per the SQL CONTRACT and
+   fill the import form. Then hand back the draft for the user to review.
+"""
+
+
 SUPERVISOR_SYSTEM_PROMPT = """You are the assistant for a graph-import web app \
 (relational data in Amazon Athena → an Amazon Neptune graph). You help the user \
 by routing their request to your tools and replying in plain language.
@@ -71,12 +148,11 @@ about first, then use only that job's tools. Do not jump ahead to a later job.
 
 ### 1. Data exploration (explore & discuss — no import yet)
 Help the user see and talk through what data is available before committing to \
-an import. This is a conversation, not a form-fill.
-- list_catalogs(): list the Athena data catalogs / data sources available. Use \
-when the user asks what data/catalogs exist or hasn't chosen one yet.
-- Stay in this job while the user is still asking "what's here?", "what could I \
-do with this?", or discussing options. Do NOT call generate_import just because \
-data was mentioned — exploration does not mean they want to build an import yet.
+an import. This is a conversation, not a form-fill. Follow the exploration \
+guidance below (tools: list_catalogs, list_databases, get_schema). Do NOT call \
+generate_import just because data was mentioned — exploration does not mean they \
+want to build an import yet.
+""" + EXPLORATION_GUIDANCE + """
 
 ### 2. Help fill individual import-form fields
 Assist the user in choosing the right value for a single field on the import \
@@ -186,6 +262,38 @@ class Supervisor:
             )
             return f"Available Athena catalogs: {named}."
 
+        def list_databases(catalog: str = "AwsDataCatalog") -> str:
+            """List the databases in an Athena catalog (ported from strands-demo).
+
+            Use this first when the user has not told you which database to use,
+            so you can show the options and pick the best fit for their question.
+            Catalog defaults to the AWS Glue catalog; the user should not have to
+            choose it. Metadata only — names, no tables or rows, no query cost."""
+            names = _list_databases(catalog)
+            if not names:
+                return f"No databases are available in catalog {catalog}."
+            shown = names[: _athena.MAX_DATABASES]
+            suffix = " (truncated)" if len(names) > _athena.MAX_DATABASES else ""
+            return f"Databases in {catalog}: {', '.join(shown)}{suffix}."
+
+        def get_schema(database: str, catalog: str = "AwsDataCatalog") -> str:
+            """Return the tables and columns of an Athena database (strands-demo).
+
+            Use this before proposing any node/edge SQL so the queries reference
+            real tables and columns — NEVER invent names. Metadata only (table
+            names, column names, and types), never row data. Catalog defaults to
+            the AWS Glue catalog."""
+            schema = _get_schema(database, catalog)
+            tables = schema["tables"]
+            if not tables:
+                return f"Database {database} has no tables."
+            lines = [
+                f'{t["name"]}({", ".join(c["name"] for c in t["columns"])})'
+                for t in tables
+            ]
+            suffix = " (more tables not shown)" if schema["truncated"] else ""
+            return f"Schema of {database}: " + "; ".join(lines) + suffix + "."
+
         def list_buckets() -> str:
             """List the S3 buckets available for an import's export/staging.
 
@@ -264,6 +372,8 @@ class Supervisor:
         return [
             navigate,
             list_catalogs,
+            list_databases,
+            get_schema,
             list_buckets,
             generate_import,
             suggest_page_actions,

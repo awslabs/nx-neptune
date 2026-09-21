@@ -31,6 +31,13 @@ from nx_neptune_proxy.utils import paginate_aws
 MAX_SAMPLE_ROWS = 100
 DEFAULT_SAMPLE_ROWS = 10
 
+# Caps on how much schema metadata we pull into the model context. Names + types
+# only (no row data), but still bounded for token budget and latency. Ported
+# from the strands-demo agent tools.
+MAX_TABLES = 50
+MAX_COLUMNS_PER_TABLE = 200
+MAX_DATABASES = 200
+
 
 class AthenaToolError(Exception):
     """A precondition for an assistant Athena tool was not met."""
@@ -135,6 +142,57 @@ def list_tables_with_columns(
             }
         )
     return result
+
+
+def get_schema(database: str, catalog: str = "AwsDataCatalog") -> dict:
+    """Return the schema (tables and their columns) for an Athena database.
+
+    Ported from the strands-demo agent tools. Use this before proposing any SQL
+    so the queries reference real tables and columns. Returns metadata only —
+    table names, column names, and column types — never row data.
+
+    ``list_table_metadata`` already includes ``Columns``, so this avoids a
+    per-table ``get_table_metadata`` round-trip. Results are capped
+    (``MAX_TABLES`` / ``MAX_COLUMNS_PER_TABLE``) to bound token budget/latency;
+    ``truncated`` is ``True`` when more tables exist than shown.
+
+    Returns::
+
+        {
+          "catalog": "...",
+          "database": "...",
+          "truncated": bool,
+          "tables": [
+            {"name": "t1", "columns": [{"name": "c", "type": "string"}, ...]},
+            ...
+          ]
+        }
+    """
+    client = agent_athena_client()
+    table_meta = paginate_aws(
+        client.list_table_metadata,
+        "TableMetadataList",
+        CatalogName=catalog,
+        DatabaseName=database,
+    )
+    truncated = len(table_meta) > MAX_TABLES
+    tables: list[dict] = []
+    for t in table_meta[:MAX_TABLES]:
+        cols = (t.get("Columns") or [])[:MAX_COLUMNS_PER_TABLE]
+        tables.append(
+            {
+                "name": t["Name"],
+                "columns": [
+                    {"name": c["Name"], "type": c.get("Type", "")} for c in cols
+                ],
+            }
+        )
+    return {
+        "catalog": catalog,
+        "database": database,
+        "truncated": truncated,
+        "tables": tables,
+    }
 
 
 def sample_table(
