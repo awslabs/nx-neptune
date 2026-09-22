@@ -37,6 +37,7 @@ export function Import() {
   // --- Projection state ---
   const [projectionsList, setProjectionsList] = useState<Projection[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
+  const [graphId, setGraphId] = useState<string | null>(null);
   const [status, setStatus] = useState<ProjectionStatus | null>(null);
   const [polling, setPolling] = useState(false);
 
@@ -82,6 +83,7 @@ export function Import() {
 
   function resetForm() {
     setCurrentId(null);
+    setGraphId(null);
     setStatus(null);
     setPolling(false);
     setChecks([]);
@@ -209,6 +211,8 @@ export function Import() {
 
   function loadProjection(p: Projection) {
     setCurrentId(p.id);
+    setGraphId(p.graph_id ?? null);
+    if (p.project_id) setProjectId(p.project_id);
     if (p.catalog) setCatalog(p.catalog);
     if (p.database) setDatabase(p.database);
     if (p.s3_staging_bucket) setBucket(p.s3_staging_bucket);
@@ -314,7 +318,11 @@ export function Import() {
   // buttons, and the active project for cross-page jumps.
   usePageBridge({
     page: "import",
-    fields: { catalog, database, bucket, graphName, nodeQueries, edgeQueries, graphQueries },
+    fields: {
+      catalog, database, bucket, graphName, nodeQueries, edgeQueries, graphQueries,
+      // Import state so the assistant knows a projection/graph already exists.
+      projectionId: currentId, graphStatus: status?.status ?? null, graphId,
+    },
     setters: {
       catalog: setCatalog,
       databases: setDatabases,
@@ -331,7 +339,7 @@ export function Import() {
       preview: { label: "Preview Schema", run: handlePreview, enabled: !loading },
     },
     persistImport,
-    jumpContext: { projectId: searchParams.get("project") },
+    jumpContext: { projectId: projectId || searchParams.get("project") },
   });
 
   // --- Actions ---

@@ -9,58 +9,82 @@ Grounded in the always-on capability catalog (§9.13) with an on-demand
 time by the Phase 1 endpoint. Returns an empty list when no query is warranted.
 """
 
+from typing import Optional
+
 from nx_neptune_proxy.assistant.agents.base_specialist import (
     SpecialistAgent,
     as_tools,
 )
 from nx_neptune_proxy.assistant.schemas import (
     DiscoveryResult,
+    GraphSchema,
     QueryPlanResult,
     SqlMappingResult,
 )
 from nx_neptune_proxy.assistant.skills import CAPABILITY_CATALOG, load_neptune_skill
 
 SYSTEM_PROMPT = (
-    """You suggest openCypher queries to run against a Neptune \
-graph once it has been imported from the described schema.
+    """You suggest read-only openCypher queries to run against a Neptune graph. \
+The "Data model" section describes the graph's shape and comes in one of two \
+kinds, labeled inline — read that label and ground your queries accordingly:
 
-The graph's shape is fixed by the node/edge import queries you are given — \
-those SELECTs define the exact node labels ("~label" on a node query), node \
-properties (the other projected columns), edge types ("~label" on an edge \
-query), and how nodes connect ("~from"/"~to"). Your openCypher MUST match that \
-model exactly: use only those labels, property names, and edge types, with the \
-same spelling and case. Do NOT invent labels or properties from the raw schema \
-that the import queries did not create.
+- LIVE GRAPH SCHEMA: the graph is already imported and live. This is the actual \
+schema read from the database, so it is AUTHORITATIVE — use exactly the node \
+labels, edge types, and property names it lists, with the same spelling and \
+case. Do NOT invent labels or properties it does not contain.
+- PREDICTED MODEL: the graph is not yet imported. Its shape is fixed by the \
+node/edge import queries — the SELECTs define node labels ("~label" on a node \
+query), node properties (the other projected columns), edge types ("~label" on \
+an edge query), and how nodes connect ("~from"/"~to"). Your openCypher MUST \
+match that model exactly; do NOT invent labels or properties the import queries \
+did not create.
+
+Either way the described graph EXISTS or will exist with that exact shape — the \
+model is what you query against, NOT a signal that the work is done. Having a \
+data model is a reason to propose queries, never a reason to decline.
 
 Given that graph model and the user's intent, propose read-only openCypher \
 queries that answer what the user wants to explore. Use the capability catalog \
 below to ground your proposals in what a graph actually unlocks and which \
 Neptune Analytics algorithms the backend exposes — do not propose procedures \
 listed there as unavailable. Only propose an algorithm call when the request \
-calls for that kind of analysis. When you need exact openCypher idioms or a \
-deeper use-case example, call the neptune_skill_reference tool. If the request \
-does not call for any post-import query, return an empty list.
+calls for that kind of analysis.
+
+Default to proposing at least one useful query. When the request names \
+something concrete to explore or analyze, answer it directly. When the request \
+is a general ask (e.g. "suggest a query", "what can I do with this graph?") or \
+gives little detail, propose a sensible starter query against the given model — \
+for example, sampling nodes of a label with ``MATCH (n:Label) RETURN n LIMIT \
+25`` or traversing an edge type. Only return an empty list when the request is \
+genuinely not about querying the graph at all (e.g. pure navigation or import \
+configuration). When you need exact openCypher idioms or a deeper use-case \
+example, call the neptune_skill_reference tool.
 
 """
     + CAPABILITY_CATALOG
     + """
 # OUTPUT REQUIREMENTS
 Return ONLY JSON, no prose, no Markdown, with this exact structure:
-{"graph_queries": [{"cypher": "MATCH (n) RETURN n LIMIT 10"}]}
-Use {"graph_queries": []} when no query is warranted. Each "cypher" value \
-must be a single line.
+{"description": "One or two plain-language sentences on what these queries help \
+the user explore or analyze and what they will learn from running them.", \
+"graph_queries": [{"cypher": "MATCH (n) RETURN n LIMIT 10"}]}
+Use {"graph_queries": [], "description": "..."} when no query is warranted, \
+with the description explaining why. The "description" is for the user, so \
+write it for a non-expert and do not restate the raw openCypher. Each "cypher" \
+value must be a single line.
 """
 )
 
-USER_PROMPT = """# Schema
-{schema}
-
-# Import queries (define the graph model)
-{mapping}
+USER_PROMPT = """# Data model
+{model}
 
 # Request
 {request}
 """
+
+# Placeholder when no relational schema is available in the predicted-model path
+# — the node/edge import queries below are then the only source of the model.
+_NO_SCHEMA = "(not provided — derive the model from the node/edge import queries below)"
 
 
 def neptune_skill_reference(topic: str) -> str:
@@ -84,24 +108,48 @@ class QueryPlannerAgent(SpecialistAgent):
 
     def _format_prompt(self, **kwargs) -> str:
         return USER_PROMPT.format(
-            schema=kwargs["schema"],
-            mapping=kwargs["mapping"],
+            model=kwargs["model"],
             request=kwargs["request"],
         )
 
     def plan(
         self,
-        discovery: DiscoveryResult,
         mapping: SqlMappingResult,
         request: str,
+        discovery: Optional[DiscoveryResult] = None,
+        graph_schema: Optional[GraphSchema] = None,
     ) -> QueryPlanResult:
-        """Propose post-import openCypher. ``mapping`` (the node/edge import
-        queries) is the source of truth for the graph model, so the planner
-        targets the same labels/properties/edges the SQL Mapping agent chose."""
-        schema = discovery.model_dump_json(exclude_none=True)
-        raw = self.execute_task(
-            schema=schema,
-            mapping=mapping.model_dump_json(exclude_none=True),
-            request=request,
-        )
+        """Propose openCypher grounded on the graph's data model.
+
+        The model has two sources, in priority order:
+
+        - ``graph_schema`` — the LIVE schema read from an imported graph. When
+          present and non-empty it is authoritative: the planner grounds on the
+          real labels/edge types/properties and the SQL model is ignored.
+        - ``mapping`` (+ optional ``discovery``) — the PREDICTED model from the
+          node/edge import SELECTs, used pre-import when no graph exists yet.
+
+        ``discovery`` is available during import generation and omitted when
+        proposing against an existing graph. Either way a model is supplied, so
+        queries can be proposed regardless of whether an import was just run."""
+        if graph_schema is not None and not graph_schema.is_empty:
+            model = (
+                "LIVE GRAPH SCHEMA (authoritative — the graph is imported; these "
+                "are the real labels, edge types, and properties):\n"
+                + graph_schema.model_dump_json(exclude_none=True)
+            )
+        else:
+            schema = (
+                discovery.model_dump_json(exclude_none=True)
+                if discovery
+                else _NO_SCHEMA
+            )
+            model = (
+                "PREDICTED MODEL (the graph is not yet imported; derive labels, "
+                "properties, and edge types from the node/edge import queries):\n"
+                f"## Relational schema\n{schema}\n"
+                "## Node/edge import queries\n"
+                + mapping.model_dump_json(exclude_none=True)
+            )
+        raw = self.execute_task(model=model, request=request)
         return self.extract_json(raw, QueryPlanResult)

@@ -32,12 +32,14 @@ from nx_neptune_proxy.assistant.debug_trace import (
     log_invocation,
     log_result,
 )
+from nx_neptune_proxy.assistant.graph_tools import fetch_graph_schema
 from nx_neptune_proxy.assistant.schemas import (
     AssistantReply,
     ChatAction,
     FieldProposal,
     JumpAction,
     PageContext,
+    SqlMappingResult,
 )
 from nx_neptune_proxy.assistant.session import Session, SessionStore
 from nx_neptune_proxy.assistant.skills import CAPABILITY_HINTS
@@ -85,12 +87,35 @@ than calling this tool with an empty catalog. database is optional: pass it to \
 target one database, or leave it empty to let discovery pick the most relevant \
 database in the catalog. bucket and graph_name are optional — if the user needs to \
 pick a bucket, call list_buckets() to offer the real options.
+- propose_queries(request): propose openCypher queries to run against the graph \
+that already exists, WITHOUT rebuilding the import. Use this instead of \
+generate_import when the user wants to query/explore/analyze a graph and the \
+page context shows one is already set up (a projection_id, a graph_status, or \
+node/edge queries are present). Do NOT re-run generate_import just to get \
+queries when the import already exists.
 - suggest_page_actions(request): surface actions available on the current page \
 (e.g. stopping a graph, executing an import).
 
 A pure navigation request must not trigger import generation, and vice versa. \
 Keep your final reply short: the proposed jumps, form fields, and actions are \
-attached to your message automatically, so summarize rather than repeat them.
+attached to your message automatically, so summarize rather than repeat them. \
+When generate_import or propose_queries returns a plain-language description of \
+what the mapping models or what the queries accomplish, relay that intent to \
+the user (verbatim or lightly summarized) so they understand WHAT was proposed \
+and WHY — do not drop it in favor of bare counts.
+
+# Reading page state
+The page context is a live snapshot of what the user is looking at. Trust it \
+over your assumptions:
+- A projection_id (or graph_status / node/edge queries) means a projection \
+already EXISTS — do not tell the user to create one, and do not call \
+generate_import to "start" it again. Prefer propose_queries for query requests.
+- graph_status tells you where the import is: "draft" (configured, not run), \
+"executing" (import running), "complete" (graph is ready to query), "failed". \
+When it is "complete" the graph is live — propose openCypher via propose_queries \
+rather than regenerating the import.
+- You can still propose openCypher regardless of graph_status; the user may want \
+the queries ready before or while the import runs.
 
 # When a graph is worth it
 """ + CAPABILITY_HINTS
@@ -210,7 +235,7 @@ class Supervisor:
             # The mapping's node/edge queries define the graph model (labels,
             # properties, edge types); pass them to the planner so its openCypher
             # targets the same model rather than re-deriving it from discovery.
-            plan = self._query_planner.plan(discovery, mapping, request)
+            plan = self._query_planner.plan(mapping, request, discovery)
 
             ctx.proposal = FieldProposal(
                 catalog=catalog,
@@ -221,10 +246,63 @@ class Supervisor:
                 edge_queries=mapping.edge_queries or None,
                 graph_queries=plan.graph_queries or None,
             )
-            return (
+            # Relay the agents' plain-language intent so the supervisor can pass
+            # it (or a summary) on to the user, not just the query counts.
+            summary = (
                 f"Proposed an import: {len(mapping.node_queries)} node and "
                 f"{len(mapping.edge_queries)} edge query(ies)."
             )
+            if mapping.description:
+                summary += f" Graph model: {mapping.description}"
+            if plan.graph_queries and plan.description:
+                summary += f" Suggested queries: {plan.description}"
+            return summary
+
+        def propose_queries(request: str) -> str:
+            """Propose openCypher graph queries to run against the existing
+            graph, WITHOUT regenerating the import.
+
+            Use this — not generate_import — when a graph/projection already
+            exists (the page context has a projection_id, graph_status, or
+            node/edge queries) and the user wants to query, explore, or analyze
+            it. When the graph is already live (a graph_id is present) its real
+            schema is read from the database and used as the authoritative
+            model; otherwise the page's node/edge queries define the predicted
+            model, or the planner proposes general-purpose queries if none are
+            present. Works regardless of whether the import has finished
+            running."""
+            pc = ctx.page_context
+            node_queries = list(pc.node_queries) if pc else []
+            edge_queries = list(pc.edge_queries) if pc else []
+            mapping = SqlMappingResult(
+                node_queries=node_queries, edge_queries=edge_queries
+            )
+            # Once the graph exists, its live schema is authoritative — read it
+            # so the planner grounds on the real labels/edge types/properties
+            # rather than the predicted node/edge SQL. Best-effort: a failed
+            # read falls back to the SQL model below.
+            graph_schema = None
+            graph_id = pc.graph_id if pc else None
+            if graph_id and pc and pc.graph_available:
+                try:
+                    graph_schema = fetch_graph_schema(graph_id)
+                except Exception as exc:  # noqa: BLE001 - degrade to SQL model
+                    logger.warning(
+                        "Live graph schema fetch failed for %s: %s", graph_id, exc
+                    )
+            plan = self._query_planner.plan(
+                mapping, request, graph_schema=graph_schema
+            )
+            # Only the graph_queries change; leaving the other fields None means
+            # the client applies just the openCypher without touching the form's
+            # catalog/database/SQL (spec §9.5).
+            ctx.proposal = FieldProposal(graph_queries=plan.graph_queries or None)
+            # Relay the planner's plain-language intent to the supervisor so the
+            # user hears what the queries accomplish, not just how many there are.
+            summary = f"Proposed {len(plan.graph_queries)} openCypher query(ies)."
+            if plan.description:
+                summary += f" {plan.description}"
+            return summary
 
         def suggest_page_actions(request: str) -> str:
             """Surface actions available on the current page for the request."""
@@ -239,6 +317,7 @@ class Supervisor:
             list_catalogs,
             list_buckets,
             generate_import,
+            propose_queries,
             suggest_page_actions,
         ]
 

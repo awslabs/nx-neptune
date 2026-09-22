@@ -9,7 +9,9 @@ from unittest.mock import MagicMock, patch
 
 from nx_neptune_proxy.assistant.schemas import (
     ChatAction,
+    CypherQuery,
     DiscoveryResult,
+    GraphSchema,
     JumpAction,
     PageContext,
     QueryPlanResult,
@@ -84,6 +86,145 @@ def test_generate_import_chains_and_builds_proposal():
     assert ctx.proposal.edge_queries is None  # empty list collapses to None
     sup._discovery.discover.assert_called_once()
     sup._sql_mapping.map_schema.assert_called_once()
+    sup._query_planner.plan.assert_called_once()
+
+
+def test_propose_queries_uses_existing_graph_model_without_import():
+    sup = _supervisor_with_mock_specialists()
+    sup._query_planner.plan.return_value = QueryPlanResult(
+        graph_queries=[CypherQuery(cypher="MATCH (n) RETURN n LIMIT 10")]
+    )
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            projection_id="proj-1",
+            graph_status="complete",
+            node_queries=[SqlQuery(sql='SELECT 1 AS "~id"')],
+            edge_queries=[SqlQuery(sql='SELECT 1 AS "~from"')],
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    tools["propose_queries"]("show me the top nodes")
+
+    # Only graph queries are proposed; import fields stay untouched.
+    assert ctx.proposal.graph_queries[0].cypher == "MATCH (n) RETURN n LIMIT 10"
+    assert ctx.proposal.catalog is None
+    assert ctx.proposal.node_queries is None
+    # Planner is grounded on the page's node/edge model, and no import runs.
+    mapping = sup._query_planner.plan.call_args.args[0]
+    assert len(mapping.node_queries) == 1 and len(mapping.edge_queries) == 1
+    sup._discovery.discover.assert_not_called()
+    sup._sql_mapping.map_schema.assert_not_called()
+
+
+def test_generate_import_relays_agent_descriptions():
+    sup = _supervisor_with_mock_specialists()
+    sup._sql_mapping.map_schema.return_value = SqlMappingResult(
+        description="Customers become nodes, orders become edges.",
+        node_queries=[SqlQuery(sql='SELECT 1 AS "~id"')],
+    )
+    sup._query_planner.plan.return_value = QueryPlanResult(
+        description="Finds your most connected customers.",
+        graph_queries=[CypherQuery(cypher="MATCH (n) RETURN n")],
+    )
+    ctx = _import_ctx(sup)
+    tools = _tools(sup, ctx)
+
+    reply = tools["generate_import"]("import it", "AwsDataCatalog", "tpch")
+
+    # The tool return (what the supervisor LLM relays) carries both intents.
+    assert "Customers become nodes, orders become edges." in reply
+    assert "Finds your most connected customers." in reply
+
+
+def test_propose_queries_relays_planner_description():
+    sup = _supervisor_with_mock_specialists()
+    sup._query_planner.plan.return_value = QueryPlanResult(
+        description="Samples people so you can eyeball the data.",
+        graph_queries=[CypherQuery(cypher="MATCH (n:Person) RETURN n LIMIT 25")],
+    )
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(page="import", projection_id="p-1"),
+    )
+    tools = _tools(sup, ctx)
+
+    reply = tools["propose_queries"]("show me people")
+    assert "Samples people so you can eyeball the data." in reply
+
+
+def test_propose_queries_grounds_on_live_schema_when_graph_exists():
+    sup = _supervisor_with_mock_specialists()
+    sup._query_planner.plan.return_value = QueryPlanResult(
+        graph_queries=[CypherQuery(cypher="MATCH (n:Person) RETURN n LIMIT 25")]
+    )
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            projection_id="proj-1",
+            graph_status="complete",
+            graph_id="g-123",
+            node_queries=[SqlQuery(sql='SELECT 1 AS "~id"')],
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    live = GraphSchema(node_labels=["Person"], edge_labels=["KNOWS"])
+    with patch(
+        "nx_neptune_proxy.assistant.supervisor.fetch_graph_schema",
+        return_value=live,
+    ) as mock_fetch:
+        tools["propose_queries"]("show me the top people")
+
+    # The live schema was read for the graph and handed to the planner as the
+    # authoritative model (not the SQL mapping).
+    mock_fetch.assert_called_once_with("g-123")
+    assert sup._query_planner.plan.call_args.kwargs["graph_schema"] is live
+    assert ctx.proposal.graph_queries[0].cypher == "MATCH (n:Person) RETURN n LIMIT 25"
+
+
+def test_propose_queries_falls_back_to_sql_when_schema_fetch_fails():
+    sup = _supervisor_with_mock_specialists()
+    sup._query_planner.plan.return_value = QueryPlanResult(
+        graph_queries=[CypherQuery(cypher="MATCH (n) RETURN n LIMIT 25")]
+    )
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import", graph_status="complete", graph_id="g-123"
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    with patch(
+        "nx_neptune_proxy.assistant.supervisor.fetch_graph_schema",
+        side_effect=RuntimeError("boom"),
+    ):
+        tools["propose_queries"]("explore")
+
+    # A failed live-schema read degrades to the predicted model — no schema is
+    # passed, and the plan still runs.
+    assert sup._query_planner.plan.call_args.kwargs["graph_schema"] is None
+    sup._query_planner.plan.assert_called_once()
+
+
+def test_propose_queries_without_graph_model_still_proposes():
+    sup = _supervisor_with_mock_specialists()
+    sup._query_planner.plan.return_value = QueryPlanResult(
+        graph_queries=[CypherQuery(cypher="MATCH (n) RETURN n LIMIT 10")]
+    )
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(page="import"),
+    )
+    tools = _tools(sup, ctx)
+
+    tools["propose_queries"]("give me a query")
+
+    assert ctx.proposal.graph_queries[0].cypher == "MATCH (n) RETURN n LIMIT 10"
     sup._query_planner.plan.assert_called_once()
 
 

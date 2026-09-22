@@ -35,11 +35,26 @@ export function serializePageContext(
   // an import without re-asking. Only forward non-empty string values.
   const asField = (v: unknown): string | null =>
     typeof v === "string" && v.trim() ? v : null;
+  // Forward the current node/edge SQL (dropping blank rows) so the agent knows
+  // the graph model and can propose openCypher against the existing graph.
+  const asQueries = (v: unknown): { sql: string }[] =>
+    Array.isArray(v)
+      ? (v as { sql?: string }[])
+          .filter((q) => typeof q?.sql === "string" && q.sql.trim())
+          .map((q) => ({ sql: q.sql as string }))
+      : [];
   return {
     page: bridge.page,
+    // Prefer the loaded projection's project id (set by the page) over the URL,
+    // so the agent sees a project even when it isn't in the query string.
     project_id: bridge.jumpContext?.projectId ?? null,
     catalog: asField(bridge.fields?.catalog),
     database: asField(bridge.fields?.database),
+    projection_id: asField(bridge.fields?.projectionId),
+    graph_status: asField(bridge.fields?.graphStatus),
+    graph_id: asField(bridge.fields?.graphId),
+    node_queries: asQueries(bridge.fields?.nodeQueries),
+    edge_queries: asQueries(bridge.fields?.edgeQueries),
     actions,
     graph_targets,
   };
@@ -144,7 +159,17 @@ function applyProposal(proposal: AssistantProposal, bridge: PageBridge | null): 
   // directly — the setters above are async, so page state is still stale here.
   // Fire-and-forget: creation happens in the background like the page's own
   // auto-save, and errors surface through the page's normal error handling.
-  if (applied.length) {
+  // Skip when only graph queries changed (a propose_queries turn against an
+  // existing graph) — there are no import fields to persist and we must not
+  // create an empty projection.
+  const persistedImportFields =
+    proposal.catalog != null ||
+    proposal.database != null ||
+    proposal.bucket != null ||
+    proposal.graph_name != null ||
+    proposal.node_queries != null ||
+    proposal.edge_queries != null;
+  if (persistedImportFields) {
     void bridge.persistImport?.({
       catalog: proposal.catalog ?? undefined,
       database: proposal.database ?? undefined,

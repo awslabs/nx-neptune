@@ -225,6 +225,14 @@ export interface AssistantPageContext {
   // import without re-asking for what the form already shows.
   catalog?: string | null;
   database?: string | null;
+  // Import page state so the agent knows a projection/graph already exists: the
+  // loaded projection id, its import status, the created graph id, and the
+  // node/edge queries that define the current graph model.
+  projection_id?: string | null;
+  graph_status?: string | null;
+  graph_id?: string | null;
+  node_queries?: AssistantSqlQuery[];
+  edge_queries?: AssistantSqlQuery[];
   actions?: { key: string; label: string; enabled?: boolean }[];
   graph_targets?: { id: string; name: string; actions: string[] }[];
 }

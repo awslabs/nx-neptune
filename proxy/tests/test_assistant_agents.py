@@ -19,6 +19,7 @@ from nx_neptune_proxy.assistant.agents.base_specialist import SpecialistAgent
 from nx_neptune_proxy.assistant.agents.navigation import list_projects
 from nx_neptune_proxy.assistant.schemas import (
     DiscoveryResult,
+    GraphSchema,
     PageContext,
     PageContextAction,
     PageContextGraphTarget,
@@ -57,11 +58,13 @@ def test_sql_mapping_parses_node_and_edge_queries():
         {"tables": [{"name": "t", "columns": [{"name": "id", "type": "string"}]}]}
     )
     reply = (
-        '{"node_queries": [{"sql": "SELECT id AS \\"~id\\" FROM t"}], '
+        '{"description": "Rows of t become nodes keyed by id.", '
+        '"node_queries": [{"sql": "SELECT id AS \\"~id\\" FROM t"}], '
         '"edge_queries": []}'
     )
     with _canned(agent, reply):
         result = agent.map_schema(discovery, "make nodes")
+    assert result.description == "Rows of t become nodes keyed by id."
     assert result.node_queries[0].sql == 'SELECT id AS "~id" FROM t'
     assert result.edge_queries == []
 
@@ -74,12 +77,41 @@ def test_query_planner_parses_queries_and_empty():
     discovery = DiscoveryResult.model_validate({"tables": []})
     mapping = SqlMappingResult()
 
-    with _canned(agent, '{"graph_queries": [{"cypher": "MATCH (n) RETURN n"}]}'):
-        result = agent.plan(discovery, mapping, "show everything")
+    with _canned(
+        agent,
+        '{"description": "Lists all nodes so you can see what loaded.", '
+        '"graph_queries": [{"cypher": "MATCH (n) RETURN n"}]}',
+    ):
+        result = agent.plan(mapping, "show everything", discovery)
+    assert result.description == "Lists all nodes so you can see what loaded."
     assert result.graph_queries[0].cypher == "MATCH (n) RETURN n"
 
     with _canned(agent, '{"graph_queries": []}'):
-        assert agent.plan(discovery, mapping, "just import").graph_queries == []
+        assert agent.plan(mapping, "just import", discovery).graph_queries == []
+
+    # Discovery is optional — proposing against an already-imported graph model.
+    with _canned(agent, '{"graph_queries": [{"cypher": "MATCH (n) RETURN n"}]}'):
+        assert agent.plan(mapping, "explore the graph").graph_queries[0].cypher == (
+            "MATCH (n) RETURN n"
+        )
+
+
+def test_query_planner_grounds_on_live_schema_when_present():
+    agent = QueryPlannerAgent(bedrock_model=None)
+    schema = GraphSchema(
+        node_labels=["Person"], edge_labels=["KNOWS"], node_properties=["name"]
+    )
+    # A non-empty live schema is authoritative: it is passed into the prompt and
+    # the (empty) SQL mapping is not what grounds the plan.
+    with patch.object(agent, "_execute_agent", return_value='{"graph_queries": []}') as ex:
+        agent.plan(SqlMappingResult(), "explore", graph_schema=schema)
+    model = ex.call_args.kwargs["model"]
+    assert "LIVE GRAPH SCHEMA" in model and "Person" in model and "KNOWS" in model
+
+    # An empty live schema falls back to the predicted (SQL) model path.
+    with patch.object(agent, "_execute_agent", return_value='{"graph_queries": []}') as ex:
+        agent.plan(SqlMappingResult(), "explore", graph_schema=GraphSchema())
+    assert "PREDICTED MODEL" in ex.call_args.kwargs["model"]
 
 
 # --- Navigation -----------------------------------------------------------
