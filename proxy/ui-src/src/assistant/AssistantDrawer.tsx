@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Sparkles, Send, Bot, User, X, Maximize2, Minimize2, CheckCircle, ArrowUpRight, Play, Square, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
+import ReactMarkdown from "react-markdown";
 import { useAssistant } from "./context";
 
 // Floating launcher: a minimized/collapsed version of the assistant drawer's
@@ -111,7 +112,9 @@ export function AssistantDrawer() {
                   : "border border-purple-200 bg-white text-gray-700",
               )}
             >
-              <p className="whitespace-pre-wrap">{m.text}</p>
+              <div className="[&_p]:my-0 [&_p+p]:mt-2 [&_code]:rounded [&_code]:bg-gray-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.85em] [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_a]:underline">
+                <ReactMarkdown>{m.text}</ReactMarkdown>
+              </div>
               {m.applied && m.applied.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1">
                   {m.applied.map((f) => (
