@@ -123,27 +123,45 @@ def test_generate_import_relays_agent_descriptions():
     sup = _supervisor_with_mock_specialists()
     sup._sql_mapping.map_schema.return_value = SqlMappingResult(
         description="Customers become nodes, orders become edges.",
-        node_queries=[SqlQuery(sql='SELECT 1 AS "~id"')],
+        node_queries=[
+            SqlQuery(sql='SELECT 1 AS "~id"', description="One node per customer.")
+        ],
+        edge_queries=[
+            SqlQuery(
+                sql='SELECT 1 AS "~from"', description="Links orders to customers."
+            )
+        ],
     )
     sup._query_planner.plan.return_value = QueryPlanResult(
         description="Finds your most connected customers.",
-        graph_queries=[CypherQuery(cypher="MATCH (n) RETURN n")],
+        graph_queries=[
+            CypherQuery(cypher="MATCH (n) RETURN n", description="Top customers.")
+        ],
     )
     ctx = _import_ctx(sup)
     tools = _tools(sup, ctx)
 
     reply = tools["generate_import"]("import it", "AwsDataCatalog", "tpch")
 
-    # The tool return (what the supervisor LLM relays) carries both intents.
+    # The tool return (what the supervisor LLM relays) carries the overall
+    # intents plus each query's own purpose.
     assert "Customers become nodes, orders become edges." in reply
     assert "Finds your most connected customers." in reply
+    assert "One node per customer." in reply
+    assert "Links orders to customers." in reply
+    assert "Top customers." in reply
 
 
 def test_propose_queries_relays_planner_description():
     sup = _supervisor_with_mock_specialists()
     sup._query_planner.plan.return_value = QueryPlanResult(
         description="Samples people so you can eyeball the data.",
-        graph_queries=[CypherQuery(cypher="MATCH (n:Person) RETURN n LIMIT 25")],
+        graph_queries=[
+            CypherQuery(
+                cypher="MATCH (n:Person) RETURN n LIMIT 25",
+                description="Shows 25 sample people.",
+            )
+        ],
     )
     ctx = TurnContext(
         session=sup._sessions.create(),
@@ -153,6 +171,7 @@ def test_propose_queries_relays_planner_description():
 
     reply = tools["propose_queries"]("show me people")
     assert "Samples people so you can eyeball the data." in reply
+    assert "Shows 25 sample people." in reply
 
 
 def test_propose_queries_grounds_on_live_schema_when_graph_exists():

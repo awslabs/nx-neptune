@@ -65,13 +65,16 @@ example, call the neptune_skill_reference tool.
     + """
 # OUTPUT REQUIREMENTS
 Return ONLY JSON, no prose, no Markdown, with this exact structure:
-{"description": "One or two plain-language sentences on what these queries help \
-the user explore or analyze and what they will learn from running them.", \
-"graph_queries": [{"cypher": "MATCH (n) RETURN n LIMIT 10"}]}
-Use {"graph_queries": [], "description": "..."} when no query is warranted, \
-with the description explaining why. The "description" is for the user, so \
-write it for a non-expert and do not restate the raw openCypher. Each "cypher" \
-value must be a single line.
+{"description": "One plain-language sentence summarizing what this set of \
+queries helps the user explore or analyze.", \
+"graph_queries": [{"description": "What THIS query answers and what the user \
+learns from its results (e.g. \\"finds the 10 most connected accounts\\").", \
+"cypher": "MATCH (n) RETURN n LIMIT 10"}]}
+Every query MUST include its own "description". Use {"graph_queries": [], \
+"description": "..."} when no query is warranted, with the description \
+explaining why. All descriptions are for the user, so write them for a \
+non-expert and do not restate the raw openCypher. Each "cypher" value must be a \
+single line.
 """
 )
 

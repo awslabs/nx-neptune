@@ -38,13 +38,16 @@ become nodes vs. edges), do not guess.
     + """
 # OUTPUT REQUIREMENTS
 Return ONLY JSON, no prose, no Markdown, with this exact structure:
-{"description": "One or two plain-language sentences on what graph model \
-these queries build (which tables become which node labels and edges) and how \
-it serves the user's intent.", \
-"node_queries": [{"sql": "SELECT id AS \\"~id\\" FROM t"}], \
-"edge_queries": [{"sql": "SELECT a AS \\"~from\\", b AS \\"~to\\" FROM e"}]}
-The "description" is for the user, so write it for a non-expert and do not \
-restate the raw SQL. Each "sql" value must be a single line.
+{"description": "One plain-language sentence on the overall graph model these \
+queries build.", \
+"node_queries": [{"description": "What THIS node query creates (e.g. \\"one \
+node per customer, labeled Customer\\").", "sql": "SELECT id AS \\"~id\\" FROM t"}], \
+"edge_queries": [{"description": "What THIS edge query connects (e.g. \\"links \
+each order to the customer who placed it\\").", "sql": "SELECT a AS \\"~from\\", \
+b AS \\"~to\\" FROM e"}]}
+Every node and edge query MUST include its own "description". All descriptions \
+are for the user, so write them for a non-expert and do not restate the raw \
+SQL. Each "sql" value must be a single line.
 """
 )
 
