@@ -121,6 +121,17 @@ function applyProposal(proposal: AssistantProposal, bridge: PageBridge | null): 
   if (!bridge || bridge.page !== "import" || !bridge.setters) return [];
   const s = bridge.setters;
   const applied: string[] = [];
+  // The bucket <select>'s option values are full URIs `s3://<name>/`, but the
+  // assistant proposes a bare bucket name (list_buckets returns bare names).
+  // Normalize once so both the <select> and the persisted projection use the
+  // same form the rest of the app expects.
+  const normalizedBucket =
+    proposal.bucket != null
+      ? (() => {
+          const bare = proposal.bucket.replace(/^s3:\/\//, "").replace(/\/+$/, "");
+          return bare ? `s3://${bare}/` : "";
+        })()
+      : null;
   if (proposal.catalog != null) {
     s.catalog?.(proposal.catalog);
     applied.push("Catalog");
@@ -134,7 +145,7 @@ function applyProposal(proposal: AssistantProposal, bridge: PageBridge | null): 
     applied.push("Database");
   }
   if (proposal.bucket != null) {
-    s.bucket?.(proposal.bucket);
+    s.bucket?.(normalizedBucket ?? "");
     applied.push("S3 Staging Bucket");
   }
   if (proposal.graph_name != null) {
@@ -173,7 +184,7 @@ function applyProposal(proposal: AssistantProposal, bridge: PageBridge | null): 
     void bridge.persistImport?.({
       catalog: proposal.catalog ?? undefined,
       database: proposal.database ?? undefined,
-      bucket: proposal.bucket ?? undefined,
+      bucket: normalizedBucket ?? undefined,
       graphName: proposal.graph_name ?? undefined,
       nodeQueries: proposal.node_queries?.map((q) => ({ sql: q.sql })),
       edgeQueries: proposal.edge_queries?.map((q) => ({ sql: q.sql })),

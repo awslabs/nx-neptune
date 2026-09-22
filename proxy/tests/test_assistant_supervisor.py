@@ -228,6 +228,37 @@ def test_propose_queries_without_graph_model_still_proposes():
     sup._query_planner.plan.assert_called_once()
 
 
+def test_update_import_fields_sets_only_bucket_and_skips_specialists():
+    sup = _supervisor_with_mock_specialists()
+    ctx = _import_ctx(sup)
+    tools = _tools(sup, ctx)
+
+    tools["update_import_fields"](bucket="nx-neptune-staging")
+
+    assert ctx.proposal.bucket == "nx-neptune-staging"
+    assert ctx.proposal.database is None
+    assert ctx.proposal.node_queries is None
+    sup._discovery.discover.assert_not_called()
+    sup._sql_mapping.map_schema.assert_not_called()
+    sup._query_planner.plan.assert_not_called()
+
+
+def test_update_import_fields_merges_without_clobbering_queries():
+    sup = _supervisor_with_mock_specialists()
+    ctx = _import_ctx(sup)
+    tools = _tools(sup, ctx)
+
+    tools["generate_import"]("import it", "cat", "db", graph_name="g")
+    assert len(ctx.proposal.node_queries) == 1
+
+    tools["update_import_fields"](bucket="nx-neptune-staging")
+
+    assert ctx.proposal.bucket == "nx-neptune-staging"
+    assert len(ctx.proposal.node_queries) == 1  # preserved
+    assert ctx.proposal.catalog == "cat"
+    assert ctx.proposal.graph_name == "g"
+
+
 def test_generate_import_reuses_discovery_cache_within_session():
     sup = _supervisor_with_mock_specialists()
     ctx = _import_ctx(sup)

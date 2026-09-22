@@ -31,6 +31,13 @@ from nx_neptune_proxy.utils import paginate_aws
 MAX_SAMPLE_ROWS = 100
 DEFAULT_SAMPLE_ROWS = 10
 
+# Caps on how much schema metadata we pull into the model context. Names + types
+# only (no row data), but still bounded for token budget and latency. Ported
+# from the strands-demo agent tools.
+MAX_TABLES = 50
+MAX_COLUMNS_PER_TABLE = 200
+MAX_DATABASES = 200
+
 
 class AthenaToolError(Exception):
     """A precondition for an assistant Athena tool was not met."""
@@ -51,6 +58,28 @@ def list_buckets() -> list[str]:
     client = agent_s3_client()
     resp = client.list_buckets(BucketRegion=region)
     return [b["Name"] for b in resp.get("Buckets", [])]
+
+
+def validate_bucket(bucket: str) -> list[dict]:
+    """Validate a single S3 bucket the same way the UI's Validate button does.
+
+    Reuses the shared ``nx_neptune.validators`` checks (no duplicated logic):
+    ``check_bucket_exists`` (bucket exists and is accessible) and, when a region
+    is configured, ``check_bucket_region`` (bucket is in the expected region).
+    Scoped to one bucket — the value the user picked — mirroring pressing
+    Validate on that choice, not the whole projection.
+
+    Returns a list of check results ``[{"check", "passed", "message"}]`` (the
+    same shape the projection ``/validate`` endpoint returns), so the caller can
+    report pass/fail per check.
+    """
+    from nx_neptune.validators import check_bucket_exists, check_bucket_region
+
+    results = [check_bucket_exists(bucket)]
+    region = get_settings().region
+    if region:
+        results.append(check_bucket_region(bucket, region))
+    return [r.to_dict() for r in results]
 
 
 def list_catalogs() -> list[dict]:
@@ -135,6 +164,57 @@ def list_tables_with_columns(
             }
         )
     return result
+
+
+def get_schema(database: str, catalog: str = "AwsDataCatalog") -> dict:
+    """Return the schema (tables and their columns) for an Athena database.
+
+    Ported from the strands-demo agent tools. Use this before proposing any SQL
+    so the queries reference real tables and columns. Returns metadata only —
+    table names, column names, and column types — never row data.
+
+    ``list_table_metadata`` already includes ``Columns``, so this avoids a
+    per-table ``get_table_metadata`` round-trip. Results are capped
+    (``MAX_TABLES`` / ``MAX_COLUMNS_PER_TABLE``) to bound token budget/latency;
+    ``truncated`` is ``True`` when more tables exist than shown.
+
+    Returns::
+
+        {
+          "catalog": "...",
+          "database": "...",
+          "truncated": bool,
+          "tables": [
+            {"name": "t1", "columns": [{"name": "c", "type": "string"}, ...]},
+            ...
+          ]
+        }
+    """
+    client = agent_athena_client()
+    table_meta = paginate_aws(
+        client.list_table_metadata,
+        "TableMetadataList",
+        CatalogName=catalog,
+        DatabaseName=database,
+    )
+    truncated = len(table_meta) > MAX_TABLES
+    tables: list[dict] = []
+    for t in table_meta[:MAX_TABLES]:
+        cols = (t.get("Columns") or [])[:MAX_COLUMNS_PER_TABLE]
+        tables.append(
+            {
+                "name": t["Name"],
+                "columns": [
+                    {"name": c["Name"], "type": c.get("Type", "")} for c in cols
+                ],
+            }
+        )
+    return {
+        "catalog": catalog,
+        "database": database,
+        "truncated": truncated,
+        "tables": tables,
+    }
 
 
 def sample_table(

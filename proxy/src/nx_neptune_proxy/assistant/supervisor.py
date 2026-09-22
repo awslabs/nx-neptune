@@ -25,8 +25,12 @@ from nx_neptune_proxy.assistant.agents.navigation import NavigationAgent
 from nx_neptune_proxy.assistant.agents.page_action import PageActionAgent
 from nx_neptune_proxy.assistant.agents.query_planner import QueryPlannerAgent
 from nx_neptune_proxy.assistant.agents.sql_mapping import SqlMappingAgent
+from nx_neptune_proxy.assistant import athena_tools as _athena
 from nx_neptune_proxy.assistant.athena_tools import list_buckets as _list_buckets
+from nx_neptune_proxy.assistant.athena_tools import validate_bucket as _validate_bucket
 from nx_neptune_proxy.assistant.athena_tools import list_catalogs as _list_catalogs
+from nx_neptune_proxy.assistant.athena_tools import list_databases as _list_databases
+from nx_neptune_proxy.assistant.athena_tools import get_schema as _get_schema
 from nx_neptune_proxy.assistant.debug_trace import (
     log_history,
     log_invocation,
@@ -59,6 +63,122 @@ class TurnContext:
     question: Optional[str] = None
 
 
+# Data-exploration guidance: how to help a user turn a data-lake schema into a
+# graph projection by reasoning about their business QUESTION, not tables/joins.
+# Kept as its own block so it can be edited independently and concatenated onto
+# the supervisor system prompt (see SUPERVISOR_SYSTEM_PROMPT below).
+EXPLORATION_GUIDANCE = """
+# Data exploration & schema-to-graph mapping
+- You help a user turn a data-lake schema into an nx-neptune graph projection.
+- The user thinks in QUESTIONS about their data (e.g. "which suppliers ship
+  which goods", "what accounts form a fraud ring", "what's most central") — not
+  in tables and joins.
+- Your GOAL: produce node SQL and edge SQL that (1) comply with the SQL CONTRACT
+  format and (2) answer the user's business question. This is a best-effort
+  mapping, not a right/wrong exercise — aim for a high hit rate, propose it, and
+  let the user correct it.
+- This is a DRAFT stage: nothing runs and nothing costs money, so always favor a
+  concrete proposal over asking the user for direction.
+
+## STYLE
+- Keep every reply to 2-3 sentences. Be conversational, not a report. (The one
+  exception is the PROPOSE step, where you also show the relationship line and
+  the ASCII property table — keep the surrounding prose short, but the table
+  itself is expected.)
+- Never ask the user for direction with empty hands. Do the lookup first and
+  come back with a concrete proposal, then ask them to review/confirm.
+- Make an educated guess and ask for confirmation, rather than asking the user
+  to make choices for you.
+- Talk in plain data terms (tables, columns, "linking suppliers to the goods
+  they ship"), not graph jargon ("bipartite edge projection").
+
+## FLOW
+1. OPEN. You may ask if the user has a particular database/tables in mind — but
+   go look regardless, so you always return with something concrete. If they
+   name a source, use it; otherwise pick the best fit yourself.
+2. DISCOVER + INSPECT (autonomously). Call list_databases, pick the database
+   that best fits the question (assume the AwsDataCatalog catalog unless told
+   otherwise), then call get_schema. The catalog/database are NOT parameters and
+   the user should not have to choose. NEVER invent table or column names — use
+   only what get_schema returned.
+3. PROPOSE (confirm the schema BEFORE drafting). Present two things:
+   a) The relationship on one line, e.g.
+        Supplier --[SUPPLIES]--> Product
+   b) A short ASCII table per element (each node label and the edge), titled by
+      the element name, listing just the properties the user will get. Users
+      don't care about the underlying column mapping, so do NOT show source
+      columns — only the property names. Use this shape:
+
+        Supplier (node)
+        | Property |
+        |----------|
+        | name     |
+        | country  |
+
+        Product (node)
+        | Property |
+        |----------|
+        | name     |
+        | price    |
+
+        SUPPLIES (edge)
+        | Property |
+        |----------|
+        | since    |
+        | quantity |
+
+   Then ask if that matches what they want. Keep prose to 2-3 sentences around
+   the tables.
+4. CONFIRM. Let the user correct tables, joins, labels, or which properties to
+   keep/drop. Adjust and re-show the line + table until they approve.
+5. DRAFT. Only AFTER approval, hand the confirmed mapping to the import-setup
+   job (generate_import) to produce the node/edge SQL per the SQL CONTRACT and
+   fill the import form. Then hand back the draft for the user to review.
+"""
+
+
+# Field-fill guidance: how to help a user choose the value for a single Import
+# form field (e.g. the S3 staging bucket) without building the whole mapping.
+# Kept as its own block so it can grow independently and be concatenated under
+# the "Help fill individual import-form fields" job (see SUPERVISOR_SYSTEM_PROMPT).
+FIELD_FILL_GUIDANCE = """
+Assist the user in choosing the right value for a single field on the import
+form, without building the whole mapping. This job is field-level assistance,
+not import generation — do NOT call generate_import just to set one field.
+
+## Choosing the S3 staging bucket
+The staging bucket is the working area Athena writes query results to before the
+graph import reads them (per projection). Help the user land on a good one with
+this flow:
+
+1. LIST. Call list_buckets() to get the real buckets (region-filtered — the same
+   list the import page's selector shows). Never invent a bucket name.
+2. RECOMMEND a few. Present the real options and suggest a sensible default,
+   using these hints (state briefly why you suggest it):
+   - Prefer the configured staging bucket if it appears in the list — it is the
+     one the rest of the app already stages into, so it is the safest default.
+   - A bucket whose name clearly matches the app/staging purpose is a weak hint,
+     not a rule. (Note: the "nxp-" prefix is a graph-name convention, NOT a
+     bucket-naming rule — do not recommend a bucket just because it starts with
+     nxp-.)
+   - Do NOT use region as a tiebreaker: the list is already region-filtered, so
+     every option is in-region.
+   - If nothing stands out, just name the real options plainly and let the user
+     choose.
+3. USER PICKS. Let the user choose one bucket. Their pick IS the confirmation —
+   do not ask again whether to set it.
+4. VALIDATE the pick. As soon as the user picks, call validate_bucket(bucket) on
+   that one bucket (this mirrors pressing Validate on their choice).
+5. SET (no second confirmation). If validation passes, immediately call
+   update_import_fields(bucket=<picked>) to set the form's bucket field, then
+   reply confirming it's set. Do NOT ask "should I set this?" first — the pick
+   already told you to. NEVER say you set the bucket unless you actually called
+   update_import_fields — claiming it without the tool call leaves the form
+   unchanged. If validation FAILS, report the failed check and let the user pick
+   again — do not set a bucket that failed.
+"""
+
+
 SUPERVISOR_SYSTEM_PROMPT = """You are the assistant for a graph-import web app \
 (relational data in Amazon Athena → an Amazon Neptune graph). You help the user \
 by routing their request to your tools and replying in plain language.
@@ -67,37 +187,54 @@ You can only *propose* — never act. Navigation, form changes, and page actions
 are applied by the user clicking what you propose. Do not claim you performed \
 an action.
 
-Tools (call only the ones a request needs):
-- navigate(request): propose cross-page navigation (e.g. "start a new import", \
-"open the TPCH projections").
-- list_catalogs(): list the Athena data catalogs available to import from. Use \
-this when the user asks what catalogs/data sources are available, or has no \
-catalog in mind — name the real options instead of telling them to look it up \
-elsewhere.
-- list_buckets(): list the S3 buckets available for an import's export/staging \
-(the same list the import page's bucket selector shows). Use this when the user \
-asks which buckets/output locations exist, or needs to choose a bucket — name \
-real options instead of asking them to type one.
+## Your jobs
+Everything you do falls into one of these jobs. Decide which job the request is \
+about first, then use only that job's tools. Do not jump ahead to a later job.
+
+### 1. Data exploration (explore & discuss — no import yet)
+Help the user see and talk through what data is available before committing to \
+an import. This is a conversation, not a form-fill. Follow the exploration \
+guidance below (tools: list_catalogs, list_databases, get_schema). Do NOT call \
+generate_import just because data was mentioned — exploration does not mean they \
+want to build an import yet.
+""" + EXPLORATION_GUIDANCE + """
+
+### 2. Help fill individual import-form fields
+""" + FIELD_FILL_GUIDANCE + """
+
+### 3. Set up the import job (build the mapping — only when asked)
 - generate_import(request, catalog, database, bucket, graph_name): propose the \
-import mapping (schema discovery → node/edge SQL → optional graph queries). You \
-MUST know the Athena catalog first. When the current page context includes a \
-catalog (and database), use those values unless the user names different ones; \
-if no catalog is available at all, call list_catalogs() to offer options rather \
-than calling this tool with an empty catalog. database is optional: pass it to \
-target one database, or leave it empty to let discovery pick the most relevant \
-database in the catalog. bucket and graph_name are optional — if the user needs to \
-pick a bucket, call list_buckets() to offer the real options.
+import mapping (schema discovery → node/edge SQL → optional graph queries). This \
+is the ONLY heavyweight tool — it runs discovery and modeling — so call it only \
+once the user actually wants to build/explore the graph, not during exploration \
+or field-filling.
+- You MUST know the Athena catalog first. If the page context has a catalog (and \
+database), use those unless the user names different ones; if no catalog is \
+available at all, go back to job 1 (list_catalogs) instead of calling this with \
+an empty catalog.
+- database is optional: pass it to target one database, or leave it empty to let \
+discovery pick the most relevant one. bucket and graph_name are optional — to \
+help the user choose a bucket, use job 2's list_buckets() first.
 - propose_queries(request): propose openCypher queries to run against the graph \
 that already exists, WITHOUT rebuilding the import. Use this instead of \
 generate_import when the user wants to query/explore/analyze a graph and the \
 page context shows one is already set up (a projection_id, a graph_status, or \
 node/edge queries are present). Do NOT re-run generate_import just to get \
 queries when the import already exists.
+
+### 4. Page navigation (move around the app)
+- navigate(request): propose cross-page navigation (e.g. "start a new import", \
+"open the TPCH projections").
 - suggest_page_actions(request): surface actions available on the current page \
 (e.g. stopping a graph, executing an import).
 
-A pure navigation request must not trigger import generation, and vice versa. \
-Keep your final reply short: the proposed jumps, form fields, and actions are \
+## Routing rules
+- A pure navigation request must not trigger import generation, and vice versa.
+- A single-field question (like which bucket to stage to) is job 2, not job 3 — \
+do not run generate_import to answer it.
+- Prefer the lightest job that answers the request; escalate to generate_import \
+only on a clear intent to build the import.
+- Keep your final reply short: the proposed jumps, form fields, and actions are \
 attached to your message automatically, so summarize rather than repeat them. \
 When generate_import or propose_queries returns a plain-language description of \
 what the mapping models or what the queries accomplish, relay that intent to \
@@ -184,6 +321,38 @@ class Supervisor:
             )
             return f"Available Athena catalogs: {named}."
 
+        def list_databases(catalog: str = "AwsDataCatalog") -> str:
+            """List the databases in an Athena catalog (ported from strands-demo).
+
+            Use this first when the user has not told you which database to use,
+            so you can show the options and pick the best fit for their question.
+            Catalog defaults to the AWS Glue catalog; the user should not have to
+            choose it. Metadata only — names, no tables or rows, no query cost."""
+            names = _list_databases(catalog)
+            if not names:
+                return f"No databases are available in catalog {catalog}."
+            shown = names[: _athena.MAX_DATABASES]
+            suffix = " (truncated)" if len(names) > _athena.MAX_DATABASES else ""
+            return f"Databases in {catalog}: {', '.join(shown)}{suffix}."
+
+        def get_schema(database: str, catalog: str = "AwsDataCatalog") -> str:
+            """Return the tables and columns of an Athena database (strands-demo).
+
+            Use this before proposing any node/edge SQL so the queries reference
+            real tables and columns — NEVER invent names. Metadata only (table
+            names, column names, and types), never row data. Catalog defaults to
+            the AWS Glue catalog."""
+            schema = _get_schema(database, catalog)
+            tables = schema["tables"]
+            if not tables:
+                return f"Database {database} has no tables."
+            lines = [
+                f'{t["name"]}({", ".join(c["name"] for c in t["columns"])})'
+                for t in tables
+            ]
+            suffix = " (more tables not shown)" if schema["truncated"] else ""
+            return f"Schema of {database}: " + "; ".join(lines) + suffix + "."
+
         def list_buckets() -> str:
             """List the S3 buckets available for an import's export/staging.
 
@@ -195,6 +364,25 @@ class Supervisor:
             if not buckets:
                 return "No S3 buckets are available in the configured region."
             return f"Available S3 buckets: {', '.join(buckets)}."
+
+        def validate_bucket(bucket: str) -> str:
+            """Validate ONE picked S3 bucket, like pressing Validate on it.
+
+            Run this only after the user has picked a specific bucket (step 4 of
+            the field-fill flow) — not on your recommendations. It checks that
+            the bucket exists/is accessible and (when a region is configured) is
+            in the expected region, reusing the same checks as the UI's Validate
+            button. Report the result; only set the bucket field after it passes
+            and the user confirms."""
+            checks = _validate_bucket(bucket)
+            failed = [c for c in checks if not c["passed"]]
+            if not failed:
+                return f"Bucket '{bucket}' is valid: " + "; ".join(
+                    c["message"] for c in checks
+                )
+            return f"Bucket '{bucket}' failed validation: " + "; ".join(
+                f'{c["check"]}: {c["message"]}' for c in failed
+            )
 
         def generate_import(
             request: str,
@@ -304,6 +492,37 @@ class Supervisor:
                 summary += f" {plan.description}"
             return summary
 
+        def update_import_fields(
+            bucket: str = "",
+            graph_name: str = "",
+            database: str = "",
+        ) -> str:
+            """Set individual Import form fields WITHOUT rebuilding the mapping.
+
+            This is how you actually APPLY a single-field choice to the form —
+            e.g. step 5 of the bucket flow: after the user picks and confirms a
+            staging bucket, call update_import_fields(bucket=...) to set it. Pass
+            ONLY the fields the user confirmed; the rest are left untouched so
+            any node/edge/graph queries already on the form are preserved. Do not
+            claim a field is set unless you called this tool."""
+            updates = {
+                k: v
+                for k, v in (
+                    ("bucket", bucket),
+                    ("graph_name", graph_name),
+                    ("database", database),
+                )
+                if v
+            }
+            if not updates:
+                return "No fields to update; specify a bucket, graph_name, or database."
+            # Merge onto any proposal already built this turn so setting one
+            # field never clobbers previously proposed queries.
+            base = ctx.proposal.model_dump() if ctx.proposal else {}
+            base.update(updates)
+            ctx.proposal = FieldProposal(**base)
+            return f"Set import field(s): {', '.join(sorted(updates))}."
+
         def suggest_page_actions(request: str) -> str:
             """Surface actions available on the current page for the request."""
             if ctx.page_context is None:
@@ -315,9 +534,13 @@ class Supervisor:
         return [
             navigate,
             list_catalogs,
+            list_databases,
+            get_schema,
             list_buckets,
+            validate_bucket,
             generate_import,
             propose_queries,
+            update_import_fields,
             suggest_page_actions,
         ]
 
