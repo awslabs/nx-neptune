@@ -51,6 +51,14 @@ from nx_neptune_proxy.assistant.skills import CAPABILITY_HINTS
 logger = logging.getLogger(__name__)
 
 
+def _query_bullets(queries) -> str:
+    """Render each query's plain-language description as a bulleted block so the
+    supervisor can relay per-query intent (not just an overall summary). Queries
+    without a description are skipped; returns "" when none have one."""
+    lines = [f"- {q.description}" for q in queries if getattr(q, "description", None)]
+    return "\n".join(lines)
+
+
 @dataclass
 class TurnContext:
     """Collects the structured descriptors produced during one turn."""
@@ -434,16 +442,27 @@ class Supervisor:
                 edge_queries=mapping.edge_queries or None,
                 graph_queries=plan.graph_queries or None,
             )
-            # Relay the agents' plain-language intent so the supervisor can pass
-            # it (or a summary) on to the user, not just the query counts.
+            # Relay the agents' plain-language intent — the overall model plus a
+            # per-query purpose — so the supervisor passes it on to the user
+            # rather than just the query counts.
             summary = (
                 f"Proposed an import: {len(mapping.node_queries)} node and "
                 f"{len(mapping.edge_queries)} edge query(ies)."
             )
             if mapping.description:
-                summary += f" Graph model: {mapping.description}"
-            if plan.graph_queries and plan.description:
-                summary += f" Suggested queries: {plan.description}"
+                summary += f"\nGraph model: {mapping.description}"
+            node_bullets = _query_bullets(mapping.node_queries)
+            if node_bullets:
+                summary += f"\nNode queries:\n{node_bullets}"
+            edge_bullets = _query_bullets(mapping.edge_queries)
+            if edge_bullets:
+                summary += f"\nEdge queries:\n{edge_bullets}"
+            if plan.graph_queries:
+                if plan.description:
+                    summary += f"\nSuggested queries: {plan.description}"
+                query_bullets = _query_bullets(plan.graph_queries)
+                if query_bullets:
+                    summary += f"\n{query_bullets}"
             return summary
 
         def propose_queries(request: str) -> str:
@@ -485,11 +504,15 @@ class Supervisor:
             # the client applies just the openCypher without touching the form's
             # catalog/database/SQL (spec §9.5).
             ctx.proposal = FieldProposal(graph_queries=plan.graph_queries or None)
-            # Relay the planner's plain-language intent to the supervisor so the
-            # user hears what the queries accomplish, not just how many there are.
+            # Relay the planner's intent — overall summary plus each query's
+            # purpose — so the user hears what the queries accomplish, not just
+            # how many there are.
             summary = f"Proposed {len(plan.graph_queries)} openCypher query(ies)."
             if plan.description:
                 summary += f" {plan.description}"
+            query_bullets = _query_bullets(plan.graph_queries)
+            if query_bullets:
+                summary += f"\n{query_bullets}"
             return summary
 
         def update_import_fields(

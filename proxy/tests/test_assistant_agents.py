@@ -59,13 +59,15 @@ def test_sql_mapping_parses_node_and_edge_queries():
     )
     reply = (
         '{"description": "Rows of t become nodes keyed by id.", '
-        '"node_queries": [{"sql": "SELECT id AS \\"~id\\" FROM t"}], '
+        '"node_queries": [{"description": "One node per row of t.", '
+        '"sql": "SELECT id AS \\"~id\\" FROM t"}], '
         '"edge_queries": []}'
     )
     with _canned(agent, reply):
         result = agent.map_schema(discovery, "make nodes")
     assert result.description == "Rows of t become nodes keyed by id."
     assert result.node_queries[0].sql == 'SELECT id AS "~id" FROM t'
+    assert result.node_queries[0].description == "One node per row of t."
     assert result.edge_queries == []
 
 
@@ -80,11 +82,13 @@ def test_query_planner_parses_queries_and_empty():
     with _canned(
         agent,
         '{"description": "Lists all nodes so you can see what loaded.", '
-        '"graph_queries": [{"cypher": "MATCH (n) RETURN n"}]}',
+        '"graph_queries": [{"description": "Returns every node.", '
+        '"cypher": "MATCH (n) RETURN n"}]}',
     ):
         result = agent.plan(mapping, "show everything", discovery)
     assert result.description == "Lists all nodes so you can see what loaded."
     assert result.graph_queries[0].cypher == "MATCH (n) RETURN n"
+    assert result.graph_queries[0].description == "Returns every node."
 
     with _canned(agent, '{"graph_queries": []}'):
         assert agent.plan(mapping, "just import", discovery).graph_queries == []

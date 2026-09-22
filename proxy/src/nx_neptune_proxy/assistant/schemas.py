@@ -20,12 +20,18 @@ class SqlQuery(BaseModel):
     """A single Athena SQL statement (node or edge query)."""
 
     sql: str
+    # Plain-language purpose of THIS query (what nodes/edges it creates and why),
+    # so a non-SQL user understands it. Surfaced to the user with the proposal.
+    description: Optional[str] = None
 
 
 class CypherQuery(BaseModel):
     """A single openCypher statement for the post-import Graph Queries."""
 
     cypher: str
+    # Plain-language purpose of THIS query (what it explores and what the user
+    # learns from it), so a non-openCypher user understands it.
+    description: Optional[str] = None
 
 
 # --- Schema Discovery agent (§9.5 / §9.6) ---------------------------------
