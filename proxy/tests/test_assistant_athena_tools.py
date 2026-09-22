@@ -18,6 +18,7 @@ from nx_neptune_proxy.assistant.athena_tools import (
     list_tables,
     list_tables_with_columns,
     sample_table,
+    validate_bucket,
 )
 from nx_neptune_proxy.services.athena_query import AthenaQueryError, execute_query_rows
 
@@ -46,6 +47,45 @@ def test_list_buckets_empty_without_region(mock_settings, mock_s3):
     mock_settings.return_value = SimpleNamespace(region="")
     assert list_buckets() == []
     mock_s3.assert_not_called()  # no client built, no S3 call when no region
+
+
+@patch("nx_neptune.validators.check_bucket_region")
+@patch("nx_neptune.validators.check_bucket_exists")
+@patch(f"{TOOLS}.get_settings")
+def test_validate_bucket_runs_both_checks_with_region(
+    mock_settings, mock_exists, mock_region
+):
+    mock_settings.return_value = SimpleNamespace(region="us-west-1")
+    mock_exists.return_value = SimpleNamespace(
+        to_dict=lambda: {"check": "exists", "passed": True, "message": "ok"}
+    )
+    mock_region.return_value = SimpleNamespace(
+        to_dict=lambda: {"check": "region", "passed": True, "message": "in region"}
+    )
+
+    result = validate_bucket("my-bucket")
+
+    assert [c["check"] for c in result] == ["exists", "region"]
+    assert all(c["passed"] for c in result)
+    mock_exists.assert_called_once_with("my-bucket")
+    mock_region.assert_called_once_with("my-bucket", "us-west-1")
+
+
+@patch("nx_neptune.validators.check_bucket_region")
+@patch("nx_neptune.validators.check_bucket_exists")
+@patch(f"{TOOLS}.get_settings")
+def test_validate_bucket_skips_region_check_when_no_region(
+    mock_settings, mock_exists, mock_region
+):
+    mock_settings.return_value = SimpleNamespace(region="")
+    mock_exists.return_value = SimpleNamespace(
+        to_dict=lambda: {"check": "exists", "passed": True, "message": "ok"}
+    )
+
+    result = validate_bucket("my-bucket")
+
+    assert [c["check"] for c in result] == ["exists"]  # no region check
+    mock_region.assert_not_called()
 
 
 @patch(f"{TOOLS}.agent_athena_client")
