@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Sparkles, Send, Bot, User, X, Maximize2, Minimize2, CheckCircle, ArrowUpRight, Play, Square, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useAssistant } from "./context";
 
 // Floating launcher: a minimized/collapsed version of the assistant drawer's
@@ -112,8 +113,8 @@ export function AssistantDrawer() {
                   : "border border-purple-200 bg-white text-gray-700",
               )}
             >
-              <div className="[&_p]:my-0 [&_p+p]:mt-2 [&_code]:rounded [&_code]:bg-gray-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.85em] [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_a]:underline">
-                <ReactMarkdown>{m.text}</ReactMarkdown>
+              <div className="overflow-x-auto [&_p]:my-0 [&_p+p]:mt-2 [&_code]:rounded [&_code]:bg-gray-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.85em] [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_a]:underline [&_table]:my-1 [&_table]:w-full [&_table]:border-collapse [&_table]:text-xs [&_th]:border [&_th]:border-gray-300 [&_th]:bg-gray-100 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_td]:border [&_td]:border-gray-300 [&_td]:px-2 [&_td]:py-1">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>
               </div>
               {m.applied && m.applied.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1">
