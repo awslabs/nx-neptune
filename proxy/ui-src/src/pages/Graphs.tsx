@@ -48,7 +48,8 @@ export function Graphs() {
   const load = useCallback(async (opts?: { withActions?: boolean; withSummaries?: boolean }) => {
     setLoading(true);
     const data = await metadata.graphs();
-    setGraphs(data.graphs);
+    const sorted = [...data.graphs].sort((a, b) => a.id.localeCompare(b.id));
+    setGraphs(sorted);
     setLoading(false);
 
     // Fetch summaries only on initial load or explicit request

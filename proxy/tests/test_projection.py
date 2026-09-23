@@ -454,6 +454,93 @@ async def test_save_queries_replaces_previous(client):
     assert data["node_queries"][0]["sql"] == "new query only"
 
 
+@pytest.mark.asyncio
+async def test_graph_queries_persist_via_queries_endpoint(client):
+    """The /queries endpoint round-trips openCypher graph queries (text only)."""
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    save_resp = await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "SELECT id FROM nodes"}],
+            "edge_queries": [],
+            "graph_queries": [
+                {"cypher": "MATCH (n) RETURN n LIMIT 10"},
+                {"cypher": "MATCH (a)-[r]->(b) RETURN r"},
+            ],
+        },
+    )
+    assert save_resp.status_code == 200
+    data = save_resp.json()
+    assert [q["cypher"] for q in data["graph_queries"]] == [
+        "MATCH (n) RETURN n LIMIT 10",
+        "MATCH (a)-[r]->(b) RETURN r",
+    ]
+    assert data["graph_queries"][1]["position"] == 1
+
+    get_resp = await client.get(f"/api/v0/projection/{pid}/queries")
+    assert get_resp.json()["graph_queries"] == data["graph_queries"]
+
+
+@pytest.mark.asyncio
+async def test_queries_omitting_graph_leaves_them_unchanged(client):
+    """A node/edge-only save must not wipe previously stored graph queries."""
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "n"}],
+            "edge_queries": [],
+            "graph_queries": [{"cypher": "MATCH (n) RETURN n"}],
+        },
+    )
+    # Save again WITHOUT graph_queries (the common node/edge-only save).
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={"node_queries": [{"sql": "n2"}], "edge_queries": []},
+    )
+    get_resp = await client.get(f"/api/v0/projection/{pid}/queries")
+    data = get_resp.json()
+    assert [q["cypher"] for q in data["graph_queries"]] == ["MATCH (n) RETURN n"]
+    # Sending [] explicitly clears them.
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={"node_queries": [{"sql": "n2"}], "edge_queries": [], "graph_queries": []},
+    )
+    get_resp = await client.get(f"/api/v0/projection/{pid}/queries")
+    assert get_resp.json()["graph_queries"] == []
+
+
+@pytest.mark.asyncio
+async def test_graph_only_endpoint_preserves_node_edge(client):
+    """PUT /graph-queries replaces graph queries without touching node/edge."""
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "SELECT id FROM nodes"}],
+            "edge_queries": [{"sql": "SELECT src, dst FROM edges"}],
+        },
+    )
+    graph_resp = await client.put(
+        f"/api/v0/projection/{pid}/graph-queries",
+        json={"graph_queries": [{"cypher": "MATCH (n) RETURN count(n)"}]},
+    )
+    assert graph_resp.status_code == 200
+    assert graph_resp.json()["graph_queries"][0]["cypher"] == "MATCH (n) RETURN count(n)"
+
+    get_resp = await client.get(f"/api/v0/projection/{pid}/queries")
+    data = get_resp.json()
+    assert len(data["node_queries"]) == 1
+    assert len(data["edge_queries"]) == 1
+    assert [q["cypher"] for q in data["graph_queries"]] == ["MATCH (n) RETURN count(n)"]
+
+
 # --- Delete clears queries (regression) ---
 
 

@@ -47,6 +47,10 @@ export interface PageBridge {
   graphTargets?: GraphTarget[];
   // Runs a graph action; the owning page handles confirmation + refresh.
   runGraphAction?: (graphId: string, action: string) => void | Promise<void>;
+  // Runs a single openCypher query against the page's graph, returning the
+  // result (or error) so the assistant can echo it into the transcript. Its
+  // presence tells the backend the page can run queries (see serializePageContext).
+  runGraphQuery?: (cypher: string) => Promise<{ result?: unknown; error?: string }>;
   // Persist the just-applied import as a projection (creating one if none
   // exists) after the assistant fills the form. The applied values are passed
   // in directly because the setters above are async — React state has not
@@ -95,6 +99,13 @@ export type ChatAction =
       page: string;
       graphId: string;
       graphAction: string;
+      label: string;
+      destructive?: boolean;
+    }
+  | {
+      kind: "run-query";
+      page: string;
+      query: string;
       label: string;
       destructive?: boolean;
     };
@@ -257,6 +268,11 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
           if (spec.enabled === false) return note(`“${spec.label}” is currently disabled.`);
           await spec.run();
           note(`Ran “${spec.label}”.`);
+        } else if (action.kind === "run-query") {
+          if (!bridge.runGraphQuery) return note("Running queries isn't available on this page.");
+          const { result, error } = await bridge.runGraphQuery(action.query);
+          if (error) return note(`Query failed: ${error}`);
+          note(`Ran the query. Results:\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``);
         } else {
           if (!bridge.runGraphAction) return note("Graph actions aren't available on this page.");
           await bridge.runGraphAction(action.graphId, action.graphAction);

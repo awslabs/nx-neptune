@@ -20,6 +20,8 @@ from nx_neptune_proxy.routers.schemas import (
     ProjectionResponse,
     ProjectionStatus,
     ProjectionUpdate,
+    GraphQueriesPayload,
+    GraphQueriesResponse,
     QueriesPayload,
     QueriesResponse,
     RunQueryPayload,
@@ -309,12 +311,15 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
     response_model=QueriesResponse,
 )
 def get_queries(projection_id: str):
-    """Return all node and edge queries for a projection."""
+    """Return all node, edge, and graph queries for a projection."""
     _get_projection_or_404(projection_id)
-    node_queries, edge_queries = projection_service.get_queries(projection_id)
+    node_queries, edge_queries, graph_queries = projection_service.get_queries(
+        projection_id
+    )
     return QueriesResponse(
         node_queries=node_queries,  # type: ignore[arg-type]
         edge_queries=edge_queries,  # type: ignore[arg-type]
+        graph_queries=graph_queries,  # type: ignore[arg-type]
     )
 
 
@@ -324,12 +329,31 @@ def get_queries(projection_id: str):
     response_model=QueriesResponse,
 )
 def save_queries(projection_id: str, body: QueriesPayload):
-    """Replace all node and edge queries for a projection."""
+    """Replace all node, edge, and graph queries for a projection.
+
+    Graph queries persist their openCypher text only — never their results.
+    """
     _get_projection_or_404(projection_id)
-    node_queries, edge_queries = projection_service.save_queries(
-        projection_id, body.node_queries, body.edge_queries
+    node_queries, edge_queries, graph_queries = projection_service.save_queries(
+        projection_id, body.node_queries, body.edge_queries, body.graph_queries
     )
     return QueriesResponse(
         node_queries=node_queries,  # type: ignore[arg-type]
         edge_queries=edge_queries,  # type: ignore[arg-type]
+        graph_queries=graph_queries,  # type: ignore[arg-type]
     )
+
+
+@router.put(
+    "/{projection_id}/graph-queries",
+    summary="Save only the openCypher graph queries for a projection",
+    response_model=GraphQueriesResponse,
+)
+def save_graph_queries(projection_id: str, body: GraphQueriesPayload):
+    """Replace the projection's openCypher graph queries, leaving node/edge
+    queries untouched. Persists query text only — never query results."""
+    _get_projection_or_404(projection_id)
+    graph_queries = projection_service.save_graph_queries(
+        projection_id, body.graph_queries
+    )
+    return GraphQueriesResponse(graph_queries=graph_queries)  # type: ignore[arg-type]

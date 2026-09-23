@@ -123,6 +123,9 @@ export const projection = {
   runQuery: (id: string, queries: string[]) => request<{ error?: string; results: unknown[] }>(`/projection/${id}/run-query`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ queries }) }),
   getQueries: (id: string) => request<QueriesResponse>(`/projection/${id}/queries`),
   saveQueries: (id: string, data: QueriesPayload) => request<QueriesResponse>(`/projection/${id}/queries`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
+  // Persist only the openCypher graph queries (leaves node/edge queries intact).
+  // Query text only — results are never persisted.
+  saveGraphQueries: (id: string, graph_queries: GraphQueryInput[]) => request<GraphQueriesResponse>(`/projection/${id}/graph-queries`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph_queries }) }),
   delete: (id: string) => request<{ id: string; status: string }>(`/projection/${id}`, { method: "DELETE" }),
   deleteGraph: (id: string) => request<{ id: string; status: string }>(`/projection/${id}/delete-graph`, { method: "POST" }),
 };
@@ -139,6 +142,11 @@ export interface EdgeQueryInput {
   sql: string;
 }
 
+export interface GraphQueryInput {
+  id?: string;
+  cypher: string;
+}
+
 export interface NodeQueryResponse {
   id: string;
   sql: string;
@@ -151,14 +159,27 @@ export interface EdgeQueryResponse {
   position: number;
 }
 
+export interface GraphQueryResponse {
+  id: string;
+  cypher: string;
+  position: number;
+}
+
 export interface QueriesPayload {
   node_queries: NodeQueryInput[];
   edge_queries: EdgeQueryInput[];
+  // Post-import openCypher graph queries (text only; results are not persisted).
+  graph_queries?: GraphQueryInput[];
 }
 
 export interface QueriesResponse {
   node_queries: NodeQueryResponse[];
   edge_queries: EdgeQueryResponse[];
+  graph_queries: GraphQueryResponse[];
+}
+
+export interface GraphQueriesResponse {
+  graph_queries: GraphQueryResponse[];
 }
 
 // --- Project ---
@@ -200,7 +221,7 @@ export interface AssistantJump {
 }
 
 export interface AssistantAction {
-  kind: "page-action" | "graph-action";
+  kind: "page-action" | "graph-action" | "run-query";
   page: string;
   label: string;
   action_key?: string | null;
@@ -208,6 +229,8 @@ export interface AssistantAction {
   destructive?: boolean | null;
   graph_id?: string | null;
   graph_action?: string | null;
+  // For run-query actions: the openCypher to execute against the page's graph.
+  query?: string | null;
 }
 
 export interface AssistantReply {
@@ -233,6 +256,10 @@ export interface AssistantPageContext {
   graph_id?: string | null;
   node_queries?: AssistantSqlQuery[];
   edge_queries?: AssistantSqlQuery[];
+  // Graph Queries (openCypher) currently on the page, plus whether the page can
+  // run them — set on the Details page so the agent may offer "Run Query" buttons.
+  graph_queries?: AssistantCypherQuery[];
+  can_run_queries?: boolean | null;
   actions?: { key: string; label: string; enabled?: boolean }[];
   graph_targets?: { id: string; name: string; actions: string[] }[];
 }

@@ -504,6 +504,22 @@ class Supervisor:
             # the client applies just the openCypher without touching the form's
             # catalog/database/SQL (spec §9.5).
             ctx.proposal = FieldProposal(graph_queries=plan.graph_queries or None)
+            # When the page can run queries (the Details page), offer each
+            # proposed query as an inline "Run Query" button so the user can
+            # execute it straight from the chat (spec §9.3).
+            if pc and pc.can_run_queries:
+                for q in plan.graph_queries:
+                    label = q.description or q.cypher
+                    if len(label) > 60:
+                        label = label[:57] + "…"
+                    ctx.actions.append(
+                        ChatAction(
+                            kind="run-query",
+                            page=pc.page,
+                            label=f"Run: {label}",
+                            query=q.cypher,
+                        )
+                    )
             # Relay the planner's intent — overall summary plus each query's
             # purpose — so the user hears what the queries accomplish, not just
             # how many there are.

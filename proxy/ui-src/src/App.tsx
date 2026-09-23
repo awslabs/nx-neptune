@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate } from "react-router";
 import { Sidebar } from "./components/Sidebar";
 import { S3ImportDialog } from "./components/S3ImportDialog";
 import { Import } from "./pages/Import";
+import { Details } from "./pages/Details";
 import { Projections } from "./pages/Projections";
 import { Graphs } from "./pages/Graphs";
 import { Projects } from "./pages/Projects";
@@ -30,6 +31,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/import" element={<Import />} />
+            <Route path="/details" element={<Details />} />
             <Route path="/projections" element={<Projections />} />
             <Route path="/graphs" element={<Graphs />} />
             <Route path="/projects" element={<Projects />} />
