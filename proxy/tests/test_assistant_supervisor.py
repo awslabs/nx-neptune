@@ -147,6 +147,98 @@ def test_validate_sql_queries_runs_checks_when_bucket_and_queries_present():
     assert "edge query 1" in out
 
 
+def test_update_sql_queries_replaces_target_and_preserves_others():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            project_id="p1",
+            node_queries=[
+                SqlQuery(sql='SELECT 1 AS ~id"', description="customers"),
+                SqlQuery(sql='SELECT 2 AS "~id"', description="orders"),
+            ],
+            edge_queries=[SqlQuery(sql='SELECT 3')],
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    out = tools["update_sql_queries"]("node", 1, 'SELECT 1 AS "~id"')
+
+    assert "updated node query 1" in out.lower()
+    # Full node list is sent, target fixed, description preserved, others intact.
+    assert [q.sql for q in ctx.proposal.node_queries] == [
+        'SELECT 1 AS "~id"',
+        'SELECT 2 AS "~id"',
+    ]
+    assert ctx.proposal.node_queries[0].description == "customers"
+    # Edge queries preserved untouched.
+    assert [q.sql for q in ctx.proposal.edge_queries] == ["SELECT 3"]
+    # Page context is updated in-place so same-turn validation sees the fix.
+    assert ctx.page_context.node_queries[0].sql == 'SELECT 1 AS "~id"'
+
+
+def test_update_sql_queries_then_validate_checks_corrected_sql():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            project_id="p1",
+            catalog="AwsDataCatalog",
+            database="tpch",
+            s3_staging_bucket="s3://staging",
+            node_queries=[SqlQuery(sql='SELECT 1 AS ~id"')],  # broken
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    tools["update_sql_queries"]("node", 1, 'SELECT 1 AS "~id"')
+
+    # A same-turn re-validate must check the CORRECTED sql, not the stale text.
+    with patch(f"{SUPERVISOR}._validate_sql_queries") as mock_validate:
+        mock_validate.return_value = [
+            {"check": "node query 1", "passed": True, "message": "ok"}
+        ]
+        out = tools["validate_sql_queries"]()
+
+    labeled = mock_validate.call_args[0][0]
+    assert labeled[0][1] == 'SELECT 1 AS "~id"'  # corrected sql validated
+    assert "valid" in out.lower()
+
+
+def test_update_sql_queries_rejects_out_of_range_index():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            project_id="p1",
+            node_queries=[SqlQuery(sql='SELECT 1 AS "~id"')],
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    out = tools["update_sql_queries"]("node", 5, "SELECT 9")
+
+    assert "no node query 5" in out.lower()
+    assert ctx.proposal is None  # nothing applied
+
+
+def test_update_sql_queries_rejects_bad_type():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(page="import", project_id="p1"),
+    )
+    tools = _tools(sup, ctx)
+
+    out = tools["update_sql_queries"]("relationship", 1, "SELECT 9")
+
+    assert "node" in out.lower() and "edge" in out.lower()
+    assert ctx.proposal is None
+
+
 def test_generate_import_chains_and_builds_proposal():
     sup = _supervisor_with_mock_specialists()
     ctx = _import_ctx(sup)

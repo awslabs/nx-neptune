@@ -50,6 +50,7 @@ from nx_neptune_proxy.assistant.schemas import (
     JumpAction,
     PageContext,
     SqlMappingResult,
+    SqlQuery,
 )
 from nx_neptune_proxy.assistant.session import Session, SessionStore
 from nx_neptune_proxy.assistant.skills import CAPABILITY_HINTS
@@ -194,9 +195,10 @@ this flow:
 
 
 # SQL-validation guidance: how to check the node/edge Athena SQL already on the
-# import form. Read-only — it never builds or runs the import. Kept as its own
-# block so it can grow independently and be concatenated under the "Validate the
-# import SQL" job (see SUPERVISOR_SYSTEM_PROMPT).
+# import form, and apply a fix when a query is wrong. Validation is read-only and
+# never builds/runs the import; the fix tool edits a single query in place. Kept
+# as its own block so it can grow independently and be concatenated under the
+# "Validate and fix the import SQL" job (see SUPERVISOR_SYSTEM_PROMPT).
 SQL_VALIDATION_GUIDANCE = """
 - validate_sql_queries(): validate the node/edge Athena SQL currently on the
   import form (runs each with LIMIT 0 against the staging bucket and checks the
@@ -206,6 +208,16 @@ SQL_VALIDATION_GUIDANCE = """
   in. This is a read-only check: it never builds or runs the import. If the form
   has no staging bucket, it refuses and explains why; relay that rather than
   claiming the SQL was checked.
+- update_sql_queries(query_type, index, sql): apply a corrected node/edge query
+  to the form. Finding a bug is not enough — when the user asks you to FIX a
+  failing query, you MUST call this with the corrected SQL, or the form stays
+  unchanged. query_type is "node"/"edge" and index is the 1-based position
+  validate_sql_queries reported (e.g. "node query 1" -> index 1). Only that one
+  query changes; the others are preserved. Never say you fixed a query unless you
+  called this tool. After applying a fix, ALWAYS call validate_sql_queries again
+  in the same turn to confirm the correction actually validates, and report that
+  result — do not tell the user it is fixed/valid unless the re-check passed. If
+  it still fails, relay the new error and try again rather than claiming success.
 """
 
 
@@ -258,7 +270,7 @@ passing the exact query strings. It needs a live, available graph (graph_status 
 "complete" / a graph_id present); if none exists, it says so — relay that rather \
 than pretending the queries were checked.
 
-### 4. Validate the import SQL (read-only check)
+### 4. Validate and fix the import SQL
 """ + SQL_VALIDATION_GUIDANCE + """
 
 ### 5. Page navigation (move around the app)
@@ -658,6 +670,62 @@ class Supervisor:
                 f'{c["check"]}: {c["message"]}' for c in failed
             )
 
+        def update_sql_queries(query_type: str, index: int, sql: str) -> str:
+            """Apply a corrected node/edge SQL query to the import form.
+
+            Use this to actually FIX a query on the form — e.g. after
+            validate_sql_queries reports a syntax error, call this with the
+            corrected SQL so the form is updated (finding the bug is not enough;
+            you MUST call this to change the form). Do NOT claim you fixed a
+            query unless you called this tool.
+
+            - query_type: "node" or "edge" — which list the query is in.
+            - index: 1-based position within that list (the same numbering
+              validate_sql_queries reports, e.g. "node query 1" -> index 1).
+            - sql: the full corrected SQL for that one query.
+
+            Only the single targeted query changes; every other node/edge query
+            (and its description) on the form is preserved. Read the current
+            queries from page context — this replaces just the one at ``index``."""
+            qtype = (query_type or "").strip().lower()
+            if qtype not in ("node", "edge"):
+                return 'query_type must be "node" or "edge".'
+            if not sql or not sql.strip():
+                return "No SQL provided; pass the full corrected query."
+
+            pc = ctx.page_context
+            nodes = list(pc.node_queries) if pc else []
+            edges = list(pc.edge_queries) if pc else []
+            target = nodes if qtype == "node" else edges
+            # 1-based index mirrors what validate_sql_queries reports.
+            pos = index - 1
+            if pos < 0 or pos >= len(target):
+                return (
+                    f"There is no {qtype} query {index} on the form "
+                    f"(it has {len(target)} {qtype} query(ies))."
+                )
+            # Preserve the query's description; only the SQL text changes.
+            target[pos] = SqlQuery(sql=sql, description=target[pos].description)
+
+            # Reflect the fix in the page-context snapshot too, so a follow-up
+            # validate_sql_queries call *in this same turn* checks the corrected
+            # SQL rather than the stale text (validation reads from page
+            # context, while the client applies changes from ctx.proposal).
+            if pc is not None:
+                if qtype == "node":
+                    pc.node_queries = nodes
+                else:
+                    pc.edge_queries = edges
+
+            # Merge onto any proposal already built this turn; send the FULL
+            # node/edge lists because the client replaces each array wholesale
+            # (a partial list would drop the other queries).
+            base = ctx.proposal.model_dump() if ctx.proposal else {}
+            base["node_queries"] = [q.model_dump() for q in nodes] or None
+            base["edge_queries"] = [q.model_dump() for q in edges] or None
+            ctx.proposal = FieldProposal(**base)
+            return f"Updated {qtype} query {index} on the form."
+
         def update_import_fields(
             bucket: str = "",
             graph_name: str = "",
@@ -708,6 +776,7 @@ class Supervisor:
             propose_queries,
             validate_graph_queries,
             validate_sql_queries,
+            update_sql_queries,
             update_import_fields,
             suggest_page_actions,
         ]
