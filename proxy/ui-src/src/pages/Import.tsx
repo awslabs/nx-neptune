@@ -225,14 +225,22 @@ export function Import() {
       navigate(`/details?projection=${p.id}`, { replace: true });
       return;
     }
+    // Switching projections: cancel the previous projection's poll and clear
+    // its status so its progress bar can't bleed onto this one.
+    stopPolling();
+    setStatus(null);
+    setPolling(false);
     setCurrentId(p.id);
     setGraphId(p.graph_id ?? null);
     if (p.project_id) setProjectId(p.project_id);
-    if (p.catalog) setCatalog(p.catalog);
-    if (p.database) setDatabase(p.database);
-    if (p.s3_staging_bucket) setBucket(p.s3_staging_bucket);
-    if (p.graph_name) setGraphName(p.graph_name);
-    if (p.graph_memory_gb) setGraphMemoryGb(p.graph_memory_gb);
+    // Set every field unconditionally (defaulting when absent) so this
+    // projection fully REPLACES the previously loaded one — a missing value
+    // must clear the old value, not keep it.
+    setCatalog(p.catalog || "AwsDataCatalog");
+    setDatabase(p.database || "");
+    setBucket(p.s3_staging_bucket || "");
+    setGraphName(p.graph_name || "");
+    setGraphMemoryGb(p.graph_memory_gb || 16);
     setChecks([]);
     setPreview(null);
     setError(null);
@@ -246,7 +254,10 @@ export function Import() {
       else setEdgeQueries([{ sql: "" }]);
 
       // Post-import openCypher graph queries (persisted text only, no results).
+      // Clear when this projection has none, so a previous projection's queries
+      // don't linger.
       if (res.graph_queries.length > 0) setGraphQueries(res.graph_queries.map((q) => ({ cypher: q.cypher })));
+      else setGraphQueries([{ cypher: "" }]);
     });
 
     // Completed projections are redirected to /details above, so only in-flight
@@ -407,18 +418,39 @@ export function Import() {
   }
 
   // --- Polling ---
+  // Hold the active poll interval so we can cancel it whenever we switch to a
+  // different projection (or unmount). Without this, a previous projection's
+  // interval keeps ticking setStatus(...) and its progress bar bleeds onto the
+  // projection now on screen.
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current !== null) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
   const startPolling = useCallback((id: string) => {
+    // Cancel any in-flight poll (e.g. the previously loaded projection's) so
+    // only this projection drives status/the progress bar.
+    stopPolling();
     setPolling(true);
     const interval = setInterval(async () => {
       const s = await projection.status(id);
       setStatus(s);
       if (s.status === "complete" || s.status === "failed") {
-        clearInterval(interval);
+        stopPolling();
         setPolling(false);
         if (s.error) setError(s.error);
       }
     }, 5000);
-  }, []);
+    pollRef.current = interval;
+  }, [stopPolling]);
+
+  // Cancel polling on unmount so a background interval never updates unmounted
+  // state (or leaks across a full page navigation).
+  useEffect(() => stopPolling, [stopPolling]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
