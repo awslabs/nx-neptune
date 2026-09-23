@@ -133,6 +133,9 @@ interface AssistantContextValue {
   chat: ChatMessage[];
   thinking: boolean;
   sendChat: (text: string) => void;
+  // Reset the conversation: clears the transcript back to the greeting and
+  // drops the server-side session so the next message starts fresh context.
+  clearChat: () => void;
   // Perform an inline jump button (navigates, or expands into a project picker).
   runJump: (jump: JumpAction) => void;
   // Run an inline page/graph action against the currently mounted page bridge.
@@ -188,6 +191,16 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
   const getBridge = useCallback(() => bridgeRef.current, []);
 
   const toggle = useCallback(() => setOpen((v) => !v), []);
+
+  // Reset the conversation. Dropping the session id means the next sendChat
+  // mints a brand-new server session (fresh history + discovery cache), so the
+  // old LLM context is fully abandoned — the in-memory server session is simply
+  // no longer referenced.
+  const clearChat = useCallback(() => {
+    sessionIdRef.current = null;
+    setThinking(false);
+    setChat([GREETING]);
+  }, []);
 
   // Send one turn to the assistant agent backend (spec §9). The active page is
   // serialized into a PageContext and sent with the message; the reply's import
@@ -295,6 +308,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
     chat,
     thinking,
     sendChat,
+    clearChat,
     runJump,
     runChatAction,
     bridgePage,

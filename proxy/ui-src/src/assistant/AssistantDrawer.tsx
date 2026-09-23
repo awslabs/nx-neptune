@@ -37,6 +37,7 @@ export function AssistantDrawer() {
     chat,
     thinking,
     sendChat,
+    clearChat,
     runJump,
     runChatAction,
   } = useAssistant();
@@ -81,6 +82,14 @@ export function AssistantDrawer() {
             <option value="us.anthropic.claude-opus-4-1-20250805-v1:0">Claude Opus 4.1</option>
             <option value="us.anthropic.claude-haiku-4-5-20251001-v1:0">Claude Haiku 4.5</option>
           </select>
+          <button
+            onClick={clearChat}
+            disabled={thinking || chat.length <= 1}
+            className="text-purple-100 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            title="Clear conversation"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
           <button
             onClick={() => setExpanded(!expanded)}
             className="text-purple-100 hover:text-white"
