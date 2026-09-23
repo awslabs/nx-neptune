@@ -8,10 +8,12 @@ data into a graph unlocks*, not just how to write the load SQL. Two tiers:
 
 1. **Always-on catalog** — distilled string constants compiled into this module
    and injected into agent system prompts every turn:
-   - :data:`CAPABILITY_CATALOG` (Query Planner) — graph use-cases + the
-     Neptune-Analytics / nx-neptune analytics the planner may propose,
-     reconciled against ``neptune-algorithms-cross-reference.md`` so it only
-     ever cites procedures the backend actually exposes.
+   - :data:`CAPABILITY_CATALOG` (Query Planner) — graph use-cases + a full
+     reference for every Neptune Analytics procedure the planner may propose
+     (call form, config-map params, and YIELD output fields for each variant).
+     Proposed openCypher runs directly against Neptune Analytics, so every
+     listed procedure is runnable — not only the ones nx-neptune wraps as
+     Python functions.
    - :data:`CAPABILITY_HINTS` (Supervisor) — a one-paragraph routing hint.
    - :data:`DATA_MODELING_GUIDANCE` (SQL Mapping) — distilled graph-modeling
      rules (labels, edge direction, supernode avoidance).
@@ -86,27 +88,89 @@ and whole-graph analytics. Common patterns (from the Neptune use-case skill):
 - **Knowledge graph / GraphRAG** — entity-linked chunks for richer retrieval
   (deep dive: `load_neptune_skill("graphrag")`).
 
-## Analytics you may propose (Neptune Analytics via nx-neptune)
+## Analytics catalog (Neptune Analytics procedures)
 
-Only cite procedures the backend actually exposes. nx-neptune runs these on
-Neptune Analytics; each is reached through its NetworkX name, and a mutating
-run writes the score onto each node (`write_property`, i.e. the `.mutate`
-variant) instead of returning rows:
+Proposed openCypher runs **directly against Neptune Analytics**, so every
+procedure below is runnable — not just the ones nx-neptune wraps as Python
+functions. Match the call form and config-map key names exactly.
 
-- **PageRank** — `neptune.algo.pageRank` — influence / importance ranking.
-- **Degree centrality** — `neptune.algo.degree` (in / out / total) — connectedness.
-- **Closeness centrality** — `neptune.algo.closenessCentrality` — how central a
-  node is by shortest-path distance.
-- **Louvain** — `neptune.algo.louvain` — community detection.
-- **Label propagation** — `neptune.algo.labelPropagation` — fast community
-  detection.
-- **BFS** — `neptune.algo.bfs` — reachability / layers from source node(s).
+Conventions:
+- Config keys are **camelCase**; pass them in the `{ }` map, e.g.
+  `CALL neptune.algo.pageRank(n, {dampingFactor: 0.85, maxIterations: 20})`.
+- Enum values are lowercase strings: `traversalDirection` ∈
+  `"outbound"` (default) | `"inbound"` | `"both"` (BFS/centrality/community
+  only — SSSP does **not** allow `"both"`). `edgeWeightType` /
+  `vertexWeightType` ∈ `"int"` | `"long"` | `"float"` | `"double"`.
+- A **`.mutate`** variant writes the result onto each node via
+  `writeProperty: "<name>"` and yields only `success` (boolean) instead of
+  rows: `CALL neptune.algo.pageRank.mutate({writeProperty: "rank"}) YIELD success RETURN success`.
+- Shared optional config accepted by most procedures: `vertexLabel: string`,
+  `edgeLabels: string[]`, `concurrency: 0|1` (`0` = all threads).
+- Always add a `LIMIT` on read queries that can return the whole graph.
 
-NOT available (do not propose as if the backend runs them): single-source
-shortest path (bellmanFord / deltaStepping / topksssp), weakly/strongly
-connected components (wcc / scc), similarity (jaccard / common-neighbors), and
-vector search. If a request needs one, say so plainly rather than inventing a
-call.
+### Path-finding / traversal
+`sourceNode` is bound by a preceding `MATCH` and passed positionally. SSSP
+requires **positive** `edgeWeightProperty` + `edgeWeightType`, does not support
+`traversalDirection: "both"`, and has no `.mutate` variant.
+
+| Procedure | Call form | Params | YIELD (type) |
+|---|---|---|---|
+| `neptune.algo.bfs.parents` | `MATCH (n) WHERE n.id=$0 CALL neptune.algo.bfs.parents(n, {maxDepth:3}) YIELD parent, node RETURN parent, node` | `maxDepth: int`, `traversalDirection`, `edgeLabels`, `vertexLabel`, `concurrency` | `node` (node), `parent` (node) |
+| `neptune.algo.bfs.levels` | `MATCH (n) WHERE n.id=$0 CALL neptune.algo.bfs.levels(n, {maxDepth:2}) YIELD node, level RETURN node, level` | same as `bfs.parents` | `node` (node), `level` (long) |
+| `neptune.algo.sssp.bellmanFord` | `MATCH (n) WHERE n.id=$0 CALL neptune.algo.sssp.bellmanFord(n, {edgeWeightProperty:"cost", edgeWeightType:"double"}) YIELD source, node, distance RETURN node, distance` | `edgeWeightProperty: string` (req), `edgeWeightType` (req), `traversalDirection` (not `both`), `edgeLabels`, `vertexLabel`, `concurrency` | `source` (node), `node` (node), `distance` (double) |
+| `neptune.algo.sssp.bellmanFord.parents` | `…CALL neptune.algo.sssp.bellmanFord.parents(n, {edgeWeightProperty:"cost", edgeWeightType:"double"}) YIELD source, node, distance, parent RETURN node, parent, distance` | same as `sssp.bellmanFord` | `source` (node), `node` (node), `distance` (double), `parent` (node) |
+| `neptune.algo.sssp.bellmanFord.path` | `MATCH (s), (t) WHERE … CALL neptune.algo.sssp.bellmanFord.path(s, t, {edgeWeightProperty:"cost", edgeWeightType:"double"}) YIELD source, target, distance, path RETURN path, distance` | source **and** target node(s) + same config | `source` (node), `target` (node), `distance` (double), `vertexPath` (list), `allDistances` (list), `path` (path) |
+| `neptune.algo.sssp.deltaStepping` | as `sssp.bellmanFord` (parallel; same result) | same as `sssp.bellmanFord` | `source` (node), `node` (node), `distance` (double) |
+| `neptune.algo.sssp.deltaStepping.parents` | as `sssp.bellmanFord.parents` | same | `source`, `node`, `distance` (double), `parent` (node) |
+| `neptune.algo.sssp.deltaStepping.path` | as `sssp.bellmanFord.path` | same (source + target) | `source`, `target`, `distance`, `vertexPath`, `allDistances`, `path` |
+| `neptune.algo.topksssp` | `MATCH (n) WHERE n.id=$0 CALL neptune.algo.topksssp(n, {maxDepth:4}) YIELD … RETURN …` | `maxDepth: int`, optional `edgeWeightProperty`/`edgeWeightType`, `edgeLabels`, `concurrency` | top-K hop-limited paths sorted by cost (see Neptune docs) |
+
+### Centrality
+| Procedure | Call form | Params | YIELD (type) |
+|---|---|---|---|
+| `neptune.algo.pageRank` | `MATCH (n) CALL neptune.algo.pageRank(n, {dampingFactor:0.85, maxIterations:20}) YIELD rank RETURN n, rank` | `dampingFactor: float` (0.85), `maxIterations: int` (20), `tolerance: float`, `edgeWeightProperty`/`edgeWeightType`, `sourceNodes: node[]`, `sourceWeights: number[]`, `traversalDirection`, `edgeLabels`, `vertexLabel`, `concurrency` | `rank` (double) |
+| `neptune.algo.pageRank.mutate` | `CALL neptune.algo.pageRank.mutate({writeProperty:"rank", dampingFactor:0.85}) YIELD success RETURN success` | `writeProperty: string` (req) + all pageRank params | `success` (bool) |
+| `neptune.algo.degree` | `MATCH (n) CALL neptune.algo.degree(n) YIELD degree RETURN n.id, degree` | `traversalDirection` (`outbound`=out-degree, `inbound`=in-degree, `both`=total), `edgeLabels`, `vertexLabel`, `concurrency` | `degree` (long) |
+| `neptune.algo.degree.mutate` | `CALL neptune.algo.degree.mutate({writeProperty:"degree"}) YIELD success RETURN success` | `writeProperty` (req) + degree params | `success` (bool) |
+| `neptune.algo.closenessCentrality` | `CALL neptune.algo.closenessCentrality(n, {numSources:1024}) YIELD node, score RETURN id(node), score` | `numSources: int` (exact if omitted), `traversalDirection`, `edgeLabels`, `vertexLabel`, `concurrency` | `node` (node), `score` (double) |
+| `neptune.algo.closenessCentrality.mutate` | `CALL neptune.algo.closenessCentrality.mutate({writeProperty:"closeness"}) YIELD success RETURN success` | `writeProperty` (req) + closeness params | `success` (bool) |
+
+### Community detection
+| Procedure | Call form | Params | YIELD (type) |
+|---|---|---|---|
+| `neptune.algo.louvain` | `MATCH (n) CALL neptune.algo.louvain(n, {iterationTolerance:1e-07}) YIELD node, community RETURN id(node), community` | `maxLevels: int`, `maxIterations: int`, `levelTolerance: float`, `iterationTolerance: float`, `edgeWeightProperty`/`edgeWeightType`, `edgeLabels`, `concurrency` | `node` (node), `community` (long) |
+| `neptune.algo.louvain.mutate` | `CALL neptune.algo.louvain.mutate({writeProperty:"community"}) YIELD success RETURN success` | `writeProperty` (req) + louvain params | `success` (bool) |
+| `neptune.algo.labelPropagation` | `MATCH (n) CALL neptune.algo.labelPropagation(n, {maxIterations:10}) YIELD node, community RETURN id(node), community` | `maxIterations: int`, `vertexWeightProperty`/`vertexWeightType`, `edgeWeightProperty`/`edgeWeightType`, `traversalDirection`, `edgeLabels`, `vertexLabel`, `concurrency` | `node` (node), `community` (long) |
+| `neptune.algo.labelPropagation.mutate` | `CALL neptune.algo.labelPropagation.mutate({writeProperty:"community"}) YIELD success RETURN success` | `writeProperty` (req) + labelPropagation params | `success` (bool) |
+| `neptune.algo.wcc` | `MATCH (n) CALL neptune.algo.wcc(n, {edgeLabels:["route"]}) YIELD node, component RETURN id(node), component` | `edgeLabels`, `vertexLabel`, `concurrency` | `node` (node), `component` (long) |
+| `neptune.algo.wcc.mutate` | `CALL neptune.algo.wcc.mutate({writeProperty:"wccId"}) YIELD success RETURN success` | `writeProperty` (req) + wcc params | `success` (bool) |
+| `neptune.algo.scc` | `MATCH (n) CALL neptune.algo.scc(n) YIELD node, component RETURN id(node), component` | `edgeLabels`, `vertexLabel`, `concurrency` | `node` (node), `component` (long) |
+| `neptune.algo.scc.mutate` | `CALL neptune.algo.scc.mutate({writeProperty:"sccId"}) YIELD success RETURN success` | `writeProperty` (req) + scc params | `success` (bool) |
+
+### Similarity (pairwise; bind two nodes with `MATCH`)
+| Procedure | Call form | Params | YIELD (type) |
+|---|---|---|---|
+| `neptune.algo.jaccardSimilarity` | `MATCH (a),(b) WHERE a.id=$0 AND b.id=$1 CALL neptune.algo.jaccardSimilarity(a, b) YIELD score RETURN score` | two nodes; optional `edgeLabels`, `vertexLabel`, `concurrency` | `score` (double, 0–1) |
+| `neptune.algo.overlapSimilarity` | as jaccard, `…CALL neptune.algo.overlapSimilarity(a, b) YIELD score RETURN score` | same | `score` (double) |
+| `neptune.algo.neighbors.common` | `MATCH (a),(b) WHERE … CALL neptune.algo.neighbors.common(a, b) YIELD node RETURN node` | two nodes; optional `edgeLabels`, `concurrency` | `node` (node) — shared neighbors |
+| `neptune.algo.neighbors.total` | `…CALL neptune.algo.neighbors.total(a, b) YIELD count RETURN count` | same | `count` (long) — size of combined neighborhood |
+
+### Vector similarity search (require a vector index on the graph)
+Only propose these if the graph was created with vector embeddings; otherwise
+say a vector index is needed. Prefer the non-deprecated `.byNode` / `.byEmbedding`
+forms: `vectors.distance.byNode`, `vectors.distance.byEmbedding`,
+`vectors.topK.byNode`, `vectors.topK.byEmbedding`, `vectors.get`,
+`vectors.upsert`, `vectors.remove`. (Deprecated aliases: `vectors.distance`,
+`vectors.distanceByEmbedding`, `vectors.topKByEmbedding`, `vectors.topKByNode`.)
+`topK.*` yields `(node, score)`; `distance.*` yields a `distance`; `get` yields
+the stored `embedding`.
+
+### Miscellaneous graph procedures
+| Procedure | Purpose | YIELD |
+|---|---|---|
+| `neptune.graph.pg_schema` | Property-graph schema (labels, edge types, property keys) | schema document |
+| `neptune.graph.pg_info` | Graph metadata / statistics | info document |
+| `neptune.algo.degreeDistribution` | Degree histogram across the graph | degree → count distribution |
 
 ## Neptune openCypher gotchas (Neptune Analytics is a subset of Neo4j Cypher)
 
