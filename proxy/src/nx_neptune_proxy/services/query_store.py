@@ -47,8 +47,31 @@ class EdgeQuery:
         return {"id": self.id, "sql": self.sql, "position": self.position}
 
 
+@dataclass
+class GraphQuery:
+    """A post-import openCypher query. Only the query text is stored — results
+    are never persisted."""
+
+    id: str
+    projection_id: str
+    cypher: str = ""
+    position: int = 0
+
+    @classmethod
+    def from_row(cls, row) -> "GraphQuery":
+        return cls(
+            id=row["id"],
+            projection_id=row["projection_id"],
+            cypher=row["cypher"],
+            position=row["position"],
+        )
+
+    def to_response(self) -> dict:
+        return {"id": self.id, "cypher": self.cypher, "position": self.position}
+
+
 class QueryStore:
-    """Manages node and edge queries for projections."""
+    """Manages node, edge, and openCypher graph queries for projections."""
 
     # --- Node Queries ---
 
@@ -128,11 +151,53 @@ class QueryStore:
         """Variant that accepts Pydantic models directly (calls model_dump internally)."""
         self.save_edge_queries(projection_id, [m.model_dump() for m in models])
 
+    # --- Graph Queries (openCypher) ---
+
+    def list_graph_queries(self, projection_id: str) -> list[GraphQuery]:
+        with connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM graph_queries WHERE projection_id = ? ORDER BY position",
+                (projection_id,),
+            ).fetchall()
+        return [GraphQuery.from_row(r) for r in rows]
+
+    def list_graph_responses(self, projection_id: str) -> list[dict]:
+        """Same as list_graph_queries but returns API-ready dicts (excludes projection_id)."""
+        return [q.to_response() for q in self.list_graph_queries(projection_id)]
+
+    def save_graph_queries(
+        self, projection_id: str, queries: list[dict]
+    ) -> list[GraphQuery]:
+        """Replace all graph queries for a projection. Persists query text only."""
+        with connection() as conn:
+            conn.execute(
+                "DELETE FROM graph_queries WHERE projection_id = ?", (projection_id,)
+            )
+            results = []
+            for i, q in enumerate(queries):
+                qid = q.get("id") or str(uuid.uuid4())
+                cypher = q.get("cypher", "")
+                conn.execute(
+                    "INSERT INTO graph_queries (id, projection_id, cypher, position) VALUES (?, ?, ?, ?)",
+                    (qid, projection_id, cypher, i),
+                )
+                results.append(
+                    GraphQuery(
+                        id=qid, projection_id=projection_id, cypher=cypher, position=i
+                    )
+                )
+        return results
+
+    def save_graph_from_payload(self, projection_id: str, models: list) -> None:
+        """Variant that accepts Pydantic models directly (calls model_dump internally)."""
+        self.save_graph_queries(projection_id, [m.model_dump() for m in models])
+
     # --- Shared-transaction helpers ---
 
     @staticmethod
-    def delete_node_and_edge_queries_on(conn, projection_id: str) -> None:
-        """Delete all node AND edge queries for a projection on an existing connection.
+    def delete_queries_on(conn, projection_id: str) -> None:
+        """Delete all node, edge, AND graph queries for a projection on an existing
+        connection.
 
         Runs on a caller-supplied connection so it can participate in a larger
         transaction (e.g. deleting a projection and its queries atomically).
@@ -142,6 +207,9 @@ class QueryStore:
         )
         conn.execute(
             "DELETE FROM edge_queries WHERE projection_id = ?", (projection_id,)
+        )
+        conn.execute(
+            "DELETE FROM graph_queries WHERE projection_id = ?", (projection_id,)
         )
 
 

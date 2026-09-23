@@ -475,9 +475,15 @@ export function Projections() {
               </div>
             )}
           </div>
-          <Button variant="secondary" className="w-full" onClick={() => navigate(`/import?projection=${selected.id}`)}>
-            Open in Import
-          </Button>
+          {selected.status === "complete" ? (
+            <Button variant="secondary" className="w-full" onClick={() => navigate(`/details?projection=${selected.id}`)}>
+              Open Details
+            </Button>
+          ) : (
+            <Button variant="secondary" className="w-full" onClick={() => navigate(`/import?projection=${selected.id}`)}>
+              Open in Import
+            </Button>
+          )}
           {selected.graph_id && selected.status !== "archived" && (
             <>
               <Button variant="ghost" className="w-full" onClick={() => {

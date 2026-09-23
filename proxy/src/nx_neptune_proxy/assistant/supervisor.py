@@ -36,7 +36,10 @@ from nx_neptune_proxy.assistant.debug_trace import (
     log_invocation,
     log_result,
 )
-from nx_neptune_proxy.assistant.graph_tools import fetch_graph_schema
+from nx_neptune_proxy.assistant.graph_tools import (
+    fetch_graph_schema,
+    validate_opencypher,
+)
 from nx_neptune_proxy.assistant.schemas import (
     AssistantReply,
     ChatAction,
@@ -229,6 +232,12 @@ generate_import when the user wants to query/explore/analyze a graph and the \
 page context shows one is already set up (a projection_id, a graph_status, or \
 node/edge queries are present). Do NOT re-run generate_import just to get \
 queries when the import already exists.
+- validate_graph_queries(queries): validate openCypher syntax against the live \
+graph via Neptune Analytics EXPLAIN (read-only — it does not run the queries). \
+Call this only when the user explicitly asks to validate/verify/check openCypher, \
+passing the exact query strings. It needs a live, available graph (graph_status \
+"complete" / a graph_id present); if none exists, it says so — relay that rather \
+than pretending the queries were checked.
 
 ### 4. Page navigation (move around the app)
 - navigate(request): propose cross-page navigation (e.g. "start a new import", \
@@ -504,6 +513,22 @@ class Supervisor:
             # the client applies just the openCypher without touching the form's
             # catalog/database/SQL (spec §9.5).
             ctx.proposal = FieldProposal(graph_queries=plan.graph_queries or None)
+            # When the page can run queries (the Details page), offer each
+            # proposed query as an inline "Run Query" button so the user can
+            # execute it straight from the chat (spec §9.3).
+            if pc and pc.can_run_queries:
+                for q in plan.graph_queries:
+                    label = q.description or q.cypher
+                    if len(label) > 60:
+                        label = label[:57] + "…"
+                    ctx.actions.append(
+                        ChatAction(
+                            kind="run-query",
+                            page=pc.page,
+                            label=f"Run: {label}",
+                            query=q.cypher,
+                        )
+                    )
             # Relay the planner's intent — overall summary plus each query's
             # purpose — so the user hears what the queries accomplish, not just
             # how many there are.
@@ -514,6 +539,48 @@ class Supervisor:
             if query_bullets:
                 summary += f"\n{query_bullets}"
             return summary
+
+        def validate_graph_queries(queries: list[str]) -> str:
+            """Validate openCypher queries against the live graph using Neptune
+            Analytics EXPLAIN (read-only — plans each query without running it).
+
+            Use when the user asks to validate / verify / check / confirm the
+            syntax of openCypher — whether queries just proposed by
+            propose_queries or ones the user provided. Pass the exact query
+            strings to check.
+
+            Requires a live graph: EXPLAIN always targets a graphIdentifier, so
+            the page context must carry a graph_id and the graph must be
+            available (import complete). Returns a per-query valid/invalid
+            verdict; invalid queries include the engine's error message (bad
+            syntax, unknown procedure, or bad algorithm parameter)."""
+            pc = ctx.page_context
+            graph_id = pc.graph_id if pc else None
+            if not graph_id or not pc.graph_available:
+                return (
+                    "Cannot validate: openCypher validation runs EXPLAIN against "
+                    "a live Neptune Analytics graph, so it needs an imported, "
+                    "available graph. This page has no live graph yet — validation "
+                    "is only possible once the import is complete."
+                )
+            checked = [q for q in queries if q and q.strip()]
+            if not checked:
+                return "No openCypher queries to validate."
+            lines: list[str] = []
+            all_valid = True
+            for q in checked:
+                valid, err = validate_opencypher(graph_id, q)
+                if valid:
+                    lines.append(f"✓ valid: {q}")
+                else:
+                    all_valid = False
+                    lines.append(f"✗ invalid: {q}\n    {err}")
+            header = (
+                "All queries are valid."
+                if all_valid
+                else "Some queries failed validation — see the errors below."
+            )
+            return header + "\n" + "\n".join(lines)
 
         def update_import_fields(
             bucket: str = "",
@@ -563,6 +630,7 @@ class Supervisor:
             validate_bucket,
             generate_import,
             propose_queries,
+            validate_graph_queries,
             update_import_fields,
             suggest_page_actions,
         ]

@@ -139,11 +139,13 @@ class ChatAction(BaseModel):
     """A page/graph action the client executes via ``runChatAction``.
 
     ``action_key``/``enabled`` apply to ``page-action``; ``graph_id``/
-    ``graph_action`` apply to ``graph-action``. Constrained to keys/targets
-    present in the request's page context (§9.4).
+    ``graph_action`` apply to ``graph-action``; ``query`` applies to
+    ``run-query`` (an openCypher statement the client runs against the page's
+    graph). Constrained to keys/targets present in the request's page context
+    (§9.4).
     """
 
-    kind: Literal["page-action", "graph-action"]
+    kind: Literal["page-action", "graph-action", "run-query"]
     page: str
     label: str
     action_key: Optional[str] = None
@@ -151,6 +153,7 @@ class ChatAction(BaseModel):
     destructive: Optional[bool] = None
     graph_id: Optional[str] = None
     graph_action: Optional[str] = None
+    query: Optional[str] = None
 
 
 # --- Page context (agent input, §9.4) -------------------------------------
@@ -192,6 +195,12 @@ class PageContext(BaseModel):
     graph_id: Optional[str] = None
     node_queries: list[SqlQuery] = Field(default_factory=list)
     edge_queries: list[SqlQuery] = Field(default_factory=list)
+    # The openCypher Graph Queries currently on the page (Details page), and
+    # whether the page can run them. When ``can_run_queries`` is True the
+    # supervisor may attach run-query ChatActions so the user can execute a
+    # proposed query inline from the chat.
+    graph_queries: list[CypherQuery] = Field(default_factory=list)
+    can_run_queries: bool = False
     actions: list[PageContextAction] = Field(default_factory=list)
     graph_targets: list[PageContextGraphTarget] = Field(default_factory=list)
 

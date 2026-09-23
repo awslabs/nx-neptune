@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useSearchParams } from "react-router";
+import { useSearchParams, useNavigate } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
 import { usePageBridge, type ImportPersistData } from "../assistant/context";
@@ -7,6 +7,7 @@ import { Play, CheckCircle, Eye, Plus, Trash2 } from "lucide-react";
 
 export function Import() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   // --- Metadata state ---
   const [catalogs, setCatalogs] = useState<{ name: string; status: string }[]>([]);
@@ -30,9 +31,9 @@ export function Import() {
   const [edgeQueries, setEdgeQueries] = useState<EdgeQueryInput[]>([{ sql: "" }]);
 
   // --- Post-import openCypher graph queries ---
+  // Authored here but never run on this page — they carry over to the read-only
+  // /details page (via navigation state) where the live graph can execute them.
   const [graphQueries, setGraphQueries] = useState<{ cypher: string }[]>([{ cypher: "" }]);
-  const [graphResults, setGraphResults] = useState<unknown[] | null>(null);
-  const [graphQueryError, setGraphQueryError] = useState<string | null>(null);
 
   // --- Projection state ---
   const [projectionsList, setProjectionsList] = useState<Projection[]>([]);
@@ -119,6 +120,13 @@ export function Import() {
     try {
       const p = await projection.create(data);
       setCurrentId(p.id);
+      // Flush any graph queries typed before the projection existed — the
+      // debounced save skips while there is no id, so persist them now.
+      if (graphQueries.some((q) => q.cypher.trim())) {
+        await projection
+          .saveGraphQueries(p.id, graphQueries.map((q) => ({ cypher: q.cypher })))
+          .catch(() => {});
+      }
       await loadProjections();
       window.dispatchEvent(new Event("projects-changed"));
       return p.id;
@@ -141,10 +149,10 @@ export function Import() {
   // Auto-create projection once user starts filling the form
   useEffect(() => {
     if (currentId) return;
-    const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
+    const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim()) || graphQueries.some(q => q.cypher.trim());
     if (!hasContent) return;
     createProjectionOnce(configData());
-  }, [database, bucket, graphName, nodeQueries, edgeQueries]);
+  }, [database, bucket, graphName, nodeQueries, edgeQueries, graphQueries]);
 
   // Auto-create projection once user starts filling the form, then auto-save config on changes
   const configTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -210,6 +218,13 @@ export function Import() {
   }
 
   function loadProjection(p: Projection) {
+    // A completed projection is immutable — its config lives on the read-only
+    // /details page. Bounce any completed projection there so Import only ever
+    // shows work that is still editable (draft/executing/failed).
+    if (p.status === "complete") {
+      navigate(`/details?projection=${p.id}`, { replace: true });
+      return;
+    }
     setCurrentId(p.id);
     setGraphId(p.graph_id ?? null);
     if (p.project_id) setProjectId(p.project_id);
@@ -229,12 +244,15 @@ export function Import() {
 
       if (res.edge_queries.length > 0) setEdgeQueries(res.edge_queries.map((q) => ({ id: q.id, sql: q.sql })));
       else setEdgeQueries([{ sql: "" }]);
+
+      // Post-import openCypher graph queries (persisted text only, no results).
+      if (res.graph_queries.length > 0) setGraphQueries(res.graph_queries.map((q) => ({ cypher: q.cypher })));
     });
 
+    // Completed projections are redirected to /details above, so only in-flight
+    // (executing) and not-yet-run states remain here.
     if (p.status === "executing") startPolling(p.id);
-    else if (p.status === "complete") {
-      setStatus({ id: p.id, status: "complete", progress: 100, graph_endpoint: p.graph_endpoint });
-    } else {
+    else {
       setStatus(null);
       setPolling(false);
     }
@@ -284,33 +302,29 @@ export function Import() {
     if (currentId) projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: updated });
   }
 
-  // --- Graph query management (visual-only prototype: local state, no backend) ---
+  // --- Graph query management (openCypher; text persisted, results are not) ---
+  // Graph queries are saved via the graph-only endpoint so authoring them here
+  // never touches the node/edge queries, and they carry over to /details.
+  const graphSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function scheduleGraphSave(gq: { cypher: string }[]) {
+    if (!currentId) return;
+    if (graphSaveTimer.current) clearTimeout(graphSaveTimer.current);
+    graphSaveTimer.current = setTimeout(() => {
+      projection.saveGraphQueries(currentId, gq.map((q) => ({ cypher: q.cypher })));
+    }, 1000);
+  }
   function updateGraphQuery(index: number, cypher: string) {
-    setGraphQueries((prev) => prev.map((q, i) => (i === index ? { cypher } : q)));
+    const updated = graphQueries.map((q, i) => (i === index ? { cypher } : q));
+    setGraphQueries(updated);
+    scheduleGraphSave(updated);
   }
   function addGraphQuery() {
     setGraphQueries((prev) => [...prev, { cypher: "" }]);
   }
   function removeGraphQuery(index: number) {
-    setGraphQueries((prev) => prev.filter((_, i) => i !== index));
-  }
-  async function runGraphQueries() {
-    setGraphResults(null);
-    setGraphQueryError(null);
-    setError(null);
-    setLoading("run-queries");
-    try {
-      const id = await ensureProjection();
-      const queries = graphQueries.map((q) => q.cypher).filter((c) => c.trim());
-      if (!queries.length) return;
-      const res = await projection.runQuery(id, queries);
-      setGraphResults(res.results);
-      if (res.error) setGraphQueryError(res.error);
-    } catch (e: any) {
-      setGraphQueryError(e.message);
-    } finally {
-      setLoading(null);
-    }
+    const updated = graphQueries.filter((_, i) => i !== index);
+    setGraphQueries(updated);
+    if (currentId) projection.saveGraphQueries(currentId, updated.map((q) => ({ cypher: q.cypher })));
   }
 
   // Expose the Import form to the global assistant: current field values, the
@@ -614,27 +628,7 @@ export function Import() {
               </div>
             ))}
           </div>
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-400">Available once the graph import is complete.</p>
-            <Button
-              variant="secondary"
-              onClick={runGraphQueries}
-              disabled={status?.status !== "complete" || loading === "run-queries"}
-              title={status?.status !== "complete" ? "Import a graph first" : undefined}
-            >
-              <Play className="h-4 w-4" /> {loading === "run-queries" ? "Running..." : "Run Queries"}
-            </Button>
-          </div>
-          {graphQueryError && (
-            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-              {graphQueryError}
-            </div>
-          )}
-          {graphResults && (
-            <pre className="max-h-96 overflow-auto rounded-md border border-gray-200 bg-gray-900 px-3 py-2 text-xs text-gray-100">
-              {JSON.stringify(graphResults, null, 2)}
-            </pre>
-          )}
+          <p className="text-xs text-gray-400">These run on the graph's details page once the import is complete.</p>
         </div>
       </Card>
 
@@ -695,9 +689,14 @@ export function Import() {
       {status && (
         <Card>
           {status.status === "complete" ? (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <p className="text-sm font-medium text-green-700">✓ Graph ready</p>
               {status.graph_endpoint && <p className="text-sm text-gray-600">Endpoint: <code className="rounded bg-gray-100 px-1">{status.graph_endpoint}</code></p>}
+              {currentId && (
+                <Button onClick={() => navigate(`/details?projection=${currentId}`, { state: { graphQueries } })}>
+                  View Details
+                </Button>
+              )}
             </div>
           ) : (
             <div className="space-y-2">
