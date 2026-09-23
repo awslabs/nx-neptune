@@ -63,9 +63,11 @@ def list_buckets() -> list[str]:
 def validate_bucket(bucket: str) -> list[dict]:
     """Validate a single S3 bucket the same way the UI's Validate button does.
 
-    Reuses the shared ``nx_neptune.validators`` checks (no duplicated logic):
-    ``check_bucket_exists`` (bucket exists and is accessible) and, when a region
-    is configured, ``check_bucket_region`` (bucket is in the expected region).
+    Reuses the shared ``nx_neptune.validators`` checks (no duplicated logic),
+    matching the staging-bucket checks the projection ``/validate`` endpoint
+    runs: ``check_bucket_exists`` (bucket exists and is accessible),
+    ``check_bucket_region`` when a region is configured (bucket is in the
+    expected region), and ``check_bucket_versioning`` (versioning enabled).
     Scoped to one bucket — the value the user picked — mirroring pressing
     Validate on that choice, not the whole projection.
 
@@ -73,12 +75,17 @@ def validate_bucket(bucket: str) -> list[dict]:
     same shape the projection ``/validate`` endpoint returns), so the caller can
     report pass/fail per check.
     """
-    from nx_neptune.validators import check_bucket_exists, check_bucket_region
+    from nx_neptune.validators import (
+        check_bucket_exists,
+        check_bucket_region,
+        check_bucket_versioning,
+    )
 
     results = [check_bucket_exists(bucket)]
     region = get_settings().region
     if region:
         results.append(check_bucket_region(bucket, region))
+    results.append(check_bucket_versioning(bucket))
     return [r.to_dict() for r in results]
 
 
