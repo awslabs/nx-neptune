@@ -99,10 +99,15 @@ def _import_from_payload(payload: ProjectExportPayload) -> dict:
     p = project_store.create(name=name)
 
     for pr_data in payload.projections:
-        pr_dict = pr_data.model_dump(exclude={"node_queries", "edge_queries"})
+        pr_dict = pr_data.model_dump(
+            exclude={"node_queries", "edge_queries", "graph_queries"}
+        )
         pr_dict["project_id"] = p.id
         projection_service.create_with_queries(
-            pr_dict, pr_data.node_queries, pr_data.edge_queries
+            pr_dict,
+            pr_data.node_queries,
+            pr_data.edge_queries,
+            pr_data.graph_queries,
         )
 
     return {"id": p.id, "name": p.name}

@@ -86,4 +86,13 @@ def init_db() -> None:
             position INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (projection_id) REFERENCES projections(id) ON DELETE CASCADE
         );
+        -- Post-import openCypher graph queries. Only the query text is persisted;
+        -- query results are never stored.
+        CREATE TABLE IF NOT EXISTS graph_queries (
+            id TEXT PRIMARY KEY,
+            projection_id TEXT NOT NULL,
+            cypher TEXT NOT NULL DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (projection_id) REFERENCES projections(id) ON DELETE CASCADE
+        );
     """)

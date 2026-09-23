@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from .projection_store import Projection, store as projection_store
-from .query_store import EdgeQuery, NodeQuery, query_store
+from .query_store import EdgeQuery, GraphQuery, NodeQuery, query_store
 from .db import connection
 
 
@@ -65,7 +65,7 @@ class ProjectionService:
         relying solely on the ON DELETE CASCADE) as defense-in-depth.
         """
         with connection() as conn:
-            query_store.delete_node_and_edge_queries_on(conn, projection_id)
+            query_store.delete_queries_on(conn, projection_id)
             return projection_store.delete_on(conn, projection_id)
 
     # --- Queries (child of a projection) ---
@@ -75,6 +75,9 @@ class ProjectionService:
 
     def list_edge_queries(self, projection_id: str) -> List[EdgeQuery]:
         return query_store.list_edge_queries(projection_id)
+
+    def list_graph_queries(self, projection_id: str) -> List[GraphQuery]:
+        return query_store.list_graph_queries(projection_id)
 
     def list_query_sql(self, projection_id: str) -> List[str]:
         """All non-empty node+edge query SQL, node queries first."""
@@ -97,33 +100,56 @@ class ProjectionService:
                 labeled.append((f"edge_query_{i + 1}", eq.sql, "edge"))
         return labeled
 
-    def get_queries(self, projection_id: str) -> tuple[List[dict], List[dict]]:
-        """Return (node_responses, edge_responses) as API-ready dicts."""
+    def get_queries(
+        self, projection_id: str
+    ) -> tuple[List[dict], List[dict], List[dict]]:
+        """Return (node_responses, edge_responses, graph_responses) as API-ready dicts."""
         return (
             query_store.list_node_responses(projection_id),
             query_store.list_edge_responses(projection_id),
+            query_store.list_graph_responses(projection_id),
         )
 
     def save_queries(
-        self, projection_id: str, node_models: List, edge_models: List
-    ) -> tuple[List[dict], List[dict]]:
-        """Replace all node/edge queries, then return the stored responses."""
+        self,
+        projection_id: str,
+        node_models: List,
+        edge_models: List,
+        graph_models: Optional[List] = None,
+    ) -> tuple[List[dict], List[dict], List[dict]]:
+        """Replace node/edge queries, then return the stored responses.
+
+        ``graph_models`` of None leaves the stored graph queries untouched (so a
+        node/edge-only save doesn't wipe them); a list (including []) replaces
+        them. Only query text is persisted for graph queries — never results.
+        """
         query_store.save_node_from_payload(projection_id, node_models)
         query_store.save_edge_from_payload(projection_id, edge_models)
+        if graph_models is not None:
+            query_store.save_graph_from_payload(projection_id, graph_models)
         return self.get_queries(projection_id)
+
+    def save_graph_queries(self, projection_id: str, graph_models: List) -> List[dict]:
+        """Replace only the openCypher graph queries (leaving node/edge queries
+        untouched) and return the stored responses. Query text only — no results."""
+        query_store.save_graph_from_payload(projection_id, graph_models)
+        return query_store.list_graph_responses(projection_id)
 
     # --- Import / export helpers ---
 
-    def get_query_sql_lists(self, projection_id: str) -> tuple[List[str], List[str]]:
-        """Return (node_sql, edge_sql) lists verbatim (no filtering), for export."""
+    def get_query_sql_lists(
+        self, projection_id: str
+    ) -> tuple[List[str], List[str], List[str]]:
+        """Return (node_sql, edge_sql, graph_cypher) lists verbatim (no filtering), for export."""
         node = [nq.sql for nq in self.list_node_queries(projection_id)]
         edge = [eq.sql for eq in self.list_edge_queries(projection_id)]
-        return node, edge
+        graph = [gq.cypher for gq in self.list_graph_queries(projection_id)]
+        return node, edge, graph
 
     def list_projections_with_query_sql(
         self, project_id: str
     ) -> tuple[List[Projection], dict]:
-        """Return (projections, {projection_id: (node_sql, edge_sql)}) for export."""
+        """Return (projections, {projection_id: (node_sql, edge_sql, graph_cypher)}) for export."""
         projections = self.list_by_project(project_id)
         queries_by_projection = {
             pr.id: self.get_query_sql_lists(pr.id) for pr in projections
@@ -135,8 +161,9 @@ class ProjectionService:
         projection_data: dict,
         node_sql: List[str],
         edge_sql: List[str],
+        graph_cypher: Optional[List[str]] = None,
     ) -> Projection:
-        """Create a projection and its node/edge queries (for import)."""
+        """Create a projection and its node/edge/graph queries (for import)."""
         projection = projection_store.create(**projection_data)
         if node_sql:
             query_store.save_node_queries(
@@ -145,6 +172,10 @@ class ProjectionService:
         if edge_sql:
             query_store.save_edge_queries(
                 projection.id, [{"sql": sql} for sql in edge_sql]
+            )
+        if graph_cypher:
+            query_store.save_graph_queries(
+                projection.id, [{"cypher": c} for c in graph_cypher]
             )
         return projection
 

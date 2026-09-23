@@ -43,6 +43,13 @@ export function serializePageContext(
           .filter((q) => typeof q?.sql === "string" && q.sql.trim())
           .map((q) => ({ sql: q.sql as string }))
       : [];
+  // Same as asQueries but for openCypher graph queries.
+  const asCypher = (v: unknown): { cypher: string }[] =>
+    Array.isArray(v)
+      ? (v as { cypher?: string }[])
+          .filter((q) => typeof q?.cypher === "string" && q.cypher.trim())
+          .map((q) => ({ cypher: q.cypher as string }))
+      : [];
   return {
     page: bridge.page,
     // Prefer the loaded projection's project id (set by the page) over the URL,
@@ -55,6 +62,9 @@ export function serializePageContext(
     graph_id: asField(bridge.fields?.graphId),
     node_queries: asQueries(bridge.fields?.nodeQueries),
     edge_queries: asQueries(bridge.fields?.edgeQueries),
+    graph_queries: asCypher(bridge.fields?.graphQueries),
+    // The page can run openCypher iff it registered a runGraphQuery handler.
+    can_run_queries: !!bridge.runGraphQuery,
     actions,
     graph_targets,
   };
@@ -109,6 +119,10 @@ function mapActions(reply: AssistantReply): ChatAction[] {
         },
       ];
     }
+    if (a.kind === "run-query") {
+      if (!a.query) return [];
+      return [{ kind: "run-query", page: a.page, query: a.query, label: a.label }];
+    }
     return [];
   });
 }
@@ -118,7 +132,10 @@ function mapActions(reply: AssistantReply): ChatAction[] {
 // follow-up turn updating just the graph queries won't clobber the SQL. Returns
 // the human labels of the fields it filled (for the message's "applied" chips).
 function applyProposal(proposal: AssistantProposal, bridge: PageBridge | null): string[] {
-  if (!bridge || bridge.page !== "import" || !bridge.setters) return [];
+  // Import applies the full form proposal; the read-only Details page only has a
+  // graphQueries setter, so it applies just the openCypher proposal (config
+  // fields and persistImport below are import-only and simply no-op there).
+  if (!bridge || (bridge.page !== "import" && bridge.page !== "details") || !bridge.setters) return [];
   const s = bridge.setters;
   const applied: string[] = [];
   // The bucket <select>'s option values are full URIs `s3://<name>/`, but the
