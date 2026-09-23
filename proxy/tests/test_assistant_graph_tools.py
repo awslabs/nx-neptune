@@ -6,6 +6,8 @@ GraphSchema, defensively (missing keys → empty lists)."""
 
 from unittest.mock import MagicMock, patch
 
+from botocore.exceptions import ClientError
+
 from nx_neptune_proxy.assistant import graph_tools
 
 
@@ -61,3 +63,39 @@ def test_fetch_graph_schema_handles_dict_property_entries():
     with ctx:
         schema = graph_tools.fetch_graph_schema("g-3")
     assert schema.node_properties == ["name", "age"]
+
+
+# --- validate_opencypher (EXPLAIN syntax check) ---
+
+
+def test_validate_opencypher_prefixes_explain_and_reports_valid():
+    client = MagicMock()
+    client.execute_query.return_value = {"payload": None}
+    with patch.object(graph_tools, "agent_neptune_client", return_value=client):
+        valid, err = graph_tools.validate_opencypher("g-1", "MATCH (n) RETURN n")
+
+    assert valid is True and err is None
+    kwargs = client.execute_query.call_args.kwargs
+    assert kwargs["graphIdentifier"] == "g-1"
+    assert kwargs["queryString"] == "EXPLAIN MATCH (n) RETURN n"
+    assert kwargs["language"] == "OPEN_CYPHER"
+
+
+def test_validate_opencypher_does_not_double_prefix():
+    client = MagicMock()
+    with patch.object(graph_tools, "agent_neptune_client", return_value=client):
+        graph_tools.validate_opencypher("g-1", "  explain MATCH (n) RETURN n  ")
+    assert client.execute_query.call_args.kwargs["queryString"] == "explain MATCH (n) RETURN n"
+
+
+def test_validate_opencypher_reports_engine_error_as_invalid():
+    client = MagicMock()
+    client.execute_query.side_effect = ClientError(
+        {"Error": {"Code": "MalformedQueryException", "Message": "bad cypher"}},
+        "ExecuteQuery",
+    )
+    with patch.object(graph_tools, "agent_neptune_client", return_value=client):
+        valid, err = graph_tools.validate_opencypher("g-1", "BROKEN")
+
+    assert valid is False
+    assert err

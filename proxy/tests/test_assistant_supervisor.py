@@ -247,6 +247,51 @@ def test_propose_queries_without_graph_model_still_proposes():
     sup._query_planner.plan.assert_called_once()
 
 
+def test_validate_graph_queries_requires_live_graph():
+    sup = _supervisor_with_mock_specialists()
+    # Draft projection: no graph_id, not available — validation is impossible.
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(page="import", projection_id="p-1", graph_status="draft"),
+    )
+    tools = _tools(sup, ctx)
+
+    with patch(
+        "nx_neptune_proxy.assistant.supervisor.validate_opencypher"
+    ) as mock_validate:
+        reply = tools["validate_graph_queries"](["MATCH (n) RETURN n"])
+
+    mock_validate.assert_not_called()
+    assert "no live graph" in reply.lower() or "needs an imported" in reply.lower()
+
+
+def test_validate_graph_queries_reports_per_query_verdicts():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="details", graph_id="g-1", graph_status="complete", can_run_queries=True
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    # First query valid, second rejected by the engine; blanks are skipped.
+    def fake_validate(graph_id, cypher):
+        assert graph_id == "g-1"
+        return (True, None) if "RETURN n" in cypher else (False, "bad cypher")
+
+    with patch(
+        "nx_neptune_proxy.assistant.supervisor.validate_opencypher",
+        side_effect=fake_validate,
+    ) as mock_validate:
+        reply = tools["validate_graph_queries"](["MATCH (n) RETURN n", "  ", "BROKEN"])
+
+    assert mock_validate.call_count == 2  # blank skipped
+    assert "failed validation" in reply.lower()
+    assert "✓ valid" in reply and "✗ invalid" in reply
+    assert "bad cypher" in reply
+
+
 def test_update_import_fields_sets_only_bucket_and_skips_specialists():
     sup = _supervisor_with_mock_specialists()
     ctx = _import_ctx(sup)
