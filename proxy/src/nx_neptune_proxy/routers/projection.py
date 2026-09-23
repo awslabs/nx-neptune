@@ -15,6 +15,8 @@ from nx_neptune.validators import (
 )
 
 from nx_neptune_proxy.routers.schemas import (
+    ExplainQueryResponse,
+    ExplainQueryResult,
     PreviewResponse,
     ProjectionCreate,
     ProjectionResponse,
@@ -226,6 +228,49 @@ def run_query(projection_id: str, body: RunQueryPayload):
                 error=sanitize_error_message(str(e)), results=results
             )
     return RunQueryResponse(error=None, results=results)
+
+
+@router.post(
+    "/{projection_id}/explain-query",
+    summary="Validate openCypher query syntax via Neptune Analytics EXPLAIN",
+    response_model=ExplainQueryResponse,
+)
+def explain_query(projection_id: str, body: RunQueryPayload):
+    """Validate each openCypher query against the projection's graph using
+    Neptune Analytics ``EXPLAIN`` mode.
+
+    ``EXPLAIN`` runs on the real engine but is read-only and cheap: it plans the
+    query without executing it, so it authoritatively catches syntax errors,
+    unknown procedures, and bad algorithm parameters. Unlike ``run-query``, every
+    query is checked independently — validation does not stop at the first
+    invalid query — so the caller gets a per-query verdict.
+    """
+    p = _get_projection_or_404(projection_id)
+    if not p.graph_id:
+        raise HTTPException(
+            status_code=409,
+            detail="No graph associated with this projection — run the import first.",
+        )
+
+    na_client = NeptuneAnalyticsClient(graph_id=p.graph_id)
+    results: list[ExplainQueryResult] = []
+    for cypher in body.queries:
+        if not cypher.strip():
+            continue
+        # Prefix EXPLAIN unless the user already did. A ClientError is the
+        # engine rejecting the query (bad syntax/procedure/param) — the signal
+        # we want; any success means the query planned cleanly.
+        stmt = cypher.strip()
+        if not stmt.upper().startswith("EXPLAIN"):
+            stmt = f"EXPLAIN {stmt}"
+        try:
+            na_client.execute_query(stmt)
+            results.append(ExplainQueryResult(valid=True))
+        except ClientError as e:
+            results.append(
+                ExplainQueryResult(valid=False, error=sanitize_error_message(str(e)))
+            )
+    return ExplainQueryResponse(results=results)
 
 
 @router.delete("/{projection_id}", summary="Delete projection record", status_code=200)

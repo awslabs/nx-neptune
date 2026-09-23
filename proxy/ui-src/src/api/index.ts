@@ -121,6 +121,9 @@ export const projection = {
   preview: (id: string, limit = 10) => request<{ error?: string; results: { columns: string[]; rows: string[][] }[] }>(`/projection/${id}/preview?limit=${limit}`, { method: "POST" }),
   execute: (id: string) => request<{ message: string }>(`/projection/${id}/execute`, { method: "POST" }),
   runQuery: (id: string, queries: string[]) => request<{ error?: string; results: unknown[] }>(`/projection/${id}/run-query`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ queries }) }),
+  // Validate openCypher syntax via Neptune Analytics EXPLAIN (read-only). One
+  // verdict per non-blank query, in order.
+  explainQuery: (id: string, queries: string[]) => request<{ results: { valid: boolean; error?: string }[] }>(`/projection/${id}/explain-query`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ queries }) }),
   getQueries: (id: string) => request<QueriesResponse>(`/projection/${id}/queries`),
   saveQueries: (id: string, data: QueriesPayload) => request<QueriesResponse>(`/projection/${id}/queries`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
   // Persist only the openCypher graph queries (leaves node/edge queries intact).

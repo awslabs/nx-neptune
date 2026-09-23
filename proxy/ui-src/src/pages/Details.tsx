@@ -19,6 +19,8 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  CheckCircle2,
+  ShieldCheck,
 } from "lucide-react";
 
 // Read-only view of a completed projection. Config is immutable (the graph
@@ -29,8 +31,16 @@ import {
 
 type GraphQuery = { id: string; cypher: string };
 // Per-query run state: the last result (or error) and whether its collapsible
-// results panel is expanded.
-type RunState = { running: boolean; result?: unknown; error?: string; open: boolean };
+// results panel is expanded. `valid` holds the last EXPLAIN syntax verdict
+// (undefined until verified); `explaining` guards the in-flight verify.
+type RunState = {
+  running: boolean;
+  explaining?: boolean;
+  valid?: boolean;
+  result?: unknown;
+  error?: string;
+  open: boolean;
+};
 
 const newId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `q${Math.random()}`;
@@ -143,6 +153,12 @@ export function Details() {
       persistGraphQueries(updated, true);
       return updated;
     });
+    // Editing invalidates any prior run/verify verdict for this row.
+    setRunStates((prev) => {
+      if (!prev[id]) return prev;
+      const { [id]: _drop, ...rest } = prev;
+      return rest;
+    });
   }
   function addGraphQuery() {
     setGraphQueries((prev) => [...prev, { id: newId(), cypher: "" }]);
@@ -182,6 +198,36 @@ export function Details() {
       setRunStates((prev) => ({ ...prev, [id]: { running: false, result, error, open: true } }));
     } catch (e: any) {
       setRunStates((prev) => ({ ...prev, [id]: { running: false, error: e.message, open: true } }));
+    }
+  }
+
+  // Validate a query's openCypher syntax via Neptune Analytics EXPLAIN (read-only,
+  // does not execute). Surfaces a per-row valid/invalid verdict; the engine's
+  // error message (bad syntax, unknown procedure, bad param) shows in the panel.
+  async function verifyOne(id: string) {
+    const q = graphQueries.find((g) => g.id === id);
+    if (!q || !q.cypher.trim() || !current) return;
+    setRunStates((prev) => ({ ...prev, [id]: { ...prev[id], running: false, explaining: true } }));
+    try {
+      const res = await projection.explainQuery(current.id, [q.cypher]);
+      const v = res.results[0];
+      const valid = v?.valid ?? false;
+      setRunStates((prev) => ({
+        ...prev,
+        [id]: {
+          running: false,
+          explaining: false,
+          valid,
+          result: undefined,
+          error: valid ? undefined : v?.error ?? "Query is invalid.",
+          open: !valid,
+        },
+      }));
+    } catch (e: any) {
+      setRunStates((prev) => ({
+        ...prev,
+        [id]: { running: false, explaining: false, valid: false, error: e.message, open: true },
+      }));
     }
   }
 
@@ -393,11 +439,31 @@ export function Details() {
               return (
                 <div key={gq.id} className="rounded-md border border-gray-200 overflow-hidden">
                   <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
-                    <span className="text-xs font-medium text-gray-700">Query {i + 1}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-gray-700">Query {i + 1}</span>
+                      {rs?.valid === true && (
+                        <span className="flex items-center gap-1 text-xs text-green-600">
+                          <CheckCircle2 className="h-3 w-3" /> Syntax valid
+                        </span>
+                      )}
+                      {rs?.valid === false && (
+                        <span className="flex items-center gap-1 text-xs text-red-600">
+                          <AlertTriangle className="h-3 w-3" /> Invalid
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-3">
                       <button
+                        onClick={() => verifyOne(gq.id)}
+                        disabled={rs?.explaining || rs?.running || !gq.cypher.trim()}
+                        title="Validate syntax with Neptune Analytics EXPLAIN (does not run the query)"
+                        className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 disabled:opacity-40 disabled:hover:text-gray-600"
+                      >
+                        <ShieldCheck className="h-3 w-3" /> {rs?.explaining ? "Verifying..." : "Verify"}
+                      </button>
+                      <button
                         onClick={() => runOne(gq.id)}
-                        disabled={rs?.running || !gq.cypher.trim()}
+                        disabled={rs?.running || rs?.explaining || !gq.cypher.trim()}
                         className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 disabled:opacity-40 disabled:hover:text-blue-600"
                       >
                         <Play className="h-3 w-3" /> {rs?.running ? "Running..." : "Run Query"}

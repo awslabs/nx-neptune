@@ -124,6 +124,19 @@ class RunQueryResponse(BaseModel):
     results: list = Field(default_factory=list)
 
 
+class ExplainQueryResult(BaseModel):
+    """Syntax-validation outcome for a single openCypher query."""
+
+    valid: bool
+    error: Optional[str] = None
+
+
+class ExplainQueryResponse(BaseModel):
+    # One entry per non-blank query, in order. Every query is checked
+    # independently (validation does not stop at the first invalid query).
+    results: list[ExplainQueryResult] = Field(default_factory=list)
+
+
 class ProjectionStatus(BaseModel):
     id: str
     status: str
