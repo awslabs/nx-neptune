@@ -49,11 +49,12 @@ def test_list_buckets_empty_without_region(mock_settings, mock_s3):
     mock_s3.assert_not_called()  # no client built, no S3 call when no region
 
 
+@patch("nx_neptune.validators.check_bucket_versioning")
 @patch("nx_neptune.validators.check_bucket_region")
 @patch("nx_neptune.validators.check_bucket_exists")
 @patch(f"{TOOLS}.get_settings")
 def test_validate_bucket_runs_both_checks_with_region(
-    mock_settings, mock_exists, mock_region
+    mock_settings, mock_exists, mock_region, mock_versioning
 ):
     mock_settings.return_value = SimpleNamespace(region="us-west-1")
     mock_exists.return_value = SimpleNamespace(
@@ -62,30 +63,42 @@ def test_validate_bucket_runs_both_checks_with_region(
     mock_region.return_value = SimpleNamespace(
         to_dict=lambda: {"check": "region", "passed": True, "message": "in region"}
     )
+    mock_versioning.return_value = SimpleNamespace(
+        to_dict=lambda: {"check": "versioning", "passed": True, "message": "enabled"}
+    )
 
     result = validate_bucket("my-bucket")
 
-    assert [c["check"] for c in result] == ["exists", "region"]
+    # Mirrors the projection /validate button: exists, region, versioning.
+    assert [c["check"] for c in result] == ["exists", "region", "versioning"]
     assert all(c["passed"] for c in result)
     mock_exists.assert_called_once_with("my-bucket")
     mock_region.assert_called_once_with("my-bucket", "us-west-1")
+    mock_versioning.assert_called_once_with("my-bucket")
 
 
+@patch("nx_neptune.validators.check_bucket_versioning")
 @patch("nx_neptune.validators.check_bucket_region")
 @patch("nx_neptune.validators.check_bucket_exists")
 @patch(f"{TOOLS}.get_settings")
 def test_validate_bucket_skips_region_check_when_no_region(
-    mock_settings, mock_exists, mock_region
+    mock_settings, mock_exists, mock_region, mock_versioning
 ):
     mock_settings.return_value = SimpleNamespace(region="")
     mock_exists.return_value = SimpleNamespace(
         to_dict=lambda: {"check": "exists", "passed": True, "message": "ok"}
     )
+    mock_versioning.return_value = SimpleNamespace(
+        to_dict=lambda: {"check": "versioning", "passed": True, "message": "enabled"}
+    )
 
     result = validate_bucket("my-bucket")
 
-    assert [c["check"] for c in result] == ["exists"]  # no region check
+    # Region check is skipped without a region, but versioning still runs
+    # (matching the button, which always checks staging-bucket versioning).
+    assert [c["check"] for c in result] == ["exists", "versioning"]
     mock_region.assert_not_called()
+    mock_versioning.assert_called_once_with("my-bucket")
 
 
 @patch(f"{TOOLS}.agent_athena_client")
