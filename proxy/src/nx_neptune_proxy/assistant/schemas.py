@@ -185,6 +185,10 @@ class PageContext(BaseModel):
     # what the form already shows. None on pages that have no such selection.
     catalog: Optional[str] = None
     database: Optional[str] = None
+    # The Import form's current S3 staging bucket. Needed to validate node/edge
+    # SQL (Athena writes LIMIT 0 results here); when empty, SQL validation is
+    # refused rather than run against an unknown location.
+    s3_staging_bucket: Optional[str] = None
     # Import-page state so the supervisor knows a projection/graph already
     # exists and need not be regenerated: the loaded projection id, its import
     # status (draft / executing / complete / failed), the created graph id, and

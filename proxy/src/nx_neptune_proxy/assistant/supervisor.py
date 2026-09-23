@@ -28,6 +28,9 @@ from nx_neptune_proxy.assistant.agents.sql_mapping import SqlMappingAgent
 from nx_neptune_proxy.assistant import athena_tools as _athena
 from nx_neptune_proxy.assistant.athena_tools import list_buckets as _list_buckets
 from nx_neptune_proxy.assistant.athena_tools import validate_bucket as _validate_bucket
+from nx_neptune_proxy.assistant.athena_tools import (
+    validate_sql_queries as _validate_sql_queries,
+)
 from nx_neptune_proxy.assistant.athena_tools import list_catalogs as _list_catalogs
 from nx_neptune_proxy.assistant.athena_tools import list_databases as _list_databases
 from nx_neptune_proxy.assistant.athena_tools import get_schema as _get_schema
@@ -190,6 +193,22 @@ this flow:
 """
 
 
+# SQL-validation guidance: how to check the node/edge Athena SQL already on the
+# import form. Read-only — it never builds or runs the import. Kept as its own
+# block so it can grow independently and be concatenated under the "Validate the
+# import SQL" job (see SUPERVISOR_SYSTEM_PROMPT).
+SQL_VALIDATION_GUIDANCE = """
+- validate_sql_queries(): validate the node/edge Athena SQL currently on the
+  import form (runs each with LIMIT 0 against the staging bucket and checks the
+  required columns — ~id for nodes, ~from/~to for edges). Call this when the user
+  asks to validate/verify/check their SQL (node/edge) queries. It reads the
+  queries, catalog, database, and bucket from page context — you do not pass them
+  in. This is a read-only check: it never builds or runs the import. If the form
+  has no staging bucket, it refuses and explains why; relay that rather than
+  claiming the SQL was checked.
+"""
+
+
 SUPERVISOR_SYSTEM_PROMPT = """You are the assistant for a graph-import web app \
 (relational data in Amazon Athena → an Amazon Neptune graph). You help the user \
 by routing their request to your tools and replying in plain language.
@@ -239,7 +258,10 @@ passing the exact query strings. It needs a live, available graph (graph_status 
 "complete" / a graph_id present); if none exists, it says so — relay that rather \
 than pretending the queries were checked.
 
-### 4. Page navigation (move around the app)
+### 4. Validate the import SQL (read-only check)
+""" + SQL_VALIDATION_GUIDANCE + """
+
+### 5. Page navigation (move around the app)
 - navigate(request): propose cross-page navigation (e.g. "start a new import", \
 "open the TPCH projections").
 - suggest_page_actions(request): surface actions available on the current page \
@@ -249,6 +271,8 @@ than pretending the queries were checked.
 - A pure navigation request must not trigger import generation, and vice versa.
 - A single-field question (like which bucket to stage to) is job 2, not job 3 — \
 do not run generate_import to answer it.
+- A validate/verify/check request for the SQL is job 4 (validate_sql_queries), \
+never job 3 — do not run generate_import to validate existing queries.
 - Prefer the lightest job that answers the request; escalate to generate_import \
 only on a clear intent to build the import.
 - Keep your final reply short: the proposed jumps, form fields, and actions are \
@@ -582,6 +606,58 @@ class Supervisor:
             )
             return header + "\n" + "\n".join(lines)
 
+        def validate_sql_queries() -> str:
+            """Validate the Import form's node/edge Athena SQL, like pressing the
+            page's Validate Query button.
+
+            Reads the node/edge SQL, catalog, database, and staging bucket
+            straight from the current page context — you do NOT pass the queries
+            in. Each query is run with LIMIT 0 against the staging bucket and
+            checked for the required output columns (``~id`` for nodes;
+            ``~from``/``~to`` for edges).
+
+            Use when the user asks to validate / verify / check their SQL (node
+            or edge) queries on the import form. REFUSE (return the message
+            explaining why) when the form has no staging bucket set — validation
+            writes results to that bucket, so it cannot run without one. Also
+            report plainly when there are no SQL queries on the form yet.
+            Returns a per-query valid/invalid verdict with the engine's error
+            message for any that fail."""
+            pc = ctx.page_context
+            bucket = (pc.s3_staging_bucket if pc else None) or ""
+            if not bucket.strip():
+                return (
+                    "I can't validate the SQL queries: the import form has no S3 "
+                    "staging bucket set. Validation runs each query against that "
+                    "bucket, so pick/set a staging bucket first, then ask again."
+                )
+
+            node_queries = list(pc.node_queries) if pc else []
+            edge_queries = list(pc.edge_queries) if pc else []
+            labeled = [
+                (f"node query {i + 1}", q.sql, "node")
+                for i, q in enumerate(node_queries)
+                if q.sql and q.sql.strip()
+            ] + [
+                (f"edge query {i + 1}", q.sql, "edge")
+                for i, q in enumerate(edge_queries)
+                if q.sql and q.sql.strip()
+            ]
+            if not labeled:
+                return "There are no node or edge SQL queries on the form to validate."
+
+            catalog = (pc.catalog if pc else None) or "AwsDataCatalog"
+            database = (pc.database if pc else None) or ""
+            checks = _validate_sql_queries(labeled, catalog, database, bucket)
+            failed = [c for c in checks if not c["passed"]]
+            if not failed:
+                return "All SQL queries are valid: " + "; ".join(
+                    f'{c["check"]}: {c["message"]}' for c in checks
+                )
+            return "Some SQL queries failed validation: " + "; ".join(
+                f'{c["check"]}: {c["message"]}' for c in failed
+            )
+
         def update_import_fields(
             bucket: str = "",
             graph_name: str = "",
@@ -631,6 +707,7 @@ class Supervisor:
             generate_import,
             propose_queries,
             validate_graph_queries,
+            validate_sql_queries,
             update_import_fields,
             suggest_page_actions,
         ]

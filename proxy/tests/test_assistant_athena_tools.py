@@ -19,6 +19,7 @@ from nx_neptune_proxy.assistant.athena_tools import (
     list_tables_with_columns,
     sample_table,
     validate_bucket,
+    validate_sql_queries,
 )
 from nx_neptune_proxy.services.athena_query import AthenaQueryError, execute_query_rows
 
@@ -99,6 +100,49 @@ def test_validate_bucket_skips_region_check_when_no_region(
     assert [c["check"] for c in result] == ["exists", "versioning"]
     mock_region.assert_not_called()
     mock_versioning.assert_called_once_with("my-bucket")
+
+
+@patch("nx_neptune.validators.check_athena_query")
+def test_validate_sql_queries_checks_each_query_with_its_type(mock_check):
+    mock_check.side_effect = [
+        SimpleNamespace(passed=True, message="node ok"),
+        SimpleNamespace(passed=False, message="missing ~from/~to"),
+    ]
+    labeled = [
+        ("node query 1", "SELECT 1", "node"),
+        ("edge query 1", "SELECT 2", "edge"),
+    ]
+
+    result = validate_sql_queries(
+        labeled, "AwsDataCatalog", "tpch", "s3://staging"
+    )
+
+    assert result == [
+        {"check": "node query 1", "passed": True, "message": "node ok"},
+        {"check": "edge query 1", "passed": False, "message": "missing ~from/~to"},
+    ]
+    # Each query is checked against the given bucket/catalog/db with its type.
+    assert mock_check.call_count == 2
+    mock_check.assert_any_call(
+        sql_query="SELECT 1",
+        database="tpch",
+        output_location="s3://staging",
+        catalog="AwsDataCatalog",
+        query_type="node",
+    )
+    mock_check.assert_any_call(
+        sql_query="SELECT 2",
+        database="tpch",
+        output_location="s3://staging",
+        catalog="AwsDataCatalog",
+        query_type="edge",
+    )
+
+
+def test_validate_sql_queries_empty_list_runs_no_checks():
+    with patch("nx_neptune.validators.check_athena_query") as mock_check:
+        assert validate_sql_queries([], "AwsDataCatalog", "tpch", "s3://staging") == []
+        mock_check.assert_not_called()
 
 
 @patch(f"{TOOLS}.agent_athena_client")

@@ -21,6 +21,8 @@ from nx_neptune_proxy.assistant.schemas import (
 from nx_neptune_proxy.assistant.session import SessionStore
 from nx_neptune_proxy.assistant.supervisor import Supervisor, TurnContext
 
+SUPERVISOR = "nx_neptune_proxy.assistant.supervisor"
+
 
 def _supervisor_with_mock_specialists():
     sup = Supervisor(bedrock_model=None, session_store=SessionStore())
@@ -70,6 +72,79 @@ def _import_ctx(sup):
         session=sup._sessions.create(),
         page_context=PageContext(page="import", project_id="p1"),
     )
+
+
+def test_validate_sql_queries_refuses_when_no_staging_bucket():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            project_id="p1",
+            node_queries=[SqlQuery(sql='SELECT 1 AS "~id"')],
+            # no s3_staging_bucket set
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    with patch(f"{SUPERVISOR}._validate_sql_queries") as mock_validate:
+        out = tools["validate_sql_queries"]()
+
+    # Refuses without a bucket and never runs the real validation.
+    assert "staging bucket" in out.lower()
+    mock_validate.assert_not_called()
+
+
+def test_validate_sql_queries_reports_no_queries_when_form_empty():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import", project_id="p1", s3_staging_bucket="s3://staging"
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    with patch(f"{SUPERVISOR}._validate_sql_queries") as mock_validate:
+        out = tools["validate_sql_queries"]()
+
+    assert "no node or edge sql" in out.lower()
+    mock_validate.assert_not_called()
+
+
+def test_validate_sql_queries_runs_checks_when_bucket_and_queries_present():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            project_id="p1",
+            catalog="AwsDataCatalog",
+            database="tpch",
+            s3_staging_bucket="s3://staging",
+            node_queries=[SqlQuery(sql='SELECT 1 AS "~id"')],
+            edge_queries=[SqlQuery(sql='SELECT 2')],
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    with patch(f"{SUPERVISOR}._validate_sql_queries") as mock_validate:
+        mock_validate.return_value = [
+            {"check": "node query 1", "passed": True, "message": "ok"},
+            {"check": "edge query 1", "passed": False, "message": "missing ~from/~to"},
+        ]
+        out = tools["validate_sql_queries"]()
+
+    # Labeled node/edge queries forwarded with catalog/database/bucket.
+    labeled, catalog, database, bucket = mock_validate.call_args[0]
+    assert [(lbl, qt) for lbl, _sql, qt in labeled] == [
+        ("node query 1", "node"),
+        ("edge query 1", "edge"),
+    ]
+    assert (catalog, database, bucket) == ("AwsDataCatalog", "tpch", "s3://staging")
+    # Failed query is surfaced.
+    assert "failed validation" in out.lower()
+    assert "edge query 1" in out
 
 
 def test_generate_import_chains_and_builds_proposal():
