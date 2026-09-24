@@ -251,6 +251,9 @@ export interface AssistantPageContext {
   // import without re-asking for what the form already shows.
   catalog?: string | null;
   database?: string | null;
+  // Import form's current S3 staging bucket, so the agent can validate the
+  // node/edge SQL (and refuse when it's empty).
+  s3_staging_bucket?: string | null;
   // Import page state so the agent knows a projection/graph already exists: the
   // loaded projection id, its import status, the created graph id, and the
   // node/edge queries that define the current graph model.

@@ -89,6 +89,45 @@ def validate_bucket(bucket: str) -> list[dict]:
     return [r.to_dict() for r in results]
 
 
+def validate_sql_queries(
+    labeled_queries: list[tuple[str, str, str]],
+    catalog: str,
+    database: str,
+    output_location: str,
+) -> list[dict]:
+    """Validate Athena node/edge SQL the same way the UI's Validate Query button.
+
+    Reuses ``nx_neptune.validators.check_athena_query`` (no duplicated logic),
+    which runs each query with ``LIMIT 0`` against ``output_location`` (the
+    staging bucket) and checks the required output columns per query type
+    (``~id`` for nodes; ``~from``/``~to`` for edges) — exactly what the
+    projection ``/validate-query`` endpoint does per query.
+
+    ``labeled_queries`` is a list of ``(label, sql, query_type)`` where
+    ``query_type`` is ``"node"`` or ``"edge"``. Returns one check result per
+    query ``[{"check", "passed", "message"}]`` (label as ``check``), matching
+    ``validate_bucket``'s shape so the caller can report pass/fail per query.
+
+    The caller must supply ``output_location`` — validation cannot run without a
+    staging bucket, so an empty one should be refused before calling this.
+    """
+    from nx_neptune.validators import check_athena_query
+
+    results = []
+    for label, sql, query_type in labeled_queries:
+        r = check_athena_query(
+            sql_query=sql,
+            database=database,
+            output_location=output_location,
+            catalog=catalog,
+            query_type=query_type,
+        )
+        results.append(
+            {"check": label, "passed": r.passed, "message": r.message}
+        )
+    return results
+
+
 def list_catalogs() -> list[dict]:
     """Return the Athena data catalogs as ``[{"name", "type"}]``.
 

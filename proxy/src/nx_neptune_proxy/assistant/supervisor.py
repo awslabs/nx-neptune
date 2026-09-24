@@ -28,6 +28,9 @@ from nx_neptune_proxy.assistant.agents.sql_mapping import SqlMappingAgent
 from nx_neptune_proxy.assistant import athena_tools as _athena
 from nx_neptune_proxy.assistant.athena_tools import list_buckets as _list_buckets
 from nx_neptune_proxy.assistant.athena_tools import validate_bucket as _validate_bucket
+from nx_neptune_proxy.assistant.athena_tools import (
+    validate_sql_queries as _validate_sql_queries,
+)
 from nx_neptune_proxy.assistant.athena_tools import list_catalogs as _list_catalogs
 from nx_neptune_proxy.assistant.athena_tools import list_databases as _list_databases
 from nx_neptune_proxy.assistant.athena_tools import get_schema as _get_schema
@@ -47,6 +50,7 @@ from nx_neptune_proxy.assistant.schemas import (
     JumpAction,
     PageContext,
     SqlMappingResult,
+    SqlQuery,
 )
 from nx_neptune_proxy.assistant.session import Session, SessionStore
 from nx_neptune_proxy.assistant.skills import CAPABILITY_HINTS
@@ -190,6 +194,33 @@ this flow:
 """
 
 
+# SQL-validation guidance: how to check the node/edge Athena SQL already on the
+# import form, and apply a fix when a query is wrong. Validation is read-only and
+# never builds/runs the import; the fix tool edits a single query in place. Kept
+# as its own block so it can grow independently and be concatenated under the
+# "Validate and fix the import SQL" job (see SUPERVISOR_SYSTEM_PROMPT).
+SQL_VALIDATION_GUIDANCE = """
+- validate_sql_queries(): validate the node/edge Athena SQL currently on the
+  import form (runs each with LIMIT 0 against the staging bucket and checks the
+  required columns — ~id for nodes, ~from/~to for edges). Call this when the user
+  asks to validate/verify/check their SQL (node/edge) queries. It reads the
+  queries, catalog, database, and bucket from page context — you do not pass them
+  in. This is a read-only check: it never builds or runs the import. If the form
+  has no staging bucket, it refuses and explains why; relay that rather than
+  claiming the SQL was checked.
+- update_sql_queries(query_type, index, sql): apply a corrected node/edge query
+  to the form. Finding a bug is not enough — when the user asks you to FIX a
+  failing query, you MUST call this with the corrected SQL, or the form stays
+  unchanged. query_type is "node"/"edge" and index is the 1-based position
+  validate_sql_queries reported (e.g. "node query 1" -> index 1). Only that one
+  query changes; the others are preserved. Never say you fixed a query unless you
+  called this tool. After applying a fix, ALWAYS call validate_sql_queries again
+  in the same turn to confirm the correction actually validates, and report that
+  result — do not tell the user it is fixed/valid unless the re-check passed. If
+  it still fails, relay the new error and try again rather than claiming success.
+"""
+
+
 SUPERVISOR_SYSTEM_PROMPT = """You are the assistant for a graph-import web app \
 (relational data in Amazon Athena → an Amazon Neptune graph). You help the user \
 by routing their request to your tools and replying in plain language.
@@ -239,7 +270,10 @@ passing the exact query strings. It needs a live, available graph (graph_status 
 "complete" / a graph_id present); if none exists, it says so — relay that rather \
 than pretending the queries were checked.
 
-### 4. Page navigation (move around the app)
+### 4. Validate and fix the import SQL
+""" + SQL_VALIDATION_GUIDANCE + """
+
+### 5. Page navigation (move around the app)
 - navigate(request): propose cross-page navigation (e.g. "start a new import", \
 "open the TPCH projections").
 - suggest_page_actions(request): surface actions available on the current page \
@@ -249,6 +283,8 @@ than pretending the queries were checked.
 - A pure navigation request must not trigger import generation, and vice versa.
 - A single-field question (like which bucket to stage to) is job 2, not job 3 — \
 do not run generate_import to answer it.
+- A validate/verify/check request for the SQL is job 4 (validate_sql_queries), \
+never job 3 — do not run generate_import to validate existing queries.
 - Prefer the lightest job that answers the request; escalate to generate_import \
 only on a clear intent to build the import.
 - Keep your final reply short: the proposed jumps, form fields, and actions are \
@@ -582,6 +618,114 @@ class Supervisor:
             )
             return header + "\n" + "\n".join(lines)
 
+        def validate_sql_queries() -> str:
+            """Validate the Import form's node/edge Athena SQL, like pressing the
+            page's Validate Query button.
+
+            Reads the node/edge SQL, catalog, database, and staging bucket
+            straight from the current page context — you do NOT pass the queries
+            in. Each query is run with LIMIT 0 against the staging bucket and
+            checked for the required output columns (``~id`` for nodes;
+            ``~from``/``~to`` for edges).
+
+            Use when the user asks to validate / verify / check their SQL (node
+            or edge) queries on the import form. REFUSE (return the message
+            explaining why) when the form has no staging bucket set — validation
+            writes results to that bucket, so it cannot run without one. Also
+            report plainly when there are no SQL queries on the form yet.
+            Returns a per-query valid/invalid verdict with the engine's error
+            message for any that fail."""
+            pc = ctx.page_context
+            bucket = (pc.s3_staging_bucket if pc else None) or ""
+            if not bucket.strip():
+                return (
+                    "I can't validate the SQL queries: the import form has no S3 "
+                    "staging bucket set. Validation runs each query against that "
+                    "bucket, so pick/set a staging bucket first, then ask again."
+                )
+
+            node_queries = list(pc.node_queries) if pc else []
+            edge_queries = list(pc.edge_queries) if pc else []
+            labeled = [
+                (f"node query {i + 1}", q.sql, "node")
+                for i, q in enumerate(node_queries)
+                if q.sql and q.sql.strip()
+            ] + [
+                (f"edge query {i + 1}", q.sql, "edge")
+                for i, q in enumerate(edge_queries)
+                if q.sql and q.sql.strip()
+            ]
+            if not labeled:
+                return "There are no node or edge SQL queries on the form to validate."
+
+            catalog = (pc.catalog if pc else None) or "AwsDataCatalog"
+            database = (pc.database if pc else None) or ""
+            checks = _validate_sql_queries(labeled, catalog, database, bucket)
+            failed = [c for c in checks if not c["passed"]]
+            if not failed:
+                return "All SQL queries are valid: " + "; ".join(
+                    f'{c["check"]}: {c["message"]}' for c in checks
+                )
+            return "Some SQL queries failed validation: " + "; ".join(
+                f'{c["check"]}: {c["message"]}' for c in failed
+            )
+
+        def update_sql_queries(query_type: str, index: int, sql: str) -> str:
+            """Apply a corrected node/edge SQL query to the import form.
+
+            Use this to actually FIX a query on the form — e.g. after
+            validate_sql_queries reports a syntax error, call this with the
+            corrected SQL so the form is updated (finding the bug is not enough;
+            you MUST call this to change the form). Do NOT claim you fixed a
+            query unless you called this tool.
+
+            - query_type: "node" or "edge" — which list the query is in.
+            - index: 1-based position within that list (the same numbering
+              validate_sql_queries reports, e.g. "node query 1" -> index 1).
+            - sql: the full corrected SQL for that one query.
+
+            Only the single targeted query changes; every other node/edge query
+            (and its description) on the form is preserved. Read the current
+            queries from page context — this replaces just the one at ``index``."""
+            qtype = (query_type or "").strip().lower()
+            if qtype not in ("node", "edge"):
+                return 'query_type must be "node" or "edge".'
+            if not sql or not sql.strip():
+                return "No SQL provided; pass the full corrected query."
+
+            pc = ctx.page_context
+            nodes = list(pc.node_queries) if pc else []
+            edges = list(pc.edge_queries) if pc else []
+            target = nodes if qtype == "node" else edges
+            # 1-based index mirrors what validate_sql_queries reports.
+            pos = index - 1
+            if pos < 0 or pos >= len(target):
+                return (
+                    f"There is no {qtype} query {index} on the form "
+                    f"(it has {len(target)} {qtype} query(ies))."
+                )
+            # Preserve the query's description; only the SQL text changes.
+            target[pos] = SqlQuery(sql=sql, description=target[pos].description)
+
+            # Reflect the fix in the page-context snapshot too, so a follow-up
+            # validate_sql_queries call *in this same turn* checks the corrected
+            # SQL rather than the stale text (validation reads from page
+            # context, while the client applies changes from ctx.proposal).
+            if pc is not None:
+                if qtype == "node":
+                    pc.node_queries = nodes
+                else:
+                    pc.edge_queries = edges
+
+            # Merge onto any proposal already built this turn; send the FULL
+            # node/edge lists because the client replaces each array wholesale
+            # (a partial list would drop the other queries).
+            base = ctx.proposal.model_dump() if ctx.proposal else {}
+            base["node_queries"] = [q.model_dump() for q in nodes] or None
+            base["edge_queries"] = [q.model_dump() for q in edges] or None
+            ctx.proposal = FieldProposal(**base)
+            return f"Updated {qtype} query {index} on the form."
+
         def update_import_fields(
             bucket: str = "",
             graph_name: str = "",
@@ -631,6 +775,8 @@ class Supervisor:
             generate_import,
             propose_queries,
             validate_graph_queries,
+            validate_sql_queries,
+            update_sql_queries,
             update_import_fields,
             suggest_page_actions,
         ]

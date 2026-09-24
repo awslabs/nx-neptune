@@ -57,6 +57,7 @@ export function serializePageContext(
     project_id: bridge.jumpContext?.projectId ?? null,
     catalog: asField(bridge.fields?.catalog),
     database: asField(bridge.fields?.database),
+    s3_staging_bucket: asField(bridge.fields?.bucket),
     projection_id: asField(bridge.fields?.projectionId),
     graph_status: asField(bridge.fields?.graphStatus),
     graph_id: asField(bridge.fields?.graphId),

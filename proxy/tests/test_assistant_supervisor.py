@@ -21,6 +21,8 @@ from nx_neptune_proxy.assistant.schemas import (
 from nx_neptune_proxy.assistant.session import SessionStore
 from nx_neptune_proxy.assistant.supervisor import Supervisor, TurnContext
 
+SUPERVISOR = "nx_neptune_proxy.assistant.supervisor"
+
 
 def _supervisor_with_mock_specialists():
     sup = Supervisor(bedrock_model=None, session_store=SessionStore())
@@ -70,6 +72,171 @@ def _import_ctx(sup):
         session=sup._sessions.create(),
         page_context=PageContext(page="import", project_id="p1"),
     )
+
+
+def test_validate_sql_queries_refuses_when_no_staging_bucket():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            project_id="p1",
+            node_queries=[SqlQuery(sql='SELECT 1 AS "~id"')],
+            # no s3_staging_bucket set
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    with patch(f"{SUPERVISOR}._validate_sql_queries") as mock_validate:
+        out = tools["validate_sql_queries"]()
+
+    # Refuses without a bucket and never runs the real validation.
+    assert "staging bucket" in out.lower()
+    mock_validate.assert_not_called()
+
+
+def test_validate_sql_queries_reports_no_queries_when_form_empty():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import", project_id="p1", s3_staging_bucket="s3://staging"
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    with patch(f"{SUPERVISOR}._validate_sql_queries") as mock_validate:
+        out = tools["validate_sql_queries"]()
+
+    assert "no node or edge sql" in out.lower()
+    mock_validate.assert_not_called()
+
+
+def test_validate_sql_queries_runs_checks_when_bucket_and_queries_present():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            project_id="p1",
+            catalog="AwsDataCatalog",
+            database="tpch",
+            s3_staging_bucket="s3://staging",
+            node_queries=[SqlQuery(sql='SELECT 1 AS "~id"')],
+            edge_queries=[SqlQuery(sql='SELECT 2')],
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    with patch(f"{SUPERVISOR}._validate_sql_queries") as mock_validate:
+        mock_validate.return_value = [
+            {"check": "node query 1", "passed": True, "message": "ok"},
+            {"check": "edge query 1", "passed": False, "message": "missing ~from/~to"},
+        ]
+        out = tools["validate_sql_queries"]()
+
+    # Labeled node/edge queries forwarded with catalog/database/bucket.
+    labeled, catalog, database, bucket = mock_validate.call_args[0]
+    assert [(lbl, qt) for lbl, _sql, qt in labeled] == [
+        ("node query 1", "node"),
+        ("edge query 1", "edge"),
+    ]
+    assert (catalog, database, bucket) == ("AwsDataCatalog", "tpch", "s3://staging")
+    # Failed query is surfaced.
+    assert "failed validation" in out.lower()
+    assert "edge query 1" in out
+
+
+def test_update_sql_queries_replaces_target_and_preserves_others():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            project_id="p1",
+            node_queries=[
+                SqlQuery(sql='SELECT 1 AS ~id"', description="customers"),
+                SqlQuery(sql='SELECT 2 AS "~id"', description="orders"),
+            ],
+            edge_queries=[SqlQuery(sql='SELECT 3')],
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    out = tools["update_sql_queries"]("node", 1, 'SELECT 1 AS "~id"')
+
+    assert "updated node query 1" in out.lower()
+    # Full node list is sent, target fixed, description preserved, others intact.
+    assert [q.sql for q in ctx.proposal.node_queries] == [
+        'SELECT 1 AS "~id"',
+        'SELECT 2 AS "~id"',
+    ]
+    assert ctx.proposal.node_queries[0].description == "customers"
+    # Edge queries preserved untouched.
+    assert [q.sql for q in ctx.proposal.edge_queries] == ["SELECT 3"]
+    # Page context is updated in-place so same-turn validation sees the fix.
+    assert ctx.page_context.node_queries[0].sql == 'SELECT 1 AS "~id"'
+
+
+def test_update_sql_queries_then_validate_checks_corrected_sql():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            project_id="p1",
+            catalog="AwsDataCatalog",
+            database="tpch",
+            s3_staging_bucket="s3://staging",
+            node_queries=[SqlQuery(sql='SELECT 1 AS ~id"')],  # broken
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    tools["update_sql_queries"]("node", 1, 'SELECT 1 AS "~id"')
+
+    # A same-turn re-validate must check the CORRECTED sql, not the stale text.
+    with patch(f"{SUPERVISOR}._validate_sql_queries") as mock_validate:
+        mock_validate.return_value = [
+            {"check": "node query 1", "passed": True, "message": "ok"}
+        ]
+        out = tools["validate_sql_queries"]()
+
+    labeled = mock_validate.call_args[0][0]
+    assert labeled[0][1] == 'SELECT 1 AS "~id"'  # corrected sql validated
+    assert "valid" in out.lower()
+
+
+def test_update_sql_queries_rejects_out_of_range_index():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            project_id="p1",
+            node_queries=[SqlQuery(sql='SELECT 1 AS "~id"')],
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    out = tools["update_sql_queries"]("node", 5, "SELECT 9")
+
+    assert "no node query 5" in out.lower()
+    assert ctx.proposal is None  # nothing applied
+
+
+def test_update_sql_queries_rejects_bad_type():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(page="import", project_id="p1"),
+    )
+    tools = _tools(sup, ctx)
+
+    out = tools["update_sql_queries"]("relationship", 1, "SELECT 9")
+
+    assert "node" in out.lower() and "edge" in out.lower()
+    assert ctx.proposal is None
 
 
 def test_generate_import_chains_and_builds_proposal():
