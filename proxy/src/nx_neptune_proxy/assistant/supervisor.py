@@ -222,6 +222,30 @@ SQL_VALIDATION_GUIDANCE = """
 """
 
 
+# openCypher-validation guidance: the Details-page twin of SQL_VALIDATION_GUIDANCE.
+# Checks the graph queries already on the page and applies a fix when one is
+# wrong. Validation is read-only (EXPLAIN plans, never runs); the fix tool edits
+# a single query in place. Kept as its own block, concatenated under the same
+# "Validate and fix queries" job (see SUPERVISOR_SYSTEM_PROMPT).
+GRAPH_QUERY_VALIDATION_GUIDANCE = """
+- validate_graph_queries(queries): validate openCypher syntax against the live
+  graph via Neptune Analytics EXPLAIN (read-only — it does not run the queries).
+  Call this when the user asks to validate/verify/check openCypher — pass the
+  exact query strings, or call with NO arguments to validate the graph queries
+  already on the page (Details page). It needs a live, available graph
+  (graph_status "complete" / a graph_id present); if none exists, it says so —
+  relay that rather than pretending the queries were checked.
+- update_graph_queries(index, cypher): apply a corrected openCypher graph query
+  to the Details page. When the user asks you to FIX a graph query, finding the
+  bug is not enough — you MUST call this with the corrected openCypher, or the
+  page stays unchanged. index is the 1-based position shown on the page; only
+  that one query changes and the others are preserved. Never claim you fixed a
+  query unless you called this tool. After applying a fix, ALWAYS call
+  validate_graph_queries again (no arguments) to confirm it now plans cleanly,
+  and only report success if that re-check passed.
+"""
+
+
 SUPERVISOR_SYSTEM_PROMPT = """You are the assistant for a graph-import web app \
 (relational data in Amazon Athena → an Amazon Neptune graph). You help the user \
 by routing their request to your tools and replying in plain language.
@@ -264,24 +288,9 @@ generate_import when the user wants to query/explore/analyze a graph and the \
 page context shows one is already set up (a projection_id, a graph_status, or \
 node/edge queries are present). Do NOT re-run generate_import just to get \
 queries when the import already exists.
-- validate_graph_queries(queries): validate openCypher syntax against the live \
-graph via Neptune Analytics EXPLAIN (read-only — it does not run the queries). \
-Call this when the user asks to validate/verify/check openCypher — pass the exact \
-query strings, or call with no arguments to validate the graph queries already on \
-the page (Details page). It needs a live, available graph (graph_status \
-"complete" / a graph_id present); if none exists, it says so — relay that rather \
-than pretending the queries were checked.
-- update_graph_queries(index, cypher): apply a corrected openCypher graph query \
-to the Details page. When the user asks you to FIX a graph query, finding the bug \
-is not enough — you MUST call this with the corrected openCypher, or the page \
-stays unchanged. index is the 1-based position shown on the page; only that one \
-query changes and the others are preserved. Never claim you fixed a query unless \
-you called this tool. After applying a fix, call validate_graph_queries again (no \
-arguments) to confirm it now plans cleanly, and only report success if that \
-re-check passed.
 
-### 4. Validate and fix the import SQL
-""" + SQL_VALIDATION_GUIDANCE + """
+### 4. Validate and fix queries (SQL and openCypher — never builds the import)
+""" + SQL_VALIDATION_GUIDANCE + GRAPH_QUERY_VALIDATION_GUIDANCE + """
 
 ### 5. Page navigation (move around the app)
 - navigate(request): propose cross-page navigation (e.g. "start a new import", \
@@ -293,8 +302,9 @@ re-check passed.
 - A pure navigation request must not trigger import generation, and vice versa.
 - A single-field question (like which bucket to stage to) is job 2, not job 3 — \
 do not run generate_import to answer it.
-- A validate/verify/check request for the SQL is job 4 (validate_sql_queries), \
-never job 3 — do not run generate_import to validate existing queries.
+- A validate/verify/check/fix request for existing queries (node/edge SQL or \
+openCypher graph queries) is job 4, never job 3 — do not run generate_import to \
+validate or fix queries that already exist.
 - Prefer the lightest job that answers the request; escalate to generate_import \
 only on a clear intent to build the import.
 - Keep your final reply short: the proposed jumps, form fields, and actions are \
