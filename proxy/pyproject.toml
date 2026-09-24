@@ -25,6 +25,9 @@ dependencies = [
     "fastapi==0.115.12",
     "uvicorn[standard]==0.34.2",
     "nx-neptune",
+    # boto3 (already transitive via nx-neptune) is pinned explicitly for the
+    # bedrock-runtime client. Floor, not exact pin — bump when a lockfile lands.
+    "boto3>=1.34.0",
 ]
 
 [project.urls]
@@ -32,10 +35,21 @@ dependencies = [
 "Source Code" = 'https://github.com/awslabs/nx-neptune'
 
 [project.optional-dependencies]
+# AI assistant backend (spec §9). Strands drives the supervisor + specialist
+# agents on Bedrock. Kept optional so the proxy imports and runs without it (the
+# assistant modules defer every strands import); install this extra to enable
+# live agent responses. Floors, not exact pins — bump when a lockfile lands.
+strands = [
+    'strands-agents>=1.0.0',
+    'strands-agents-tools>=0.1.0',
+]
 test = [
     'pytest>=7.2',
     'pytest-asyncio>=0.26.0',
     'httpx>=0.28,<1',
+    # `make dev` installs `.[test]`, so include strands here to enable the live
+    # assistant in development.
+    'nx-neptune-proxy[strands]',
 ]
 
 [tool.setuptools]
@@ -44,6 +58,12 @@ include-package-data = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# Vendored Neptune skill references (§9.13) — snapshot copy of Apache-2.0 files
+# from aws/agent-toolkit-for-aws; ship in the wheel so load_neptune_skill can
+# read them via importlib.resources. See references/PROVENANCE.md.
+"nx_neptune_proxy.assistant.skills" = ["references/*.md"]
 
 [tool.isort]
 profile = "black"

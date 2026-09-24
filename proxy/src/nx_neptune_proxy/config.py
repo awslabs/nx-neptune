@@ -13,6 +13,11 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 # normalizing an origin, so "https://x" and "https://x:443" compare equal.
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
+# Bedrock model used by the AI assistant when BEDROCK_MODEL is unset. This is a
+# cross-region inference profile ID — Bedrock's Converse API rejects the bare
+# "us.anthropic.claude-sonnet-4-5" alias, so the full versioned form is required.
+_DEFAULT_BEDROCK_MODEL = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
 
 def normalize_origin(origin: str) -> str | None:
     """Normalize an origin to a canonical scheme://host[:port] form.
@@ -56,6 +61,22 @@ class Settings:
     region: str = ""
     graph_prefix: str = "nxp-"
     config_bucket: str = ""
+    # AI assistant (spec §9.9). Default Bedrock model for the agent pipeline;
+    # read from BEDROCK_MODEL (falling back to _DEFAULT_BEDROCK_MODEL) and
+    # overridable per request via the chat panel's model selector. bedrock_region
+    # falls back to the general AWS region when BEDROCK_REGION is unset.
+    bedrock_model: str = field(
+        default_factory=lambda: os.environ.get(
+            "BEDROCK_MODEL", _DEFAULT_BEDROCK_MODEL
+        )
+    )
+    bedrock_region: str = ""
+    # Optional scoped, read-only IAM role for the agent path (spec §9.11). When
+    # set, the proxy assumes this role via STS and hands the resulting
+    # short-lived credentials to the agent's Athena/Bedrock clients, so "the
+    # agent can only read/propose" holds at the AWS layer, not just in code.
+    # When unset, the agent path falls back to the proxy's own process role.
+    bedrock_agent_role_arn: str = ""
 
     def __post_init__(self) -> None:
         if self.allowed_origins is None:
@@ -92,6 +113,10 @@ class Settings:
         allow_raw = os.environ.get("ALLOW_NON_LOOPBACK_BIND", "")
         trusted_hosts = _LOOPBACK_HOSTS | origin_hosts
 
+        region = os.environ.get(
+            "AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "")
+        )
+
         return cls(
             log_level=os.environ.get("LOG_LEVEL", "INFO").upper(),
             allowed_origins=origins,
@@ -101,11 +126,14 @@ class Settings:
             extra_trusted_hosts=extra_trusted,
             allow_non_loopback_bind=allow_raw.strip().lower()
             not in ("", "0", "false", "no"),
-            region=os.environ.get(
-                "AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "")
-            ),
+            region=region,
             graph_prefix=os.environ.get("GRAPH_PREFIX", "nxp-"),
             config_bucket=os.environ.get("NX_NEPTUNE_CONFIG_BUCKET", ""),
+            bedrock_model=os.environ.get(
+                "BEDROCK_MODEL", _DEFAULT_BEDROCK_MODEL
+            ),
+            bedrock_region=os.environ.get("BEDROCK_REGION", "") or region,
+            bedrock_agent_role_arn=os.environ.get("BEDROCK_AGENT_ROLE_ARN", ""),
         )
 
     def validate(self) -> None:

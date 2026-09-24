@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { metadata, graphActions, Inflight } from "../api";
 import { Card, RefreshButton } from "../components/ui";
+import { usePageBridge } from "../assistant/context";
 import { Trash2, ExternalLink, Square, Play, X, AlertTriangle } from "lucide-react";
 
 interface Graph {
@@ -47,7 +48,8 @@ export function Graphs() {
   const load = useCallback(async (opts?: { withActions?: boolean; withSummaries?: boolean }) => {
     setLoading(true);
     const data = await metadata.graphs();
-    setGraphs(data.graphs);
+    const sorted = [...data.graphs].sort((a, b) => a.id.localeCompare(b.id));
+    setGraphs(sorted);
     setLoading(false);
 
     // Fetch summaries only on initial load or explicit request
@@ -97,6 +99,24 @@ export function Graphs() {
     graphActions.dismissInflight(graphId).catch(() => {});
   }
 
+  // Expose graphs to the assistant as per-graph Stop/Delete Instance targets.
+  // performAction owns confirmation + refresh. Graphs is a global list, so no
+  // project context for jumps.
+  usePageBridge({
+    page: "graphs",
+    graphTargets: graphs.map(g => ({
+      id: g.id,
+      name: g.name,
+      status: g.status,
+      actions: actionStates[g.id]?.actions ?? [],
+    })),
+    runGraphAction: (id, action) => {
+      const g = graphs.find(x => x.id === id);
+      return performAction(id, action, g?.name ?? id);
+    },
+    jumpContext: { projectId: null },
+  });
+
   const statusStyle = (status: string) => {
     switch (status) {
       case "AVAILABLE": return "bg-green-100 text-green-700";
@@ -111,7 +131,7 @@ export function Graphs() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pr-32">
         <div>
           <h1 className="text-lg font-semibold">Neptune Analytics Graphs</h1>
           <p className="text-sm text-gray-500">Showing graphs with <code className="rounded bg-gray-100 px-1">{graphPrefix}</code> prefix</p>

@@ -1,11 +1,13 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useSearchParams } from "react-router";
+import { useSearchParams, useNavigate } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
+import { usePageBridge, type ImportPersistData } from "../assistant/context";
 import { Play, CheckCircle, Eye, Plus, Trash2 } from "lucide-react";
 
 export function Import() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   // --- Metadata state ---
   const [catalogs, setCatalogs] = useState<{ name: string; status: string }[]>([]);
@@ -28,9 +30,15 @@ export function Import() {
   const [nodeQueries, setNodeQueries] = useState<NodeQueryInput[]>([{ sql: "" }]);
   const [edgeQueries, setEdgeQueries] = useState<EdgeQueryInput[]>([{ sql: "" }]);
 
+  // --- Post-import openCypher graph queries ---
+  // Authored here but never run on this page — they carry over to the read-only
+  // /details page (via navigation state) where the live graph can execute them.
+  const [graphQueries, setGraphQueries] = useState<{ cypher: string }[]>([{ cypher: "" }]);
+
   // --- Projection state ---
   const [projectionsList, setProjectionsList] = useState<Projection[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
+  const [graphId, setGraphId] = useState<string | null>(null);
   const [status, setStatus] = useState<ProjectionStatus | null>(null);
   const [polling, setPolling] = useState(false);
 
@@ -43,7 +51,7 @@ export function Import() {
   // --- Load metadata ---
   useEffect(() => {
     metadata.catalogs().then((d) => setCatalogs(d.catalogs));
-    metadata.buckets().then((d) => setBuckets(d.buckets));
+    metadata.buckets().then((d) => setBuckets(d.buckets)).catch((e) => setError(e.message));
     projectApi.list().then(setProjects);
     loadProjections().then(() => {
       const projectionId = searchParams.get("projection");
@@ -76,6 +84,7 @@ export function Import() {
 
   function resetForm() {
     setCurrentId(null);
+    setGraphId(null);
     setStatus(null);
     setPolling(false);
     setChecks([]);
@@ -85,6 +94,7 @@ export function Import() {
     setDatabase("");
     setNodeQueries([{ sql: "" }]);
     setEdgeQueries([{ sql: "" }]);
+    setGraphQueries([{ cypher: "" }]);
     setBucket("");
     setGraphName("");
     setGraphMemoryGb(16);
@@ -97,24 +107,53 @@ export function Import() {
 
   // --- Projection management ---
 
-  // Auto-create projection once user starts filling the form
-  useEffect(() => {
-    if (currentId) return;
-    const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
-    if (!hasContent) return;
-    projection.create({
+  // Guards projection creation so the several triggers that can fire in the
+  // same tick — the two auto-create effects below, an assistant apply, and a
+  // manual Validate/Execute — create exactly one row instead of racing (setId
+  // is async, so a plain `!currentId` check is not enough).
+  const creatingRef = useRef(false);
+
+  async function createProjectionOnce(
+    data: Record<string, unknown>,
+  ): Promise<string | null> {
+    if (currentId || creatingRef.current) return currentId;
+    creatingRef.current = true;
+    try {
+      const p = await projection.create(data);
+      setCurrentId(p.id);
+      // Flush any graph queries typed before the projection existed — the
+      // debounced save skips while there is no id, so persist them now.
+      if (graphQueries.some((q) => q.cypher.trim())) {
+        await projection
+          .saveGraphQueries(p.id, graphQueries.map((q) => ({ cypher: q.cypher })))
+          .catch(() => {});
+      }
+      await loadProjections();
+      window.dispatchEvent(new Event("projects-changed"));
+      return p.id;
+    } finally {
+      creatingRef.current = false;
+    }
+  }
+
+  function configData() {
+    return {
       catalog,
       database,
       s3_staging_bucket: bucket,
-      graph_name: graphName,
+      graph_name: graphName || undefined,
       graph_memory_gb: graphMemoryGb,
       project_id: projectId || undefined,
-    }).then((p) => {
-      setCurrentId(p.id);
-      loadProjections();
-      window.dispatchEvent(new Event("projects-changed"));
-    });
-  }, [database, bucket, graphName, nodeQueries, edgeQueries]);
+    };
+  }
+
+  // Auto-create projection once user starts filling the form
+  useEffect(() => {
+    if (currentId) return;
+    const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim()) || graphQueries.some(q => q.cypher.trim());
+    if (!hasContent) return;
+    createProjectionOnce(configData());
+  }, [database, bucket, graphName, nodeQueries, edgeQueries, graphQueries]);
 
   // Auto-create projection once user starts filling the form, then auto-save config on changes
   const configTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,60 +162,88 @@ export function Import() {
     const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
     if (!hasContent) return;
 
-    const data = {
-      catalog,
-      database,
-      s3_staging_bucket: bucket,
-      graph_name: graphName,
-      graph_memory_gb: graphMemoryGb,
-      project_id: projectId || undefined,
-    };
-
     if (!currentId) {
-      // First time — create
-      projection.create(data).then((p) => {
-        setCurrentId(p.id);
-        loadProjections();
-        window.dispatchEvent(new Event("projects-changed"));
-      });
+      // First time — create (deduped against the effect above)
+      createProjectionOnce(configData());
     } else {
       // Subsequent changes — debounced update
+      pendingSaveRef.current.configDirty = true;
       if (configTimer.current) clearTimeout(configTimer.current);
       configTimer.current = setTimeout(() => {
-        projection.update(currentId, data);
+        pendingSaveRef.current.configDirty = false;
+        projection.update(currentId, configData());
       }, 1000);
     }
   }, [catalog, database, bucket, graphName, graphMemoryGb, projectId]);
 
   async function ensureProjection(): Promise<string> {
-    const data = {
-      catalog,
-      database,
-      s3_staging_bucket: bucket,
-      graph_name: graphName,
-      graph_memory_gb: graphMemoryGb,
-      project_id: projectId || undefined,
-    };
+    const data = configData();
     if (currentId) {
       await projection.update(currentId, data);
       await projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: edgeQueries });
       return currentId;
     }
-    const p = await projection.create(data);
-    setCurrentId(p.id);
-    await projection.saveQueries(p.id, { node_queries: nodeQueries, edge_queries: edgeQueries });
-    await loadProjections();
-    window.dispatchEvent(new Event("projects-changed"));
-    return p.id;
+    const id = await createProjectionOnce(data);
+    if (!id) throw new Error("Could not create the projection");
+    await projection.saveQueries(id, { node_queries: nodeQueries, edge_queries: edgeQueries });
+    return id;
+  }
+
+  // Persist the import the assistant just applied. Called from the page bridge
+  // right after the proposal fills the form, with the applied values passed in
+  // directly (state has not re-rendered yet). Creates the projection if none
+  // exists — the whole point of this hook — then saves any node/edge queries,
+  // which the raw setters do not persist on their own.
+  async function persistImport(data: ImportPersistData): Promise<void> {
+    const config: Record<string, unknown> = {
+      graph_memory_gb: graphMemoryGb,
+      project_id: projectId || undefined,
+    };
+    if (data.catalog != null) config.catalog = data.catalog;
+    if (data.database != null) config.database = data.database;
+    if (data.bucket != null) config.s3_staging_bucket = data.bucket;
+    if (data.graphName != null) config.graph_name = data.graphName;
+
+    let id = currentId;
+    if (!id) {
+      id = await createProjectionOnce({ catalog: data.catalog ?? catalog, ...config });
+      if (!id) return; // a create is already in flight; it will carry the fields
+    } else {
+      await projection.update(id, config);
+    }
+
+    if (data.nodeQueries || data.edgeQueries) {
+      await projection.saveQueries(id, {
+        node_queries: (data.nodeQueries ?? nodeQueries).map((q) => ({ sql: q.sql })),
+        edge_queries: (data.edgeQueries ?? edgeQueries).map((q) => ({ sql: q.sql })),
+      });
+    }
   }
 
   function loadProjection(p: Projection) {
+    // A completed projection is immutable — its config lives on the read-only
+    // /details page. Bounce any completed projection there so Import only ever
+    // shows work that is still editable (draft/executing/failed).
+    if (p.status === "complete") {
+      navigate(`/details?projection=${p.id}`, { replace: true });
+      return;
+    }
+    // Switching projections: cancel the previous projection's poll and clear
+    // its status so its progress bar can't bleed onto this one.
+    stopPolling();
+    setStatus(null);
+    setPolling(false);
     setCurrentId(p.id);
-    if (p.catalog) setCatalog(p.catalog);
-    if (p.database) setDatabase(p.database);
-    if (p.s3_staging_bucket) setBucket(p.s3_staging_bucket);
-    if (p.graph_name) setGraphName(p.graph_name);
-    if (p.graph_memory_gb) setGraphMemoryGb(p.graph_memory_gb);
+    setGraphId(p.graph_id ?? null);
+    if (p.project_id) setProjectId(p.project_id);
+    // Set every field unconditionally (defaulting when absent) so this
+    // projection fully REPLACES the previously loaded one — a missing value
+    // must clear the old value, not keep it.
+    setCatalog(p.catalog || "AwsDataCatalog");
+    setDatabase(p.database || "");
+    setBucket(p.s3_staging_bucket || "");
+    setGraphName(p.graph_name || "");
+    setGraphMemoryGb(p.graph_memory_gb || 16);
     setChecks([]);
     setPreview(null);
     setError(null);
@@ -188,12 +255,20 @@ export function Import() {
 
       if (res.edge_queries.length > 0) setEdgeQueries(res.edge_queries.map((q) => ({ id: q.id, sql: q.sql })));
       else setEdgeQueries([{ sql: "" }]);
+
+      // Post-import openCypher graph queries (persisted text only, no results).
+      // Clear when this projection has none, so a previous projection's queries
+      // don't linger.
+      if (res.graph_queries.length > 0) setGraphQueries(res.graph_queries.map((q) => ({ cypher: q.cypher })));
+      else setGraphQueries([{ cypher: "" }]);
     });
 
-    if (p.status === "executing") startPolling(p.id);
-    else if (p.status === "complete") {
-      setStatus({ id: p.id, status: "complete", progress: 100, graph_endpoint: p.graph_endpoint });
-    } else {
+    // Completed projections are redirected to /details above, so only in-flight
+    // and not-yet-run states remain here. The backend marks an in-progress
+    // import "importing" (see pipeline.py); "executing" is accepted too for
+    // consistency with the rest of the app (Sidebar/Projections).
+    if (p.status === "importing" || p.status === "executing") startPolling(p.id);
+    else {
       setStatus(null);
       setPolling(false);
     }
@@ -209,8 +284,10 @@ export function Import() {
 
   function scheduleSave(nq: NodeQueryInput[], eq: EdgeQueryInput[]) {
     if (!currentId) return;
+    pendingSaveRef.current.queriesDirty = true;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
+      pendingSaveRef.current.queriesDirty = false;
       projection.saveQueries(currentId, { node_queries: nq, edge_queries: eq });
     }, 1000);
   }
@@ -242,6 +319,75 @@ export function Import() {
     setEdgeQueries(updated);
     if (currentId) projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: updated });
   }
+
+  // --- Graph query management (openCypher; text persisted, results are not) ---
+  // Graph queries are saved via the graph-only endpoint so authoring them here
+  // never touches the node/edge queries, and they carry over to /details.
+  const graphSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Holds the latest values + which debounced saves are still pending, so we
+  // can flush them if the component unmounts (navigating away) before the 1s
+  // debounce fires — otherwise in-flight edits like graph queries are lost.
+  const pendingSaveRef = useRef({
+    currentId: null as string | null,
+    nodeQueries: [] as NodeQueryInput[],
+    edgeQueries: [] as EdgeQueryInput[],
+    graphQueries: [] as { cypher: string }[],
+    queriesDirty: false,
+    graphDirty: false,
+    configDirty: false,
+    config: {} as Record<string, unknown>,
+  });
+  function scheduleGraphSave(gq: { cypher: string }[]) {
+    if (!currentId) return;
+    pendingSaveRef.current.graphDirty = true;
+    if (graphSaveTimer.current) clearTimeout(graphSaveTimer.current);
+    graphSaveTimer.current = setTimeout(() => {
+      pendingSaveRef.current.graphDirty = false;
+      projection.saveGraphQueries(currentId, gq.map((q) => ({ cypher: q.cypher })));
+    }, 1000);
+  }
+  function updateGraphQuery(index: number, cypher: string) {
+    const updated = graphQueries.map((q, i) => (i === index ? { cypher } : q));
+    setGraphQueries(updated);
+    scheduleGraphSave(updated);
+  }
+  function addGraphQuery() {
+    setGraphQueries((prev) => [...prev, { cypher: "" }]);
+  }
+  function removeGraphQuery(index: number) {
+    const updated = graphQueries.filter((_, i) => i !== index);
+    setGraphQueries(updated);
+    if (currentId) projection.saveGraphQueries(currentId, updated.map((q) => ({ cypher: q.cypher })));
+  }
+
+  // Expose the Import form to the global assistant: current field values, the
+  // setters the mock fills, the page actions the assistant can surface as chat
+  // buttons, and the active project for cross-page jumps.
+  usePageBridge({
+    page: "import",
+    fields: {
+      catalog, database, bucket, graphName, nodeQueries, edgeQueries, graphQueries,
+      // Import state so the assistant knows a projection/graph already exists.
+      projectionId: currentId, graphStatus: status?.status ?? null, graphId,
+    },
+    setters: {
+      catalog: setCatalog,
+      databases: setDatabases,
+      database: setDatabase,
+      bucket: setBucket,
+      graphName: setGraphName,
+      nodeQueries: setNodeQueries,
+      edgeQueries: setEdgeQueries,
+      graphQueries: setGraphQueries,
+    },
+    actions: {
+      execute: { label: "Execute", run: handleExecute, enabled: !polling && !loading },
+      validateQuery: { label: "Validate Query", run: handleValidateQuery, enabled: !loading },
+      preview: { label: "Preview Schema", run: handlePreview, enabled: !loading },
+    },
+    persistImport,
+    jumpContext: { projectId: projectId || searchParams.get("project") },
+  });
 
   // --- Actions ---
   async function handleValidate() {
@@ -294,22 +440,83 @@ export function Import() {
   }
 
   // --- Polling ---
+  // Hold the active poll interval so we can cancel it whenever we switch to a
+  // different projection (or unmount). Without this, a previous projection's
+  // interval keeps ticking setStatus(...) and its progress bar bleeds onto the
+  // projection now on screen.
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current !== null) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
   const startPolling = useCallback((id: string) => {
+    // Cancel any in-flight poll (e.g. the previously loaded projection's) so
+    // only this projection drives status/the progress bar.
+    stopPolling();
     setPolling(true);
-    const interval = setInterval(async () => {
+
+    // Fetch status once right away so the progress bar shows immediately on
+    // load — otherwise it stays hidden until the first interval tick (below),
+    // leaving a blank ~5s window when you open an in-flight projection.
+    const poll = async () => {
       const s = await projection.status(id);
       setStatus(s);
       if (s.status === "complete" || s.status === "failed") {
-        clearInterval(interval);
+        stopPolling();
         setPolling(false);
         if (s.error) setError(s.error);
       }
-    }, 5000);
+    };
+    void poll();
+
+    const interval = setInterval(poll, 5000);
+    pollRef.current = interval;
+  }, [stopPolling]);
+
+  // Cancel polling on unmount so a background interval never updates unmounted
+  // state (or leaks across a full page navigation).
+  useEffect(() => stopPolling, [stopPolling]);
+
+  // Keep the pending-save snapshot current every render so the unmount flush
+  // below has the latest values (refs don't trigger re-renders).
+  pendingSaveRef.current.currentId = currentId;
+  pendingSaveRef.current.nodeQueries = nodeQueries;
+  pendingSaveRef.current.edgeQueries = edgeQueries;
+  pendingSaveRef.current.graphQueries = graphQueries;
+  pendingSaveRef.current.config = configData();
+
+  // Flush any pending debounced saves on unmount (navigating away). Without
+  // this, edits made within the 1s debounce window — most visibly the
+  // post-import graph queries — are lost because the timer never fires.
+  useEffect(() => {
+    return () => {
+      const p = pendingSaveRef.current;
+      if (!p.currentId) return;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (graphSaveTimer.current) clearTimeout(graphSaveTimer.current);
+      if (configTimer.current) clearTimeout(configTimer.current);
+      // Fire-and-forget: the requests go out as the component tears down.
+      if (p.configDirty) projection.update(p.currentId, p.config).catch(() => {});
+      if (p.queriesDirty) {
+        projection
+          .saveQueries(p.currentId, { node_queries: p.nodeQueries, edge_queries: p.edgeQueries })
+          .catch(() => {});
+      }
+      if (p.graphDirty) {
+        projection
+          .saveGraphQueries(p.currentId, p.graphQueries.map((q) => ({ cypher: q.cypher })))
+          .catch(() => {});
+      }
+    };
   }, []);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pr-32">
         <h1 className="text-lg font-semibold">Import</h1>
         <div className="flex items-center gap-2">
           <Select
@@ -482,6 +689,43 @@ export function Import() {
         </div>
       </Card>
 
+      {/* Graph Queries (openCypher) — run against the graph after import */}
+      <Card>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold">Graph Queries (openCypher)</h2>
+              <p className="text-xs text-gray-500">Query or mutate the graph after import. Runs in sequence.</p>
+            </div>
+            <button onClick={addGraphQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+              <Plus className="h-3 w-3" /> Add
+            </button>
+          </div>
+          <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+            {graphQueries.map((gq, i) => (
+              <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
+                  <span className="text-xs font-medium text-gray-700">Query {i + 1}</span>
+                  {graphQueries.length > 1 && (
+                    <button onClick={() => removeGraphQuery(i)} className="text-gray-400 hover:text-red-600">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
+                  rows={3}
+                  placeholder="MATCH (n) RETURN n LIMIT 10"
+                  value={gq.cypher}
+                  onChange={(e) => updateGraphQuery(i, e.target.value)}
+                />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400">These run on the graph's details page once the import is complete.</p>
+        </div>
+      </Card>
+
       {/* Actions */}
       <div className="flex gap-2">
         <Button variant="secondary" onClick={handleValidate} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate" ? "Validating..." : "Validate Resources"}</Button>
@@ -539,9 +783,14 @@ export function Import() {
       {status && (
         <Card>
           {status.status === "complete" ? (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <p className="text-sm font-medium text-green-700">✓ Graph ready</p>
               {status.graph_endpoint && <p className="text-sm text-gray-600">Endpoint: <code className="rounded bg-gray-100 px-1">{status.graph_endpoint}</code></p>}
+              {currentId && (
+                <Button onClick={() => navigate(`/details?projection=${currentId}`, { state: { graphQueries } })}>
+                  View Details
+                </Button>
+              )}
             </div>
           ) : (
             <div className="space-y-2">

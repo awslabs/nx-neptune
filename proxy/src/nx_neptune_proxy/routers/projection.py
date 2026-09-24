@@ -8,34 +8,34 @@ from dataclasses import asdict
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from nx_neptune.clients.client_factory import ClientFactory
-from nx_neptune.clients.response_utils import get_query_failure_reason, get_query_state
-from nx_neptune.instance_management import (
-    _execute_athena_query,
-    get_athena_query_results,
-)
-from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
+from nx_neptune.clients.na_client import NeptuneAnalyticsClient
 from nx_neptune.validators import (
     check_athena_query,
     validate_resources,
-    wrap_with_limit,
 )
 
 from nx_neptune_proxy.routers.schemas import (
+    ExplainQueryResponse,
+    ExplainQueryResult,
     PreviewResponse,
     ProjectionCreate,
     ProjectionResponse,
     ProjectionStatus,
     ProjectionUpdate,
+    GraphQueriesPayload,
+    GraphQueriesResponse,
     QueriesPayload,
     QueriesResponse,
+    RunQueryPayload,
+    RunQueryResponse,
     ValidateResponse,
 )
+from nx_neptune_proxy.services.athena_query import AthenaQueryError, execute_query_rows
 from nx_neptune_proxy.services.pipeline import run_pipeline
 from nx_neptune_proxy.services.projection_service import (
     ProjectionNotFound,
     projection_service,
 )
-from nx_neptune_proxy.utils import unpack_query_results
 from nx_neptune_proxy.utils.aws_helper import (
     assert_managed_graph,
     get_graph_or_exception,
@@ -168,23 +168,19 @@ async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le
     all_results: list = []
 
     for q in queries:
-        limited = wrap_with_limit(q, limit)
-
-        exec_id = _execute_athena_query(
-            client, limited, p.s3_staging_bucket, catalog=p.catalog, database=p.database
-        )
-
-        await wait_until_all_complete(
-            [exec_id], TaskType.EXPORT_ATHENA_TABLE, client, polling_interval=5
-        )
-
-        resp = client.get_query_execution(QueryExecutionId=exec_id)
-        state = get_query_state(resp)
-        if state != "SUCCEEDED":
-            return {"error": get_query_failure_reason(resp), "results": all_results}
-
-        rows = get_athena_query_results(query_execution_id=exec_id, client=client)
-        all_results.append(unpack_query_results(rows))
+        try:
+            all_results.append(
+                await execute_query_rows(
+                    client,
+                    q,
+                    p.s3_staging_bucket,
+                    catalog=p.catalog,
+                    database=p.database,
+                    limit=limit,
+                )
+            )
+        except AthenaQueryError as e:
+            return {"error": e.reason, "results": all_results}
 
     return {"error": None, "results": all_results}
 
@@ -199,6 +195,82 @@ def execute_projection(projection_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=409, detail="Pipeline already running")
     background_tasks.add_task(run_pipeline, p)
     return {"id": p.id, "status": "accepted"}
+
+
+@router.post(
+    "/{projection_id}/run-query",
+    summary="Run openCypher queries against the projection's graph",
+    response_model=RunQueryResponse,
+)
+def run_query(projection_id: str, body: RunQueryPayload):
+    """Execute the supplied openCypher queries in sequence against the
+    projection's Neptune Analytics graph and return each query's results.
+
+    Stops at the first failing query, returning any results gathered so far
+    alongside the error message.
+    """
+    p = _get_projection_or_404(projection_id)
+    if not p.graph_id:
+        raise HTTPException(
+            status_code=409,
+            detail="No graph associated with this projection — run the import first.",
+        )
+
+    na_client = NeptuneAnalyticsClient(graph_id=p.graph_id)
+    results: list = []
+    for cypher in body.queries:
+        if not cypher.strip():
+            continue
+        try:
+            results.append(na_client.execute_query(cypher))
+        except ClientError as e:
+            return RunQueryResponse(
+                error=sanitize_error_message(str(e)), results=results
+            )
+    return RunQueryResponse(error=None, results=results)
+
+
+@router.post(
+    "/{projection_id}/explain-query",
+    summary="Validate openCypher query syntax via Neptune Analytics EXPLAIN",
+    response_model=ExplainQueryResponse,
+)
+def explain_query(projection_id: str, body: RunQueryPayload):
+    """Validate each openCypher query against the projection's graph using
+    Neptune Analytics ``EXPLAIN`` mode.
+
+    ``EXPLAIN`` runs on the real engine but is read-only and cheap: it plans the
+    query without executing it, so it authoritatively catches syntax errors,
+    unknown procedures, and bad algorithm parameters. Unlike ``run-query``, every
+    query is checked independently — validation does not stop at the first
+    invalid query — so the caller gets a per-query verdict.
+    """
+    p = _get_projection_or_404(projection_id)
+    if not p.graph_id:
+        raise HTTPException(
+            status_code=409,
+            detail="No graph associated with this projection — run the import first.",
+        )
+
+    na_client = NeptuneAnalyticsClient(graph_id=p.graph_id)
+    results: list[ExplainQueryResult] = []
+    for cypher in body.queries:
+        if not cypher.strip():
+            continue
+        # Prefix EXPLAIN unless the user already did. A ClientError is the
+        # engine rejecting the query (bad syntax/procedure/param) — the signal
+        # we want; any success means the query planned cleanly.
+        stmt = cypher.strip()
+        if not stmt.upper().startswith("EXPLAIN"):
+            stmt = f"EXPLAIN {stmt}"
+        try:
+            na_client.execute_query(stmt)
+            results.append(ExplainQueryResult(valid=True))
+        except ClientError as e:
+            results.append(
+                ExplainQueryResult(valid=False, error=sanitize_error_message(str(e)))
+            )
+    return ExplainQueryResponse(results=results)
 
 
 @router.delete("/{projection_id}", summary="Delete projection record", status_code=200)
@@ -284,12 +356,15 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
     response_model=QueriesResponse,
 )
 def get_queries(projection_id: str):
-    """Return all node and edge queries for a projection."""
+    """Return all node, edge, and graph queries for a projection."""
     _get_projection_or_404(projection_id)
-    node_queries, edge_queries = projection_service.get_queries(projection_id)
+    node_queries, edge_queries, graph_queries = projection_service.get_queries(
+        projection_id
+    )
     return QueriesResponse(
         node_queries=node_queries,  # type: ignore[arg-type]
         edge_queries=edge_queries,  # type: ignore[arg-type]
+        graph_queries=graph_queries,  # type: ignore[arg-type]
     )
 
 
@@ -299,12 +374,31 @@ def get_queries(projection_id: str):
     response_model=QueriesResponse,
 )
 def save_queries(projection_id: str, body: QueriesPayload):
-    """Replace all node and edge queries for a projection."""
+    """Replace all node, edge, and graph queries for a projection.
+
+    Graph queries persist their openCypher text only — never their results.
+    """
     _get_projection_or_404(projection_id)
-    node_queries, edge_queries = projection_service.save_queries(
-        projection_id, body.node_queries, body.edge_queries
+    node_queries, edge_queries, graph_queries = projection_service.save_queries(
+        projection_id, body.node_queries, body.edge_queries, body.graph_queries
     )
     return QueriesResponse(
         node_queries=node_queries,  # type: ignore[arg-type]
         edge_queries=edge_queries,  # type: ignore[arg-type]
+        graph_queries=graph_queries,  # type: ignore[arg-type]
     )
+
+
+@router.put(
+    "/{projection_id}/graph-queries",
+    summary="Save only the openCypher graph queries for a projection",
+    response_model=GraphQueriesResponse,
+)
+def save_graph_queries(projection_id: str, body: GraphQueriesPayload):
+    """Replace the projection's openCypher graph queries, leaving node/edge
+    queries untouched. Persists query text only — never query results."""
+    _get_projection_or_404(projection_id)
+    graph_queries = projection_service.save_graph_queries(
+        projection_id, body.graph_queries
+    )
+    return GraphQueriesResponse(graph_queries=graph_queries)  # type: ignore[arg-type]

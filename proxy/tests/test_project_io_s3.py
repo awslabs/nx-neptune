@@ -18,7 +18,7 @@ class TestExportToS3:
         p = project_store.create(name="Test")
         resp = await client.post(f"/api/v0/project/{p.id}/export/s3")
         assert resp.status_code == 404
-        assert "not configured" in resp.json()["detail"]
+        assert "not configured" in resp.json()["message"]
 
     @pytest.mark.anyio
     @patch("nx_neptune_proxy.routers.project_io.Settings.from_env")
@@ -104,7 +104,7 @@ class TestExportToS3:
 
         resp = await client.post(f"/api/v0/project/{p.id}/export/s3")
         assert resp.status_code == 502
-        assert "Permission denied" in resp.json()["detail"]
+        assert "Permission denied" in resp.json()["message"]
 
     @pytest.mark.anyio
     async def test_export_to_s3_project_not_found(self, client):
@@ -282,7 +282,7 @@ class TestImportFromS3:
             content=json.dumps({"key": "nonexistent.json"}),
         )
         assert resp.status_code == 502
-        assert "not found" in resp.json()["detail"].lower()
+        assert "not found" in resp.json()["message"].lower()
 
     @pytest.mark.anyio
     @patch("nx_neptune_proxy.routers.project_io.Settings.from_env")
@@ -321,7 +321,7 @@ class TestImportFromS3:
                 "/api/v0/project/import/s3", content=json.dumps({})
             )
             assert resp.status_code == 400
-            assert "key" in resp.json()["detail"].lower()
+            assert "key" in resp.json()["message"].lower()
 
 
 class TestSanitizeName:

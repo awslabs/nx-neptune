@@ -171,6 +171,10 @@ class TestRoundTrip:
             pr.id, [{"sql": "SELECT id FROM nodes"}, {"sql": "SELECT id FROM users"}]
         )
         query_store.save_edge_queries(pr.id, [{"sql": "SELECT src, dst FROM edges"}])
+        # Graph queries persist their openCypher text only (never results).
+        query_store.save_graph_queries(
+            pr.id, [{"cypher": "MATCH (n) RETURN n LIMIT 10"}]
+        )
 
         # Export
         export_resp = await client.get(f"/api/v0/project/{p.id}/export")
@@ -185,6 +189,9 @@ class TestRoundTrip:
         ]
         assert export_json["projections"][0]["edge_queries"] == [
             "SELECT src, dst FROM edges"
+        ]
+        assert export_json["projections"][0]["graph_queries"] == [
+            "MATCH (n) RETURN n LIMIT 10"
         ]
 
         # Import
@@ -218,6 +225,9 @@ class TestRoundTrip:
         assert imported_node_queries[1].sql == "SELECT id FROM users"
         assert len(imported_edge_queries) == 1
         assert imported_edge_queries[0].sql == "SELECT src, dst FROM edges"
+        imported_graph_queries = query_store.list_graph_queries(projections[0].id)
+        assert len(imported_graph_queries) == 1
+        assert imported_graph_queries[0].cypher == "MATCH (n) RETURN n LIMIT 10"
 
 
 # --- Additional validation tests ---
@@ -230,7 +240,7 @@ class TestImportValidation:
         payload = {"version": "1.0", "project": {"name": "   "}, "projections": []}
         resp = await client.post("/api/v0/project/import", content=json.dumps(payload))
         assert resp.status_code == 400
-        assert "name" in resp.json()["detail"].lower()
+        assert "name" in resp.json()["message"].lower()
 
     @pytest.mark.anyio
     async def test_import_missing_project_name(self, client):
@@ -245,7 +255,7 @@ class TestImportValidation:
         payload = {"version": "1.0", "project": {"name": "x" * 101}, "projections": []}
         resp = await client.post("/api/v0/project/import", content=json.dumps(payload))
         assert resp.status_code == 400
-        assert "too long" in resp.json()["detail"].lower()
+        assert "too long" in resp.json()["message"].lower()
 
     @pytest.mark.anyio
     async def test_import_invalid_content_length(self, client):
@@ -257,7 +267,7 @@ class TestImportValidation:
             headers={"content-length": "not-a-number"},
         )
         assert resp.status_code == 400
-        assert "Content-Length" in resp.json()["detail"]
+        assert "Content-Length" in resp.json()["message"]
 
 
 class TestExportFilename:

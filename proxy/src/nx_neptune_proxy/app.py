@@ -17,6 +17,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from nx_neptune_proxy.auth import get_token, log_token_notice, require_token
 from nx_neptune_proxy.config import _LOOPBACK_HOSTS, get_settings, normalize_origin
+from nx_neptune_proxy.routers.assistant import router as assistant_router
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
 from nx_neptune_proxy.routers.project import router as project_router
@@ -36,10 +37,15 @@ init_db()
 
 logging.basicConfig(
     level=settings.log_level,
-    format='{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","message":"%(message)s"}',
+    format="%(asctime)s %(levelname)-5s %(name)s: %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
 logger = logging.getLogger("nx_neptune_proxy")
+# basicConfig is a no-op if the root logger already has handlers (uvicorn
+# installs its own), which would leave our level at uvicorn's default and
+# silently drop DEBUG traces. Set the level on our named logger explicitly so
+# LOG_LEVEL=DEBUG reliably turns on the assistant trace logging.
+logger.setLevel(settings.log_level)
 
 # --- Proxy access token (per-run bearer token) ---
 # Delivered via the launch URL below, not embedded in any response, so it
@@ -209,6 +215,18 @@ async def aws_exception_handler(request: Request, exc: ClientError):
     )
 
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    # FastAPI's default envelope is {"detail": ...}, but the UI (and our other
+    # handlers) read {"message": ...}. Remap so raised detail text actually
+    # reaches the client instead of a bare "Request failed: <status>".
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": "http_error", "message": exc.detail},
+        headers=getattr(exc, "headers", None),
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.exception(f"Unhandled error on {request.method} {request.url.path}")
@@ -241,6 +259,7 @@ app.include_router(projection_router, dependencies=[Depends(require_token)])
 app.include_router(project_router, dependencies=[Depends(require_token)])
 app.include_router(graph_router, dependencies=[Depends(require_token)])
 app.include_router(project_io_router, dependencies=[Depends(require_token)])
+app.include_router(assistant_router, dependencies=[Depends(require_token)])
 
 
 # --- Startup: resume stuck deletions ---

@@ -112,6 +112,31 @@ class PreviewResponse(BaseModel):
     results: list[PreviewQueryResult]
 
 
+class RunQueryPayload(BaseModel):
+    """openCypher queries to run against the projection's graph, in sequence."""
+
+    queries: list[str]
+
+
+class RunQueryResponse(BaseModel):
+    error: Optional[str] = None
+    # One entry per query executed (the Neptune Analytics `results` array).
+    results: list = Field(default_factory=list)
+
+
+class ExplainQueryResult(BaseModel):
+    """Syntax-validation outcome for a single openCypher query."""
+
+    valid: bool
+    error: Optional[str] = None
+
+
+class ExplainQueryResponse(BaseModel):
+    # One entry per non-blank query, in order. Every query is checked
+    # independently (validation does not stop at the first invalid query).
+    results: list[ExplainQueryResult] = Field(default_factory=list)
+
+
 class ProjectionStatus(BaseModel):
     id: str
     status: str
@@ -171,6 +196,9 @@ class ProjectionExport(BaseModel):
     edge_queries: list[str] = Field(
         default_factory=list, description="Edge SQL queries"
     )
+    graph_queries: list[str] = Field(
+        default_factory=list, description="Post-import openCypher graph queries"
+    )
 
     model_config = {"extra": "forbid"}
 
@@ -180,6 +208,7 @@ class ProjectionExport(BaseModel):
         pr,
         node_queries: Optional[list[str]] = None,
         edge_queries: Optional[list[str]] = None,
+        graph_queries: Optional[list[str]] = None,
     ) -> "ProjectionExport":
         """Create from a Projection dataclass instance."""
         return cls(  # type: ignore[call-arg]
@@ -190,6 +219,7 @@ class ProjectionExport(BaseModel):
             s3_staging_bucket=pr.s3_staging_bucket,
             node_queries=node_queries or [],
             edge_queries=edge_queries or [],
+            graph_queries=graph_queries or [],
         )
 
 
@@ -209,7 +239,8 @@ class ProjectExportPayload(BaseModel):
         """Build export payload from a project and its projections.
 
         Args:
-            queries_by_projection: dict mapping projection_id to (node_queries, edge_queries) tuple of SQL strings.
+            queries_by_projection: dict mapping projection_id to
+                (node_queries, edge_queries, graph_queries) tuple of query strings.
         """
         qmap = queries_by_projection or {}
         return cls(
@@ -217,8 +248,9 @@ class ProjectExportPayload(BaseModel):
             projections=[
                 ProjectionExport.from_projection(
                     pr,
-                    node_queries=qmap.get(pr.id, ([], []))[0],
-                    edge_queries=qmap.get(pr.id, ([], []))[1],
+                    node_queries=qmap.get(pr.id, ([], [], []))[0],
+                    edge_queries=qmap.get(pr.id, ([], [], []))[1],
+                    graph_queries=qmap.get(pr.id, ([], [], []))[2],
                 )
                 for pr in projections
             ],
@@ -238,6 +270,11 @@ class EdgeQueryInput(BaseModel):
     sql: str = ""
 
 
+class GraphQueryInput(BaseModel):
+    id: Optional[str] = None
+    cypher: str = ""
+
+
 class NodeQueryResponse(BaseModel):
     id: str
     sql: str
@@ -250,11 +287,32 @@ class EdgeQueryResponse(BaseModel):
     position: int
 
 
+class GraphQueryResponse(BaseModel):
+    id: str
+    cypher: str
+    position: int
+
+
 class QueriesPayload(BaseModel):
     node_queries: list[NodeQueryInput] = []
     edge_queries: list[EdgeQueryInput] = []
+    # Post-import openCypher graph queries (text only; results are not persisted).
+    # None means "leave the stored graph queries unchanged" so a node/edge-only
+    # save doesn't wipe them; [] explicitly clears them.
+    graph_queries: Optional[list[GraphQueryInput]] = None
 
 
 class QueriesResponse(BaseModel):
     node_queries: list[NodeQueryResponse]
     edge_queries: list[EdgeQueryResponse]
+    graph_queries: list[GraphQueryResponse]
+
+
+class GraphQueriesPayload(BaseModel):
+    """Graph-query-only save (Details page), leaving node/edge queries intact."""
+
+    graph_queries: list[GraphQueryInput] = []
+
+
+class GraphQueriesResponse(BaseModel):
+    graph_queries: list[GraphQueryResponse]
