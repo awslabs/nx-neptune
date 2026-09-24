@@ -287,17 +287,9 @@ that already exists, WITHOUT rebuilding the import. Use this instead of \
 generate_import when the user wants to query/explore/analyze a graph and the \
 page context shows one is already set up (a projection_id, a graph_status, or \
 node/edge queries are present). Do NOT re-run generate_import just to get \
-queries when the import already exists.
-- SELF-CHECK before presenting: whenever you propose openCypher with \
-propose_queries AND the graph is live (a graph_id is present / graph_status \
-"complete"), you MUST immediately call validate_graph_queries (job 4) to \
-EXPLAIN-check the proposed queries before telling the user about them. Pass the \
-proposed query strings explicitly (they are a pending proposal, not yet on the \
-page, so the no-argument form would not see them). Only present the queries \
-that pass; for any that fail, fix them with update_graph_queries and \
-re-validate, or drop them and say so. Do not offer a query you have not \
-validated when a live graph is available to check it. (No live graph yet? There \
-is nothing to EXPLAIN against, so present the proposal as-is.)
+queries when the import already exists. (propose_queries already EXPLAIN-\
+validates its own output when the graph is live and withholds any query that \
+fails, so you do not need to separately validate queries it returns.)
 
 ### 4. Validate and fix queries (SQL and openCypher — never builds the import)
 """ + SQL_VALIDATION_GUIDANCE + GRAPH_QUERY_VALIDATION_GUIDANCE + """
@@ -552,7 +544,13 @@ class Supervisor:
             model; otherwise the page's node/edge queries define the predicted
             model, or the planner proposes general-purpose queries if none are
             present. Works regardless of whether the import has finished
-            running."""
+            running.
+
+            Built-in validation: when the graph is live, each proposed query is
+            EXPLAIN-checked before being offered; queries that fail to plan are
+            withheld (not shown as run buttons) and reported in the result, so
+            the queries returned to the user are already validated — you need
+            not validate them separately."""
             pc = ctx.page_context
             node_queries = list(pc.node_queries) if pc else []
             edge_queries = list(pc.edge_queries) if pc else []
@@ -575,15 +573,33 @@ class Supervisor:
             plan = self._query_planner.plan(
                 mapping, request, graph_schema=graph_schema
             )
+            # Validate before offering: a proposed query the engine rejects is
+            # worthless, so when the graph is live we EXPLAIN-check the batch
+            # (STATIC — read-only, no execution) in one pass and withhold any
+            # that don't plan cleanly. No live graph -> no EXPLAIN target, so we
+            # offer the plan as-is (predicted-model path). This is done in code
+            # (not via a chain of validate/update tool calls) so it is
+            # deterministic and adds no extra LLM round-trips.
+            proposed = list(plan.graph_queries)
+            withheld: list[tuple[CypherQuery, str]] = []
+            if graph_id and pc and pc.graph_available and proposed:
+                valid: list[CypherQuery] = []
+                for q in proposed:
+                    ok, err = validate_opencypher(graph_id, q.cypher)
+                    if ok:
+                        valid.append(q)
+                    else:
+                        withheld.append((q, err or "did not plan cleanly"))
+                proposed = valid
             # Only the graph_queries change; leaving the other fields None means
             # the client applies just the openCypher without touching the form's
             # catalog/database/SQL (spec §9.5).
-            ctx.proposal = FieldProposal(graph_queries=plan.graph_queries or None)
+            ctx.proposal = FieldProposal(graph_queries=proposed or None)
             # When the page can run queries (the Details page), offer each
             # proposed query as an inline "Run Query" button so the user can
             # execute it straight from the chat (spec §9.3).
             if pc and pc.can_run_queries:
-                for q in plan.graph_queries:
+                for q in proposed:
                     label = q.description or q.cypher
                     if len(label) > 60:
                         label = label[:57] + "…"
@@ -598,12 +614,21 @@ class Supervisor:
             # Relay the planner's intent — overall summary plus each query's
             # purpose — so the user hears what the queries accomplish, not just
             # how many there are.
-            summary = f"Proposed {len(plan.graph_queries)} openCypher query(ies)."
+            summary = f"Proposed {len(proposed)} openCypher query(ies)."
             if plan.description:
                 summary += f" {plan.description}"
-            query_bullets = _query_bullets(plan.graph_queries)
+            query_bullets = _query_bullets(proposed)
             if query_bullets:
                 summary += f"\n{query_bullets}"
+            # Be honest about anything the validation dropped rather than
+            # silently discarding it.
+            if withheld:
+                summary += (
+                    f"\nWithheld {len(withheld)} query(ies) that failed EXPLAIN "
+                    "validation and were not offered:"
+                )
+                for q, err in withheld:
+                    summary += f"\n- {q.cypher} — {err}"
             return summary
 
         def validate_graph_queries(queries: Optional[list[str]] = None) -> str:

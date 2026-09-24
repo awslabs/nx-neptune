@@ -286,6 +286,75 @@ def test_propose_queries_uses_existing_graph_model_without_import():
     sup._sql_mapping.map_schema.assert_not_called()
 
 
+def test_propose_queries_validates_and_withholds_invalid_when_live():
+    sup = _supervisor_with_mock_specialists()
+    sup._query_planner.plan.return_value = QueryPlanResult(
+        description="Explore the graph.",
+        graph_queries=[
+            CypherQuery(cypher="MATCH (n) RETURN n LIMIT 10", description="good one"),
+            CypherQuery(cypher="MATCH (n RETURN n", description="broken one"),
+        ],
+    )
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="details",
+            projection_id="proj-1",
+            graph_id="g-1",
+            graph_status="complete",
+            can_run_queries=True,
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    def fake_validate(graph_id, cypher):
+        assert graph_id == "g-1"
+        return (True, None) if "RETURN n LIMIT 10" in cypher else (False, "bad cypher")
+
+    with patch(
+        "nx_neptune_proxy.assistant.supervisor.validate_opencypher",
+        side_effect=fake_validate,
+    ):
+        out = tools["propose_queries"]("explore")
+
+    # Only the valid query is offered (proposal + run button); invalid withheld.
+    assert [q.cypher for q in ctx.proposal.graph_queries] == [
+        "MATCH (n) RETURN n LIMIT 10"
+    ]
+    run_actions = [a for a in ctx.actions if a.kind == "run-query"]
+    assert len(run_actions) == 1
+    assert run_actions[0].query == "MATCH (n) RETURN n LIMIT 10"
+    # The reply reports the withheld query and its error.
+    assert "withheld 1" in out.lower()
+    assert "bad cypher" in out
+
+
+def test_propose_queries_skips_validation_without_live_graph():
+    sup = _supervisor_with_mock_specialists()
+    sup._query_planner.plan.return_value = QueryPlanResult(
+        graph_queries=[CypherQuery(cypher="MATCH (n RETURN n")]  # would be invalid
+    )
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            projection_id="proj-1",
+            # No graph_id -> no EXPLAIN target -> validation skipped.
+            node_queries=[SqlQuery(sql='SELECT 1 AS "~id"')],
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    with patch(
+        "nx_neptune_proxy.assistant.supervisor.validate_opencypher"
+    ) as mock_validate:
+        tools["propose_queries"]("explore")
+
+    # No live graph -> no validation call -> query offered as-is (unchanged path).
+    mock_validate.assert_not_called()
+    assert ctx.proposal.graph_queries[0].cypher == "MATCH (n RETURN n"
+
+
 def test_generate_import_relays_agent_descriptions():
     sup = _supervisor_with_mock_specialists()
     sup._sql_mapping.map_schema.return_value = SqlMappingResult(
@@ -362,7 +431,10 @@ def test_propose_queries_grounds_on_live_schema_when_graph_exists():
     with patch(
         "nx_neptune_proxy.assistant.supervisor.fetch_graph_schema",
         return_value=live,
-    ) as mock_fetch:
+    ) as mock_fetch, patch(
+        "nx_neptune_proxy.assistant.supervisor.validate_opencypher",
+        return_value=(True, None),
+    ):
         tools["propose_queries"]("show me the top people")
 
     # The live schema was read for the graph and handed to the planner as the
@@ -388,6 +460,9 @@ def test_propose_queries_falls_back_to_sql_when_schema_fetch_fails():
     with patch(
         "nx_neptune_proxy.assistant.supervisor.fetch_graph_schema",
         side_effect=RuntimeError("boom"),
+    ), patch(
+        "nx_neptune_proxy.assistant.supervisor.validate_opencypher",
+        return_value=(True, None),
     ):
         tools["propose_queries"]("explore")
 
