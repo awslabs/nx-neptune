@@ -286,6 +286,75 @@ def test_propose_queries_uses_existing_graph_model_without_import():
     sup._sql_mapping.map_schema.assert_not_called()
 
 
+def test_propose_queries_validates_and_withholds_invalid_when_live():
+    sup = _supervisor_with_mock_specialists()
+    sup._query_planner.plan.return_value = QueryPlanResult(
+        description="Explore the graph.",
+        graph_queries=[
+            CypherQuery(cypher="MATCH (n) RETURN n LIMIT 10", description="good one"),
+            CypherQuery(cypher="MATCH (n RETURN n", description="broken one"),
+        ],
+    )
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="details",
+            projection_id="proj-1",
+            graph_id="g-1",
+            graph_status="complete",
+            can_run_queries=True,
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    def fake_validate(graph_id, cypher):
+        assert graph_id == "g-1"
+        return (True, None) if "RETURN n LIMIT 10" in cypher else (False, "bad cypher")
+
+    with patch(
+        "nx_neptune_proxy.assistant.supervisor.validate_opencypher",
+        side_effect=fake_validate,
+    ):
+        out = tools["propose_queries"]("explore")
+
+    # Only the valid query is offered (proposal + run button); invalid withheld.
+    assert [q.cypher for q in ctx.proposal.graph_queries] == [
+        "MATCH (n) RETURN n LIMIT 10"
+    ]
+    run_actions = [a for a in ctx.actions if a.kind == "run-query"]
+    assert len(run_actions) == 1
+    assert run_actions[0].query == "MATCH (n) RETURN n LIMIT 10"
+    # The reply reports the withheld query and its error.
+    assert "withheld 1" in out.lower()
+    assert "bad cypher" in out
+
+
+def test_propose_queries_skips_validation_without_live_graph():
+    sup = _supervisor_with_mock_specialists()
+    sup._query_planner.plan.return_value = QueryPlanResult(
+        graph_queries=[CypherQuery(cypher="MATCH (n RETURN n")]  # would be invalid
+    )
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="import",
+            projection_id="proj-1",
+            # No graph_id -> no EXPLAIN target -> validation skipped.
+            node_queries=[SqlQuery(sql='SELECT 1 AS "~id"')],
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    with patch(
+        "nx_neptune_proxy.assistant.supervisor.validate_opencypher"
+    ) as mock_validate:
+        tools["propose_queries"]("explore")
+
+    # No live graph -> no validation call -> query offered as-is (unchanged path).
+    mock_validate.assert_not_called()
+    assert ctx.proposal.graph_queries[0].cypher == "MATCH (n RETURN n"
+
+
 def test_generate_import_relays_agent_descriptions():
     sup = _supervisor_with_mock_specialists()
     sup._sql_mapping.map_schema.return_value = SqlMappingResult(
@@ -362,7 +431,10 @@ def test_propose_queries_grounds_on_live_schema_when_graph_exists():
     with patch(
         "nx_neptune_proxy.assistant.supervisor.fetch_graph_schema",
         return_value=live,
-    ) as mock_fetch:
+    ) as mock_fetch, patch(
+        "nx_neptune_proxy.assistant.supervisor.validate_opencypher",
+        return_value=(True, None),
+    ):
         tools["propose_queries"]("show me the top people")
 
     # The live schema was read for the graph and handed to the planner as the
@@ -388,6 +460,9 @@ def test_propose_queries_falls_back_to_sql_when_schema_fetch_fails():
     with patch(
         "nx_neptune_proxy.assistant.supervisor.fetch_graph_schema",
         side_effect=RuntimeError("boom"),
+    ), patch(
+        "nx_neptune_proxy.assistant.supervisor.validate_opencypher",
+        return_value=(True, None),
     ):
         tools["propose_queries"]("explore")
 
@@ -457,6 +532,113 @@ def test_validate_graph_queries_reports_per_query_verdicts():
     assert "failed validation" in reply.lower()
     assert "✓ valid" in reply and "✗ invalid" in reply
     assert "bad cypher" in reply
+
+
+def test_validate_graph_queries_no_args_reads_page_context():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="details",
+            graph_id="g-1",
+            graph_status="complete",
+            can_run_queries=True,
+            graph_queries=[
+                CypherQuery(cypher="MATCH (n) RETURN n"),
+                CypherQuery(cypher="MATCH (a)-[r]->(b) RETURN r"),
+            ],
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    with patch(
+        "nx_neptune_proxy.assistant.supervisor.validate_opencypher",
+        return_value=(True, None),
+    ) as mock_validate:
+        reply = tools["validate_graph_queries"]()  # no args -> use page context
+
+    # Both on-page queries validated, none passed in by the model.
+    assert mock_validate.call_count == 2
+    assert "valid" in reply.lower()
+
+
+def test_update_graph_queries_replaces_target_and_preserves_others():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="details",
+            projection_id="p1",
+            graph_id="g-1",
+            graph_status="complete",
+            graph_queries=[
+                CypherQuery(cypher="MATCH (n RETURN n", description="all nodes"),
+                CypherQuery(cypher="MATCH (a)-[r]->(b) RETURN r"),
+            ],
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    out = tools["update_graph_queries"](1, "MATCH (n) RETURN n")
+
+    assert "updated graph query 1" in out.lower()
+    assert [q.cypher for q in ctx.proposal.graph_queries] == [
+        "MATCH (n) RETURN n",
+        "MATCH (a)-[r]->(b) RETURN r",
+    ]
+    assert ctx.proposal.graph_queries[0].description == "all nodes"
+    # Page context updated in place so same-turn validation sees the fix.
+    assert ctx.page_context.graph_queries[0].cypher == "MATCH (n) RETURN n"
+
+
+def test_update_graph_queries_rejects_out_of_range_index():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="details",
+            graph_id="g-1",
+            graph_status="complete",
+            graph_queries=[CypherQuery(cypher="MATCH (n) RETURN n")],
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    out = tools["update_graph_queries"](5, "MATCH (x) RETURN x")
+
+    assert "no graph query 5" in out.lower()
+    assert ctx.proposal is None
+
+
+def test_update_graph_queries_then_validate_checks_corrected_cypher():
+    sup = _supervisor_with_mock_specialists()
+    ctx = TurnContext(
+        session=sup._sessions.create(),
+        page_context=PageContext(
+            page="details",
+            graph_id="g-1",
+            graph_status="complete",
+            graph_queries=[CypherQuery(cypher="MATCH (n RETURN n")],  # broken
+        ),
+    )
+    tools = _tools(sup, ctx)
+
+    tools["update_graph_queries"](1, "MATCH (n) RETURN n")
+
+    seen = []
+
+    def fake_validate(graph_id, cypher):
+        seen.append(cypher)
+        return (True, None)
+
+    with patch(
+        "nx_neptune_proxy.assistant.supervisor.validate_opencypher",
+        side_effect=fake_validate,
+    ):
+        out = tools["validate_graph_queries"]()  # no args -> re-check the fix
+
+    assert seen == ["MATCH (n) RETURN n"]  # corrected cypher validated
+    assert "valid" in out.lower()
 
 
 def test_update_import_fields_sets_only_bucket_and_skips_specialists():
