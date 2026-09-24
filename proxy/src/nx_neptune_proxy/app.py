@@ -24,7 +24,10 @@ from nx_neptune_proxy.routers.projection import router as projection_router
 from nx_neptune_proxy.services.db import init_db
 from nx_neptune_proxy.services.project_deletion import delete_project
 from nx_neptune_proxy.services.project_store import store as project_store
-from nx_neptune_proxy.utils.sanitize import sanitize_error_message
+from nx_neptune_proxy.utils.sanitize import (
+    RedactingLogFilter,
+    sanitize_error_message,
+)
 
 settings = get_settings()
 
@@ -38,6 +41,10 @@ logging.basicConfig(
     format='{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","message":"%(message)s"}',
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
+# Redact sensitive identifiers and drop tracebacks from every log line.
+_redactor = RedactingLogFilter()
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(_redactor)
 logger = logging.getLogger("nx_neptune_proxy")
 
 # --- Proxy access token (per-run bearer token) ---

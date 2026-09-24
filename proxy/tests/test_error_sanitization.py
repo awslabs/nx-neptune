@@ -29,6 +29,12 @@ class TestErrorSanitization:
         assert "123456789012" not in result
         assert "arn:aws" not in result
 
+    def test_bare_account_id_stripped(self):
+        msg = "Deploying into account 210987654321 failed"
+        result = sanitize_error_message(msg)
+        assert "210987654321" not in result
+        assert "[ACCOUNT_ID]" in result
+
     def test_access_key_stripped(self):
         msg = "The security token for AKIA1234567890ABCDEF is invalid"
         result = sanitize_error_message(msg)
