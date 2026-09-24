@@ -94,6 +94,7 @@ export function Import() {
     setDatabase("");
     setNodeQueries([{ sql: "" }]);
     setEdgeQueries([{ sql: "" }]);
+    setGraphQueries([{ cypher: "" }]);
     setBucket("");
     setGraphName("");
     setGraphMemoryGb(16);
@@ -166,8 +167,10 @@ export function Import() {
       createProjectionOnce(configData());
     } else {
       // Subsequent changes — debounced update
+      pendingSaveRef.current.configDirty = true;
       if (configTimer.current) clearTimeout(configTimer.current);
       configTimer.current = setTimeout(() => {
+        pendingSaveRef.current.configDirty = false;
         projection.update(currentId, configData());
       }, 1000);
     }
@@ -225,14 +228,22 @@ export function Import() {
       navigate(`/details?projection=${p.id}`, { replace: true });
       return;
     }
+    // Switching projections: cancel the previous projection's poll and clear
+    // its status so its progress bar can't bleed onto this one.
+    stopPolling();
+    setStatus(null);
+    setPolling(false);
     setCurrentId(p.id);
     setGraphId(p.graph_id ?? null);
     if (p.project_id) setProjectId(p.project_id);
-    if (p.catalog) setCatalog(p.catalog);
-    if (p.database) setDatabase(p.database);
-    if (p.s3_staging_bucket) setBucket(p.s3_staging_bucket);
-    if (p.graph_name) setGraphName(p.graph_name);
-    if (p.graph_memory_gb) setGraphMemoryGb(p.graph_memory_gb);
+    // Set every field unconditionally (defaulting when absent) so this
+    // projection fully REPLACES the previously loaded one — a missing value
+    // must clear the old value, not keep it.
+    setCatalog(p.catalog || "AwsDataCatalog");
+    setDatabase(p.database || "");
+    setBucket(p.s3_staging_bucket || "");
+    setGraphName(p.graph_name || "");
+    setGraphMemoryGb(p.graph_memory_gb || 16);
     setChecks([]);
     setPreview(null);
     setError(null);
@@ -246,12 +257,17 @@ export function Import() {
       else setEdgeQueries([{ sql: "" }]);
 
       // Post-import openCypher graph queries (persisted text only, no results).
+      // Clear when this projection has none, so a previous projection's queries
+      // don't linger.
       if (res.graph_queries.length > 0) setGraphQueries(res.graph_queries.map((q) => ({ cypher: q.cypher })));
+      else setGraphQueries([{ cypher: "" }]);
     });
 
     // Completed projections are redirected to /details above, so only in-flight
-    // (executing) and not-yet-run states remain here.
-    if (p.status === "executing") startPolling(p.id);
+    // and not-yet-run states remain here. The backend marks an in-progress
+    // import "importing" (see pipeline.py); "executing" is accepted too for
+    // consistency with the rest of the app (Sidebar/Projections).
+    if (p.status === "importing" || p.status === "executing") startPolling(p.id);
     else {
       setStatus(null);
       setPolling(false);
@@ -268,8 +284,10 @@ export function Import() {
 
   function scheduleSave(nq: NodeQueryInput[], eq: EdgeQueryInput[]) {
     if (!currentId) return;
+    pendingSaveRef.current.queriesDirty = true;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
+      pendingSaveRef.current.queriesDirty = false;
       projection.saveQueries(currentId, { node_queries: nq, edge_queries: eq });
     }, 1000);
   }
@@ -306,10 +324,25 @@ export function Import() {
   // Graph queries are saved via the graph-only endpoint so authoring them here
   // never touches the node/edge queries, and they carry over to /details.
   const graphSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Holds the latest values + which debounced saves are still pending, so we
+  // can flush them if the component unmounts (navigating away) before the 1s
+  // debounce fires — otherwise in-flight edits like graph queries are lost.
+  const pendingSaveRef = useRef({
+    currentId: null as string | null,
+    nodeQueries: [] as NodeQueryInput[],
+    edgeQueries: [] as EdgeQueryInput[],
+    graphQueries: [] as { cypher: string }[],
+    queriesDirty: false,
+    graphDirty: false,
+    configDirty: false,
+    config: {} as Record<string, unknown>,
+  });
   function scheduleGraphSave(gq: { cypher: string }[]) {
     if (!currentId) return;
+    pendingSaveRef.current.graphDirty = true;
     if (graphSaveTimer.current) clearTimeout(graphSaveTimer.current);
     graphSaveTimer.current = setTimeout(() => {
+      pendingSaveRef.current.graphDirty = false;
       projection.saveGraphQueries(currentId, gq.map((q) => ({ cypher: q.cypher })));
     }, 1000);
   }
@@ -407,17 +440,78 @@ export function Import() {
   }
 
   // --- Polling ---
+  // Hold the active poll interval so we can cancel it whenever we switch to a
+  // different projection (or unmount). Without this, a previous projection's
+  // interval keeps ticking setStatus(...) and its progress bar bleeds onto the
+  // projection now on screen.
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current !== null) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
   const startPolling = useCallback((id: string) => {
+    // Cancel any in-flight poll (e.g. the previously loaded projection's) so
+    // only this projection drives status/the progress bar.
+    stopPolling();
     setPolling(true);
-    const interval = setInterval(async () => {
+
+    // Fetch status once right away so the progress bar shows immediately on
+    // load — otherwise it stays hidden until the first interval tick (below),
+    // leaving a blank ~5s window when you open an in-flight projection.
+    const poll = async () => {
       const s = await projection.status(id);
       setStatus(s);
       if (s.status === "complete" || s.status === "failed") {
-        clearInterval(interval);
+        stopPolling();
         setPolling(false);
         if (s.error) setError(s.error);
       }
-    }, 5000);
+    };
+    void poll();
+
+    const interval = setInterval(poll, 5000);
+    pollRef.current = interval;
+  }, [stopPolling]);
+
+  // Cancel polling on unmount so a background interval never updates unmounted
+  // state (or leaks across a full page navigation).
+  useEffect(() => stopPolling, [stopPolling]);
+
+  // Keep the pending-save snapshot current every render so the unmount flush
+  // below has the latest values (refs don't trigger re-renders).
+  pendingSaveRef.current.currentId = currentId;
+  pendingSaveRef.current.nodeQueries = nodeQueries;
+  pendingSaveRef.current.edgeQueries = edgeQueries;
+  pendingSaveRef.current.graphQueries = graphQueries;
+  pendingSaveRef.current.config = configData();
+
+  // Flush any pending debounced saves on unmount (navigating away). Without
+  // this, edits made within the 1s debounce window — most visibly the
+  // post-import graph queries — are lost because the timer never fires.
+  useEffect(() => {
+    return () => {
+      const p = pendingSaveRef.current;
+      if (!p.currentId) return;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (graphSaveTimer.current) clearTimeout(graphSaveTimer.current);
+      if (configTimer.current) clearTimeout(configTimer.current);
+      // Fire-and-forget: the requests go out as the component tears down.
+      if (p.configDirty) projection.update(p.currentId, p.config).catch(() => {});
+      if (p.queriesDirty) {
+        projection
+          .saveQueries(p.currentId, { node_queries: p.nodeQueries, edge_queries: p.edgeQueries })
+          .catch(() => {});
+      }
+      if (p.graphDirty) {
+        projection
+          .saveGraphQueries(p.currentId, p.graphQueries.map((q) => ({ cypher: q.cypher })))
+          .catch(() => {});
+      }
+    };
   }, []);
 
   return (
