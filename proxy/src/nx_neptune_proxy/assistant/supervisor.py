@@ -582,7 +582,7 @@ class Supervisor:
             # deterministic and adds no extra LLM round-trips.
             proposed = list(plan.graph_queries)
             withheld: list[tuple[CypherQuery, str]] = []
-            if graph_id and pc and pc.graph_available and proposed:
+            if graph_id and proposed:
                 valid: list[CypherQuery] = []
                 for q in proposed:
                     ok, err = validate_opencypher(graph_id, q.cypher)
@@ -591,6 +591,15 @@ class Supervisor:
                     else:
                         withheld.append((q, err or "did not plan cleanly"))
                 proposed = valid
+            elif proposed:
+                # No graph_id in page context -> no EXPLAIN target, so proposed
+                # queries cannot be validated this turn. Log it so a skipped
+                # validation is visible in the trace rather than looking silent.
+                logger.info(
+                    "propose_queries: no live graph_id in page context; "
+                    "offering %d query(ies) without EXPLAIN validation",
+                    len(proposed),
+                )
             # Only the graph_queries change; leaving the other fields None means
             # the client applies just the openCypher without touching the form's
             # catalog/database/SQL (spec §9.5).
