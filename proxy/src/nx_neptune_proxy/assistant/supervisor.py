@@ -288,6 +288,16 @@ generate_import when the user wants to query/explore/analyze a graph and the \
 page context shows one is already set up (a projection_id, a graph_status, or \
 node/edge queries are present). Do NOT re-run generate_import just to get \
 queries when the import already exists.
+- SELF-CHECK before presenting: whenever you propose openCypher with \
+propose_queries AND the graph is live (a graph_id is present / graph_status \
+"complete"), you MUST immediately call validate_graph_queries (job 4) to \
+EXPLAIN-check the proposed queries before telling the user about them. Pass the \
+proposed query strings explicitly (they are a pending proposal, not yet on the \
+page, so the no-argument form would not see them). Only present the queries \
+that pass; for any that fail, fix them with update_graph_queries and \
+re-validate, or drop them and say so. Do not offer a query you have not \
+validated when a live graph is available to check it. (No live graph yet? There \
+is nothing to EXPLAIN against, so present the proposal as-is.)
 
 ### 4. Validate and fix queries (SQL and openCypher — never builds the import)
 """ + SQL_VALIDATION_GUIDANCE + GRAPH_QUERY_VALIDATION_GUIDANCE + """
