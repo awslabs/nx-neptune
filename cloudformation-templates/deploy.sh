@@ -8,7 +8,18 @@ if [ ${#STACK_NAME} -gt 16 ]; then
   echo "Error: STACK_NAME '${STACK_NAME}' exceeds 16 characters (ApplicationId limit)." >&2
   exit 1
 fi
+
+# Must match the template's ApplicationId AllowedPattern ([a-z][a-z0-9-]*, 3-16 chars).
+# Validate here to fail fast, rather than surfacing a cryptic CloudFormation rejection after the work is done.
+if ! printf '%s' "$STACK_NAME" | grep -Eq '^[a-z][a-z0-9-]{2,15}$'; then
+  echo "Error: STACK_NAME '${STACK_NAME}' is invalid. Use 3-16 chars: lowercase letter first, then lowercase letters, digits, or hyphens." >&2
+  exit 1
+fi
 BUILD_WHEEL="${3:-false}"
+# Secure by default: private graph, deletion-protected. Override for a
+# convenient demo, e.g. PUBLIC_CONNECTIVITY=true DELETION_PROTECTION=false ./deploy.sh
+PUBLIC_CONNECTIVITY="${PUBLIC_CONNECTIVITY:-false}"
+DELETION_PROTECTION="${DELETION_PROTECTION:-true}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$SCRIPT_DIR/build"
@@ -45,7 +56,7 @@ aws cloudformation deploy \
   --template-file "$SCRIPT_DIR/nx-neptune-sagemaker.json" \
   --capabilities CAPABILITY_NAMED_IAM \
   --region "$REGION" \
-  --parameter-overrides "ApplicationId=${STACK_NAME}" "AssetsS3Prefix=s3://${ASSETS_BUCKET}" "CustomNotebooks=true"
+  --parameter-overrides "ApplicationId=${STACK_NAME}" "AssetsS3Prefix=s3://${ASSETS_BUCKET}" "CustomNotebooks=true" "PublicConnectivity=${PUBLIC_CONNECTIVITY}" "DeletionProtection=${DELETION_PROTECTION}" "GlueDatabaseScope=${STACK_NAME}"
 
 echo ""
 aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Outputs' --output table

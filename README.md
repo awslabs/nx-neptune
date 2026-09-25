@@ -180,6 +180,52 @@ Analytics instance. Make sure your AWS credentials are properly configured and
 your IAM role/user has the required permissions (ReadDataViaQuery,
 WriteDataViaQuery, DeleteDataViaQuery).
 
+## Graph creation defaults
+
+When nx-neptune creates a Neptune Analytics graph for you (via `SessionManager`,
+the instance-management APIs, or the proxy), it applies **secure defaults**:
+
+| Setting | Default | Environment variable | Effect |
+|---|---|---|---|
+| Public connectivity | `false` | `NETWORKX_PUBLIC_CONNECTIVITY` | Graph has **no public endpoint** — reachable only from within its VPC |
+| Deletion protection | `true` | `NETWORKX_DELETION_PROTECTION` | Graph **cannot be deleted** until protection is turned off |
+
+These defaults favor safety over convenience: a freshly created graph is private
+and cannot be accidentally destroyed. Public connectivity is **opt-in** — set
+`NETWORKX_PUBLIC_CONNECTIVITY=true` to enable it. Deletion protection is
+**opt-out** — set `NETWORKX_DELETION_PROTECTION=false` to disable it. Values are
+case-insensitive, and any unrecognized value keeps the secure default.
+
+An explicit value passed in the `config` dict always wins over the environment
+variable, which in turn wins over the default.
+
+### Connecting to a private graph (VPC)
+
+With `NETWORKX_PUBLIC_CONNECTIVITY=false`, the graph is only reachable over a
+private endpoint. The client (your notebook, script, or the proxy) must run
+inside the same VPC as the graph — for example on an EC2 instance, a Cloud9
+environment, or a SageMaker notebook configured for that VPC — with a
+[Neptune Analytics private endpoint](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/vpc.html)
+reachable from the client's subnet and security group.
+
+### Connecting to a public graph (local development)
+
+If you are developing locally and connecting directly to the graph from your
+machine, opt into a public endpoint and (optionally) relax deletion protection:
+
+```bash
+export NETWORKX_PUBLIC_CONNECTIVITY=true
+export NETWORKX_DELETION_PROTECTION=false
+```
+
+> **Note on the local proxy:** the proxy's `make dev`, `make run`, and `make up`
+> targets already set these two variables, because the proxy is a local
+> development tool that creates and tears down short-lived graphs. If you launch
+> the proxy **outside** the Makefile (e.g. raw `uvicorn`, or a container that
+> does not set them), you get the secure defaults — a private graph you cannot
+> reach from a laptop and that will refuse deletion — so set the variables
+> explicitly in that case.
+
 ## Running tests
 
 Unit tests can be run with make, this runs all tests in the `test` folder:
