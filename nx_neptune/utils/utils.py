@@ -22,6 +22,42 @@ from typing import List, Optional
 
 import boto3
 
+# --- SQL/DDL generation: identifier and literal validation constants ---------
+# S3 URI: s3://<bucket>/<key>. Bucket is DNS-style; key excludes quotes/newlines
+# so it cannot terminate a surrounding SQL string literal.
+_S3_LOCATION_RE = re.compile(
+    r"^s3://[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9](/[^'\"\n\r]*)?\Z"
+)
+
+
+# Allowlisted Athena column types for CSV-export DDL. The export path derives
+# datatypes from the Neptune CSV header (String, Int, Long, Double, Bool, ...),
+# which are always scalar — vectors are skipped upstream. A flat scalar
+# allowlist rejects both malformed values (``int)``) and unsupported complex
+# types (``struct<...>``) without needing to parse a type grammar.
+_ALLOWED_COLUMN_TYPES = {
+    "boolean",
+    "bool",
+    "byte",
+    "short",
+    "tinyint",
+    "smallint",
+    "int",
+    "integer",
+    "bigint",
+    "long",
+    "float",
+    "double",
+    "real",
+    "decimal",
+    "string",
+    "varchar",
+    "char",
+    "binary",
+    "date",
+    "timestamp",
+}
+
 
 def get_stdout_logger(
     project_identifier: str,
@@ -311,149 +347,6 @@ def push_to_s3_vector(items, bucket_name, index_name, batch_size=300):
         print(f"Inserted batch {i // batch_size + 1}: {len(batch)} vectors")
 
 
-def generate_create_table_ddl(table_name, s3_location, columns):
-    """
-    Generate CREATE EXTERNAL TABLE DDL statement for Athena.
-
-    Args:
-        table_name: Name of the table to create
-        s3_location: S3 location for the table data
-        columns: List of tuples (column_name, column_type)
-
-    Returns:
-        str: DDL statement
-
-    Example:
-        >>> columns = [("id", "string"), ("name", "string"), ("embedding", "array<float>")]
-        >>> ddl = generate_create_table_ddl("my_table", "s3://bucket/path/", columns)
-    """
-    _validate_sql_identifier(table_name)
-    column_defs = ",\n    ".join([f"`{name}` {dtype}" for name, dtype in columns])
-
-    return f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
-    {column_defs}
-    )
-    ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
-    WITH SERDEPROPERTIES ('field.delim' = ',', 'collection.delim' = ';')
-    STORED AS INPUTFORMAT 'org.apache.hadoop.mapred.TextInputFormat'
-    OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
-    LOCATION '{s3_location}'
-    TBLPROPERTIES ('classification' = 'csv', 'skip.header.line.count'='1');
-    """
-
-
-def generate_projection_stmt(
-    col_id,
-    base_table,
-    columns=None,
-    col_label=None,
-    col_embedding=None,
-    joins=None,
-    connector_name=None,
-    vector_bucket=None,
-    vector_index=None,
-    col_vector_id=None,
-):
-    """
-    Generate a SQL SELECT statement for projecting data with Neptune-compatible column names.
-
-    This function creates a SQL projection statement that formats columns for Neptune graph
-    database ingestion, including special handling for ID, label, and embedding columns.
-
-    Parameters
-    ----------
-    col_id : str
-        Column name to use as the vertex/edge ID, will be aliased as "~id"
-    base_table : str
-        Name of the base table to select from
-    columns : list of str, optional
-        List of additional column names to include in the projection.
-        Column names will be extracted from qualified names (e.g., "table.column" -> "column")
-    col_label : str, optional
-        Column name to use as the vertex/edge label, will be aliased as "~label"
-    col_embedding : str, optional
-        Column name containing embedding array data, will be formatted as semicolon-separated
-        string and aliased as "embedding:vector"
-    joins : list of tuple, optional
-        List of (table_name, join_condition) tuples for joining additional tables
-
-    Returns
-    -------
-    str
-        A formatted SQL SELECT statement with appropriate column aliases and joins
-
-    Examples
-    --------
-    >>> stmt = generate_projection_stmt("id", "users", columns=["name", "age"])
-    >>> print(stmt)
-    SELECT
-        id AS "~id",
-        name AS "name",
-        age AS "age"
-    FROM users;
-
-    >>> stmt = generate_projection_stmt(
-    ...     "u.id", "users u",
-    ...     columns=["u.name", "p.title"],
-    ...     col_label="u.type",
-    ...     joins=[("posts p", "u.id = p.user_id")]
-    ... )
-    >>> print(stmt)
-    SELECT
-        u.id AS "~id",
-        u.type AS "~label",
-        u.name AS "name",
-        p.title AS "title"
-    FROM users u join
-        posts p
-        on u.id = p.user_id;
-    """
-    for part in base_table.split():
-        _validate_sql_identifier(part)
-    selects = [f'{col_id} AS "~id"']
-
-    if col_label:
-        selects.append(f'{col_label} AS "~label"')
-
-    if columns:
-        for col in columns:
-            col_name = col.split(".")[-1].strip('"')
-            selects.append(f'{col} AS "{col_name}"')
-
-    if col_embedding:
-        selects.append(f"array_join({col_embedding}, ';') AS \"embedding:vector\"")
-
-    if col_vector_id:
-        selects.append(
-            "array_join(transform(get_embedding("
-            f"'{vector_bucket}', '{vector_index}', {col_vector_id}"
-            "), x -> cast(x AS varchar)), ';') AS \"embedding:vector\""
-        )
-
-    select_clause = ",\n        ".join(selects)
-
-    from_clause = f"{base_table}"
-    if joins:
-        for table, condition in joins:
-            from_clause += f" join\n    {table} \n    on {condition}"
-
-    if connector_name:
-        return f"""
-            USING
-            EXTERNAL FUNCTION get_embedding(schema_name VARCHAR, index_name VARCHAR, id VARCHAR )
-                RETURNS ARRAY<REAL>
-            LAMBDA '{connector_name}'
-            SELECT
-                {select_clause},
-                row_number() OVER () AS bucket
-            FROM {from_clause};"""
-    else:
-        return f"""
-          SELECT
-              {select_clause}
-          FROM {from_clause};"""
-
-
 def _validate_sql_identifier(value: str) -> str:
     """Validate that *value* is a safe SQL identifier (table or column name).
 
@@ -469,4 +362,30 @@ def _validate_sql_identifier(value: str) -> str:
     _SQL_IDENTIFIER_RE = re.compile(rf"^{_SEGMENT}(\.{_SEGMENT})*\Z")
     if not value or not _SQL_IDENTIFIER_RE.match(value):
         raise ValueError(f"Invalid SQL identifier: {value!r}.")
+    return value
+
+
+def _validate_s3_location(value: str) -> str:
+    """Validate an ``s3://bucket/key`` location before interpolating it into a
+    single-quoted SQL string literal. The key excludes quotes and newlines so
+    it cannot terminate the literal. Raises ``ValueError`` if *value* is empty
+    or malformed.
+    """
+    if not value or not _S3_LOCATION_RE.match(value):
+        raise ValueError(f"Invalid S3 location: {value!r}.")
+    return value
+
+
+def _validate_column_type(value: str) -> str:
+    """Validate a column type against the scalar allowlist.
+
+    The CSV-export DDL path only ever produces scalar Athena types (the Neptune
+    export header carries ``String``/``Int``/``Long``/``Double``/``Bool``/...;
+    vectors are skipped upstream), so an exact-match scalar allowlist is
+    sufficient. It rejects both malformed values (e.g. ``int)``, ``int, string``)
+    and unsupported complex types (e.g. ``struct<...>``). Raises ``ValueError``
+    otherwise.
+    """
+    if not value or value.lower() not in _ALLOWED_COLUMN_TYPES:
+        raise ValueError(f"Invalid column type: {value!r}.")
     return value
