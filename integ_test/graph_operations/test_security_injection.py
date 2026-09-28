@@ -139,6 +139,74 @@ class TestInjectionUpdateNode:
         props = results[0]["n"].get("~properties", {})
         assert props["injected"] == payload
 
+class TestInjectionAlgorithmParameters:
+    """Prove label / property-key / algorithm-parameter injection is neutralized.
+
+    These exercise the identifier and algorithm-parameter interpolation paths
+    (vertex_label, edge_labels, write_property) that are NOT covered by the
+    property-value / node-ID parameterization above.
+    """
+
+    def test_pagerank_vertex_label_injection(self, na_graph):
+        import networkx as nx
+
+        # Contains a double-quote (the breakout char for a quoted string literal),
+        # a backslash, and a backtick — so it exercises the double-quote/backslash
+        # escaping applied to identifier-valued algorithm parameters.
+        payload = 'X"`\\ }) MATCH (m) DETACH DELETE m //'
+        # Must never execute the injected DETACH DELETE — either runs harmlessly
+        # (label matches nothing) or raises.
+        try:
+            nx.pagerank(nx.Graph(), backend="neptune", vertex_label=payload)
+        except Exception:
+            pass
+
+        results = na_graph.na_client.execute_generic_query(
+            "MATCH (n:Canary) WHERE id(n) = $id RETURN n",
+            parameter_map={"id": CANARY_NODE_ID},
+        )
+        assert len(results) == 1, "Canary destroyed via vertex_label injection"
+
+    def test_pagerank_write_property_injection(self, na_graph):
+        import networkx as nx
+
+        payload = 'X"`\\ }) MATCH (m) DETACH DELETE m //'
+        try:
+            nx.pagerank(nx.Graph(), backend="neptune", write_property=payload)
+        except Exception:
+            pass
+
+        results = na_graph.na_client.execute_generic_query(
+            "MATCH (n:Canary) WHERE id(n) = $id RETURN n",
+            parameter_map={"id": CANARY_NODE_ID},
+        )
+        assert len(results) == 1, "Canary destroyed via write_property injection"
+
+    def test_bfs_edge_labels_injection(self, na_graph):
+        import networkx as nx
+
+        # Double-quote is the breakout char for the quoted list element; include
+        # a backtick and backslash too.
+        payload = '"`\\] }) MATCH (m) DETACH DELETE m //'
+        try:
+            list(
+                nx.bfs_edges(
+                    nx.Graph(),
+                    source=CANARY_NODE_ID,
+                    backend="neptune",
+                    edge_labels=[payload],
+                )
+            )
+        except Exception:
+            pass
+
+        results = na_graph.na_client.execute_generic_query(
+            "MATCH (n:Canary) WHERE id(n) = $id RETURN n",
+            parameter_map={"id": CANARY_NODE_ID},
+        )
+        assert len(results) == 1, "Canary destroyed via edge_labels injection"
+
+
 
 class TestInjectionCanarySurvival:
     """Final check: canary node must still exist after all injection tests."""
