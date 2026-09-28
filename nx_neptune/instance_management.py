@@ -55,7 +55,11 @@ from .utils.task_future import (
     TaskType,
     wait_until_all_complete,
 )
-from .utils.utils import _validate_sql_identifier
+from .utils.utils import (
+    _validate_column_type,
+    _validate_s3_location,
+    _validate_sql_identifier,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -712,6 +716,22 @@ async def update_na_instance_size(
         )
 
 
+def _log_connectivity_hint(config):
+    """Log a hint when a graph will be created without public connectivity.
+
+    A private graph is only reachable from within its VPC, so a caller that
+    creates one and then tries to connect from outside the VPC will hang until
+    the connection times out with no obvious cause. Surfacing the resolved
+    setting makes that failure diagnosable and points at the opt-in env var.
+    """
+    if not config.get("publicConnectivity"):
+        logger.info(
+            "Creating graph with publicConnectivity=false (private, VPC-only). "
+            "To connect from outside the VPC, set NETWORKX_PUBLIC_CONNECTIVITY=true "
+            "or pass publicConnectivity=True in config."
+        )
+
+
 def _get_create_instance_config(graph_name, config=None):
     """
     Build and sanitize the configuration dictionary for creating a graph instance.
@@ -730,15 +750,25 @@ def _get_create_instance_config(graph_name, config=None):
 
     config = config or {}
     # Ensure mandatory config present.
-    config.setdefault("publicConnectivity", True)
+    # Secure by default: private graph + deletion protection. Public connectivity
+    # is opt-in ("true"); deletion protection is opt-out ("false"). Any other
+    # value keeps the secure state. An explicit `config` value wins over both.
+    config.setdefault(
+        "publicConnectivity",
+        os.getenv("NETWORKX_PUBLIC_CONNECTIVITY", "false").strip().lower() == "true",
+    )
     config.setdefault("replicaCount", 0)
-    config.setdefault("deletionProtection", False)
+    config.setdefault(
+        "deletionProtection",
+        os.getenv("NETWORKX_DELETION_PROTECTION", "true").strip().lower() != "false",
+    )
     config.setdefault("provisionedMemory", 16)
 
     # Make sure agent tag shows regardless
     config["graphName"] = graph_name
     config.setdefault("tags", {}).setdefault("agent", _PROJECT_IDENTIFIER)
 
+    _log_connectivity_hint(config)
     return config
 
 
@@ -773,9 +803,18 @@ def _get_create_instance_with_import_config(
 
     config = config or {}
     # Ensure mandatory config present.
-    config.setdefault("publicConnectivity", True)
+    # Secure by default: private graph + deletion protection. Public connectivity
+    # is opt-in ("true"); deletion protection is opt-out ("false"). Any other
+    # value keeps the secure state. An explicit `config` value wins over both.
+    config.setdefault(
+        "publicConnectivity",
+        os.getenv("NETWORKX_PUBLIC_CONNECTIVITY", "false").strip().lower() == "true",
+    )
     config.setdefault("replicaCount", 0)
-    config.setdefault("deletionProtection", False)
+    config.setdefault(
+        "deletionProtection",
+        os.getenv("NETWORKX_DELETION_PROTECTION", "true").strip().lower() != "false",
+    )
     config.setdefault("minProvisionedMemory", 16)
     config.setdefault("maxProvisionedMemory", 32)
     config.setdefault("format", "CSV")
@@ -786,6 +825,7 @@ def _get_create_instance_with_import_config(
     config["roleArn"] = role_arn
     config.setdefault("tags", {}).setdefault("agent", _PROJECT_IDENTIFIER)
 
+    _log_connectivity_hint(config)
     return config
 
 
@@ -858,6 +898,19 @@ def _delete_na_instance_task(client, graph_id: str):
     Raises:
         ClientError: If there's an issue with the AWS API call
     """
+    # Graphs are created with deletion protection enabled by default (secure
+    # default). delete_graph fails with ConflictException on a protected graph,
+    # so clear protection first. This is best-effort: if the graph is already
+    # unprotected the update is a harmless no-op, and any failure here is logged
+    # rather than masking the delete the caller asked for.
+    try:
+        client.update_graph(graphIdentifier=graph_id, deletionProtection=False)
+    except ClientError as e:
+        logger.warning(
+            "Could not clear deletion protection for graph %s before delete: %s",
+            graph_id,
+            e,
+        )
     response = client.delete_graph(graphIdentifier=graph_id, skipSnapshot=True)
     return response
 
@@ -1156,7 +1209,6 @@ async def create_csv_table_from_s3(
     table_name: str,
     catalog: Optional[str] = None,
     database: Optional[str] = None,
-    table_columns: Optional[list[str]] = None,
     sts_client: Optional[BaseClient] = None,
     iam_client: Optional[BaseClient] = None,
     athena_client: Optional[BaseClient] = None,
@@ -1172,7 +1224,6 @@ async def create_csv_table_from_s3(
         :param table_name: the table name to create iceberg-formatted data
         :param catalog: (str, optional) catalog namespace to run the sql_query
         :param database: (str, optional) the database to run the sql_query
-        :param table_columns: (list, optional) table columns to include in the newly created query
         :param sts_client: (optional) Pre-configured STS client
         :param iam_client: (optional) Pre-configured IAM client
         :param athena_client: (optional) Pre-configured Athena client
@@ -1321,12 +1372,20 @@ def _build_sql_statement(
                 continue
             table_columns[field] = datatype.lower()
 
+    # Column names and datatypes are parsed from the CSV header in the staging
+    # bucket, i.e. from data outside this function's control. Validate each one
+    # before interpolating it into the DDL: names must be safe SQL identifiers
+    # and datatypes must be in the allowlist.
+    for k, v in table_columns.items():
+        _validate_sql_identifier(k)
+        _validate_column_type(v)
     table_schema = ",\n    ".join(f"`{k}` {v}" for k, v in table_columns.items())
     _validate_sql_identifier(table_name)
     if bucket_folder:
         s3_location = f"s3://{bucket_name}/{bucket_folder}/{prefix}"
     else:
         s3_location = f"s3://{bucket_name}/{prefix}"
+    _validate_s3_location(s3_location)
 
     return f"""CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
     {table_schema}
@@ -1383,7 +1442,11 @@ async def create_iceberg_table_from_table(
 
     select_columns = "*"
     if table_columns:
-        select_columns = '"' + '","'.join(table_columns) + '"'
+        for c in table_columns:
+            _validate_sql_identifier(c)
+        select_columns = ",".join(
+            '"' + c.replace('"', '""') + '"' for c in table_columns
+        )
 
     _validate_sql_identifier(table_name)
     _validate_sql_identifier(csv_table_name)
@@ -1570,6 +1633,9 @@ def _execute_athena_query(
         "QueryString": sql_statement,
         "ResultConfiguration": {"OutputLocation": output_location},
     }
+    work_group = os.getenv("NETWORKX_ATHENA_WORKGROUP", "").strip()
+    if work_group:
+        query_execution_params["WorkGroup"] = work_group
     if catalog or database:
         query_execution_context = {}
         if catalog:

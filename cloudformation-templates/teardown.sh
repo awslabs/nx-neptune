@@ -10,6 +10,16 @@ echo "Looking up stack ${STACK_NAME} in ${REGION}..."
 STAGING=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" \
   --query 'Stacks[0].Outputs[?OutputKey==`StagingBucketName`].OutputValue' --output text)
 
+# Disable it on the graph before deleting the stack (otherwise delete-stack fails).
+# Look up the graph id from the stack outputs and clear protection; ignore errors if already disabled.
+GRAPH_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" \
+  --query 'Stacks[0].Outputs[?OutputKey==`GraphId`].OutputValue' --output text)
+if [ -n "$GRAPH_ID" ] && [ "$GRAPH_ID" != "None" ]; then
+  echo "Disabling deletion protection on graph ${GRAPH_ID}..."
+  aws neptune-graph update-graph --graph-identifier "$GRAPH_ID" \
+    --no-deletion-protection --region "$REGION" 2>/dev/null || true
+fi
+
 # Empty the versioned staging bucket
 if [ -n "$STAGING" ] && [ "$STAGING" != "None" ]; then
   echo "Emptying s3://${STAGING}..."
