@@ -49,6 +49,9 @@ jobs:
     needs: prerelease-build
     permissions:
       contents: write
+      # Required for keyless build-provenance attestation (Sigstore via OIDC).
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -63,8 +66,22 @@ jobs:
       - name: Package notebooks
         run: zip -j notebooks.zip notebooks/*.ipynb notebooks/README.md
 
+      - name: Generate checksums
+        run: |
+          ( cd dist && sha256sum *.whl ) > SHA256SUMS
+          sha256sum notebooks.zip >> SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.whl
+            notebooks.zip
+            SHA256SUMS
+
       - name: Upload assets to GitHub Prerelease
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.whl notebooks.zip
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.whl notebooks.zip SHA256SUMS
