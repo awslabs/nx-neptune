@@ -86,8 +86,19 @@ test: lint        ## Run tests and generate coverage report.
 	$(ENV_PREFIX)coverage html
 
 .PHONY: integ-test
-integ-test:
+integ-test:       ## Run all integration tests (requires NETWORKX_GRAPH_ID).
+	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
 	$(ENV_PREFIX)pytest -v -l --tb=short --maxfail=1 integ_test/
+
+.PHONY: integ-test-graph
+integ-test-graph: ## Run graph operation integration tests only.
+	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
+	$(ENV_PREFIX)pytest -v -l --tb=short --maxfail=1 integ_test/graph_operations/
+
+.PHONY: integ-test-session
+integ-test-session: ## Run session manager integration tests only.
+	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
+	$(ENV_PREFIX)pytest -v -l --tb=short --maxfail=1 integ_test/session_manager/
 
 .PHONY: watch
 watch:            ## Run tests on every change.
