@@ -10,6 +10,56 @@ This repository contains three independently released components:
 | Athena Databricks Connector | Java | SAM / Lambda | Manual deploy from `connectors/athena-databricks-connector/` |
 | Athena S3Vector Connector | Java | SAM / Lambda | Manual deploy from `connectors/athena-s3vector-connector/` |
 
+## Verifying release artifacts
+
+Every `nx_neptune` GitHub Release (and prerelease) ships with:
+
+- the wheel (`nx_neptune-<version>-py3-none-any.whl`),
+- `notebooks.zip`,
+- a `SHA256SUMS` checksum manifest.
+
+The wheel, `notebooks.zip`, and `SHA256SUMS` are covered by a **Sigstore build
+provenance attestation** generated in the release workflow
+([`python-publish.yml`](.github/workflows/python-publish.yml) /
+[`python-prerelease.yml`](.github/workflows/python-prerelease.yml)) via
+`actions/attest-build-provenance`. Signing is keyless (GitHub OIDC) — no signing
+keys are stored in the repository.
+
+### Verify provenance (recommended)
+
+Requires the [GitHub CLI](https://cli.github.com/) (`gh` ≥ 2.49). Download the
+asset from the Releases page, then:
+
+```bash
+gh attestation verify nx_neptune-<version>-py3-none-any.whl --repo awslabs/nx-neptune
+```
+
+To pin verification to the exact release workflow that is allowed to sign:
+
+```bash
+gh attestation verify nx_neptune-<version>-py3-none-any.whl \
+  --repo awslabs/nx-neptune \
+  --signer-workflow awslabs/nx-neptune/.github/workflows/python-publish.yml
+```
+
+The same command works for `notebooks.zip` and `SHA256SUMS`.
+
+### Verify checksums
+
+After verifying provenance on `SHA256SUMS`, confirm the downloaded files match
+it (run from the directory containing the downloaded assets):
+
+```bash
+sha256sum -c SHA256SUMS
+```
+
+### PyPI provenance
+
+Wheels published to [PyPI](https://pypi.org/project/nx-neptune/) also carry
+Sigstore attestations (the publish step sets `attestations: true`). PyPI exposes
+these on the project's files page; note that `pip install` does not verify them
+automatically today.
+
 ## Pre-release checklist
 
 ### 1. Ensure CI is green
