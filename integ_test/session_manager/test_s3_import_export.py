@@ -13,8 +13,10 @@ Requirements:
 
 import asyncio
 import os
+import time
 
 import pytest
+from botocore.exceptions import ClientError
 
 from nx_neptune import empty_s3_bucket
 from nx_neptune.clients.iam_client import split_s3_arn_to_bucket_and_path
@@ -25,6 +27,20 @@ pytestmark = pytest.mark.skipif(
     not S3_BUCKET,
     reason="NETWORKX_S3_EXPORT_BUCKET_PATH not set"
 )
+
+
+def _read_with_retry(read_fn, attempts=6, delay=10):
+    # Neptune can briefly reject queries right after an import completes
+    # (UnprocessableException / "resubmit the query"); retry before failing.
+    for attempt in range(attempts):
+        try:
+            return read_fn()
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code")
+            if code == "UnprocessableException" and attempt < attempts - 1:
+                time.sleep(delay)
+                continue
+            raise
 
 
 class TestExportCsvToS3:
@@ -63,12 +79,12 @@ class TestImportCsvFromS3:
         assert task_id is not None
 
         # Verify data came back
-        nodes = neptune_graph.get_all_nodes()
+        nodes = _read_with_retry(neptune_graph.get_all_nodes)
         assert len(nodes) >= 3
         node_ids = {n["~id"] for n in nodes}
         assert {"s1", "s2", "s3"}.issubset(node_ids)
 
-        edges = neptune_graph.get_all_edges()
+        edges = _read_with_retry(neptune_graph.get_all_edges)
         assert len(edges) >= 2
         edge_pairs = {(e["~start"], e["~end"]) for e in edges}
         assert ("s1", "s2") in edge_pairs
