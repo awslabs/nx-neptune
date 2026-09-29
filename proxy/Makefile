@@ -39,10 +39,10 @@ clean:            ## Remove container and image.
 
 up:               ## Start proxy + Graph Explorer with compose.
 	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
-	$(RUNTIME) compose up --build --force-recreate -d
+	$(RUNTIME) compose up --build --force-recreate -d 2>&1 | grep -v "nerdctl run"
 
 up-ge:            ## Start only Graph Explorer.
-	$(RUNTIME) compose up graph-explorer -d
+	$(RUNTIME) compose up graph-explorer -d 2>&1 | grep -v "nerdctl run"
 
 down:             ## Stop compose services.
 	$(RUNTIME) compose down
