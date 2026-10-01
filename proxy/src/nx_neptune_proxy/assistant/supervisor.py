@@ -46,6 +46,7 @@ from nx_neptune_proxy.assistant.graph_tools import (
 from nx_neptune_proxy.assistant.schemas import (
     AssistantReply,
     ChatAction,
+    CypherQuery,
     FieldProposal,
     JumpAction,
     PageContext,
@@ -221,6 +222,30 @@ SQL_VALIDATION_GUIDANCE = """
 """
 
 
+# openCypher-validation guidance: the Details-page twin of SQL_VALIDATION_GUIDANCE.
+# Checks the graph queries already on the page and applies a fix when one is
+# wrong. Validation is read-only (EXPLAIN plans, never runs); the fix tool edits
+# a single query in place. Kept as its own block, concatenated under the same
+# "Validate and fix queries" job (see SUPERVISOR_SYSTEM_PROMPT).
+GRAPH_QUERY_VALIDATION_GUIDANCE = """
+- validate_graph_queries(queries): validate openCypher syntax against the live
+  graph via Neptune Analytics EXPLAIN (read-only — it does not run the queries).
+  Call this when the user asks to validate/verify/check openCypher — pass the
+  exact query strings, or call with NO arguments to validate the graph queries
+  already on the page (Details page). It needs a live, available graph
+  (graph_status "complete" / a graph_id present); if none exists, it says so —
+  relay that rather than pretending the queries were checked.
+- update_graph_queries(index, cypher): apply a corrected openCypher graph query
+  to the Details page. When the user asks you to FIX a graph query, finding the
+  bug is not enough — you MUST call this with the corrected openCypher, or the
+  page stays unchanged. index is the 1-based position shown on the page; only
+  that one query changes and the others are preserved. Never claim you fixed a
+  query unless you called this tool. After applying a fix, ALWAYS call
+  validate_graph_queries again (no arguments) to confirm it now plans cleanly,
+  and only report success if that re-check passed.
+"""
+
+
 SUPERVISOR_SYSTEM_PROMPT = """You are the assistant for a graph-import web app \
 (relational data in Amazon Athena → an Amazon Neptune graph). You help the user \
 by routing their request to your tools and replying in plain language.
@@ -262,16 +287,12 @@ that already exists, WITHOUT rebuilding the import. Use this instead of \
 generate_import when the user wants to query/explore/analyze a graph and the \
 page context shows one is already set up (a projection_id, a graph_status, or \
 node/edge queries are present). Do NOT re-run generate_import just to get \
-queries when the import already exists.
-- validate_graph_queries(queries): validate openCypher syntax against the live \
-graph via Neptune Analytics EXPLAIN (read-only — it does not run the queries). \
-Call this only when the user explicitly asks to validate/verify/check openCypher, \
-passing the exact query strings. It needs a live, available graph (graph_status \
-"complete" / a graph_id present); if none exists, it says so — relay that rather \
-than pretending the queries were checked.
+queries when the import already exists. (propose_queries already EXPLAIN-\
+validates its own output when the graph is live and withholds any query that \
+fails, so you do not need to separately validate queries it returns.)
 
-### 4. Validate and fix the import SQL
-""" + SQL_VALIDATION_GUIDANCE + """
+### 4. Validate and fix queries (SQL and openCypher — never builds the import)
+""" + SQL_VALIDATION_GUIDANCE + GRAPH_QUERY_VALIDATION_GUIDANCE + """
 
 ### 5. Page navigation (move around the app)
 - navigate(request): propose cross-page navigation (e.g. "start a new import", \
@@ -283,8 +304,9 @@ than pretending the queries were checked.
 - A pure navigation request must not trigger import generation, and vice versa.
 - A single-field question (like which bucket to stage to) is job 2, not job 3 — \
 do not run generate_import to answer it.
-- A validate/verify/check request for the SQL is job 4 (validate_sql_queries), \
-never job 3 — do not run generate_import to validate existing queries.
+- A validate/verify/check/fix request for existing queries (node/edge SQL or \
+openCypher graph queries) is job 4, never job 3 — do not run generate_import to \
+validate or fix queries that already exist.
 - Prefer the lightest job that answers the request; escalate to generate_import \
 only on a clear intent to build the import.
 - Keep your final reply short: the proposed jumps, form fields, and actions are \
@@ -522,7 +544,13 @@ class Supervisor:
             model; otherwise the page's node/edge queries define the predicted
             model, or the planner proposes general-purpose queries if none are
             present. Works regardless of whether the import has finished
-            running."""
+            running.
+
+            Built-in validation: when the graph is live, each proposed query is
+            EXPLAIN-checked before being offered; queries that fail to plan are
+            withheld (not shown as run buttons) and reported in the result, so
+            the queries returned to the user are already validated — you need
+            not validate them separately."""
             pc = ctx.page_context
             node_queries = list(pc.node_queries) if pc else []
             edge_queries = list(pc.edge_queries) if pc else []
@@ -545,15 +573,42 @@ class Supervisor:
             plan = self._query_planner.plan(
                 mapping, request, graph_schema=graph_schema
             )
+            # Validate before offering: a proposed query the engine rejects is
+            # worthless, so when the graph is live we EXPLAIN-check the batch
+            # (STATIC — read-only, no execution) in one pass and withhold any
+            # that don't plan cleanly. No live graph -> no EXPLAIN target, so we
+            # offer the plan as-is (predicted-model path). This is done in code
+            # (not via a chain of validate/update tool calls) so it is
+            # deterministic and adds no extra LLM round-trips.
+            proposed = list(plan.graph_queries)
+            withheld: list[tuple[CypherQuery, str]] = []
+            if graph_id and proposed:
+                valid: list[CypherQuery] = []
+                for q in proposed:
+                    ok, err = validate_opencypher(graph_id, q.cypher)
+                    if ok:
+                        valid.append(q)
+                    else:
+                        withheld.append((q, err or "did not plan cleanly"))
+                proposed = valid
+            elif proposed:
+                # No graph_id in page context -> no EXPLAIN target, so proposed
+                # queries cannot be validated this turn. Log it so a skipped
+                # validation is visible in the trace rather than looking silent.
+                logger.info(
+                    "propose_queries: no live graph_id in page context; "
+                    "offering %d query(ies) without EXPLAIN validation",
+                    len(proposed),
+                )
             # Only the graph_queries change; leaving the other fields None means
             # the client applies just the openCypher without touching the form's
             # catalog/database/SQL (spec §9.5).
-            ctx.proposal = FieldProposal(graph_queries=plan.graph_queries or None)
+            ctx.proposal = FieldProposal(graph_queries=proposed or None)
             # When the page can run queries (the Details page), offer each
             # proposed query as an inline "Run Query" button so the user can
             # execute it straight from the chat (spec §9.3).
             if pc and pc.can_run_queries:
-                for q in plan.graph_queries:
+                for q in proposed:
                     label = q.description or q.cypher
                     if len(label) > 60:
                         label = label[:57] + "…"
@@ -568,22 +623,34 @@ class Supervisor:
             # Relay the planner's intent — overall summary plus each query's
             # purpose — so the user hears what the queries accomplish, not just
             # how many there are.
-            summary = f"Proposed {len(plan.graph_queries)} openCypher query(ies)."
+            summary = f"Proposed {len(proposed)} openCypher query(ies)."
             if plan.description:
                 summary += f" {plan.description}"
-            query_bullets = _query_bullets(plan.graph_queries)
+            query_bullets = _query_bullets(proposed)
             if query_bullets:
                 summary += f"\n{query_bullets}"
+            # Be honest about anything the validation dropped rather than
+            # silently discarding it.
+            if withheld:
+                summary += (
+                    f"\nWithheld {len(withheld)} query(ies) that failed EXPLAIN "
+                    "validation and were not offered:"
+                )
+                for q, err in withheld:
+                    summary += f"\n- {q.cypher} — {err}"
             return summary
 
-        def validate_graph_queries(queries: list[str]) -> str:
+        def validate_graph_queries(queries: Optional[list[str]] = None) -> str:
             """Validate openCypher queries against the live graph using Neptune
             Analytics EXPLAIN (read-only — plans each query without running it).
 
             Use when the user asks to validate / verify / check / confirm the
             syntax of openCypher — whether queries just proposed by
             propose_queries or ones the user provided. Pass the exact query
-            strings to check.
+            strings to check; or call with NO arguments to validate the graph
+            queries currently on the page (read from page context) — use the
+            no-arg form when the user says "validate/check the queries on the
+            page" or right after fixing one with update_graph_queries.
 
             Requires a live graph: EXPLAIN always targets a graphIdentifier, so
             the page context must carry a graph_id and the graph must be
@@ -599,6 +666,11 @@ class Supervisor:
                     "available graph. This page has no live graph yet — validation "
                     "is only possible once the import is complete."
                 )
+            # No explicit list -> validate the page's current graph queries, so
+            # "check the queries on the page" (and post-fix re-validation) works
+            # the same way validate_sql_queries reads from page context.
+            if queries is None:
+                queries = [q.cypher for q in (pc.graph_queries if pc else [])]
             checked = [q for q in queries if q and q.strip()]
             if not checked:
                 return "No openCypher queries to validate."
@@ -726,6 +798,54 @@ class Supervisor:
             ctx.proposal = FieldProposal(**base)
             return f"Updated {qtype} query {index} on the form."
 
+        def update_graph_queries(index: int, cypher: str) -> str:
+            """Apply a corrected openCypher graph query to the page.
+
+            Use this to actually FIX a graph query on the Details page — e.g.
+            after validate_graph_queries reports a syntax error, call this with
+            the corrected openCypher so the page is updated (finding the bug is
+            not enough; you MUST call this to change the page). Do NOT claim you
+            fixed a query unless you called this tool.
+
+            - index: 1-based position in the page's graph-query list (the same
+              order shown on the page / reported by validation).
+            - cypher: the full corrected openCypher for that one query.
+
+            Only the single targeted query changes; every other graph query
+            (and its description) is preserved. The corrected query is applied
+            to the page and persisted; after fixing you should re-run
+            validate_graph_queries to confirm it now plans cleanly."""
+            if not cypher or not cypher.strip():
+                return "No openCypher provided; pass the full corrected query."
+
+            pc = ctx.page_context
+            queries = list(pc.graph_queries) if pc else []
+            # 1-based index mirrors what the page shows / validation reports.
+            pos = index - 1
+            if pos < 0 or pos >= len(queries):
+                return (
+                    f"There is no graph query {index} on the page "
+                    f"(it has {len(queries)} graph query(ies))."
+                )
+            # Preserve the query's description; only the openCypher text changes.
+            queries[pos] = CypherQuery(
+                cypher=cypher, description=queries[pos].description
+            )
+
+            # Reflect the fix in the page-context snapshot too, so a follow-up
+            # validate_graph_queries call *in this same turn* plans the corrected
+            # openCypher rather than the stale text.
+            if pc is not None:
+                pc.graph_queries = queries
+
+            # Merge onto any proposal already built this turn; send the FULL
+            # graph-query list because the client replaces the array wholesale
+            # (a partial list would drop the other queries).
+            base = ctx.proposal.model_dump() if ctx.proposal else {}
+            base["graph_queries"] = [q.model_dump() for q in queries] or None
+            ctx.proposal = FieldProposal(**base)
+            return f"Updated graph query {index} on the page."
+
         def update_import_fields(
             bucket: str = "",
             graph_name: str = "",
@@ -777,6 +897,7 @@ class Supervisor:
             validate_graph_queries,
             validate_sql_queries,
             update_sql_queries,
+            update_graph_queries,
             update_import_fields,
             suggest_page_actions,
         ]

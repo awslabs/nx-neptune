@@ -252,19 +252,31 @@ def explain_query(projection_id: str, body: RunQueryPayload):
             detail="No graph associated with this projection — run the import first.",
         )
 
-    na_client = NeptuneAnalyticsClient(graph_id=p.graph_id)
+    # The wrapper's execute_query is for RUNNING queries (returns results); an
+    # EXPLAIN is a different call — request the plan via the explainMode
+    # parameter on the raw neptune-graph client, exactly like the assistant's
+    # validate_opencypher. STATIC plans without executing (read-only, cheap).
+    # NOTE: EXPLAIN must go through explainMode, NOT a literal "EXPLAIN" prefix
+    # in the query text (the engine rejects that at column 1: "Invalid input
+    # 'E'").
+    na_boto = NeptuneAnalyticsClient(graph_id=p.graph_id).client
     results: list[ExplainQueryResult] = []
     for cypher in body.queries:
-        if not cypher.strip():
-            continue
-        # Prefix EXPLAIN unless the user already did. A ClientError is the
-        # engine rejecting the query (bad syntax/procedure/param) — the signal
-        # we want; any success means the query planned cleanly.
         stmt = cypher.strip()
-        if not stmt.upper().startswith("EXPLAIN"):
-            stmt = f"EXPLAIN {stmt}"
+        if not stmt:
+            continue
+        # A ClientError is the engine rejecting the query (bad
+        # syntax/procedure/param) — the signal we want; any success means the
+        # query planned cleanly. The error message carries the exact syntax
+        # detail (offending token + line/column), so the caller can fix it.
         try:
-            na_client.execute_query(stmt)
+            na_boto.execute_query(
+                graphIdentifier=p.graph_id,
+                queryString=stmt,
+                language="OPEN_CYPHER",
+                parameters={},
+                explainMode="STATIC",
+            )
             results.append(ExplainQueryResult(valid=True))
         except ClientError as e:
             results.append(

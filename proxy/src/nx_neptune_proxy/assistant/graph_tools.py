@@ -72,15 +72,20 @@ def validate_opencypher(graph_id: str, cypher: str) -> tuple[bool, Optional[str]
     Read-only, under the scoped agent role via :func:`agent_neptune_client`.
     """
     stmt = cypher.strip()
-    if not stmt.upper().startswith("EXPLAIN"):
-        stmt = f"EXPLAIN {stmt}"
     client = agent_neptune_client()
     try:
+        # Neptune Analytics requests an EXPLAIN via the explainMode parameter —
+        # NOT by prefixing the literal "EXPLAIN" keyword into queryString (that
+        # gets parsed as query text and fails at column 1 with "Invalid input
+        # 'E'"). STATIC plans the query WITHOUT executing it (DETAILS would run
+        # it), so validation stays read-only and cheap while still catching
+        # syntax/procedure/param errors authoritatively.
         client.execute_query(
             graphIdentifier=graph_id,
             queryString=stmt,
             language="OPEN_CYPHER",
             parameters={},
+            explainMode="STATIC",
         )
         return True, None
     except ClientError as e:

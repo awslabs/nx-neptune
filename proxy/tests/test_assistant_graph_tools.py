@@ -68,7 +68,7 @@ def test_fetch_graph_schema_handles_dict_property_entries():
 # --- validate_opencypher (EXPLAIN syntax check) ---
 
 
-def test_validate_opencypher_prefixes_explain_and_reports_valid():
+def test_validate_opencypher_uses_explain_mode_and_reports_valid():
     client = MagicMock()
     client.execute_query.return_value = {"payload": None}
     with patch.object(graph_tools, "agent_neptune_client", return_value=client):
@@ -77,15 +77,22 @@ def test_validate_opencypher_prefixes_explain_and_reports_valid():
     assert valid is True and err is None
     kwargs = client.execute_query.call_args.kwargs
     assert kwargs["graphIdentifier"] == "g-1"
-    assert kwargs["queryString"] == "EXPLAIN MATCH (n) RETURN n"
+    # Query is sent verbatim; EXPLAIN is requested via explainMode, NOT by
+    # prefixing the literal keyword (which the engine rejects at column 1).
+    assert kwargs["queryString"] == "MATCH (n) RETURN n"
+    assert "EXPLAIN" not in kwargs["queryString"].upper()
+    assert kwargs["explainMode"] == "STATIC"
     assert kwargs["language"] == "OPEN_CYPHER"
 
 
-def test_validate_opencypher_does_not_double_prefix():
+def test_validate_opencypher_does_not_inline_explain_keyword():
     client = MagicMock()
     with patch.object(graph_tools, "agent_neptune_client", return_value=client):
-        graph_tools.validate_opencypher("g-1", "  explain MATCH (n) RETURN n  ")
-    assert client.execute_query.call_args.kwargs["queryString"] == "explain MATCH (n) RETURN n"
+        graph_tools.validate_opencypher("g-1", "  MATCH (n) RETURN n  ")
+    kwargs = client.execute_query.call_args.kwargs
+    # Trimmed and sent as-is with explainMode — no "EXPLAIN " prepended.
+    assert kwargs["queryString"] == "MATCH (n) RETURN n"
+    assert kwargs["explainMode"] == "STATIC"
 
 
 def test_validate_opencypher_reports_engine_error_as_invalid():

@@ -335,8 +335,8 @@ async def test_explain_query_reports_per_query_validity(client):
 
     mock_na = MagicMock()
     # First query plans cleanly; second is rejected by the engine.
-    mock_na.execute_query.side_effect = [
-        [{"plan": "ok"}],
+    mock_na.client.execute_query.side_effect = [
+        {"payload": None},
         ClientError(
             {"Error": {"Code": "MalformedQueryException", "Message": "bad cypher"}},
             "ExecuteQuery",
@@ -359,31 +359,38 @@ async def test_explain_query_reports_per_query_validity(client):
     assert results[1]["valid"] is False
     assert results[1]["error"]
 
-    # Queries are EXPLAIN-prefixed and validation does not stop at the failure.
-    calls = [c.args[0] for c in mock_na.execute_query.call_args_list]
-    assert calls == ["EXPLAIN MATCH (n) RETURN n", "EXPLAIN BROKEN"]
+    # Queries are validated via explainMode on the raw boto client (sent
+    # verbatim, NOT EXPLAIN-prefixed); validation does not stop at the failure.
+    calls = mock_na.client.execute_query.call_args_list
+    assert [c.kwargs["queryString"] for c in calls] == ["MATCH (n) RETURN n", "BROKEN"]
+    assert all(c.kwargs["explainMode"] == "STATIC" for c in calls)
 
 
 @pytest.mark.asyncio
-async def test_explain_query_does_not_double_prefix(client):
+async def test_explain_query_sends_query_verbatim_with_explain_mode(client):
     create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
     store.update(pid, graph_id="g-abc123")
 
     mock_na = MagicMock()
-    mock_na.execute_query.return_value = [{"plan": "ok"}]
+    mock_na.client.execute_query.return_value = {"payload": None}
     with patch(
         "nx_neptune_proxy.routers.projection.NeptuneAnalyticsClient",
         return_value=mock_na,
     ):
         resp = await client.post(
             f"/api/v0/projection/{pid}/explain-query",
-            json={"queries": ["explain MATCH (n) RETURN n"]},
+            json={"queries": ["MATCH (n) RETURN n"]},
         )
 
     assert resp.status_code == 200
     assert resp.json()["results"] == [{"valid": True, "error": None}]
-    mock_na.execute_query.assert_called_once_with("explain MATCH (n) RETURN n")
+    # Sent verbatim with explainMode on the raw boto client — never the literal
+    # "EXPLAIN" prefix that the engine rejects at column 1 ("Invalid input 'E'").
+    kwargs = mock_na.client.execute_query.call_args.kwargs
+    assert kwargs["queryString"] == "MATCH (n) RETURN n"
+    assert "EXPLAIN" not in kwargs["queryString"].upper()
+    assert kwargs["explainMode"] == "STATIC"
 
 
 @pytest.mark.asyncio
