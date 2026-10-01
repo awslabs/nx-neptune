@@ -544,13 +544,7 @@ class Supervisor:
             model; otherwise the page's node/edge queries define the predicted
             model, or the planner proposes general-purpose queries if none are
             present. Works regardless of whether the import has finished
-            running.
-
-            Built-in validation: when the graph is live, each proposed query is
-            EXPLAIN-checked before being offered; queries that fail to plan are
-            withheld (not shown as run buttons) and reported in the result, so
-            the queries returned to the user are already validated — you need
-            not validate them separately."""
+            running."""
             pc = ctx.page_context
             node_queries = list(pc.node_queries) if pc else []
             edge_queries = list(pc.edge_queries) if pc else []
@@ -573,42 +567,15 @@ class Supervisor:
             plan = self._query_planner.plan(
                 mapping, request, graph_schema=graph_schema
             )
-            # Validate before offering: a proposed query the engine rejects is
-            # worthless, so when the graph is live we EXPLAIN-check the batch
-            # (STATIC — read-only, no execution) in one pass and withhold any
-            # that don't plan cleanly. No live graph -> no EXPLAIN target, so we
-            # offer the plan as-is (predicted-model path). This is done in code
-            # (not via a chain of validate/update tool calls) so it is
-            # deterministic and adds no extra LLM round-trips.
-            proposed = list(plan.graph_queries)
-            withheld: list[tuple[CypherQuery, str]] = []
-            if graph_id and proposed:
-                valid: list[CypherQuery] = []
-                for q in proposed:
-                    ok, err = validate_opencypher(graph_id, q.cypher)
-                    if ok:
-                        valid.append(q)
-                    else:
-                        withheld.append((q, err or "did not plan cleanly"))
-                proposed = valid
-            elif proposed:
-                # No graph_id in page context -> no EXPLAIN target, so proposed
-                # queries cannot be validated this turn. Log it so a skipped
-                # validation is visible in the trace rather than looking silent.
-                logger.info(
-                    "propose_queries: no live graph_id in page context; "
-                    "offering %d query(ies) without EXPLAIN validation",
-                    len(proposed),
-                )
             # Only the graph_queries change; leaving the other fields None means
             # the client applies just the openCypher without touching the form's
             # catalog/database/SQL (spec §9.5).
-            ctx.proposal = FieldProposal(graph_queries=proposed or None)
+            ctx.proposal = FieldProposal(graph_queries=plan.graph_queries or None)
             # When the page can run queries (the Details page), offer each
             # proposed query as an inline "Run Query" button so the user can
             # execute it straight from the chat (spec §9.3).
             if pc and pc.can_run_queries:
-                for q in proposed:
+                for q in plan.graph_queries:
                     label = q.description or q.cypher
                     if len(label) > 60:
                         label = label[:57] + "…"
@@ -623,22 +590,14 @@ class Supervisor:
             # Relay the planner's intent — overall summary plus each query's
             # purpose — so the user hears what the queries accomplish, not just
             # how many there are.
-            summary = f"Proposed {len(proposed)} openCypher query(ies)."
+            summary = f"Proposed {len(plan.graph_queries)} openCypher query(ies)."
             if plan.description:
                 summary += f" {plan.description}"
-            query_bullets = _query_bullets(proposed)
+            query_bullets = _query_bullets(plan.graph_queries)
             if query_bullets:
                 summary += f"\n{query_bullets}"
-            # Be honest about anything the validation dropped rather than
-            # silently discarding it.
-            if withheld:
-                summary += (
-                    f"\nWithheld {len(withheld)} query(ies) that failed EXPLAIN "
-                    "validation and were not offered:"
-                )
-                for q, err in withheld:
-                    summary += f"\n- {q.cypher} — {err}"
             return summary
+
 
         def validate_graph_queries(queries: Optional[list[str]] = None) -> str:
             """Validate openCypher queries against the live graph using Neptune
