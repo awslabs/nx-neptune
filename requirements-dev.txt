@@ -38,7 +38,7 @@ identify==2.6.20
     # via pre-commit
 iniconfig==2.3.0
     # via pytest
-isort==9.0.1
+isort==9.0.2
     # via nx-neptune (pyproject.toml)
 jmespath==1.1.0
     # via
