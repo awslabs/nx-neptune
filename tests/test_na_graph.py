@@ -10,6 +10,7 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
+import os
 import pytest
 from unittest.mock import MagicMock, patch
 import logging
@@ -20,7 +21,7 @@ from nx_neptune.clients import (
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
 )
-from nx_neptune.na_graph import NeptuneGraph
+from nx_neptune.na_graph import NeptuneGraph, get_config
 from nx_neptune.clients import (
     NeptuneAnalyticsClient,
     insert_node,
@@ -262,3 +263,53 @@ class TestNeptuneGraph:
         expected_query = match_all_edges()
         mock_client.execute_generic_query.assert_called_once_with(expected_query)
         assert result == ["relationship1", "relationship1"]
+
+
+class TestGetConfig:
+    @pytest.fixture(autouse=True)
+    def reset_neptune_config(self):
+        """Reset the global neptune backend config before and after each test.
+
+        get_config() mutates a process-wide singleton (networkx.config.backends.neptune),
+        so tests must not leak overrides into each other.
+        """
+        config = nx.config.backends.neptune
+        original_graph_id = config.graph_id
+        original_s3_iam_role = config.s3_iam_role
+        config.graph_id = None
+        config.s3_iam_role = None
+        yield
+        config.graph_id = original_graph_id
+        config.s3_iam_role = original_s3_iam_role
+
+    def test_get_config_reads_graph_id_set_after_import(self):
+        """Regression test for #16: NETWORKX_GRAPH_ID must be read live, not cached
+        at import time, so it is picked up even if set (e.g. via load_dotenv())
+        after nx_neptune has already been imported."""
+        with patch.dict(os.environ, {"NETWORKX_GRAPH_ID": "graph-set-after-import"}):
+            config = get_config()
+
+        assert config.graph_id == "graph-set-after-import"
+
+    def test_get_config_reads_s3_iam_role_set_after_import(self):
+        """Regression test for #16, and for the config.role_arn typo (the
+        NeptuneConfig field is s3_iam_role, not role_arn) which meant this branch
+        raised AttributeError whenever NETWORKX_S3_IAM_ROLE_ARN was set."""
+        with patch.dict(
+            os.environ,
+            {"NETWORKX_S3_IAM_ROLE_ARN": "arn:aws:iam::123456789012:role/my-role"},
+        ):
+            config = get_config()
+
+        assert config.s3_iam_role == "arn:aws:iam::123456789012:role/my-role"
+
+    def test_get_config_leaves_defaults_untouched_when_env_vars_unset(self):
+        """When neither env var is set, get_config() must not overwrite existing
+        configuration values."""
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("NETWORKX_GRAPH_ID", None)
+            os.environ.pop("NETWORKX_S3_IAM_ROLE_ARN", None)
+            config = get_config()
+
+        assert config.graph_id is None
+        assert config.s3_iam_role is None

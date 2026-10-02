@@ -11,6 +11,7 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 import logging
+import os
 from asyncio import Task
 from typing import Any, List, Optional
 
@@ -304,16 +305,23 @@ def get_config() -> NeptuneConfig:
     """
     Helper method to retrieve the Neptune configuration with global variable overrides.
 
+    Reads NETWORKX_GRAPH_ID and NETWORKX_S3_IAM_ROLE_ARN from the environment at call
+    time rather than relying on the module-level constants exported from
+    nx_plugin.config, which are captured once at import time and would otherwise miss
+    values set afterward (for example via load_dotenv() called after import).
+
     Returns:
         dict: The Neptune configuration.
     """
     config = networkx.config.backends.neptune
 
-    if NETWORKX_GRAPH_ID is not None:
-        config.graph_id = NETWORKX_GRAPH_ID
+    graph_id = os.environ.get("NETWORKX_GRAPH_ID")
+    if graph_id is not None:
+        config.graph_id = graph_id
 
-    if NETWORKX_S3_IAM_ROLE_ARN is not None:
-        config.role_arn = NETWORKX_S3_IAM_ROLE_ARN
+    s3_iam_role_arn = os.environ.get("NETWORKX_S3_IAM_ROLE_ARN")
+    if s3_iam_role_arn is not None:
+        config.s3_iam_role = s3_iam_role_arn
 
     return config
 
