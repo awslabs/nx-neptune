@@ -10,7 +10,7 @@ black==26.5.1
     # via nx-neptune (pyproject.toml)
 boto3==1.43.103
     # via nx-neptune (pyproject.toml)
-botocore==1.43.103
+botocore==1.43.105
     # via
     #   boto3
     #   s3transfer
