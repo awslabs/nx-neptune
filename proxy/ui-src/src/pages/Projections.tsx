@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useSearchParams, NavLink } from "react-router";
-import { projection, metadata, projectApi, graphActions, type Projection, type Project, type Inflight } from "../api";
+import { projection, metadata, projectApi, graphActions, type Projection, type Project, type Inflight, type QueriesResponse } from "../api";
 import { Card, Button, RefreshButton } from "../components/ui";
 import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown, Download } from "lucide-react";
 import { useNavigate } from "react-router";
@@ -9,6 +9,7 @@ export function Projections() {
   const [searchParams] = useSearchParams();
   const [projections, setProjections] = useState<Projection[]>([]);
   const [selected, setSelected] = useState<Projection | null>(null);
+  const [selectedQueries, setSelectedQueries] = useState<QueriesResponse | null>(null);
   const [region, setRegion] = useState("");
   const [projects, setProjects] = useState<Map<string, Project>>(new Map());
   const [summaries, setSummaries] = useState<Map<string, { numNodes: number; numEdges: number }>>(new Map());
@@ -22,6 +23,16 @@ export function Projections() {
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const filterProjectId = searchParams.get("project");
+
+  // Load the selected projection's node/edge queries for the detail panel.
+  // Queries live in the dedicated queries endpoint, not on the Projection.
+  useEffect(() => {
+    if (!selected) {
+      setSelectedQueries(null);
+      return;
+    }
+    projection.getQueries(selected.id).then(setSelectedQueries).catch(() => setSelectedQueries(null));
+  }, [selected]);
 
   useEffect(() => {
     load();
@@ -433,11 +444,11 @@ export function Projections() {
             <div><span className="text-gray-500">Database:</span> {selected.database || "—"}</div>
             <div>
               <span className="text-gray-500">Node Query:</span>
-              <pre className="mt-1 overflow-auto rounded bg-gray-50 p-2 font-mono text-xs">{selected.node_query || "—"}</pre>
+              <pre className="mt-1 overflow-auto rounded bg-gray-50 p-2 font-mono text-xs">{selectedQueries?.node_queries.map((q) => q.sql).join("\n\n") || "—"}</pre>
             </div>
             <div>
               <span className="text-gray-500">Edge Query:</span>
-              <pre className="mt-1 overflow-auto rounded bg-gray-50 p-2 font-mono text-xs">{selected.edge_query || "—"}</pre>
+              <pre className="mt-1 overflow-auto rounded bg-gray-50 p-2 font-mono text-xs">{selectedQueries?.edge_queries.map((q) => q.sql).join("\n\n") || "—"}</pre>
             </div>
             <div><span className="text-gray-500">S3 Bucket:</span> {selected.s3_staging_bucket || "—"}</div>
             <div><span className="text-gray-500">Graph ID:</span> {selected.graph_id || "—"}</div>
