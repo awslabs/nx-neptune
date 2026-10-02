@@ -93,7 +93,8 @@ The connector versions are defined in their respective `pom.xml` files:
 <version>0.7.0</version>
 ```
 
-Update all to the new version number.
+Update all to the new version number. This should be the version you are
+releasing now — not the next (n+1) snapshot version that comes after it.
 
 ### 4. Update lock files
 
