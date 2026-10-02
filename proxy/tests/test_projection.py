@@ -8,7 +8,8 @@ from httpx import ASGITransport, AsyncClient
 
 from nx_neptune_proxy.app import app
 from nx_neptune_proxy.auth import get_token
-from nx_neptune_proxy.services.db import get_connection
+from nx_neptune_proxy.services.db import connection
+from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_store import store
 
 
@@ -27,26 +28,31 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clear_store():
-    conn = get_connection()
-    conn.execute("DELETE FROM projections")
-    conn.execute("DELETE FROM projects")
-    conn.commit()
-    conn.close()
+    with connection() as conn:
+        conn.execute("DELETE FROM projections")
+        conn.execute("DELETE FROM projects")
+    # Create a default project for tests
+    p = project_store.create(name="Test Project")
+    global _TEST_PROJECT_ID
+    _TEST_PROJECT_ID = p.id
     yield
-    conn = get_connection()
-    conn.execute("DELETE FROM projections")
-    conn.execute("DELETE FROM projects")
-    conn.commit()
-    conn.close()
+    with connection() as conn:
+        conn.execute("DELETE FROM projections")
+        conn.execute("DELETE FROM projects")
 
 
-SAMPLE_BODY = {
-    "database": "mydb",
-    "sql_query": "SELECT * FROM t",
-    "node_query": "SELECT * FROM t",
-    "graph_name": "test-graph",
-    "s3_staging_bucket": "s3://my-bucket/staging/",
-}
+_TEST_PROJECT_ID = ""
+
+
+def SAMPLE_BODY():
+    return {
+        "database": "mydb",
+        "node_query": "SELECT id AS `~id`, type AS `~label` FROM nodes",
+        "edge_query": "SELECT src AS `~from`, dst AS `~to`, rel AS `~label` FROM edges",
+        "graph_name": "test-graph",
+        "s3_staging_bucket": "s3://my-bucket/staging/",
+        "project_id": _TEST_PROJECT_ID,
+    }
 
 
 # --- CRUD ---
@@ -54,7 +60,7 @@ SAMPLE_BODY = {
 
 @pytest.mark.asyncio
 async def test_create_projection(client):
-    resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     assert resp.status_code == 201
     data = resp.json()
     assert data["status"] == "draft"
@@ -66,7 +72,7 @@ async def test_create_projection(client):
 
 @pytest.mark.asyncio
 async def test_get_projection(client):
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     resp = await client.get(f"/api/v0/projection/{pid}")
@@ -82,21 +88,26 @@ async def test_get_projection_not_found(client):
 
 @pytest.mark.asyncio
 async def test_update_projection(client):
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     resp = await client.put(
-        f"/api/v0/projection/{pid}", json={"sql_query": "SELECT id FROM t"}
+        f"/api/v0/projection/{pid}",
+        json={
+            "database": "updated_db",
+            "graph_name": "updated-graph",
+        },
     )
     assert resp.status_code == 200
-    assert resp.json()["sql_query"] == "SELECT id FROM t"
-    # Other fields unchanged
-    assert resp.json()["database"] == "mydb"
+    assert resp.json()["database"] == "updated_db"
+    assert resp.json()["graph_name"] == "updated-graph"
 
 
 @pytest.mark.asyncio
 async def test_update_projection_not_found(client):
-    resp = await client.put("/api/v0/projection/nonexistent", json={"sql_query": "x"})
+    resp = await client.put(
+        "/api/v0/projection/nonexistent", json={"node_query": "x", "edge_query": "y"}
+    )
     assert resp.status_code == 404
 
 
@@ -105,7 +116,7 @@ async def test_update_projection_not_found(client):
 
 @pytest.mark.asyncio
 async def test_get_status(client):
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     resp = await client.get(f"/api/v0/projection/{pid}/status")
@@ -127,7 +138,7 @@ async def test_validate_projection(mock_validate, client):
         {"check": "query_valid", "passed": True, "error": None},
     ]
 
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     resp = await client.post(f"/api/v0/projection/{pid}/validate")
@@ -144,7 +155,7 @@ async def test_validate_projection_fails(mock_validate, client):
         {"check": "bucket_region", "passed": False, "error": "Wrong region"},
     ]
 
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     resp = await client.post(f"/api/v0/projection/{pid}/validate")
@@ -163,8 +174,17 @@ async def test_validate_query(mock_check, client):
     mock_result.message = ""
     mock_check.return_value = mock_result
 
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
+
+    # Queries live in the multi-query store, not on the projection record.
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "SELECT id FROM nodes"}],
+            "edge_queries": [{"sql": "SELECT src, dst FROM edges"}],
+        },
+    )
 
     resp = await client.post(f"/api/v0/projection/{pid}/validate-query")
     assert resp.status_code == 200
@@ -187,8 +207,17 @@ async def test_preview(mock_cf, mock_wait, mock_results, client):
     mock_cf.return_value.athena.return_value = mock_athena
     mock_results.return_value = [["id", "name"], ["1", "Alice"]]
 
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
+
+    # Queries live in the multi-query store, not on the projection record.
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "SELECT id, name FROM nodes"}],
+            "edge_queries": [],
+        },
+    )
 
     resp = await client.post(f"/api/v0/projection/{pid}/preview")
     assert resp.status_code == 200
@@ -203,7 +232,7 @@ async def test_preview(mock_cf, mock_wait, mock_results, client):
 
 @pytest.mark.asyncio
 async def test_execute_returns_202(client):
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     with patch("nx_neptune_proxy.routers.projection.run_pipeline"):
@@ -214,7 +243,7 @@ async def test_execute_returns_202(client):
 
 @pytest.mark.asyncio
 async def test_execute_conflict_if_already_running(client):
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
     store.update(pid, status="executing")
 
@@ -227,8 +256,8 @@ async def test_execute_conflict_if_already_running(client):
 
 @pytest.mark.asyncio
 async def test_list_projections(client):
-    await client.post("/api/v0/projection", json=SAMPLE_BODY)
-    await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    await client.post("/api/v0/projection", json=SAMPLE_BODY())
 
     resp = await client.get("/api/v0/projection")
     assert resp.status_code == 200
@@ -251,7 +280,7 @@ async def test_create_projection_invalid_body(client):
 
 @pytest.mark.asyncio
 async def test_execute_poll_lifecycle(client):
-    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY)
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
     pid = create_resp.json()["id"]
 
     with patch("nx_neptune_proxy.routers.projection.run_pipeline"):
@@ -275,3 +304,173 @@ async def test_execute_poll_lifecycle(client):
     assert resp.json()["status"] == "complete"
     assert resp.json()["progress"] == 100
     assert resp.json()["graph_endpoint"] == "https://g-123.neptune-graph.amazonaws.com"
+
+
+# --- Queries endpoints ---
+
+
+@pytest.mark.asyncio
+async def test_get_queries_not_found(client):
+    resp = await client.get("/api/v0/projection/nonexistent/queries")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_save_queries_not_found(client):
+    resp = await client.put(
+        "/api/v0/projection/nonexistent/queries",
+        json={
+            "node_queries": [{"sql": "SELECT 1"}],
+            "edge_queries": [],
+        },
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_save_and_get_queries(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    save_resp = await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [
+                {"sql": "SELECT id FROM nodes"},
+                {"sql": "SELECT id FROM users"},
+            ],
+            "edge_queries": [{"sql": "SELECT src, dst FROM edges"}],
+        },
+    )
+    assert save_resp.status_code == 200
+    data = save_resp.json()
+    assert len(data["node_queries"]) == 2
+    assert len(data["edge_queries"]) == 1
+    assert data["node_queries"][0]["sql"] == "SELECT id FROM nodes"
+    assert data["node_queries"][1]["position"] == 1
+
+    get_resp = await client.get(f"/api/v0/projection/{pid}/queries")
+    assert get_resp.status_code == 200
+    assert get_resp.json() == data
+
+
+@pytest.mark.asyncio
+async def test_save_queries_replaces_previous(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "old query 1"}, {"sql": "old query 2"}],
+            "edge_queries": [],
+        },
+    )
+
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "new query only"}],
+            "edge_queries": [],
+        },
+    )
+
+    get_resp = await client.get(f"/api/v0/projection/{pid}/queries")
+    data = get_resp.json()
+    assert len(data["node_queries"]) == 1
+    assert data["node_queries"][0]["sql"] == "new query only"
+
+
+# --- Delete clears queries (regression) ---
+
+
+@pytest.mark.asyncio
+async def test_delete_projection_clears_queries(client):
+    """Deleting a projection must remove its node/edge queries (no orphans)."""
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "SELECT id FROM nodes"}],
+            "edge_queries": [{"sql": "SELECT src, dst FROM edges"}],
+        },
+    )
+
+    # Sanity: rows exist before delete.
+    with connection() as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM node_queries WHERE projection_id = ?",
+                (pid,),
+            ).fetchone()["c"]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM edge_queries WHERE projection_id = ?",
+                (pid,),
+            ).fetchone()["c"]
+            == 1
+        )
+
+    del_resp = await client.delete(f"/api/v0/projection/{pid}")
+    assert del_resp.status_code == 200
+    assert del_resp.json()["status"] == "deleted"
+
+    # No orphaned query rows remain after the projection is gone.
+    with connection() as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM node_queries WHERE projection_id = ?",
+                (pid,),
+            ).fetchone()["c"]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM edge_queries WHERE projection_id = ?",
+                (pid,),
+            ).fetchone()["c"]
+            == 0
+        )
+
+
+@pytest.mark.asyncio
+async def test_fk_cascade_backstop_clears_queries(client):
+    """Deleting the projection row directly must cascade to query rows.
+
+    Guards the ``PRAGMA foreign_keys = ON`` + ``ON DELETE CASCADE`` backstop so
+    a future direct deletion path can't silently re-orphan query rows.
+    """
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "SELECT id FROM nodes"}],
+            "edge_queries": [{"sql": "SELECT src, dst FROM edges"}],
+        },
+    )
+
+    # Delete only the projection row — rely on the FK cascade, not the service.
+    with connection() as conn:
+        conn.execute("DELETE FROM projections WHERE id = ?", (pid,))
+
+    with connection() as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM node_queries WHERE projection_id = ?",
+                (pid,),
+            ).fetchone()["c"]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM edge_queries WHERE projection_id = ?",
+                (pid,),
+            ).fetchone()["c"]
+            == 0
+        )
