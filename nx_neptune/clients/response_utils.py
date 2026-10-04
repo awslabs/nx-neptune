@@ -69,6 +69,13 @@ def get_table_columns(resp: dict) -> list[str]:
     return [c["Name"] for c in resp.get("TableMetadata", {}).get("Columns", [])]
 
 
+def get_table_column_types(resp: dict) -> list[tuple[str, str]]:
+    """Extract (name, type) pairs, partition keys included, from get_table_metadata."""
+    meta = resp.get("TableMetadata", {})
+    cols = meta.get("Columns", []) + meta.get("PartitionKeys", [])
+    return [(c["Name"], c.get("Type", "")) for c in cols]
+
+
 def get_query_state(resp: dict) -> str:
     """Get execution state from get_query_execution response."""
     return resp["QueryExecution"]["Status"]["State"]

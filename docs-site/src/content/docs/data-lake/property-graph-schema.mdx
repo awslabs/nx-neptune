@@ -6,9 +6,9 @@ Declare how your source tables map to a graph using the standard SQL/PGQ (SQL:20
 
 ## Overview
 
-The [Session Manager](/data-lake/session-manager/) import path expects Athena `SELECT` statements that alias source columns into Neptune Analytics' Gremlin CSV load format — `~id`/`~label` for vertices and `~from`/`~to`/`~label` for edges. Writing those by hand is repetitive and easy to get subtly wrong.
+The [Session Manager](/data-lake/session-manager/) import path expects Athena `SELECT` statements that alias source columns into Neptune Analytics' Gremlin CSV load format — `~id`/`~label` for vertices and `~from`/`~to`/`~label` for edges, with typed property headers such as `amount:Double`. Writing those by hand is repetitive and easy to get subtly wrong.
 
-`import_from_graph_schema` lets you declare the mapping declaratively. The DDL is parsed and translated into the same projection queries, which run through the unchanged Athena → S3 → Neptune import path — so only the front-end differs from `import_from_table`.
+`import_from_graph_schema` lets you declare the mapping instead. It reads each source table's columns and types from the Athena catalog, resolves the DDL into the same projection queries, and runs them through the unchanged Athena → S3 → Neptune import path — so only the front-end differs from `import_from_table`.
 
 ## Example
 
@@ -26,25 +26,27 @@ CREATE PROPERTY GRAPH financial
       SOURCE KEY (nameOrig) REFERENCES customer
       DESTINATION KEY (nameDest) REFERENCES customer
       LABEL transfer
-      PROPERTIES (step:Int, amount:Float, isFraud:Int)
+      PROPERTIES (step, CAST(amount AS DOUBLE) AS amount, isFraud)
   )
 """
 
+graph = await session.get_or_create_graph()
 await session.import_from_graph_schema(
     graph, s3_location, DDL, catalog=catalog, database=database
 )
 ```
 
-This translates to two projection queries — one per vertex table, then one per edge table:
+With `step` and `isFraud` stored as `int` and `amount` as `decimal(10,2)`, this translates to one projection query per vertex table, then one per edge table:
 
 ```sql
 SELECT DISTINCT "name" AS "~id", 'customer' AS "~label", "name" AS "name"
 FROM "accounts" WHERE "name" IS NOT NULL;
 
-SELECT "nameOrig" AS "~from", "nameDest" AS "~to", 'transfer' AS "~label",
-       "step" AS "step:Int", "amount" AS "amount:Float", "isFraud" AS "isFraud:Int"
+SELECT "nameorig" AS "~from", "namedest" AS "~to", 'transfer' AS "~label",
+       "step" AS "step:Int", CAST("amount" AS DOUBLE) AS "amount:Double",
+       "isfraud" AS "isFraud:Int"
 FROM "transactions"
-WHERE "nameOrig" IS NOT NULL AND "nameDest" IS NOT NULL;
+WHERE "nameorig" IS NOT NULL AND "namedest" IS NOT NULL;
 ```
 
 ## Syntax
@@ -55,35 +57,75 @@ CREATE PROPERTY GRAPH <name>
     <table> [ [AS] <alias> ]
       KEY ( <column> )
       [ LABEL <label> ]
-      [ PROPERTIES ( <prop> [, <prop>]* ) | NO PROPERTIES ]
+      [ <properties> ]
     [, ...]
   )
   [ EDGE TABLES (
     <table> [ [AS] <alias> ]
       [ KEY ( <column> ) ]
-      SOURCE      [ KEY ( <column> ) ] REFERENCES <vertex> [ ( <column> ) ]
-      DESTINATION [ KEY ( <column> ) ] REFERENCES <vertex> [ ( <column> ) ]
+      SOURCE      [ KEY ] ( <column> ) REFERENCES <vertex> [ ( <column> ) ]
+      DESTINATION [ KEY ] ( <column> ) REFERENCES <vertex> [ ( <column> ) ]
       [ LABEL <label> ]
-      [ PROPERTIES ( <prop> [, <prop>]* ) | NO PROPERTIES ]
+      [ <properties> ]
     [, ...]
   ) ]
+
+<properties> ::= PROPERTIES ( <property> [, <property>]* )
+               | PROPERTIES [ARE] ALL COLUMNS [ EXCEPT ( <column> [, ...] ) ]
+               | NO PROPERTIES
+<property>   ::= <column> [ AS <name> ]
+               | CAST ( <column> AS <sql type> ) [ AS <name> ]
 ```
 
-- A `<prop>` is `<column> [AS <name>] [: <NeptuneType>]`. The optional `:Type` suffix (e.g. `amount:Float`) matches Neptune's load-format header convention; without it the property loads as a string.
-- `LABEL` defaults to the table's alias, then its name, when omitted.
-- Vertex `KEY` becomes `~id`; edge `SOURCE`/`DESTINATION` become `~from`/`~to`.
+- Omitting `<properties>` means `ALL COLUMNS`, as in the standard. Partition columns are included.
+- `LABEL` defaults to the table's alias, then its table name.
+- Vertex `KEY` becomes `~id`; edge `SOURCE`/`DESTINATION` become `~from`/`~to`. A column list after `REFERENCES` must name the referenced vertex's `KEY`.
+- Tables may be written `table`, `database.table` or `catalog.database.table`; unqualified parts use the `catalog`/`database` arguments.
+
+## Property types
+
+Each property's type comes from its source column's type in the catalog:
+
+| Catalog type | Neptune type |
+|---|---|
+| `boolean` | `Bool` |
+| `tinyint`, `smallint`, `int`/`integer`, `bigint` | `Byte`, `Short`, `Int`, `Long` |
+| `real`/`float`, `double`, `decimal(p,s)` | `Float`, `Double`, `Double` |
+| `string`, `varchar(n)`, `char(n)` | `String` |
+| `date` | `Date` |
+| `timestamp` | `Datetime` (rendered as ISO-8601) |
+
+`CAST(column AS <sql type>)` overrides the catalog type. Columns of other types (arrays, maps, structs, binary) cannot be loaded as properties: leave them out with `PROPERTIES ALL COLUMNS EXCEPT (...)` or an explicit property list.
+
+Properties that share a name under the same label must resolve to the same type. When they do not — for example, two tables feeding the `txn` label store `amount` as `double` and `bigint` — translation fails and the error includes the `CAST` that makes them agree:
+
+```
+Property 'amount' of vertex label 'txn' has conflicting types: Double in 'wires' (column amount: double),
+Long in 'cards' (column amount: bigint). Cast to a common type (Double) in the PROPERTIES clause:
+  in 'cards': PROPERTIES (CAST(amount AS DOUBLE) AS amount)
+```
+
+## Permissions
+
+Reading table metadata needs `athena:GetTableMetadata`, plus `glue:GetTable` for Glue-backed catalogs, in addition to the [Athena import permissions](/getting-started/prerequisites/).
 
 ## Inspecting generated SQL
 
 To see the translated queries without running an import:
 
 ```python
-from nx_neptune import property_graph_to_sql
+import boto3
+from nx_neptune import AthenaTableMetadata, property_graph_to_sql
 
-for query in property_graph_to_sql(DDL):
+metadata = AthenaTableMetadata(boto3.client("athena"), catalog=catalog, database=database)
+for query in property_graph_to_sql(DDL, metadata):
     print(query)
 ```
 
+`StaticTableMetadata({"accounts": [("name", "varchar(64)")], ...})` supplies columns offline instead of reading the catalog.
+
 ## Limitations
 
-See [Known Considerations](/reference/limitations/) — notably, keys must be single-column and `PROPERTIES ARE ALL COLUMNS` is not supported.
+- Keys must be single-column; composite keys are rejected.
+- Keys and references are not inferred from primary/foreign keys, since Iceberg and Athena do not enforce them.
+- Each element table has a single label.

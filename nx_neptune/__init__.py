@@ -50,8 +50,12 @@ from .instance_management import (
 )
 from .interface import BackendInterface
 from .property_graph import (
+    AthenaTableMetadata,
     PropertyGraph,
+    PropertyGraphError,
+    PropertyGraphSchemaError,
     PropertyGraphSyntaxError,
+    StaticTableMetadata,
     parse_property_graph,
     property_graph_to_sql,
 )
@@ -93,8 +97,12 @@ __all__ = [
     "configure_if_nx_active",
     "BackendInterface",
     # property graph front-end
+    "AthenaTableMetadata",
     "PropertyGraph",
+    "PropertyGraphError",
+    "PropertyGraphSchemaError",
     "PropertyGraphSyntaxError",
+    "StaticTableMetadata",
     "parse_property_graph",
     "property_graph_to_sql",
     # instance management
