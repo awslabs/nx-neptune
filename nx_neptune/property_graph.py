@@ -21,61 +21,142 @@ GRAPH`` DDL, and this module translates it into those projection queries. The
 generated queries feed the unchanged ``SessionManager.import_from_table`` path,
 so only the front-end changes.
 
-The grammar is defined declaratively in ``_GRAMMAR`` and parsed with
-`lark <https://github.com/lark-parser/lark>`_; ``_Builder`` folds the parse tree
-into the schema dataclasses below. Grammar accepted (case-insensitive
-keywords)::
+Translation has three steps: :func:`parse_property_graph` turns the DDL into a
+:class:`PropertyGraph` (the lark grammar is ``_GRAMMAR``), a
+:class:`TableMetadataProvider` supplies each source table's columns and types
+from the catalog, and :func:`property_graph_to_sql` resolves the two into SQL.
+Grammar accepted (case-insensitive keywords)::
 
     CREATE PROPERTY GRAPH <name>
       VERTEX TABLES (
         <table> [ [AS] <alias> ]
           KEY ( <column> )
           [ LABEL <label> ]
-          [ PROPERTIES ( <prop> [, <prop>]* ) | NO PROPERTIES ]
+          [ <properties> ]
         [, ...]
       )
       [ EDGE TABLES (
         <table> [ [AS] <alias> ]
           [ KEY ( <column> ) ]
-          SOURCE      [ KEY ( <column> ) ] REFERENCES <vertex> [ ( <column> ) ]
-          DESTINATION [ KEY ( <column> ) ] REFERENCES <vertex> [ ( <column> ) ]
+          SOURCE      [ KEY ] ( <column> ) REFERENCES <vertex> [ ( <column> ) ]
+          DESTINATION [ KEY ] ( <column> ) REFERENCES <vertex> [ ( <column> ) ]
           [ LABEL <label> ]
-          [ PROPERTIES ( <prop> [, <prop>]* ) | NO PROPERTIES ]
+          [ <properties> ]
         [, ...]
       ) ]
 
-A ``<prop>`` is ``<column> [AS <name>] [: <NeptuneType>]``. The optional
-``:Type`` suffix is an nx-neptune extension matching Neptune's load-format
-header convention (e.g. ``amount:Float``); without it the property is loaded as
-a string. When ``LABEL`` is omitted the label defaults to the table's
-name/alias.
+    <properties> ::= PROPERTIES ( <property> [, <property>]* )
+                   | PROPERTIES [ARE] ALL COLUMNS [ EXCEPT ( <column> [, ...] ) ]
+                   | NO PROPERTIES
+    <property>   ::= <column> [ AS <name> ]
+                   | CAST ( <column> AS <sql type> ) [ AS <name> ]
+
+As in the standard, omitting ``<properties>`` means ``ALL COLUMNS``, and an
+omitted ``LABEL`` defaults to the element table's alias, then its table name.
+Property types come from the source columns' catalog types, and ``CAST``
+overrides them. Properties sharing a name under one label must resolve to the
+same type; the error for a mismatch includes the ``CAST`` that fixes it.
 """
 
+import difflib
+import re
 from dataclasses import dataclass, field
-from typing import List, Optional, cast
+from typing import (
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+    Union,
+    cast,
+)
 
+from botocore.exceptions import ClientError
 from lark import Lark, Transformer
 from lark.exceptions import LarkError, VisitError
 
-# Neptune Analytics Gremlin CSV load-format property types (the suffix after the
-# colon in a column header, e.g. ``amount:Float``). ``String`` is the default
-# and is emitted without a suffix.
-NEPTUNE_TYPES = {
-    "String",
-    "Byte",
-    "Short",
-    "Int",
-    "Long",
-    "Float",
-    "Double",
-    "Bool",
-    "Boolean",
-    "Date",
+from .clients.response_utils import get_table_column_types, is_entity_not_found
+
+QualifiedName = Tuple[str, ...]
+
+# Source SQL types (catalog or CAST target, matched on the base type name) that
+# map onto a Neptune load-format type. String is emitted without a suffix.
+_SQL_TO_NEPTUNE = {
+    "boolean": "Bool",
+    "tinyint": "Byte",
+    "smallint": "Short",
+    "int": "Int",
+    "integer": "Int",
+    "bigint": "Long",
+    "float": "Float",
+    "real": "Float",
+    "double": "Double",
+    "decimal": "Double",
+    "string": "String",
+    "varchar": "String",
+    "char": "String",
+    "character": "String",
+    "date": "Date",
+    "timestamp": "Datetime",
 }
 
+# The CAST target suggested for each Neptune type.
+_NEPTUNE_TO_SQL = {
+    "Bool": "BOOLEAN",
+    "Byte": "TINYINT",
+    "Short": "SMALLINT",
+    "Int": "INTEGER",
+    "Long": "BIGINT",
+    "Float": "REAL",
+    "Double": "DOUBLE",
+    "String": "VARCHAR",
+    "Date": "DATE",
+    "Datetime": "TIMESTAMP",
+}
 
-class PropertyGraphSyntaxError(ValueError):
-    """Raised when a ``CREATE PROPERTY GRAPH`` statement cannot be parsed."""
+_INTEGER_TYPES = ["Byte", "Short", "Int", "Long"]  # narrowest first
+_FLOAT_TYPES = ["Float", "Double"]
+
+_KEYWORDS = {
+    "ALL",
+    "ARE",
+    "AS",
+    "CAST",
+    "COLUMNS",
+    "CREATE",
+    "DESTINATION",
+    "EDGE",
+    "EXCEPT",
+    "GRAPH",
+    "KEY",
+    "LABEL",
+    "NO",
+    "PROPERTIES",
+    "PROPERTY",
+    "REFERENCES",
+    "SOURCE",
+    "TABLES",
+    "VERTEX",
+}
+
+_BARE_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_$]*")
+
+# Neptune CSV headers cannot hold these, and a leading '~' marks system columns.
+_BAD_PROPERTY_NAME = re.compile(r"^~|[:,\s]")
+
+
+class PropertyGraphError(ValueError):
+    """Base class for problems with a ``CREATE PROPERTY GRAPH`` statement."""
+
+
+class PropertyGraphSyntaxError(PropertyGraphError):
+    """The statement cannot be parsed or is internally inconsistent."""
+
+
+class PropertyGraphSchemaError(PropertyGraphError):
+    """The statement does not match the source tables in the catalog."""
 
 
 # --------------------------------------------------------------------------- #
@@ -83,35 +164,48 @@ class PropertyGraphSyntaxError(ValueError):
 # --------------------------------------------------------------------------- #
 @dataclass
 class PropertyDef:
-    """A single mapped property: source ``column`` -> output ``name[:type]``."""
+    """A declared property: source ``column`` exposed as ``name``, optionally CAST."""
 
     column: str
     name: str
-    type: Optional[str] = None
-
-    def header(self) -> str:
-        """The Neptune load-format column header alias for this property."""
-        return f"{self.name}:{self.type}" if self.type else self.name
+    cast: Optional[str] = None
 
 
-@dataclass
-class VertexTable:
-    table: str
-    key: str
+@dataclass(kw_only=True)
+class ElementTable:
+    """Fields shared by vertex and edge tables."""
+
+    table: QualifiedName
     label: str
+    alias: Optional[str] = None
     properties: List[PropertyDef] = field(default_factory=list)
+    all_columns: bool = False
+    except_columns: List[str] = field(default_factory=list)
+
+    @property
+    def name(self) -> str:
+        """The element table's name, as used by ``REFERENCES``."""
+        return self.alias or self.table[-1]
+
+    @property
+    def table_name(self) -> str:
+        return ".".join(self.table)
 
 
-@dataclass
-class EdgeTable:
-    table: str
+@dataclass(kw_only=True)
+class VertexTable(ElementTable):
+    key: str
+
+
+@dataclass(kw_only=True)
+class EdgeTable(ElementTable):
     source_key: str
     dest_key: str
-    label: str
+    source_ref: str
+    dest_ref: str
+    source_ref_columns: Optional[List[str]] = None
+    dest_ref_columns: Optional[List[str]] = None
     key: Optional[str] = None
-    source_ref: Optional[str] = None
-    dest_ref: Optional[str] = None
-    properties: List[PropertyDef] = field(default_factory=list)
 
 
 @dataclass
@@ -120,70 +214,103 @@ class PropertyGraph:
     vertex_tables: List[VertexTable] = field(default_factory=list)
     edge_tables: List[EdgeTable] = field(default_factory=list)
 
-    def to_sql_queries(self) -> List[str]:
-        """Generate the Athena projection queries (vertices first, then edges)."""
-        return [_vertex_query(v) for v in self.vertex_tables] + [
-            _edge_query(e) for e in self.edge_tables
-        ]
-
 
 # --------------------------------------------------------------------------- #
-# SQL generation
+# Table metadata
 # --------------------------------------------------------------------------- #
-def _quote_ident(name: str) -> str:
-    """Double-quote a SQL identifier, doubling any embedded double quotes."""
-    return '"' + name.replace('"', '""') + '"'
+@dataclass(frozen=True)
+class Column:
+    name: str
+    type: str
 
 
-def _quote_literal(value: str) -> str:
-    """Single-quote a SQL string literal, doubling any embedded single quotes."""
-    return "'" + value.replace("'", "''") + "'"
+class TableMetadataProvider(Protocol):
+    """Supplies a source table's columns (name and SQL type) from a catalog."""
+
+    def get_columns(self, table: QualifiedName) -> List[Column]: ...
 
 
-def _quote_header(header: str) -> str:
-    """Double-quote a load-format header alias (``~id``, ``name:Float``, ...)."""
-    return '"' + header.replace('"', '""') + '"'
+class StaticTableMetadata:
+    """A provider backed by a mapping, for tests and offline translation.
+
+    Keys are table names as written in the DDL (``accounts`` or
+    ``db.accounts``, case-insensitive); values are ``(column, sql_type)`` pairs.
+    """
+
+    def __init__(self, tables: Mapping[str, Sequence[Tuple[str, str]]]):
+        self._tables = {
+            name.lower(): [Column(col, typ) for col, typ in cols]
+            for name, cols in tables.items()
+        }
+
+    def get_columns(self, table: QualifiedName) -> List[Column]:
+        key = ".".join(table).lower()
+        if key not in self._tables:
+            raise PropertyGraphSchemaError(f"Table '{key}' not found")
+        return self._tables[key]
 
 
-def _table_ref(table: str) -> str:
-    """Render a possibly-dotted table reference, quoting each bare segment."""
-    return ".".join(_quote_ident(part) for part in table.split("."))
+class AthenaTableMetadata:
+    """A provider that reads table metadata through Athena ``GetTableMetadata``.
 
+    Serves Glue-backed and federated (connector) catalogs alike. Table names may
+    be ``table``, ``database.table`` or ``catalog.database.table``; missing parts
+    fall back to ``catalog`` and ``database``.
+    """
 
-def _property_selects(properties: List[PropertyDef]) -> List[str]:
-    return [
-        f"{_quote_ident(p.column)} AS {_quote_header(p.header())}" for p in properties
-    ]
+    DEFAULT_CATALOG = "AwsDataCatalog"
 
+    def __init__(
+        self,
+        athena_client,
+        catalog: Optional[str] = None,
+        database: Optional[str] = None,
+    ):
+        self._client = athena_client
+        self._catalog = catalog or self.DEFAULT_CATALOG
+        self._database = database
+        self._cache: Dict[Tuple[str, str, str], List[Column]] = {}
 
-def _vertex_query(v: VertexTable) -> str:
-    cols = [
-        f"{_quote_ident(v.key)} AS {_quote_header('~id')}",
-        f"{_quote_literal(v.label)} AS {_quote_header('~label')}",
-    ]
-    cols.extend(_property_selects(v.properties))
-    return (
-        "SELECT DISTINCT "
-        + ", ".join(cols)
-        + f" FROM {_table_ref(v.table)}"
-        + f" WHERE {_quote_ident(v.key)} IS NOT NULL"
-    )
+    def get_columns(self, table: QualifiedName) -> List[Column]:
+        location = self._qualify(table)
+        if location not in self._cache:
+            catalog, database, name = location
+            try:
+                resp = self._client.get_table_metadata(
+                    CatalogName=catalog, DatabaseName=database, TableName=name
+                )
+            except ClientError as e:
+                where = ".".join(location)
+                if is_entity_not_found(e):
+                    raise PropertyGraphSchemaError(
+                        f"Table '{where}' not found or not readable: {e}"
+                    ) from e
+                raise PropertyGraphSchemaError(
+                    f"Could not read metadata for table '{where}' (requires "
+                    f"athena:GetTableMetadata, and glue:GetTable for Glue "
+                    f"catalogs): {e}"
+                ) from e
+            self._cache[location] = [
+                Column(col, typ) for col, typ in get_table_column_types(resp)
+            ]
+        return self._cache[location]
 
-
-def _edge_query(e: EdgeTable) -> str:
-    cols = [
-        f"{_quote_ident(e.source_key)} AS {_quote_header('~from')}",
-        f"{_quote_ident(e.dest_key)} AS {_quote_header('~to')}",
-        f"{_quote_literal(e.label)} AS {_quote_header('~label')}",
-    ]
-    cols.extend(_property_selects(e.properties))
-    return (
-        "SELECT "
-        + ", ".join(cols)
-        + f" FROM {_table_ref(e.table)}"
-        + f" WHERE {_quote_ident(e.source_key)} IS NOT NULL"
-        + f" AND {_quote_ident(e.dest_key)} IS NOT NULL"
-    )
+    def _qualify(self, table: QualifiedName) -> Tuple[str, str, str]:
+        if len(table) == 3:
+            return table[0], table[1], table[2]
+        if len(table) == 2:
+            return self._catalog, table[0], table[1]
+        if len(table) == 1:
+            if not self._database:
+                raise PropertyGraphSchemaError(
+                    f"Table '{table[0]}' has no database: pass database= or "
+                    f"write <database>.{table[0]}"
+                )
+            return self._catalog, self._database, table[0]
+        raise PropertyGraphSchemaError(
+            f"Table name '{'.'.join(table)}' has too many parts; expected "
+            f"[catalog.][database.]table"
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -194,8 +321,8 @@ start: "CREATE"i "PROPERTY"i "GRAPH"i name \
        "VERTEX"i "TABLES"i "(" vertex ("," vertex)* ")" \
        ["EDGE"i "TABLES"i "(" edge ("," edge)* ")"]
 
-vertex: name alias? key label? props?
-edge:   name alias? key? source dest label? props?
+vertex: name alias? key? label? props?
+edge:   name alias? key? source? dest? label? props?
 
 source: "SOURCE"i      _keykw? "(" ident ")" "REFERENCES"i name refcols?
 dest:   "DESTINATION"i _keykw? "(" ident ")" "REFERENCES"i name refcols?
@@ -204,11 +331,15 @@ refcols: "(" ident ("," ident)* ")"
 
 key:     "KEY"i "(" ident ("," ident)* ")"
 label:   "LABEL"i ident
-props:   "PROPERTIES"i "(" property ("," property)* ")" -> props
-       | "NO"i "PROPERTIES"i                            -> no_props
-property: ident as_name? ptype?
+props:   "PROPERTIES"i "(" property ("," property)* ")"     -> props
+       | "PROPERTIES"i _are? "ALL"i "COLUMNS"i except_cols? -> all_columns
+       | "NO"i "PROPERTIES"i                                -> no_props
+_are:    "ARE"i
+except_cols: "EXCEPT"i "(" ident ("," ident)* ")"
+property: ident as_name?                                    -> column_property
+        | "CAST"i "(" ident "AS"i sql_type ")" as_name?     -> cast_property
 as_name: "AS"i ident
-ptype:   ":" ident
+sql_type: CNAME ("(" INT ("," INT)* ")")?
 alias:   "AS"i? ident
 name:    ident ("." ident)*
 ident:   CNAME | QUOTED
@@ -216,6 +347,7 @@ ident:   CNAME | QUOTED
 QUOTED:  /"(?:[^"]|"")*"/
 CNAME:   /[A-Za-z_][A-Za-z0-9_$]*/
 COMMENT: /--[^\n]*/ | /\/\*(.|\n)*?\*\//
+%import common.INT
 %import common.WS
 %ignore WS
 %ignore COMMENT
@@ -225,9 +357,8 @@ COMMENT: /--[^\n]*/ | /\/\*(.|\n)*?\*\//
 # --------------------------------------------------------------------------- #
 # Parse-tree markers and transformer
 # --------------------------------------------------------------------------- #
-# Optional clauses (alias / key / label / props) arrive as positional children
-# of the vertex / edge rules, so each reduces to a distinctly-typed marker and
-# the builder dispatches on type rather than position.
+# Optional clauses arrive as positional children of the vertex / edge rules,
+# so each reduces to a distinctly-typed marker and the builder dispatches on type.
 @dataclass
 class _Alias:
     value: str
@@ -246,12 +377,41 @@ class _Label:
 @dataclass
 class _Props:
     properties: List[PropertyDef]
+    all_columns: bool = False
+    except_columns: List[str] = field(default_factory=list)
 
 
 @dataclass
 class _Endpoint:
+    clause: str  # SOURCE or DESTINATION
     column: str
     ref: str
+    ref_columns: Optional[List[str]]
+
+
+@dataclass
+class _Clauses:
+    alias: Optional[str] = None
+    key: Optional[_Key] = None
+    label: Optional[str] = None
+    props: Optional[_Props] = None
+    endpoints: List[_Endpoint] = field(default_factory=list)
+
+
+def _collect(children) -> _Clauses:
+    clauses = _Clauses()
+    for child in children:
+        if isinstance(child, _Alias):
+            clauses.alias = child.value
+        elif isinstance(child, _Key):
+            clauses.key = child
+        elif isinstance(child, _Label):
+            clauses.label = child.value
+        elif isinstance(child, _Props):
+            clauses.props = child
+        elif isinstance(child, _Endpoint):
+            clauses.endpoints.append(child)
+    return clauses
 
 
 def _single_key(columns: List[str], context: str) -> str:
@@ -273,7 +433,7 @@ class _Builder(Transformer):
         return tok.value
 
     def name(self, items):
-        return ".".join(items)
+        return tuple(items)
 
     def alias(self, items):
         return _Alias(items[0])
@@ -285,90 +445,104 @@ class _Builder(Transformer):
         return _Label(items[0])
 
     def as_name(self, items):
-        return ("as", items[0])
+        return items[0]
 
-    def ptype(self, items):
-        return ("type", _canonical_type(items[0]))
+    def sql_type(self, items):
+        base = items[0].value.upper()
+        args = [tok.value for tok in items[1:]]
+        return f"{base}({','.join(args)})" if args else base
 
-    def property(self, items):
+    def column_property(self, items):
         column = items[0]
-        name = column
-        ptype = None
-        for kind, value in items[1:]:
-            if kind == "as":
-                name = value
-            else:
-                ptype = value
-        return PropertyDef(column=column, name=name, type=ptype)
+        return PropertyDef(column=column, name=items[1] if len(items) > 1 else column)
+
+    def cast_property(self, items):
+        column, sql_type = items[0], items[1]
+        name = items[2] if len(items) > 2 else column
+        return PropertyDef(column=column, name=name, cast=sql_type)
 
     def props(self, items):
         return _Props(list(items))
+
+    def all_columns(self, items):
+        return _Props([], all_columns=True, except_columns=items[0] if items else [])
+
+    def except_cols(self, items):
+        return list(items)
 
     def no_props(self, items):
         return _Props([])
 
     def refcols(self, items):
-        return None  # referenced columns are not needed for the projection
+        return list(items)
 
     def source(self, items):
-        return _Endpoint(column=items[0], ref=items[1])
+        return _Endpoint(
+            "SOURCE",
+            items[0],
+            ".".join(items[1]),
+            items[2] if len(items) > 2 else None,
+        )
 
     def dest(self, items):
-        return _Endpoint(column=items[0], ref=items[1])
+        return _Endpoint(
+            "DESTINATION",
+            items[0],
+            ".".join(items[1]),
+            items[2] if len(items) > 2 else None,
+        )
 
+    # KEY, SOURCE and DESTINATION are optional in the grammar only so that
+    # leaving one out gets this message rather than a parser error.
     def vertex(self, items):
-        table = items[0]
-        alias = key = label = props = None
-        for child in items[1:]:
-            if isinstance(child, _Alias):
-                alias = child.value
-            elif isinstance(child, _Key):
-                key = child
-            elif isinstance(child, _Label):
-                label = child.value
-            elif isinstance(child, _Props):
-                props = child.properties
-        if key is None:
+        table, clauses = items[0], _collect(items[1:])
+        if clauses.key is None:
             raise PropertyGraphSyntaxError(
-                f"Vertex table '{table}' is missing a KEY clause"
+                f"Vertex table '{clauses.alias or table[-1]}' has no KEY: declare "
+                f"the column that identifies its vertices, e.g. KEY (id). Primary "
+                f"keys are not read from the catalog."
             )
+        props = clauses.props or _Props([], all_columns=True)
         return VertexTable(
             table=table,
-            key=_single_key(key.columns, "~id"),
-            label=label if label is not None else (alias or table),
-            properties=props or [],
+            alias=clauses.alias,
+            key=_single_key(clauses.key.columns, "~id"),
+            label=clauses.label or clauses.alias or table[-1],
+            properties=props.properties,
+            all_columns=props.all_columns,
+            except_columns=props.except_columns,
         )
 
     def edge(self, items):
-        table = items[0]
-        alias = key = label = props = None
-        endpoints = []
-        for child in items[1:]:
-            if isinstance(child, _Alias):
-                alias = child.value
-            elif isinstance(child, _Key):
-                key = child
-            elif isinstance(child, _Label):
-                label = child.value
-            elif isinstance(child, _Props):
-                props = child.properties
-            elif isinstance(child, _Endpoint):
-                endpoints.append(child)
-        source, dest = endpoints
+        table, clauses = items[0], _collect(items[1:])
+        endpoints = {e.clause: e for e in clauses.endpoints}
+        for clause in ("SOURCE", "DESTINATION"):
+            if clause not in endpoints:
+                raise PropertyGraphSyntaxError(
+                    f"Edge table '{clauses.alias or table[-1]}' has no {clause}: "
+                    f"declare {clause} KEY (<column>) REFERENCES <vertex table>. "
+                    f"Foreign keys are not read from the catalog."
+                )
+        source, dest = endpoints["SOURCE"], endpoints["DESTINATION"]
+        props = clauses.props or _Props([], all_columns=True)
         return EdgeTable(
             table=table,
-            key=_single_key(key.columns, "edge KEY") if key is not None else None,
+            alias=clauses.alias,
+            key=_single_key(clauses.key.columns, "edge KEY") if clauses.key else None,
             source_key=source.column,
             dest_key=dest.column,
             source_ref=source.ref,
             dest_ref=dest.ref,
-            label=label if label is not None else (alias or table),
-            properties=props or [],
+            source_ref_columns=source.ref_columns,
+            dest_ref_columns=dest.ref_columns,
+            label=clauses.label or clauses.alias or table[-1],
+            properties=props.properties,
+            all_columns=props.all_columns,
+            except_columns=props.except_columns,
         )
 
     def start(self, items):
-        name = items[0]
-        graph = PropertyGraph(name=name)
+        graph = PropertyGraph(name=items[0][-1])
         for child in items[1:]:
             if isinstance(child, VertexTable):
                 graph.vertex_tables.append(child)
@@ -378,31 +552,36 @@ class _Builder(Transformer):
         return graph
 
 
-def _canonical_type(raw: str) -> str:
-    for t in NEPTUNE_TYPES:
-        if t.lower() == raw.lower():
-            return t
-    raise PropertyGraphSyntaxError(
-        f"Unknown property type '{raw}'. Supported types: "
-        f"{', '.join(sorted(NEPTUNE_TYPES))}"
-    )
+def _referenced_vertices(graph: PropertyGraph, ref: str) -> List[VertexTable]:
+    """Vertex tables a REFERENCES target names: by table name first, then label."""
+    ref = ref.lower()
+    by_name = [
+        v for v in graph.vertex_tables if ref in (v.name.lower(), v.table_name.lower())
+    ]
+    return by_name or [v for v in graph.vertex_tables if v.label.lower() == ref]
 
 
 def _validate(graph: PropertyGraph) -> None:
-    if not graph.vertex_tables:
-        raise PropertyGraphSyntaxError(
-            "A property graph must declare at least one VERTEX TABLE"
-        )
-    labels = {v.label for v in graph.vertex_tables}
-    tables = {v.table for v in graph.vertex_tables}
-    known = labels | tables
     for e in graph.edge_tables:
-        for endpoint, ref in (("SOURCE", e.source_ref), ("DESTINATION", e.dest_ref)):
-            if ref is not None and ref not in known:
+        for endpoint, ref, ref_columns in (
+            ("SOURCE", e.source_ref, e.source_ref_columns),
+            ("DESTINATION", e.dest_ref, e.dest_ref_columns),
+        ):
+            targets = _referenced_vertices(graph, ref)
+            if not targets:
                 raise PropertyGraphSyntaxError(
-                    f"Edge table '{e.table}' {endpoint} REFERENCES '{ref}', "
+                    f"Edge table '{e.name}' {endpoint} REFERENCES '{ref}', "
                     f"which is not a declared vertex table or label"
                 )
+            if ref_columns is None:
+                continue
+            for v in targets:
+                if [c.lower() for c in ref_columns] != [v.key.lower()]:
+                    raise PropertyGraphSyntaxError(
+                        f"Edge table '{e.name}' {endpoint} REFERENCES {ref} "
+                        f"({', '.join(ref_columns)}), but vertex table '{v.name}' "
+                        f"has KEY ({v.key}); the referenced columns must be its KEY"
+                    )
 
 
 # Building the LALR parser is relatively expensive, so do it once at import.
@@ -415,23 +594,303 @@ def parse_property_graph(ddl: str) -> PropertyGraph:
         # The embedded _Builder transformer turns the parse tree into a
         # PropertyGraph, but Lark.parse is typed as returning a Tree.
         return cast(PropertyGraph, _PARSER.parse(ddl))
-    except PropertyGraphSyntaxError:
+    except PropertyGraphError:
         raise
     except VisitError as exc:
         # lark wraps exceptions raised inside transformer callbacks; surface our
-        # own syntax errors unchanged and rewrap anything else.
-        if isinstance(exc.orig_exc, PropertyGraphSyntaxError):
+        # own errors unchanged and rewrap anything else.
+        if isinstance(exc.orig_exc, PropertyGraphError):
             raise exc.orig_exc from None
         raise PropertyGraphSyntaxError(str(exc)) from exc
     except LarkError as exc:
         raise PropertyGraphSyntaxError(str(exc)) from exc
 
 
-def property_graph_to_sql(ddl: str) -> List[str]:
+# --------------------------------------------------------------------------- #
+# Resolution against table metadata
+# --------------------------------------------------------------------------- #
+def _neptune_type(sql_type: str) -> Optional[str]:
+    """The Neptune type for a SQL type such as ``decimal(10,2)``, if loadable."""
+    base = re.split(r"[\s(<]", sql_type.strip().lower(), maxsplit=1)[0]
+    return _SQL_TO_NEPTUNE.get(base)
+
+
+def _common_type(types: Sequence[str]) -> str:
+    """The narrowest Neptune type that all of ``types`` can be cast to."""
+    distinct = set(types)
+    if distinct <= set(_INTEGER_TYPES):
+        return max(distinct, key=_INTEGER_TYPES.index)
+    if distinct <= set(_INTEGER_TYPES + _FLOAT_TYPES):
+        return "Double"
+    if distinct == {"Date", "Datetime"}:
+        return "Datetime"
+    return "String"
+
+
+def _ddl_ident(name: str) -> str:
+    """Render an identifier for a DDL suggestion, quoting only when needed."""
+    if _BARE_IDENT.fullmatch(name) and name.upper() not in _KEYWORDS:
+        return name
+    return '"' + name.replace('"', '""') + '"'
+
+
+@dataclass
+class _ResolvedProperty:
+    name: str
+    column: Column
+    neptune_type: str
+    cast: Optional[str] = None
+
+    def select(self) -> str:
+        expr = _quote_ident(self.column.name)
+        if self.cast:
+            expr = f"CAST({expr} AS {self.cast})"
+        if self.neptune_type == "Datetime":
+            # Athena renders timestamps as 'yyyy-MM-dd HH:mm:ss'; Neptune needs ISO-8601.
+            expr = f"to_iso8601({expr})"
+        header = self.name
+        if self.neptune_type != "String":
+            header = f"{self.name}:{self.neptune_type}"
+        return f"{expr} AS {_quote_header(header)}"
+
+
+@dataclass
+class _ResolvedElement:
+    element: ElementTable
+    kind: str  # "vertex" or "edge"
+    key: Optional[Column]  # vertex ~id column
+    source: Optional[Column]  # edge ~from column
+    dest: Optional[Column]  # edge ~to column
+    properties: List[_ResolvedProperty]
+
+
+def _lookup(
+    columns: Dict[str, Column], element: ElementTable, name: str, role: str
+) -> Column:
+    col = columns.get(name.lower())
+    if col is not None:
+        return col
+    close = difflib.get_close_matches(name.lower(), list(columns), n=1)
+    hint = f" Did you mean '{columns[close[0]].name}'?" if close else ""
+    raise PropertyGraphSchemaError(
+        f"{role} column '{name}' not found in table '{element.table_name}'.{hint} "
+        f"Columns: {', '.join(c.name for c in columns.values())}"
+    )
+
+
+def _id_column(
+    columns: Dict[str, Column], element: ElementTable, name: str, role: str
+) -> Column:
+    col = _lookup(columns, element, name, role)
+    if _neptune_type(col.type) is None:
+        raise PropertyGraphSchemaError(
+            f"{role} column '{col.name}' in table '{element.table_name}' has type "
+            f"{col.type}, which cannot be used as a Neptune id"
+        )
+    return col
+
+
+def _resolve_properties(
+    element: ElementTable, columns: Dict[str, Column]
+) -> List[_ResolvedProperty]:
+    resolved = []
+    if element.all_columns:
+        excluded = {
+            _lookup(columns, element, c, "EXCEPT").name.lower()
+            for c in element.except_columns
+        }
+        for col in columns.values():
+            if col.name.lower() in excluded:
+                continue
+            ntype = _neptune_type(col.type)
+            if ntype is None:
+                raise PropertyGraphSchemaError(
+                    f"Column '{col.name}' in table '{element.table_name}' has type "
+                    f"{col.type}, which cannot be loaded as a Neptune property. "
+                    f"Leave it out with PROPERTIES ALL COLUMNS EXCEPT "
+                    f"({_ddl_ident(col.name)}), or list the properties explicitly."
+                )
+            resolved.append(_ResolvedProperty(col.name, col, ntype))
+    for prop in element.properties:
+        col = _lookup(columns, element, prop.column, "Property")
+        if prop.cast:
+            ntype = _neptune_type(prop.cast)
+            if ntype is None:
+                raise PropertyGraphSchemaError(
+                    f"CAST({prop.column} AS {prop.cast}) in table "
+                    f"'{element.table_name}': {prop.cast} cannot be loaded as a "
+                    f"Neptune property. Supported CAST targets: "
+                    f"{', '.join(_NEPTUNE_TO_SQL.values())}"
+                )
+        else:
+            ntype = _neptune_type(col.type)
+            if ntype is None:
+                raise PropertyGraphSchemaError(
+                    f"Column '{col.name}' in table '{element.table_name}' has type "
+                    f"{col.type}, which cannot be loaded as a Neptune property; "
+                    f"remove it from the PROPERTIES list."
+                )
+        resolved.append(_ResolvedProperty(prop.name, col, ntype, prop.cast))
+
+    seen = set()
+    for p in resolved:
+        if _BAD_PROPERTY_NAME.search(p.name):
+            safe = re.sub(r"[:,\s~]+", "_", p.name).strip("_") or "property"
+            raise PropertyGraphSchemaError(
+                f"Property name '{p.name}' in table '{element.table_name}' cannot "
+                f"be a Neptune property name (no ':', ',', whitespace or leading "
+                f"'~'). Rename it, e.g. {_ddl_ident(p.column.name)} AS {safe}."
+            )
+        if p.name in seen:
+            raise PropertyGraphSchemaError(
+                f"Property '{p.name}' is defined twice in table '{element.table_name}'"
+            )
+        seen.add(p.name)
+    return resolved
+
+
+def _resolve(
+    element: ElementTable, metadata: TableMetadataProvider
+) -> _ResolvedElement:
+    columns = {c.name.lower(): c for c in metadata.get_columns(element.table)}
+    key = source = dest = None
+    if isinstance(element, VertexTable):
+        key = _id_column(columns, element, element.key, "KEY")
+        kind = "vertex"
+    else:
+        edge = cast(EdgeTable, element)
+        source = _id_column(columns, edge, edge.source_key, "SOURCE KEY")
+        dest = _id_column(columns, edge, edge.dest_key, "DESTINATION KEY")
+        if edge.key:
+            _lookup(columns, edge, edge.key, "KEY")
+        kind = "edge"
+    props = _resolve_properties(element, columns)
+    return _ResolvedElement(element, kind, key, source, dest, props)
+
+
+def _properties_fix(
+    resolved: _ResolvedElement, fix: _ResolvedProperty, target: str
+) -> str:
+    """A replacement PROPERTIES clause for ``resolved`` that casts ``fix`` to ``target``."""
+    parts = []
+    for p in resolved.properties:
+        cast_to = _NEPTUNE_TO_SQL[target] if p is fix else p.cast
+        expr = _ddl_ident(p.column.name)
+        if cast_to:
+            expr = f"CAST({expr} AS {cast_to})"
+        if cast_to or p.name != p.column.name:
+            expr += f" AS {_ddl_ident(p.name)}"
+        parts.append(expr)
+    return f"PROPERTIES ({', '.join(parts)})"
+
+
+def _check_type_conflicts(elements: List[_ResolvedElement]) -> None:
+    groups: Dict[
+        Tuple[str, str, str], List[Tuple[_ResolvedElement, _ResolvedProperty]]
+    ] = {}
+    for r in elements:
+        for p in r.properties:
+            groups.setdefault((r.kind, r.element.label, p.name), []).append((r, p))
+    for (kind, label, name), members in groups.items():
+        types = {p.neptune_type for _, p in members}
+        if len(types) < 2:
+            continue
+        target = _common_type(list(types))
+        found = ", ".join(
+            f"{p.neptune_type} in '{r.element.name}' (column {p.column.name}: "
+            f"{p.column.type})"
+            for r, p in members
+        )
+        fixes = "\n".join(
+            f"  in '{r.element.name}': {_properties_fix(r, p, target)}"
+            for r, p in members
+            if p.neptune_type != target
+        )
+        raise PropertyGraphSchemaError(
+            f"Property '{name}' of {kind} label '{label}' has conflicting types: "
+            f"{found}. Cast to a common type ({target}) in the PROPERTIES clause:\n"
+            f"{fixes}"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# SQL generation
+# --------------------------------------------------------------------------- #
+def _quote_ident(name: str) -> str:
+    """Double-quote a SQL identifier, doubling any embedded double quotes."""
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _quote_literal(value: str) -> str:
+    """Single-quote a SQL string literal, doubling any embedded single quotes."""
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _quote_header(header: str) -> str:
+    """Double-quote a load-format header alias (``~id``, ``name:Float``, ...)."""
+    return '"' + header.replace('"', '""') + '"'
+
+
+def _table_ref(table: QualifiedName) -> str:
+    """Render a possibly-qualified table reference, quoting each segment."""
+    return ".".join(_quote_ident(part) for part in table)
+
+
+def _vertex_query(r: _ResolvedElement) -> str:
+    assert r.key is not None
+    key = _quote_ident(r.key.name)
+    cols = [
+        f"{key} AS {_quote_header('~id')}",
+        f"{_quote_literal(r.element.label)} AS {_quote_header('~label')}",
+    ]
+    cols.extend(p.select() for p in r.properties)
+    return (
+        "SELECT DISTINCT "
+        + ", ".join(cols)
+        + f" FROM {_table_ref(r.element.table)}"
+        + f" WHERE {key} IS NOT NULL"
+    )
+
+
+def _edge_query(r: _ResolvedElement) -> str:
+    assert r.source is not None and r.dest is not None
+    source, dest = _quote_ident(r.source.name), _quote_ident(r.dest.name)
+    cols = [
+        f"{source} AS {_quote_header('~from')}",
+        f"{dest} AS {_quote_header('~to')}",
+        f"{_quote_literal(r.element.label)} AS {_quote_header('~label')}",
+    ]
+    cols.extend(p.select() for p in r.properties)
+    return (
+        "SELECT "
+        + ", ".join(cols)
+        + f" FROM {_table_ref(r.element.table)}"
+        + f" WHERE {source} IS NOT NULL AND {dest} IS NOT NULL"
+    )
+
+
+def property_graph_to_sql(
+    property_graph: Union[str, PropertyGraph], metadata: TableMetadataProvider
+) -> List[str]:
     """Translate a ``CREATE PROPERTY GRAPH`` statement into Athena projection SQL.
 
-    Returns the vertex projection queries followed by the edge projection
-    queries, in the ``~id``/``~label`` and ``~from``/``~to``/``~label`` load
-    format expected by ``SessionManager.import_from_table``.
+    ``metadata`` supplies each source table's columns and types: use
+    :class:`AthenaTableMetadata` against a live catalog, or
+    :class:`StaticTableMetadata` offline. Returns the vertex projection queries
+    followed by the edge projection queries, in the ``~id``/``~label`` and
+    ``~from``/``~to``/``~label`` load format expected by
+    ``SessionManager.import_from_table``.
+
+    Raises:
+        PropertyGraphSyntaxError: If the statement cannot be parsed.
+        PropertyGraphSchemaError: If it does not match the source tables.
     """
-    return parse_property_graph(ddl).to_sql_queries()
+    graph = (
+        property_graph
+        if isinstance(property_graph, PropertyGraph)
+        else parse_property_graph(property_graph)
+    )
+    vertices = [_resolve(v, metadata) for v in graph.vertex_tables]
+    edges = [_resolve(e, metadata) for e in graph.edge_tables]
+    _check_type_conflicts(vertices + edges)
+    return [_vertex_query(r) for r in vertices] + [_edge_query(r) for r in edges]

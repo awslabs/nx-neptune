@@ -41,16 +41,17 @@ CREATE PROPERTY GRAPH financial
       SOURCE KEY (nameOrig) REFERENCES customer
       DESTINATION KEY (nameDest) REFERENCES customer
       LABEL transfer
-      PROPERTIES (step:Int, amount:Float, isFraud:Int)
+      PROPERTIES (step, CAST(amount AS DOUBLE) AS amount, isFraud)
   )
 """
 
+graph = await session.get_or_create_graph()
 await session.import_from_graph_schema(
     graph, s3_location, DDL, catalog=catalog, database=database
 )
 ```
 
-The optional `:Type` suffix on a property (e.g. `amount:Float`) matches Neptune's load-format header convention; without it the property loads as a string. `LABEL` defaults to the table name/alias when omitted. To see the generated SQL without importing, call `nx_neptune.property_graph_to_sql(DDL)`.
+Property types come from each source column's type in the Athena catalog; `CAST` overrides them, and a type mismatch between tables sharing a label fails with the `CAST` that fixes it. As in the standard, omitting `PROPERTIES` exposes all columns (`PROPERTIES ALL COLUMNS EXCEPT (...)` drops some), and `LABEL` defaults to the table alias/name. Reading the catalog needs `athena:GetTableMetadata`, plus `glue:GetTable` for Glue catalogs. To see the generated SQL without importing, call `nx_neptune.property_graph_to_sql(DDL, AthenaTableMetadata(athena_client, catalog, database))`.
 
 **Use cases demonstrated in the notebooks:**
 
@@ -164,6 +165,7 @@ In Addition to the S3 import/export permissions, to read from/write to an existi
 
   - `athena:StartQueryExecution`
   - `athena:GetQueryExecution`
+  - `athena:GetTableMetadata` and `glue:GetTable` (for `import_from_graph_schema`, which reads source table columns)
 
 The ARN with the above permissions must be added to your environment variables
 

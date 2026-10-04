@@ -25,7 +25,9 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from nx_neptune import property_graph_to_sql
+import boto3
+
+from nx_neptune import AthenaTableMetadata, property_graph_to_sql
 from nx_neptune.session_manager import CleanupTask, SessionManager
 from nx_neptune.utils.utils import get_stdout_logger
 
@@ -42,7 +44,8 @@ https://www.kaggle.com/code/kartik2112/fraud-detection-on-paysim-dataset/input?s
 
 The same paysim projection expressed as a property-graph schema. Customers are
 projected from the transactions table's origin/destination account columns, and
-each transaction becomes a labelled edge between them.
+each transaction becomes a labelled edge between them. Property types come from
+the table's column types in the catalog; CAST overrides one.
 """
 FINANCIAL_GRAPH_DDL = """
 CREATE PROPERTY GRAPH financial
@@ -50,6 +53,7 @@ CREATE PROPERTY GRAPH financial
     transactions AS customer
       KEY (nameOrig)
       LABEL customer
+      NO PROPERTIES
   )
   EDGE TABLES (
     transactions
@@ -57,22 +61,26 @@ CREATE PROPERTY GRAPH financial
       DESTINATION KEY (nameDest) REFERENCES customer
       LABEL transfer
       PROPERTIES (
-        type AS type,
-        step:Int,
-        amount:Float,
-        oldbalanceOrg:Float,
-        newbalanceOrig:Float,
-        oldbalanceDest:Float,
-        newbalanceDest:Float,
-        isFraud:Int
+        type,
+        step,
+        CAST(amount AS DOUBLE) AS amount,
+        oldbalanceOrg,
+        newbalanceOrig,
+        oldbalanceDest,
+        newbalanceDest,
+        isFraud
       )
   )
 """
 
+CATALOG = 's3tablescatalog/nx-fraud-detection-data'
+DATABASE = 'bank_fraud_full'
+
 
 def preview_generated_sql():
     """Print the Athena queries the DDL translates into, without importing."""
-    for query in property_graph_to_sql(FINANCIAL_GRAPH_DDL):
+    metadata = AthenaTableMetadata(boto3.client('athena'), catalog=CATALOG, database=DATABASE)
+    for query in property_graph_to_sql(FINANCIAL_GRAPH_DDL, metadata):
         print(query)
         print("---")
 
@@ -85,14 +93,14 @@ async def do_import_from_graph_schema():
 
     with SessionManager("property-graph-demo", cleanup_task=CleanupTask.NONE) as session:
         graph = await session.get_or_create_graph()
-        graph_id = await session.import_from_graph_schema(
+        task_id = await session.import_from_graph_schema(
             graph,
             s3_location_import,
             FINANCIAL_GRAPH_DDL,
-            catalog='s3tablescatalog/nx-fraud-detection-data',
-            database='bank_fraud_full',
+            catalog=CATALOG,
+            database=DATABASE,
         )
-        print(f"Imported data into graph {graph_id}")
+        print(f"Imported data into graph {graph.graph_id} (task {task_id})")
 
 
 if __name__ == "__main__":
