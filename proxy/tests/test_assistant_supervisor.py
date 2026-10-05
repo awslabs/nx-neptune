@@ -286,13 +286,15 @@ def test_propose_queries_uses_existing_graph_model_without_import():
     sup._sql_mapping.map_schema.assert_not_called()
 
 
-def test_propose_queries_validates_and_withholds_invalid_when_live():
+def test_propose_queries_offers_all_queries_without_validation_when_live():
+    """propose_queries no longer EXPLAIN-validates/withholds (reverted): all
+    planner queries are offered as-is. validate_opencypher must not be called."""
     sup = _supervisor_with_mock_specialists()
     sup._query_planner.plan.return_value = QueryPlanResult(
         description="Explore the graph.",
         graph_queries=[
-            CypherQuery(cypher="MATCH (n) RETURN n LIMIT 10", description="good one"),
-            CypherQuery(cypher="MATCH (n RETURN n", description="broken one"),
+            CypherQuery(cypher="MATCH (n) RETURN n LIMIT 10", description="read one"),
+            CypherQuery(cypher="CREATE (n:Foo)", description="mutation one"),
         ],
     )
     ctx = TurnContext(
@@ -307,26 +309,20 @@ def test_propose_queries_validates_and_withholds_invalid_when_live():
     )
     tools = _tools(sup, ctx)
 
-    def fake_validate(graph_id, cypher):
-        assert graph_id == "g-1"
-        return (True, None) if "RETURN n LIMIT 10" in cypher else (False, "bad cypher")
-
     with patch(
         "nx_neptune_proxy.assistant.supervisor.validate_opencypher",
-        side_effect=fake_validate,
-    ):
+    ) as mock_validate:
         out = tools["propose_queries"]("explore")
 
-    # Only the valid query is offered (proposal + run button); invalid withheld.
+    mock_validate.assert_not_called()
+    # Both queries offered (proposal + run buttons); nothing withheld.
     assert [q.cypher for q in ctx.proposal.graph_queries] == [
-        "MATCH (n) RETURN n LIMIT 10"
+        "MATCH (n) RETURN n LIMIT 10",
+        "CREATE (n:Foo)",
     ]
     run_actions = [a for a in ctx.actions if a.kind == "run-query"]
-    assert len(run_actions) == 1
-    assert run_actions[0].query == "MATCH (n) RETURN n LIMIT 10"
-    # The reply reports the withheld query and its error.
-    assert "withheld 1" in out.lower()
-    assert "bad cypher" in out
+    assert len(run_actions) == 2
+    assert "withheld" not in out.lower()
 
 
 def test_propose_queries_skips_validation_without_live_graph():

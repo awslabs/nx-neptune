@@ -426,4 +426,3 @@ def save_graph_queries(projection_id: str, body: GraphQueriesPayload):
         projection_id, body.graph_queries
     )
     return GraphQueriesResponse(graph_queries=graph_queries)  # type: ignore[arg-type]
-    )

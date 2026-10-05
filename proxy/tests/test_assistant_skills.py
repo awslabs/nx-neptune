@@ -60,15 +60,17 @@ def test_neptune_skill_reference_tool_delegates_to_loader():
 # --- catalog reconciled against the backend ------------------------------
 
 
-def test_catalog_only_cites_implemented_algorithms():
-    # Algorithms nx-neptune actually exposes may be named.
-    for available in ("pageRank", "degree", "closenessCentrality", "louvain",
-                      "labelPropagation", "bfs"):
-        assert available in CAPABILITY_CATALOG
-    # Unavailable procedures must be flagged as NOT available, never proposed.
-    assert "NOT available" in CAPABILITY_CATALOG
-    for gap in ("bellmanFord", "deltaStepping", "wcc", "scc"):
-        assert gap in CAPABILITY_CATALOG  # named only in the "not available" list
+def test_catalog_cites_runnable_neptune_analytics_procedures():
+    # Per #491, the catalog treats every Neptune Analytics procedure as runnable
+    # (not just the ones nx-neptune wraps as Python functions), so all of these
+    # must be named in the catalog.
+    for proc in (
+        "pageRank", "degree", "closenessCentrality", "louvain",
+        "labelPropagation", "bfs", "bellmanFord", "deltaStepping", "wcc", "scc",
+    ):
+        assert proc in CAPABILITY_CATALOG
+    # The old "NOT available" gating list was removed with that change.
+    assert "NOT available" not in CAPABILITY_CATALOG
 
 
 # --- prompt wiring --------------------------------------------------------

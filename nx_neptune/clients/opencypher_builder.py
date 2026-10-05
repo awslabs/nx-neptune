@@ -139,6 +139,68 @@ def _escape_identifier(value: str) -> str:
     return "`" + value.replace("`", "``") + "`"
 
 
+# Shapes recognized by _escape_property_path: a safe bare reference, and a
+# structural predicate like id(n) that carries no property name to escape.
+_BARE_REF_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_FUNC_PREDICATE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\([A-Za-z_][A-Za-z0-9_]*\)")
+
+
+def _escape_property_key(key: str) -> str:
+    """Backtick-escape a bare property name for use as a map/SET key.
+
+    The whole key is a single property name (e.g. ``name``, ``~id``, or an
+    untrusted attribute name that may contain dots), so it is escaped wholesale
+    via :func:`_escape_identifier`. This is the escaping used for property maps
+    in ``CREATE``/``MERGE`` node/edge construction.
+
+    Example:
+        >>> _escape_property_key("name")
+        '`name`'
+        >>> _escape_property_key("~id")
+        '`~id`'
+        >>> _escape_property_key('x: 1}) MATCH (m) DETACH DELETE m //')
+        '`x: 1}) MATCH (m) DETACH DELETE m //`'
+    """
+    return _escape_identifier(key)
+
+
+def _escape_property_path(key: str) -> str:
+    """Backtick-escape only the property segment of a ``ref.prop`` path.
+
+    ``SET`` and ``WHERE`` keys are code-generated in one of a few shapes where
+    only part of the key is a (potentially untrusted) property name:
+
+      * ``<ref>.<prop>`` — escape only ``<prop>`` (e.g. ``a.age`` -> ``a.`age```);
+        the reference prefix is code-controlled and left bare.
+      * ``<func>(<ref>)`` — a structural predicate such as ``id(n)``. It carries
+        no property name, so it is passed through unchanged, but ONLY when it
+        matches the strict ``identifier(identifier)`` shape — anything else
+        (e.g. an attacker-supplied key merely starting with ``id(``) falls
+        through to wholesale escaping and is neutralized.
+      * anything else / a bare key with no ``.`` — escaped wholesale via
+        :func:`_escape_identifier` (fail-safe).
+
+    Example:
+        >>> _escape_property_path("a.age")
+        'a.`age`'
+        >>> _escape_property_path("id(n)")
+        'id(n)'
+        >>> _escape_property_path('id(n) }) MATCH (m) DETACH DELETE m //')
+        '`id(n) }) MATCH (m) DETACH DELETE m //`'
+    """
+    # Structural predicate like ``id(n)`` — no property name to escape. Strict
+    # shape only; anything fancier is treated as untrusted and escaped below.
+    if _FUNC_PREDICATE_RE.fullmatch(key):
+        return key
+
+    ref, sep, prop = key.partition(".")
+    if not sep or not _BARE_REF_RE.fullmatch(ref):
+        # No reference prefix, or a ref segment that isn't a safe bare
+        # identifier — escape the whole key as a bare property name.
+        return _escape_identifier(key)
+    return f"{ref}.{_escape_identifier(prop)}"
+
+
 def _escape_string_literal(value: str) -> str:
     """Encode a string as a double-quoted openCypher string literal.
 
