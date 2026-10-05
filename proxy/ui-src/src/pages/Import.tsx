@@ -162,9 +162,24 @@ export function Import() {
     const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
     if (!hasContent) return;
 
+    const data = {
+      catalog,
+      database,
+      s3_staging_bucket: bucket,
+      graph_name: graphName,
+      graph_memory_gb: graphMemoryGb,
+      project_id: projectId || undefined,
+    };
+
     if (!currentId) {
       // First time — create (deduped against the effect above)
       createProjectionOnce(configData());
+      // First time — create
+      projection.create(data).then((p) => {
+        setCurrentId(p.id);
+        loadProjections();
+        window.dispatchEvent(new Event("projects-changed"));
+      });
     } else {
       // Subsequent changes — debounced update
       pendingSaveRef.current.configDirty = true;
@@ -592,6 +607,7 @@ export function Import() {
               </Select>
             </label>
           </div>
+
           <div className="grid grid-cols-3 gap-4">
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">S3 Staging Bucket</span>

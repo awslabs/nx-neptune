@@ -8,6 +8,7 @@ from nx_neptune_proxy.app import app
 from nx_neptune_proxy.auth import get_token
 from nx_neptune_proxy.services.db import connection
 from nx_neptune_proxy.services.project_store import store as project_store
+from nx_neptune_proxy.services.db import get_connection
 
 
 @pytest.fixture

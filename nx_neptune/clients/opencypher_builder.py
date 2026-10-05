@@ -10,6 +10,7 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
+import enum
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -24,6 +25,23 @@ from .neptune_constants import (
     ALLOWED_ALGO_PARAM_KEYS,
     RESPONSE_SUCCESS,
 )
+
+
+class KeyStyle(enum.Enum):
+    """How a property-map key is escaped in :meth:`ParameterMapBuilder.read_map`.
+
+    * ``PLAIN`` — the key is a bare property name (``CREATE``/``MERGE`` maps);
+      the whole key is backtick-escaped. Safe default for untrusted attribute
+      names.
+    * ``PATH`` — the key is a code-generated ``ref.prop`` path or a structural
+      predicate like ``id(n)`` (``SET``/``WHERE``); only the property segment is
+      escaped and ``func(ref)`` predicates pass through, so the reference stays
+      valid.
+    """
+
+    PLAIN = "plain"
+    PATH = "path"
+
 
 # Internal constants for reference names
 _SRC_NODE_REF = "a"
@@ -236,26 +254,46 @@ class ParameterMapBuilder:
         self._counter = 0
         self._param_values = {}
 
-    def read_map(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
-        """
-        Process a dictionary and create a masked version with parameter placeholders.
-        If params is None or empty, returns an empty dictionary.
+    def read_map(
+        self,
+        params: Optional[Dict[str, Any]] = None,
+        key_style: KeyStyle = KeyStyle.PLAIN,
+    ) -> Dict[str, str]:
+        """Mask values as ``$N`` placeholders and backtick-escape the keys.
+
+        This is the single choke point where property-map keys are made safe:
+        the value of every entry is replaced with a ``$N`` parameter placeholder
+        (stored for later binding) and the key is backtick-escaped so an
+        untrusted attribute name cannot break out of the identifier and inject
+        openCypher syntax.
 
         Args:
-            params: A dictionary containing parameter names and values, or None
+            params: A dict of property name -> value, or None.
+            key_style: A :class:`KeyStyle` selecting how each key is escaped:
+                * :attr:`KeyStyle.PLAIN` (default) — bare property name
+                  (``CREATE``/``MERGE`` maps); escaped wholesale.
+                * :attr:`KeyStyle.PATH` — a code-generated ``ref.prop`` path or
+                  ``id(n)`` predicate (``SET``/``WHERE``); only the property
+                  segment is escaped and ``func(ref)`` predicates pass through.
 
         Returns:
-            A dictionary with the same keys but values replaced with parameter placeholders ($0, $1, etc.)
+            A dict mapping the escaped key to its ``$N`` placeholder.
         """
         if not params:
             return {}
+
+        escape_key = (
+            _escape_property_path
+            if key_style is KeyStyle.PATH
+            else _escape_property_key
+        )
 
         # handle a map of values
         masked_params = {}
         for key, value in params.items():
             param_name = str(self._counter)
             masked_param_name = f"${param_name}"
-            masked_params[key] = masked_param_name
+            masked_params[escape_key(key)] = masked_param_name
             self._param_values[param_name] = value
             self._counter += 1
 
@@ -341,13 +379,13 @@ def insert_node(node: Node) -> Tuple[str, Dict[str, Any]]:
     Examples:
         >>> node = Node(id='Alice', labels=['Person'], properties={'age': 15})
         >>> insert_node(node)
-        ('CREATE (:Person {'~id': $0, age: $1})', {'0': 'Alice', '1': '15'})
+        ('CREATE (:`Person` {`age`: $0, `~id`: $1})', {'0': '15', '1': 'Alice'})
     """
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
     updated_parameters = node.properties
-    updated_parameters["`~id`"] = str(node.id)
+    updated_parameters["~id"] = str(node.id)
 
     # Mask node properties
     masked_properties = param_builder.read_map(updated_parameters)
@@ -401,8 +439,8 @@ def insert_edge(edge: Edge) -> Tuple[str, Dict[str, Any]]:
         >>> dest = Node(id='Bob', labels=['Person'], properties={})
         >>> edge = Edge(label='FRIEND_WITH', properties={'since': '2020'}, node_src=src, node_dest=dest)
         >>> insert_edge(edge)
-        ('MERGE (a:Person {`~id`: $0}) MERGE (b:Person {`~id`: $1})
-        MERGE (a)-[r:FRIEND_WITH {since: $2}]->(b)', {'0': 'Alice', '1': 'Bob', '2': '2020'})
+        ('MERGE (a:`Person` {`~id`: $0}) MERGE (b:`Person` {`~id`: $1})
+        MERGE (a)-[r:`FRIEND_WITH` {`since`: $2}]->(b)', {'0': 'Alice', '1': 'Bob', '2': '2020'})
     """
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
@@ -502,7 +540,7 @@ def update_node(
 
     Example:
         >>> update_node('Person', 'a', ['Alice'], {'a.age': '25'})
-        ('MATCH (a:Person) WHERE id(a) = $0 SET a.age = $1', {'0': 'Alice', '1': '25'})
+        ('MATCH (a:`Person`) WHERE id(a) = $0 SET a.`age` = $1', {'0': 'Alice', '1': '25'})
     """
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
@@ -511,7 +549,9 @@ def update_node(
     literal_where_clause = " OR ".join(
         [f"id({ref_name})={node_id}" for node_id in masked_node_ids]
     )
-    masked_properties_set = param_builder.read_map(properties_set)
+    masked_properties_set = param_builder.read_map(
+        properties_set, key_style=KeyStyle.PATH
+    )
 
     return (
         QueryBuilder()
@@ -549,7 +589,7 @@ def update_edge(
         >>> update_edge('a', 'r', edge, 'b',
         ...                  {"a.name": "Alice", "b.name": "Bob"},
         ...                  {"r.since": "1997"})
-        ('MATCH (a:Person)-[r:FRIEND_WITH]->(b:Person) WHERE id(a) = $0 AND id(b) = $1 SET r.since = $2',
+        ('MATCH (a:`Person`)-[r:`FRIEND_WITH`]->(b:`Person`) WHERE a.`name` = $0 AND b.`name` = $1 SET r.`since` = $2',
          {'0': 'Alice', '1': 'Bob', '2': '1997'})
     """
     # Initialize parameter map builder
@@ -563,8 +603,12 @@ def update_edge(
         qb = qb.relates(label=_escape_identifier(edge.label), ref_name=ref_name_edge)
     qb = _append_node(qb, param_builder, edge.node_dest, ref_name_des)
 
-    masked_where_filters = param_builder.read_map(where_filters)
-    masked_properties_set = param_builder.read_map(properties_set)
+    masked_where_filters = param_builder.read_map(
+        where_filters, key_style=KeyStyle.PATH
+    )
+    masked_properties_set = param_builder.read_map(
+        properties_set, key_style=KeyStyle.PATH
+    )
     qb = qb.where_multiple(masked_where_filters, escape=False).set(
         masked_properties_set, escape_values=False
     )
@@ -665,7 +709,9 @@ def bfs_query(
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
-    masked_where_filters = param_builder.read_map(where_filters)
+    masked_where_filters = param_builder.read_map(
+        where_filters, key_style=KeyStyle.PATH
+    )
 
     bfs_params = f"{source_node}"
     if parameters:
@@ -714,7 +760,9 @@ def descendants_at_distance_query(
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
-    masked_where_filters = param_builder.read_map(where_filters)
+    masked_where_filters = param_builder.read_map(
+        where_filters, key_style=KeyStyle.PATH
+    )
 
     distance_params = f"{source_node}"
     if parameters:
@@ -761,7 +809,9 @@ def bfs_layers_query(
     # Initialize parameter map builder
     param_builder = ParameterMapBuilder()
 
-    masked_where_filters = param_builder.read_map(where_in_filters)
+    masked_where_filters = param_builder.read_map(
+        where_in_filters, key_style=KeyStyle.PATH
+    )
 
     bfs_params = f"{source_node}"
     if parameters:
@@ -1210,7 +1260,7 @@ def _append_node(
     """
     # Mask node properties
     updated_parameters = node.properties
-    updated_parameters["`~id`"] = str(node.id)
+    updated_parameters["~id"] = str(node.id)
 
     # Mask node properties
     masked_properties = param_builder.read_map(updated_parameters)
@@ -1270,8 +1320,12 @@ def jaccard_coefficient_query(
     """
     param_builder = ParameterMapBuilder()
 
-    masked_first = param_builder.read_map({"id(n1)": first_node})
-    masked_second = param_builder.read_map({"id(n2)": second_node})
+    masked_first = param_builder.read_map(
+        {"id(n1)": first_node}, key_style=KeyStyle.PATH
+    )
+    masked_second = param_builder.read_map(
+        {"id(n2)": second_node}, key_style=KeyStyle.PATH
+    )
 
     jaccard_params = "n1, n2"
     if parameters:

@@ -5,7 +5,7 @@ import logging
 
 from nx_neptune_proxy.config import get_settings
 from nx_neptune_proxy.services.projection_service import projection_service
-from nx_neptune_proxy.services.projection_store import Projection
+from nx_neptune_proxy.services.projection_store import Projection, store
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
