@@ -59,6 +59,7 @@ def init_db() -> None:
             database TEXT,
             node_query TEXT,
             edge_query TEXT,
+            property_graph TEXT,
             graph_name TEXT,
             graph_memory_gb INTEGER DEFAULT 16,
             s3_staging_bucket TEXT,
