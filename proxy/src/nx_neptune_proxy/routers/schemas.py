@@ -67,6 +67,7 @@ class NeptuneAnalyticsGraphsResponse(BaseModel):
 class ProjectionCreate(BaseModel):
     catalog: str = "AwsDataCatalog"
     database: Optional[str] = None
+    property_graph: Optional[str] = None
     graph_name: Optional[str] = Field(
         default=None,
         min_length=GRAPH_NAME_MIN_LENGTH,
@@ -81,6 +82,7 @@ class ProjectionCreate(BaseModel):
 class ProjectionUpdate(BaseModel):
     catalog: Optional[str] = None
     database: Optional[str] = None
+    property_graph: Optional[str] = None
     graph_name: Optional[str] = Field(
         default=None,
         min_length=GRAPH_NAME_MIN_LENGTH,
@@ -100,6 +102,19 @@ class CheckResult(BaseModel):
 class ValidateResponse(BaseModel):
     valid: bool
     checks: list[CheckResult]
+
+
+class TranslateRequest(BaseModel):
+    """Optional DDL to translate. If omitted, the projection's saved
+    property_graph is used."""
+
+    property_graph: Optional[str] = None
+
+
+class TranslateResponse(BaseModel):
+    node_queries: list[str] = []
+    edge_queries: list[str] = []
+    error: Optional[str] = None
 
 
 class PreviewQueryResult(BaseModel):
@@ -127,6 +142,7 @@ class ProjectionResponse(BaseModel):
     status: str
     catalog: str
     database: Optional[str] = None
+    property_graph: Optional[str] = None
     graph_name: Optional[str] = None
     graph_id: Optional[str] = None
     graph_endpoint: Optional[str] = None

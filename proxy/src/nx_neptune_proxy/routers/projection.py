@@ -28,6 +28,8 @@ from nx_neptune_proxy.routers.schemas import (
     ProjectionUpdate,
     QueriesPayload,
     QueriesResponse,
+    TranslateRequest,
+    TranslateResponse,
     ValidateResponse,
 )
 from nx_neptune_proxy.services.pipeline import run_pipeline
@@ -151,6 +153,32 @@ def validate_query(projection_id: str):
         )
     valid = all(c["passed"] for c in checks) if checks else False
     return {"valid": valid, "checks": checks}
+
+
+@router.post(
+    "/{projection_id}/translate",
+    summary="Translate a CREATE PROPERTY GRAPH statement into node/edge queries",
+    response_model=TranslateResponse,
+)
+def translate_projection(projection_id: str, body: TranslateRequest):
+    """Translate PGQ DDL into node/edge projection SQL.
+
+    Pure: the generated queries are returned, not persisted (the client saves
+    them via the queries endpoint). Invalid DDL or schema mismatches are
+    returned as a 200 with ``error`` set, so the UI can display the message.
+    """
+    from nx_neptune.property_graph import PropertyGraphError
+
+    _get_projection_or_404(projection_id)
+    try:
+        node_queries, edge_queries = projection_service.translate(
+            projection_id, body.property_graph
+        )
+    except PropertyGraphError as e:
+        return TranslateResponse(error=str(e))
+    except ValueError as e:
+        return TranslateResponse(error=str(e))
+    return TranslateResponse(node_queries=node_queries, edge_queries=edge_queries)
 
 
 @router.post(
