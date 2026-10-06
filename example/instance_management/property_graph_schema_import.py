@@ -43,22 +43,27 @@ This data comes from kaggle.com:
 https://www.kaggle.com/code/kartik2112/fraud-detection-on-paysim-dataset/input?select=PS_20174392719_1491204439457_log.csv
 
 The same paysim projection expressed as a property-graph schema. Customers are
-projected from the transactions table's origin/destination account columns, and
-each transaction becomes a labelled edge between them. Property types come from
-the table's column types in the catalog; CAST overrides one.
+projected from the transactions table's origin and destination account columns
+(two vertex tables over one source table, each with its own alias), and each
+transaction becomes a labelled edge between them. Property types come from the
+table's column types in the catalog; CAST overrides one.
 """
 FINANCIAL_GRAPH_DDL = """
 CREATE PROPERTY GRAPH financial
   VERTEX TABLES (
-    transactions AS customer
+    transactions AS sender
       KEY (nameOrig)
+      LABEL customer
+      NO PROPERTIES,
+    transactions AS recipient
+      KEY (nameDest)
       LABEL customer
       NO PROPERTIES
   )
   EDGE TABLES (
     transactions
-      SOURCE KEY (nameOrig) REFERENCES customer
-      DESTINATION KEY (nameDest) REFERENCES customer
+      SOURCE KEY (nameOrig) REFERENCES sender
+      DESTINATION KEY (nameDest) REFERENCES recipient
       LABEL transfer
       PROPERTIES (
         type,

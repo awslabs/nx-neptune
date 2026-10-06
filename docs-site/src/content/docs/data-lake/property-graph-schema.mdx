@@ -36,7 +36,7 @@ await session.import_from_graph_schema(
 )
 ```
 
-With `step` and `isFraud` stored as `int` and `amount` as `decimal(10,2)`, this translates to one projection query per vertex table, then one per edge table:
+With `step` and `isFraud` stored as `int` and `amount` as `decimal(10,2)`, this translates to one projection query per vertex table, then one per edge table. Each edge endpoint is joined to the keys of the vertex table it `REFERENCES`:
 
 ```sql
 SELECT DISTINCT "name" AS "~id", 'customer' AS "~label", "name" AS "name"
@@ -46,7 +46,10 @@ SELECT "nameorig" AS "~from", "namedest" AS "~to", 'transfer' AS "~label",
        "step" AS "step:Int", CAST("amount" AS DOUBLE) AS "amount:Double",
        "isfraud" AS "isFraud:Int"
 FROM "transactions"
-WHERE "nameorig" IS NOT NULL AND "namedest" IS NOT NULL;
+JOIN (SELECT DISTINCT "name" AS "~key" FROM "accounts") "~source"
+  ON "nameorig" = "~source"."~key"
+JOIN (SELECT DISTINCT "name" AS "~key" FROM "accounts") "~destination"
+  ON "namedest" = "~destination"."~key";
 ```
 
 ## Syntax
@@ -63,8 +66,8 @@ CREATE PROPERTY GRAPH <name>
   [ EDGE TABLES (
     <table> [ [AS] <alias> ]
       [ KEY ( <column> ) ]
-      SOURCE      [ KEY ] ( <column> ) REFERENCES <vertex> [ ( <column> ) ]
-      DESTINATION [ KEY ] ( <column> ) REFERENCES <vertex> [ ( <column> ) ]
+      SOURCE      [ KEY ] ( <column> ) REFERENCES <vertex table> [ ( <column> ) ]
+      DESTINATION [ KEY ] ( <column> ) REFERENCES <vertex table> [ ( <column> ) ]
       [ LABEL <label> ]
       [ <properties> ]
     [, ...]
@@ -77,9 +80,12 @@ CREATE PROPERTY GRAPH <name>
                | CAST ( <column> AS <sql type> ) [ AS <name> ]
 ```
 
+- Each vertex and edge table is named by its alias, which defaults to its table name; names must be unique, so give each use of a table its own alias.
+- `REFERENCES` names a vertex table that way, not by its underlying table or label: with `accounts AS customer`, write `REFERENCES customer`.
 - Omitting `<properties>` means `ALL COLUMNS`, as in the standard. Partition columns are included.
 - `LABEL` defaults to the table's alias, then its table name.
-- Vertex `KEY` becomes `~id`; edge `SOURCE`/`DESTINATION` become `~from`/`~to`. A column list after `REFERENCES` must name the referenced vertex's `KEY`.
+- Vertex `KEY` becomes `~id`; edge `SOURCE`/`DESTINATION` become `~from`/`~to`. A column list after `REFERENCES` must name the referenced vertex's `KEY`, since Neptune links edges to vertices by `~id`.
+- Edges are loaded only when both endpoints match a key in the referenced vertex tables; edges whose source or destination has no vertex are dropped rather than loaded against unlabeled vertices.
 - Tables may be written `table`, `database.table` or `catalog.database.table`; unqualified parts use the `catalog`/`database` arguments.
 
 ## Property types
@@ -114,15 +120,14 @@ Reading table metadata needs `athena:GetTableMetadata`, plus `glue:GetTable` for
 To see the translated queries without running an import:
 
 ```python
-import boto3
 from nx_neptune import AthenaTableMetadata, property_graph_to_sql
 
-metadata = AthenaTableMetadata(boto3.client("athena"), catalog=catalog, database=database)
+metadata = AthenaTableMetadata(catalog=catalog, database=database)
 for query in property_graph_to_sql(DDL, metadata):
     print(query)
 ```
 
-`StaticTableMetadata({"accounts": [("name", "varchar(64)")], ...})` supplies columns offline instead of reading the catalog.
+`AthenaTableMetadata` uses the library's shared Athena client unless you pass one. Each source table is read once per translation, and nothing is cached between calls. `StaticTableMetadata({"accounts": [("name", "varchar(64)")], ...})` supplies columns offline instead of reading the catalog.
 
 ## Limitations
 

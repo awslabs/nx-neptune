@@ -38,8 +38,8 @@ Grammar accepted (case-insensitive keywords)::
       [ EDGE TABLES (
         <table> [ [AS] <alias> ]
           [ KEY ( <column> ) ]
-          SOURCE      [ KEY ] ( <column> ) REFERENCES <vertex> [ ( <column> ) ]
-          DESTINATION [ KEY ] ( <column> ) REFERENCES <vertex> [ ( <column> ) ]
+          SOURCE      [ KEY ] ( <column> ) REFERENCES <vertex table> [ ( <column> ) ]
+          DESTINATION [ KEY ] ( <column> ) REFERENCES <vertex table> [ ( <column> ) ]
           [ LABEL <label> ]
           [ <properties> ]
         [, ...]
@@ -51,16 +51,20 @@ Grammar accepted (case-insensitive keywords)::
     <property>   ::= <column> [ AS <name> ]
                    | CAST ( <column> AS <sql type> ) [ AS <name> ]
 
-As in the standard, omitting ``<properties>`` means ``ALL COLUMNS``, and an
-omitted ``LABEL`` defaults to the element table's alias, then its table name.
-Property types come from the source columns' catalog types, and ``CAST``
-overrides them. Properties sharing a name under one label must resolve to the
-same type; the error for a mismatch includes the ``CAST`` that fixes it.
+As in the standard, each element table is named by its alias, which defaults
+to its table name; ``REFERENCES`` names a vertex table that way. Omitting
+``<properties>`` means ``ALL COLUMNS``, and an omitted ``LABEL`` defaults to
+the element table's name. Edge endpoints are joined to their referenced vertex
+table, so edges whose endpoint has no vertex are not loaded. Property types
+come from the source columns' catalog types, and ``CAST`` overrides them.
+Properties sharing a name under one label must resolve to the same type; the
+error for a mismatch includes the ``CAST`` that fixes it.
 """
 
 import difflib
 import re
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import (
     Dict,
     List,
@@ -73,10 +77,18 @@ from typing import (
     cast,
 )
 
+from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 from lark import Lark, Transformer
-from lark.exceptions import LarkError, VisitError
+from lark.exceptions import (
+    LarkError,
+    UnexpectedCharacters,
+    UnexpectedInput,
+    UnexpectedToken,
+    VisitError,
+)
 
+from .clients.client_factory import ClientFactory
 from .clients.response_utils import get_table_column_types, is_entity_not_found
 
 QualifiedName = Tuple[str, ...]
@@ -262,38 +274,33 @@ class AthenaTableMetadata:
 
     def __init__(
         self,
-        athena_client,
+        athena_client: Optional[BaseClient] = None,
         catalog: Optional[str] = None,
         database: Optional[str] = None,
     ):
-        self._client = athena_client
+        self._client = athena_client or ClientFactory().athena()
         self._catalog = catalog or self.DEFAULT_CATALOG
         self._database = database
-        self._cache: Dict[Tuple[str, str, str], List[Column]] = {}
 
     def get_columns(self, table: QualifiedName) -> List[Column]:
         location = self._qualify(table)
-        if location not in self._cache:
-            catalog, database, name = location
-            try:
-                resp = self._client.get_table_metadata(
-                    CatalogName=catalog, DatabaseName=database, TableName=name
-                )
-            except ClientError as e:
-                where = ".".join(location)
-                if is_entity_not_found(e):
-                    raise PropertyGraphSchemaError(
-                        f"Table '{where}' not found or not readable: {e}"
-                    ) from e
+        catalog, database, name = location
+        try:
+            resp = self._client.get_table_metadata(
+                CatalogName=catalog, DatabaseName=database, TableName=name
+            )
+        except ClientError as e:
+            where = ".".join(location)
+            if is_entity_not_found(e):
                 raise PropertyGraphSchemaError(
-                    f"Could not read metadata for table '{where}' (requires "
-                    f"athena:GetTableMetadata, and glue:GetTable for Glue "
-                    f"catalogs): {e}"
+                    f"Table '{where}' not found or not readable: {e}"
                 ) from e
-            self._cache[location] = [
-                Column(col, typ) for col, typ in get_table_column_types(resp)
-            ]
-        return self._cache[location]
+            raise PropertyGraphSchemaError(
+                f"Could not read metadata for table '{where}' (requires "
+                f"athena:GetTableMetadata, and glue:GetTable for Glue "
+                f"catalogs): {e}"
+            ) from e
+        return [Column(col, typ) for col, typ in get_table_column_types(resp)]
 
     def _qualify(self, table: QualifiedName) -> Tuple[str, str, str]:
         if len(table) == 3:
@@ -319,7 +326,7 @@ class AthenaTableMetadata:
 _GRAMMAR = r"""
 start: "CREATE"i "PROPERTY"i "GRAPH"i name \
        "VERTEX"i "TABLES"i "(" vertex ("," vertex)* ")" \
-       ["EDGE"i "TABLES"i "(" edge ("," edge)* ")"]
+       ["EDGE"i "TABLES"i "(" edge ("," edge)* ")"] [";"]
 
 vertex: name alias? key? label? props?
 edge:   name alias? key? source? dest? label? props?
@@ -381,9 +388,14 @@ class _Props:
     except_columns: List[str] = field(default_factory=list)
 
 
+class _EndpointClause(Enum):
+    SOURCE = "SOURCE"
+    DESTINATION = "DESTINATION"
+
+
 @dataclass
 class _Endpoint:
-    clause: str  # SOURCE or DESTINATION
+    clause: _EndpointClause
     column: str
     ref: str
     ref_columns: Optional[List[str]]
@@ -478,7 +490,7 @@ class _Builder(Transformer):
 
     def source(self, items):
         return _Endpoint(
-            "SOURCE",
+            _EndpointClause.SOURCE,
             items[0],
             ".".join(items[1]),
             items[2] if len(items) > 2 else None,
@@ -486,7 +498,7 @@ class _Builder(Transformer):
 
     def dest(self, items):
         return _Endpoint(
-            "DESTINATION",
+            _EndpointClause.DESTINATION,
             items[0],
             ".".join(items[1]),
             items[2] if len(items) > 2 else None,
@@ -516,14 +528,16 @@ class _Builder(Transformer):
     def edge(self, items):
         table, clauses = items[0], _collect(items[1:])
         endpoints = {e.clause: e for e in clauses.endpoints}
-        for clause in ("SOURCE", "DESTINATION"):
+        for clause in _EndpointClause:
             if clause not in endpoints:
                 raise PropertyGraphSyntaxError(
-                    f"Edge table '{clauses.alias or table[-1]}' has no {clause}: "
-                    f"declare {clause} KEY (<column>) REFERENCES <vertex table>. "
-                    f"Foreign keys are not read from the catalog."
+                    f"Edge table '{clauses.alias or table[-1]}' has no "
+                    f"{clause.value}: declare {clause.value} KEY (<column>) "
+                    f"REFERENCES <vertex table>. Foreign keys are not read from "
+                    f"the catalog."
                 )
-        source, dest = endpoints["SOURCE"], endpoints["DESTINATION"]
+        source = endpoints[_EndpointClause.SOURCE]
+        dest = endpoints[_EndpointClause.DESTINATION]
         props = clauses.props or _Props([], all_columns=True)
         return EdgeTable(
             table=table,
@@ -552,36 +566,54 @@ class _Builder(Transformer):
         return graph
 
 
-def _referenced_vertices(graph: PropertyGraph, ref: str) -> List[VertexTable]:
-    """Vertex tables a REFERENCES target names: by table name first, then label."""
-    ref = ref.lower()
-    by_name = [
-        v for v in graph.vertex_tables if ref in (v.name.lower(), v.table_name.lower())
-    ]
-    return by_name or [v for v in graph.vertex_tables if v.label.lower() == ref]
+def _referenced_vertex(graph: PropertyGraph, ref: str) -> Optional[VertexTable]:
+    """The vertex table a REFERENCES target names, by element table name."""
+    return next((v for v in graph.vertex_tables if v.name.lower() == ref.lower()), None)
+
+
+def _unknown_reference(
+    graph: PropertyGraph, edge: EdgeTable, clause: _EndpointClause, ref: str
+) -> PropertyGraphSyntaxError:
+    names = ", ".join(v.name for v in graph.vertex_tables)
+    hint = ""
+    # A common slip: naming the underlying table or label of an aliased vertex table.
+    for v in graph.vertex_tables:
+        if ref.lower() in (v.table_name.lower(), v.table[-1].lower(), v.label.lower()):
+            hint = f" Did you mean REFERENCES {_ddl_ident(v.name)}?"
+            break
+    return PropertyGraphSyntaxError(
+        f"Edge table '{edge.name}' {clause.value} REFERENCES '{ref}', which is not "
+        f"a declared vertex table. REFERENCES names a vertex table by its alias, "
+        f"or by its table name when it has no alias; declared: {names}.{hint}"
+    )
 
 
 def _validate(graph: PropertyGraph) -> None:
+    seen = set()
+    for element in [*graph.vertex_tables, *graph.edge_tables]:
+        if element.name.lower() in seen:
+            raise PropertyGraphSyntaxError(
+                f"Element table name '{element.name}' is used more than once: "
+                f"give each use of a table a unique alias, e.g. "
+                f"{_ddl_ident(element.table[-1])} AS <name>"
+            )
+        seen.add(element.name.lower())
     for e in graph.edge_tables:
-        for endpoint, ref, ref_columns in (
-            ("SOURCE", e.source_ref, e.source_ref_columns),
-            ("DESTINATION", e.dest_ref, e.dest_ref_columns),
+        for clause, ref, ref_columns in (
+            (_EndpointClause.SOURCE, e.source_ref, e.source_ref_columns),
+            (_EndpointClause.DESTINATION, e.dest_ref, e.dest_ref_columns),
         ):
-            targets = _referenced_vertices(graph, ref)
-            if not targets:
+            v = _referenced_vertex(graph, ref)
+            if v is None:
+                raise _unknown_reference(graph, e, clause, ref)
+            if ref_columns is not None and [c.lower() for c in ref_columns] != [
+                v.key.lower()
+            ]:
                 raise PropertyGraphSyntaxError(
-                    f"Edge table '{e.name}' {endpoint} REFERENCES '{ref}', "
-                    f"which is not a declared vertex table or label"
+                    f"Edge table '{e.name}' {clause.value} REFERENCES {ref} "
+                    f"({', '.join(ref_columns)}), but vertex table '{v.name}' "
+                    f"has KEY ({v.key}); the referenced columns must be its KEY"
                 )
-            if ref_columns is None:
-                continue
-            for v in targets:
-                if [c.lower() for c in ref_columns] != [v.key.lower()]:
-                    raise PropertyGraphSyntaxError(
-                        f"Edge table '{e.name}' {endpoint} REFERENCES {ref} "
-                        f"({', '.join(ref_columns)}), but vertex table '{v.name}' "
-                        f"has KEY ({v.key}); the referenced columns must be its KEY"
-                    )
 
 
 # Building the LALR parser is relatively expensive, so do it once at import.
@@ -602,8 +634,59 @@ def parse_property_graph(ddl: str) -> PropertyGraph:
         if isinstance(exc.orig_exc, PropertyGraphError):
             raise exc.orig_exc from None
         raise PropertyGraphSyntaxError(str(exc)) from exc
+    except UnexpectedInput as exc:
+        raise PropertyGraphSyntaxError(_syntax_error_message(ddl, exc)) from exc
     except LarkError as exc:
         raise PropertyGraphSyntaxError(str(exc)) from exc
+
+
+# lark terminal names a user would not recognise.
+_TERMINAL_DESCRIPTIONS = {
+    "CNAME": "identifier",
+    "QUOTED": "identifier",
+    "INT": "number",
+    "$END": "end of input",
+}
+
+
+def _describe_terminal(name: str) -> str:
+    if name in _TERMINAL_DESCRIPTIONS:
+        return _TERMINAL_DESCRIPTIONS[name]
+    try:
+        pattern = _PARSER.get_terminal(name).pattern
+    except KeyError:
+        return name
+    if pattern.type != "str":
+        return name
+    # Show keywords as written and quote punctuation.
+    value = pattern.value.upper()
+    return value if value.isalpha() else f"'{value}'"
+
+
+def _syntax_error_message(ddl: str, exc: UnexpectedInput) -> str:
+    """A user-facing message for a parse error: position, culprit, expectations."""
+    found = ""
+    expected: Sequence[str] = []
+    if isinstance(exc, UnexpectedToken):
+        tok = exc.token
+        found = "end of input" if tok.type == "$END" else repr(str(tok))
+        expected = sorted(exc.accepts or exc.expected)
+    elif isinstance(exc, UnexpectedCharacters):
+        found = repr(exc.char)
+        expected = sorted(exc.allowed or [])
+    message = f"Syntax error at line {exc.line}, column {exc.column}"
+    if found:
+        message += f": unexpected {found}"
+    message += "."
+    if expected:
+        names = dict.fromkeys(_describe_terminal(t) for t in expected)
+        message += f" Expected one of: {', '.join(names)}."
+    lines = ddl.splitlines()
+    if isinstance(exc.line, int) and 1 <= exc.line <= len(lines) and exc.column > 0:
+        text, col = lines[exc.line - 1], exc.column - 1
+        start = max(0, col - 60)  # keep long single-line statements readable
+        message += f"\n  {text[start:col + 40]}\n  {' ' * (col - start)}^"
+    return message
 
 
 # --------------------------------------------------------------------------- #
@@ -654,10 +737,15 @@ class _ResolvedProperty:
         return f"{expr} AS {_quote_header(header)}"
 
 
+class _ElementKind(Enum):
+    VERTEX = "vertex"
+    EDGE = "edge"
+
+
 @dataclass
 class _ResolvedElement:
     element: ElementTable
-    kind: str  # "vertex" or "edge"
+    kind: _ElementKind
     key: Optional[Column]  # vertex ~id column
     source: Optional[Column]  # edge ~from column
     dest: Optional[Column]  # edge ~to column
@@ -749,21 +837,19 @@ def _resolve_properties(
     return resolved
 
 
-def _resolve(
-    element: ElementTable, metadata: TableMetadataProvider
-) -> _ResolvedElement:
-    columns = {c.name.lower(): c for c in metadata.get_columns(element.table)}
+def _resolve(element: ElementTable, table_columns: List[Column]) -> _ResolvedElement:
+    columns = {c.name.lower(): c for c in table_columns}
     key = source = dest = None
     if isinstance(element, VertexTable):
         key = _id_column(columns, element, element.key, "KEY")
-        kind = "vertex"
+        kind = _ElementKind.VERTEX
     else:
         edge = cast(EdgeTable, element)
         source = _id_column(columns, edge, edge.source_key, "SOURCE KEY")
         dest = _id_column(columns, edge, edge.dest_key, "DESTINATION KEY")
         if edge.key:
             _lookup(columns, edge, edge.key, "KEY")
-        kind = "edge"
+        kind = _ElementKind.EDGE
     props = _resolve_properties(element, columns)
     return _ResolvedElement(element, kind, key, source, dest, props)
 
@@ -786,7 +872,8 @@ def _properties_fix(
 
 def _check_type_conflicts(elements: List[_ResolvedElement]) -> None:
     groups: Dict[
-        Tuple[str, str, str], List[Tuple[_ResolvedElement, _ResolvedProperty]]
+        Tuple[_ElementKind, str, str],
+        List[Tuple[_ResolvedElement, _ResolvedProperty]],
     ] = {}
     for r in elements:
         for p in r.properties:
@@ -807,7 +894,7 @@ def _check_type_conflicts(elements: List[_ResolvedElement]) -> None:
             if p.neptune_type != target
         )
         raise PropertyGraphSchemaError(
-            f"Property '{name}' of {kind} label '{label}' has conflicting types: "
+            f"Property '{name}' of {kind.value} label '{label}' has conflicting types: "
             f"{found}. Cast to a common type ({target}) in the PROPERTIES clause:\n"
             f"{fixes}"
         )
@@ -852,12 +939,33 @@ def _vertex_query(r: _ResolvedElement) -> str:
     )
 
 
-def _edge_query(r: _ResolvedElement) -> str:
+def _endpoint_join(alias: str, column: Column, vertex: _ResolvedElement) -> str:
+    """Join an edge endpoint column to the distinct keys of its vertex table.
+
+    Inner-joining drops edges whose endpoint has no vertex (and NULL endpoints);
+    without it, Neptune would load them against unlabeled, property-less
+    vertices. DISTINCT keeps duplicate vertex rows from multiplying edges.
+    """
+    assert vertex.key is not None
+    joined = f"{_quote_ident(alias)}.{_quote_ident('~key')}"
+    left = _quote_ident(column.name)
+    if _neptune_type(column.type) != _neptune_type(vertex.key.type):
+        # Neptune ids are strings, so compare as strings when the types differ.
+        left, joined = f"CAST({left} AS VARCHAR)", f"CAST({joined} AS VARCHAR)"
+    return (
+        f" JOIN (SELECT DISTINCT {_quote_ident(vertex.key.name)} AS "
+        f"{_quote_ident('~key')} FROM {_table_ref(vertex.element.table)}) "
+        f"{_quote_ident(alias)} ON {left} = {joined}"
+    )
+
+
+def _edge_query(
+    r: _ResolvedElement, source_vertex: _ResolvedElement, dest_vertex: _ResolvedElement
+) -> str:
     assert r.source is not None and r.dest is not None
-    source, dest = _quote_ident(r.source.name), _quote_ident(r.dest.name)
     cols = [
-        f"{source} AS {_quote_header('~from')}",
-        f"{dest} AS {_quote_header('~to')}",
+        f"{_quote_ident(r.source.name)} AS {_quote_header('~from')}",
+        f"{_quote_ident(r.dest.name)} AS {_quote_header('~to')}",
         f"{_quote_literal(r.element.label)} AS {_quote_header('~label')}",
     ]
     cols.extend(p.select() for p in r.properties)
@@ -865,7 +973,8 @@ def _edge_query(r: _ResolvedElement) -> str:
         "SELECT "
         + ", ".join(cols)
         + f" FROM {_table_ref(r.element.table)}"
-        + f" WHERE {source} IS NOT NULL AND {dest} IS NOT NULL"
+        + _endpoint_join("~source", r.source, source_vertex)
+        + _endpoint_join("~destination", r.dest, dest_vertex)
     )
 
 
@@ -879,7 +988,8 @@ def property_graph_to_sql(
     :class:`StaticTableMetadata` offline. Returns the vertex projection queries
     followed by the edge projection queries, in the ``~id``/``~label`` and
     ``~from``/``~to``/``~label`` load format expected by
-    ``SessionManager.import_from_table``.
+    ``SessionManager.import_from_table``. Each edge query joins its endpoints to
+    the referenced vertex tables, so only edges between declared vertices load.
 
     Raises:
         PropertyGraphSyntaxError: If the statement cannot be parsed.
@@ -890,7 +1000,25 @@ def property_graph_to_sql(
         if isinstance(property_graph, PropertyGraph)
         else parse_property_graph(property_graph)
     )
-    vertices = [_resolve(v, metadata) for v in graph.vertex_tables]
-    edges = [_resolve(e, metadata) for e in graph.edge_tables]
+    # Read each source table once per call, even when it backs several element
+    # tables; nothing is kept between calls, so schema changes are always seen.
+    tables: Dict[QualifiedName, List[Column]] = {}
+
+    def resolve(element: ElementTable) -> _ResolvedElement:
+        key = tuple(part.lower() for part in element.table)
+        if key not in tables:
+            tables[key] = metadata.get_columns(element.table)
+        return _resolve(element, tables[key])
+
+    vertices = [resolve(v) for v in graph.vertex_tables]
+    edges = [resolve(e) for e in graph.edge_tables]
     _check_type_conflicts(vertices + edges)
-    return [_vertex_query(r) for r in vertices] + [_edge_query(r) for r in edges]
+    by_name = {r.element.name.lower(): r for r in vertices}
+    return [_vertex_query(r) for r in vertices] + [
+        _edge_query(
+            r,
+            by_name[cast(EdgeTable, r.element).source_ref.lower()],
+            by_name[cast(EdgeTable, r.element).dest_ref.lower()],
+        )
+        for r in edges
+    ]

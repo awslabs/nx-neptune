@@ -51,7 +51,7 @@ await session.import_from_graph_schema(
 )
 ```
 
-Property types come from each source column's type in the Athena catalog; `CAST` overrides them, and a type mismatch between tables sharing a label fails with the `CAST` that fixes it. As in the standard, omitting `PROPERTIES` exposes all columns (`PROPERTIES ALL COLUMNS EXCEPT (...)` drops some), and `LABEL` defaults to the table alias/name. Reading the catalog needs `athena:GetTableMetadata`, plus `glue:GetTable` for Glue catalogs. To see the generated SQL without importing, call `nx_neptune.property_graph_to_sql(DDL, AthenaTableMetadata(athena_client, catalog, database))`.
+Property types come from each source column's type in the Athena catalog; `CAST` overrides them, and a type mismatch between tables sharing a label fails with the `CAST` that fixes it. As in the standard, omitting `PROPERTIES` exposes all columns (`PROPERTIES ALL COLUMNS EXCEPT (...)` drops some), and `LABEL` defaults to the table alias/name. `REFERENCES` names a vertex table by its alias, and each edge endpoint is joined to that table's keys, so only edges between declared vertices are loaded. Reading the catalog needs `athena:GetTableMetadata`, plus `glue:GetTable` for Glue catalogs. To see the generated SQL without importing, call `nx_neptune.property_graph_to_sql(DDL, AthenaTableMetadata(athena_client, catalog, database))`.
 
 **Use cases demonstrated in the notebooks:**
 

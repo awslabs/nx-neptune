@@ -77,13 +77,47 @@ def test_paysim_generates_typed_vertex_and_edge_queries():
         '"name" AS "name" FROM "accounts" WHERE "name" IS NOT NULL'
     )
     # Column references use the catalog's spelling; property names keep the DDL's.
+    # Each endpoint joins the referenced vertex table's keys.
     assert edge == (
         'SELECT "nameorig" AS "~from", "namedest" AS "~to", '
         '\'transfer\' AS "~label", "step" AS "step:Int", '
         '"amount" AS "amount:Double", "isfraud" AS "isFraud:Int" '
         'FROM "transactions" '
-        'WHERE "nameorig" IS NOT NULL AND "namedest" IS NOT NULL'
+        'JOIN (SELECT DISTINCT "name" AS "~key" FROM "accounts") "~source" '
+        'ON "nameorig" = "~source"."~key" '
+        'JOIN (SELECT DISTINCT "name" AS "~key" FROM "accounts") "~destination" '
+        'ON "namedest" = "~destination"."~key"'
     )
+
+
+def test_edge_endpoints_join_their_own_vertex_tables():
+    edge = to_sql(
+        """
+        CREATE PROPERTY GRAPH g
+          VERTEX TABLES (
+            lake.accounts AS customer KEY (id),
+            lake.accounts AS merchant KEY (id)
+          )
+          EDGE TABLES (
+            payments
+              SOURCE KEY (payer) REFERENCES customer (id)
+              DESTINATION KEY (payee) REFERENCES merchant
+              NO PROPERTIES
+          )
+        """,
+        {
+            "lake.accounts": [("id", "bigint")],
+            "payments": [("payer", "bigint"), ("payee", "string")],
+        },
+    )[2]
+    assert (
+        'JOIN (SELECT DISTINCT "id" AS "~key" FROM "lake"."accounts") "~source" '
+        'ON "payer" = "~source"."~key"'
+    ) in edge
+    # Neptune ids are strings, so mismatched key types are compared as strings.
+    assert (
+        'ON CAST("payee" AS VARCHAR) = CAST("~destination"."~key" AS VARCHAR)'
+    ) in edge
 
 
 def test_omitted_properties_means_all_columns():
@@ -392,6 +426,31 @@ def test_reference_columns_must_match_vertex_key():
             """)
 
 
+@pytest.mark.parametrize("ref", ["accounts", "person"])
+def test_aliased_vertex_table_is_referenced_by_alias(ref):
+    # SQL:2023 references the element table name (its alias), not the
+    # underlying table or the label.
+    with pytest.raises(
+        PropertyGraphSyntaxError, match=r"REFERENCES 'accounts'|REFERENCES 'person'"
+    ) as err:
+        parse_property_graph(f"""
+            CREATE PROPERTY GRAPH g
+              VERTEX TABLES ( accounts AS customer KEY (id) LABEL person )
+              EDGE TABLES (
+                e SOURCE KEY (a) REFERENCES {ref}
+                  DESTINATION KEY (b) REFERENCES customer
+              )
+            """)
+    assert "Did you mean REFERENCES customer?" in str(err.value)
+
+
+def test_element_table_names_must_be_unique():
+    with pytest.raises(PropertyGraphSyntaxError, match="'accounts' is used more"):
+        parse_property_graph(
+            "CREATE PROPERTY GRAPH g VERTEX TABLES ( accounts KEY (id), accounts KEY (id) )"
+        )
+
+
 def test_reference_by_table_name_when_no_alias():
     graph = parse_property_graph("""
         CREATE PROPERTY GRAPH g
@@ -419,6 +478,37 @@ def test_missing_vertex_tables_rejected():
 def test_garbage_input_rejected():
     with pytest.raises(PropertyGraphSyntaxError):
         parse_property_graph("this is not a property graph")
+
+
+def test_syntax_error_shows_position_expectation_and_line():
+    with pytest.raises(PropertyGraphSyntaxError) as err:
+        parse_property_graph(
+            "CREATE PROPERTY GRAPH g\n"
+            "  VERTEX TABLES ( v KEY (id) )\n"
+            "  EDGE TABLE ( e SOURCE KEY (a) REFERENCES v DESTINATION KEY (b) REFERENCES v )"
+        )
+    message = str(err.value)
+    assert message.startswith(
+        "Syntax error at line 3, column 8: unexpected 'TABLE'. Expected one of: TABLES."
+    )
+    assert message.splitlines()[1:] == [
+        "    EDGE TABLE ( e SOURCE KEY (a) REFERENCES v DE",
+        "         ^",
+    ]
+
+
+def test_syntax_error_names_punctuation_and_end_of_input():
+    with pytest.raises(PropertyGraphSyntaxError) as err:
+        parse_property_graph("CREATE PROPERTY GRAPH g VERTEX TABLES ( v KEY (id)")
+    assert "unexpected end of input. Expected one of: ',', LABEL, NO" in str(err.value)
+    assert "CNAME" not in str(err.value)
+
+
+def test_trailing_semicolon_accepted():
+    graph = parse_property_graph(
+        "CREATE PROPERTY GRAPH g VERTEX TABLES ( v KEY (id) );"
+    )
+    assert graph.vertex_tables[0].key == "id"
 
 
 # --------------------------------------------------------------------------- #
@@ -467,13 +557,49 @@ def test_athena_metadata_qualifies_names_and_includes_partition_keys():
     assert [(c.name, c.type) for c in events] == [("id", "bigint"), ("day", "date")]
     metadata.get_columns(("other", "t"))
     metadata.get_columns(("cat", "db", "t"))
-    metadata.get_columns(("events",))  # cached
 
     assert athena.calls == [
         ("AwsDataCatalog", "lake", "events"),
         ("AwsDataCatalog", "other", "t"),
         ("cat", "db", "t"),
     ]
+
+
+def test_each_source_table_is_read_once_per_translation():
+    athena = FakeAthena(
+        {
+            ("AwsDataCatalog", "db", "transactions"): table_metadata(
+                [("nameorig", "string"), ("namedest", "string")]
+            )
+        }
+    )
+    ddl = """
+        CREATE PROPERTY GRAPH g
+          VERTEX TABLES (
+            transactions AS sender KEY (nameOrig) NO PROPERTIES,
+            transactions AS recipient KEY (nameDest) NO PROPERTIES
+          )
+          EDGE TABLES (
+            Transactions
+              SOURCE KEY (nameOrig) REFERENCES sender
+              DESTINATION KEY (nameDest) REFERENCES recipient
+          )
+        """
+    metadata = AthenaTableMetadata(athena, database="db")
+    property_graph_to_sql(ddl, metadata)
+    assert athena.calls == [("AwsDataCatalog", "db", "transactions")]
+    property_graph_to_sql(ddl, metadata)  # nothing is kept between calls
+    assert len(athena.calls) == 2
+
+
+def test_athena_metadata_defaults_to_shared_athena_client():
+    athena = FakeAthena({})
+    with patch("nx_neptune.property_graph.ClientFactory") as factory:
+        factory.return_value.athena.return_value = athena
+        metadata = AthenaTableMetadata(database="db")
+    with pytest.raises(PropertyGraphSchemaError, match="not found"):
+        metadata.get_columns(("t",))
+    assert athena.calls == [("AwsDataCatalog", "db", "t")]
 
 
 def test_athena_metadata_errors():
