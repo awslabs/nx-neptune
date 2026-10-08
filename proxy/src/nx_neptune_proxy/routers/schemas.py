@@ -67,9 +67,6 @@ class NeptuneAnalyticsGraphsResponse(BaseModel):
 class ProjectionCreate(BaseModel):
     catalog: str = "AwsDataCatalog"
     database: Optional[str] = None
-    sql_query: Optional[str] = None
-    node_query: Optional[str] = None
-    edge_query: Optional[str] = None
     graph_name: Optional[str] = Field(
         default=None,
         min_length=GRAPH_NAME_MIN_LENGTH,
@@ -78,15 +75,12 @@ class ProjectionCreate(BaseModel):
     )
     graph_memory_gb: int = 16
     s3_staging_bucket: Optional[str] = None
-    project_id: Optional[str] = None
+    project_id: str
 
 
 class ProjectionUpdate(BaseModel):
     catalog: Optional[str] = None
     database: Optional[str] = None
-    sql_query: Optional[str] = None
-    node_query: Optional[str] = None
-    edge_query: Optional[str] = None
     graph_name: Optional[str] = Field(
         default=None,
         min_length=GRAPH_NAME_MIN_LENGTH,
@@ -133,9 +127,6 @@ class ProjectionResponse(BaseModel):
     status: str
     catalog: str
     database: Optional[str] = None
-    sql_query: Optional[str] = None
-    node_query: Optional[str] = None
-    edge_query: Optional[str] = None
     graph_name: Optional[str] = None
     graph_id: Optional[str] = None
     graph_endpoint: Optional[str] = None
@@ -147,3 +138,123 @@ class ProjectionResponse(BaseModel):
     progress: float = 0
     error: Optional[str] = None
     created_at: datetime
+
+
+# --- Project import/export ---
+
+
+class ProjectionExport(BaseModel):
+    """Projection config fields only — no runtime state."""
+
+    catalog: str = Field("AwsDataCatalog", description="Athena catalog name")
+    database: Optional[str] = Field(None, description="Athena database name")
+    node_query: Optional[str] = Field(
+        None,
+        description="SQL query that produces nodes (must include ~id and ~label columns)",
+    )
+    edge_query: Optional[str] = Field(
+        None,
+        description="SQL query that produces edges (must include ~from, ~to, and ~label columns)",
+    )
+    graph_name: Optional[str] = Field(
+        None,
+        description="Neptune Analytics graph name suffix (prefix is added automatically)",
+    )
+    graph_memory_gb: int = Field(16, description="Graph memory allocation in GB")
+    s3_staging_bucket: Optional[str] = Field(
+        None,
+        description="S3 bucket path for staging Athena results (e.g. s3://bucket/prefix)",
+    )
+    node_queries: list[str] = Field(
+        default_factory=list, description="Node SQL queries"
+    )
+    edge_queries: list[str] = Field(
+        default_factory=list, description="Edge SQL queries"
+    )
+
+    model_config = {"extra": "forbid"}
+
+    @classmethod
+    def from_projection(
+        cls,
+        pr,
+        node_queries: Optional[list[str]] = None,
+        edge_queries: Optional[list[str]] = None,
+    ) -> "ProjectionExport":
+        """Create from a Projection dataclass instance."""
+        return cls(  # type: ignore[call-arg]
+            catalog=pr.catalog,
+            database=pr.database,
+            graph_name=pr.graph_name,
+            graph_memory_gb=pr.graph_memory_gb,
+            s3_staging_bucket=pr.s3_staging_bucket,
+            node_queries=node_queries or [],
+            edge_queries=edge_queries or [],
+        )
+
+
+class ProjectExportPayload(BaseModel):
+    """Top-level export format for a single project."""
+
+    version: str = "1.0"
+    project: dict
+    projections: list[ProjectionExport] = []
+
+    model_config = {"extra": "forbid"}
+
+    @classmethod
+    def from_project(
+        cls, project, projections: list, queries_by_projection: Optional[dict] = None
+    ) -> "ProjectExportPayload":
+        """Build export payload from a project and its projections.
+
+        Args:
+            queries_by_projection: dict mapping projection_id to (node_queries, edge_queries) tuple of SQL strings.
+        """
+        qmap = queries_by_projection or {}
+        return cls(
+            project={"name": project.name},
+            projections=[
+                ProjectionExport.from_projection(
+                    pr,
+                    node_queries=qmap.get(pr.id, ([], []))[0],
+                    edge_queries=qmap.get(pr.id, ([], []))[1],
+                )
+                for pr in projections
+            ],
+        )
+
+
+# --- Multi-Query ---
+
+
+class NodeQueryInput(BaseModel):
+    id: Optional[str] = None
+    sql: str = ""
+
+
+class EdgeQueryInput(BaseModel):
+    id: Optional[str] = None
+    sql: str = ""
+
+
+class NodeQueryResponse(BaseModel):
+    id: str
+    sql: str
+    position: int
+
+
+class EdgeQueryResponse(BaseModel):
+    id: str
+    sql: str
+    position: int
+
+
+class QueriesPayload(BaseModel):
+    node_queries: list[NodeQueryInput] = []
+    edge_queries: list[EdgeQueryInput] = []
+
+
+class QueriesResponse(BaseModel):
+    node_queries: list[NodeQueryResponse]
+    edge_queries: list[EdgeQueryResponse]
