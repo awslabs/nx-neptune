@@ -47,6 +47,7 @@ class Settings:
     """
 
     log_level: str = "INFO"
+    log_format: str = "json"
     allowed_origins: list[str] = None  # type: ignore[assignment]
     host: str = "127.0.0.1"
     trusted_hosts: frozenset[str] = None  # type: ignore[assignment]
@@ -94,6 +95,7 @@ class Settings:
 
         return cls(
             log_level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+            log_format=os.environ.get("LOG_FORMAT", "json").lower(),
             allowed_origins=origins,
             host=os.environ.get("HOST", "127.0.0.1"),
             trusted_hosts=trusted_hosts,

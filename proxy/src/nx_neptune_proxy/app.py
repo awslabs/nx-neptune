@@ -3,6 +3,7 @@
 
 import asyncio
 import logging
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -34,11 +35,52 @@ init_db()
 
 # --- Structured logging ---
 
-logging.basicConfig(
-    level=settings.log_level,
-    format='{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","message":"%(message)s"}',
-    datefmt="%Y-%m-%dT%H:%M:%S",
-)
+
+class _ColorLevelFormatter(logging.Formatter):
+    """Formatter that colorizes the level name with ANSI codes (uvicorn-style).
+
+    Used only for the human-readable ``text`` format on a TTY, so ingested
+    JSON logs never contain escape sequences.
+    """
+
+    _COLORS = {
+        "DEBUG": "\033[36m",  # cyan
+        "INFO": "\033[32m",  # green
+        "WARNING": "\033[33m",  # yellow
+        "ERROR": "\033[31m",  # red
+        "CRITICAL": "\033[1;31m",  # bold red
+    }
+    _RESET = "\033[0m"
+
+    def format(self, record: logging.LogRecord) -> str:
+        color = self._COLORS.get(record.levelname)
+        if color:
+            # Pad before coloring so columns stay aligned regardless of codes.
+            record.levelname = f"{color}{record.levelname:<7}{self._RESET}"
+        return super().format(record)
+
+
+if settings.log_format == "text":
+    # Human-readable for local dev: time-only (no date, no millis); colorize
+    # the level only on a TTY.
+    _datefmt = "%H:%M:%S"
+    _plain_fmt = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
+    logging.basicConfig(level=settings.log_level, format=_plain_fmt, datefmt=_datefmt)
+    if sys.stdout.isatty():
+        _color_fmt = "%(asctime)s %(levelname)s %(name)s | %(message)s"
+        for _h in logging.getLogger().handlers:
+            _h.setFormatter(_ColorLevelFormatter(_color_fmt, datefmt=_datefmt))
+else:
+    # JSON for log ingestion in deployed environments (the default).
+    logging.basicConfig(
+        level=settings.log_level,
+        format=(
+            '{"time":"%(asctime)s","level":"%(levelname)s",'
+            '"logger":"%(name)s","message":"%(message)s"}'
+        ),
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    )
+
 logger = logging.getLogger("nx_neptune_proxy")
 
 # --- Proxy access token (per-run bearer token) ---
