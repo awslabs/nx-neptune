@@ -9,9 +9,9 @@ dev:              ## Run with auto-reload for development.
 	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
 	uvicorn nx_neptune_proxy.app:app --reload --host 127.0.0.1 --port 8080
 
-dev-debug:        ## Run dev server with DEBUG logging for nx_neptune.property_graph only.
-	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
-	python -c "import logging; logging.getLogger('nx_neptune.property_graph').setLevel(logging.DEBUG); import uvicorn; uvicorn.run('nx_neptune_proxy.app:app', reload=True, host='127.0.0.1', port=8080)"
+dev-debug:        ## Run dev server with DEBUG logging (verbose, incl. AWS SDK).
+	LOG_LEVEL=DEBUG NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
+	uvicorn nx_neptune_proxy.app:app --reload --host 127.0.0.1 --port 8080
 
 install:          ## Install proxy in editable mode with test deps.
 	pip install -e ".[test]"
