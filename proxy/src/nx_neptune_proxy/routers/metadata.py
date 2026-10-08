@@ -37,6 +37,7 @@ _databases_cache: "TTLCache[str, list]" = TTLCache(_LIST_TTL)  # key: catalog
 _tables_cache: "TTLCache[tuple[str, str], list]" = TTLCache(
     _LIST_TTL
 )  # key: (catalog, database)
+_buckets_cache: "TTLCache[str, list]" = TTLCache(_LIST_TTL)  # key: region
 
 
 @router.get("/config", summary="Get server configuration")
@@ -140,11 +141,16 @@ def list_s3_buckets():
     filter_region = get_settings().region
     if not filter_region:
         return {"buckets": []}
+    cached = _buckets_cache.get(filter_region)
+    if cached is not None:
+        return {"buckets": cached}
+    logger.info("Fetching S3 buckets for region=%s", filter_region)
     client = ClientFactory().s3()
     buckets = [
         b["Name"]
         for b in client.list_buckets(BucketRegion=filter_region).get("Buckets", [])
     ]
+    _buckets_cache.set(filter_region, buckets)
     return {"buckets": buckets}
 
 
