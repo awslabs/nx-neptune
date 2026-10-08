@@ -26,6 +26,14 @@ from nx_neptune.property_graph import (
 )
 from nx_neptune.session_manager import SessionManager
 
+
+@pytest.fixture(autouse=True)
+def _clear_metadata_cache():
+    """Reset the shared AthenaTableMetadata cache so tests don't leak hits."""
+    AthenaTableMetadata._cache.clear()
+    yield
+    AthenaTableMetadata._cache.clear()
+
 # Catalog column names are lower-case, as Glue stores them.
 PAYSIM_TABLES = {
     "accounts": [("name", "varchar(64)"), ("region", "string")],
@@ -565,7 +573,7 @@ def test_athena_metadata_qualifies_names_and_includes_partition_keys():
     ]
 
 
-def test_each_source_table_is_read_once_per_translation():
+def test_source_table_metadata_is_cached_across_translations():
     athena = FakeAthena(
         {
             ("AwsDataCatalog", "db", "transactions"): table_metadata(
@@ -588,8 +596,10 @@ def test_each_source_table_is_read_once_per_translation():
     metadata = AthenaTableMetadata(athena, database="db")
     property_graph_to_sql(ddl, metadata)
     assert athena.calls == [("AwsDataCatalog", "db", "transactions")]
-    property_graph_to_sql(ddl, metadata)  # nothing is kept between calls
-    assert len(athena.calls) == 2
+    # Within the TTL the result is cached, so a second translation does not
+    # re-read the table from Athena.
+    property_graph_to_sql(ddl, metadata)
+    assert len(athena.calls) == 1
 
 
 def test_athena_metadata_defaults_to_shared_athena_client():
