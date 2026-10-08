@@ -63,6 +63,7 @@ error for a mismatch includes the ``CAST`` that fixes it.
 
 import difflib
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -91,8 +92,12 @@ from lark.exceptions import (
 
 from .clients.client_factory import ClientFactory
 from .clients.response_utils import get_table_column_types, is_entity_not_found
+from .utils.ttl_cache import TTLCache
 
 logger = logging.getLogger(__name__)
+
+# TTL (seconds) for cached Athena GetTableMetadata results; 0 disables caching.
+_METADATA_TTL = float(os.environ.get("ATHENA_METADATA_TTL", "60"))
 
 QualifiedName = Tuple[str, ...]
 
@@ -271,9 +276,20 @@ class AthenaTableMetadata:
     Serves Glue-backed and federated (connector) catalogs alike. Table names may
     be ``table``, ``database.table`` or ``catalog.database.table``; missing parts
     fall back to ``catalog`` and ``database``.
+
+    Results are cached in a process-wide, time-bounded cache shared across all
+    instances, keyed by the resolved ``(catalog, database, name)``. An entry is
+    reused for up to ``ATHENA_METADATA_TTL`` seconds (default 60; set ``0`` to
+    disable), so repeated lookups of the same table within that window — within
+    a single translation or across translations — do not re-call Athena. Set
+    ``ATHENA_METADATA_TTL=0`` to always read fresh.
     """
 
     DEFAULT_CATALOG = "AwsDataCatalog"
+
+    # Shared across instances (a new provider is often built per request), so
+    # the cache must outlive any single instance. Keyed by (catalog, db, name).
+    _cache: "TTLCache[Tuple[str, str, str], List[Column]]" = TTLCache(_METADATA_TTL)
 
     def __init__(
         self,
@@ -287,6 +303,12 @@ class AthenaTableMetadata:
 
     def get_columns(self, table: QualifiedName) -> List[Column]:
         location = self._qualify(table)
+
+        cached = self._cache.get(location)
+        if cached is not None:
+            logger.debug("Athena metadata cache hit for %s", ".".join(location))
+            return cached
+
         catalog, database, name = location
         try:
             logger.info(
@@ -309,7 +331,9 @@ class AthenaTableMetadata:
                 f"athena:GetTableMetadata, and glue:GetTable for Glue "
                 f"catalogs): {e}"
             ) from e
-        return [Column(col, typ) for col, typ in get_table_column_types(resp)]
+        columns = [Column(col, typ) for col, typ in get_table_column_types(resp)]
+        self._cache.set(location, columns)
+        return columns
 
     def _qualify(self, table: QualifiedName) -> Tuple[str, str, str]:
         if len(table) == 3:
