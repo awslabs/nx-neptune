@@ -162,8 +162,9 @@ def validate_query(projection_id: str):
     "/{projection_id}/translate",
     summary="Translate a CREATE PROPERTY GRAPH statement into node/edge queries",
     response_model=TranslateResponse,
+    dependencies=[Depends(_get_projection_or_404)],
 )
-def translate_projection(projection_id: str, body: TranslateRequest):
+def translate_pgq_statement(projection_id: str, body: TranslateRequest):
     """Translate PGQ DDL into node/edge projection SQL.
 
     Pure: the generated queries are returned, not persisted (the client saves
@@ -171,7 +172,6 @@ def translate_projection(projection_id: str, body: TranslateRequest):
     returned as a 200 with ``error`` set, so the UI can display the message.
     """
 
-    _get_projection_or_404(projection_id)
     try:
         node_queries, edge_queries = projection_service.translate(
             projection_id, body.property_graph
