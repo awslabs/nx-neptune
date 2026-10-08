@@ -57,8 +57,8 @@ async def test_translate_splits_vertex_and_edge_queries(client):
     ddl = (
         "CREATE PROPERTY GRAPH g "
         "VERTEX TABLES ( accounts KEY (id) LABEL account PROPERTIES (name) ) "
-        "EDGE TABLES ( transfers SOURCE (src) REFERENCES account "
-        "DESTINATION (dst) REFERENCES account LABEL transfer PROPERTIES (amount) )"
+        "EDGE TABLES ( transfers SOURCE (src) REFERENCES accounts "
+        "DESTINATION (dst) REFERENCES accounts LABEL transfer PROPERTIES (amount) )"
     )
     # Keep property_graph_to_sql real but stub the catalog metadata so no AWS
     # call is made: accounts has id/name, transfers has src/dst/amount.
