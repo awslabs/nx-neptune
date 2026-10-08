@@ -1,8 +1,12 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import logging
+import os
+
 from fastapi import APIRouter, HTTPException, Query
 from nx_neptune.clients.client_factory import ClientFactory
+from nx_neptune.utils.ttl_cache import TTLCache
 
 from nx_neptune_proxy.config import get_settings
 from nx_neptune_proxy.routers.schemas import (
@@ -20,6 +24,19 @@ from nx_neptune_proxy.utils.aws_helper import (
 )
 
 router = APIRouter(prefix="/api/v0/metadata", tags=["metadata"])
+
+logger = logging.getLogger(__name__)
+
+# TTL (seconds) for cached Athena discovery lists backing the UI dropdowns;
+# 0 disables caching. Separate from the schema cache (ATHENA_METADATA_TTL) so
+# dropdown freshness can be tuned independently.
+_LIST_TTL = float(os.environ.get("ATHENA_LIST_TTL", "60"))
+
+# Each dropdown endpoint keeps its own cache with its own key shape.
+_databases_cache: "TTLCache[str, list]" = TTLCache(_LIST_TTL)  # key: catalog
+_tables_cache: "TTLCache[tuple[str, str], list]" = TTLCache(
+    _LIST_TTL
+)  # key: (catalog, database)
 
 
 @router.get("/config", summary="Get server configuration")
@@ -58,9 +75,15 @@ def list_athena_databases(
     catalog: str = Query("AwsDataCatalog", description="Athena catalog name")
 ):
     """List all databases in the specified Athena catalog"""
+    cached = _databases_cache.get(catalog)
+    if cached is not None:
+        return {"databases": cached}
+    logger.info("Fetching Athena databases for catalog=%s", catalog)
     client = ClientFactory().athena()
     items = paginate_aws(client.list_databases, "DatabaseList", CatalogName=catalog)
-    return {"databases": [db["Name"] for db in items]}
+    databases = [db["Name"] for db in items]
+    _databases_cache.set(catalog, databases)
+    return {"databases": databases}
 
 
 @router.get(
@@ -71,6 +94,15 @@ def list_athena_tables(
     catalog: str = Query("AwsDataCatalog", description="Athena catalog name"),
 ):
     """List all tables in the specified Athena database"""
+    key = (catalog, database)
+    cached = _tables_cache.get(key)
+    if cached is not None:
+        return {"tables": cached}
+    logger.info(
+        "Fetching Athena tables for catalog=%s database=%s",
+        catalog,
+        database,
+    )
     client = ClientFactory().athena()
     items = paginate_aws(
         client.list_table_metadata,
@@ -78,7 +110,9 @@ def list_athena_tables(
         CatalogName=catalog,
         DatabaseName=database,
     )
-    return {"tables": [t["Name"] for t in items]}
+    tables = [t["Name"] for t in items]
+    _tables_cache.set(key, tables)
+    return {"tables": tables}
 
 
 @router.get(

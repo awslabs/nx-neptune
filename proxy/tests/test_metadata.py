@@ -9,6 +9,23 @@ from httpx import ASGITransport, AsyncClient
 
 from nx_neptune_proxy.app import app
 from nx_neptune_proxy.auth import get_token
+from nx_neptune_proxy.routers import metadata as metadata_router
+
+
+@pytest.fixture(autouse=True)
+def _clear_metadata_list_caches():
+    """Reset per-endpoint dropdown caches so cached results don't leak between tests."""
+    for cache in (
+        metadata_router._databases_cache,
+        metadata_router._tables_cache,
+    ):
+        cache.clear()
+    yield
+    for cache in (
+        metadata_router._databases_cache,
+        metadata_router._tables_cache,
+    ):
+        cache.clear()
 
 
 @pytest.fixture
