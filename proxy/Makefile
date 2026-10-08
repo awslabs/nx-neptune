@@ -1,4 +1,4 @@
-.PHONY: dev dev-debug install test build run stop clean ui
+.PHONY: dev install test build run stop clean ui
 
 RUNTIME ?= finch
 
@@ -7,7 +7,7 @@ ui:               ## Build frontend into ui/ directory.
 
 dev:              ## Run with auto-reload for development.
 	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
-	uvicorn nx_neptune_proxy.app:app --reload --host 127.0.0.1 --port 8080
+	uvicorn nx_neptune_proxy.app:app --reload --no-access-log --host 127.0.0.1 --port 8080
 
 install:          ## Install proxy in editable mode with test deps.
 	pip install -e ".[test]"
