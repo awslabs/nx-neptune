@@ -62,6 +62,7 @@ error for a mismatch includes the ``CAST`` that fixes it.
 """
 
 import difflib
+import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -90,6 +91,8 @@ from lark.exceptions import (
 
 from .clients.client_factory import ClientFactory
 from .clients.response_utils import get_table_column_types, is_entity_not_found
+
+logger = logging.getLogger(__name__)
 
 QualifiedName = Tuple[str, ...]
 
@@ -286,6 +289,12 @@ class AthenaTableMetadata:
         location = self._qualify(table)
         catalog, database, name = location
         try:
+            logger.debug(
+                "Fetching Athena table metadata for %s.%s.%s",
+                catalog,
+                database,
+                name,
+            )
             resp = self._client.get_table_metadata(
                 CatalogName=catalog, DatabaseName=database, TableName=name
             )
