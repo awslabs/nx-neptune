@@ -289,7 +289,7 @@ class AthenaTableMetadata:
         location = self._qualify(table)
         catalog, database, name = location
         try:
-            logger.debug(
+            logger.info(
                 "Fetching Athena table metadata for %s.%s.%s",
                 catalog,
                 database,
