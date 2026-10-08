@@ -66,6 +66,33 @@ session = SessionManager(
 # Create graph, import data, run algorithms, export, destroy
 ```
 
+## Declaring the graph schema
+
+Instead of hand-writing the Athena `SELECT` statements that alias source columns into Neptune's load format (`~id`/`~label` for vertices, `~from`/`~to`/`~label` for edges), you can declare the mapping with the standard SQL/PGQ (SQL:2023) `CREATE PROPERTY GRAPH` DDL. `import_from_graph_schema` translates the DDL into those projection queries and runs the same Athena → S3 → Neptune import path as `import_from_table`:
+
+```python
+DDL = """
+CREATE PROPERTY GRAPH financial
+  VERTEX TABLES (
+    accounts AS customer KEY (name) LABEL customer PROPERTIES (name)
+  )
+  EDGE TABLES (
+    transactions
+      SOURCE KEY (nameOrig) REFERENCES customer
+      DESTINATION KEY (nameDest) REFERENCES customer
+      LABEL transfer
+      PROPERTIES (step, CAST(amount AS DOUBLE) AS amount, isFraud)
+  )
+"""
+
+graph = await session.get_or_create_graph()
+await session.import_from_graph_schema(
+    graph, s3_location, DDL, catalog=catalog, database=database
+)
+```
+
+Property types are read from the Athena catalog, and `CAST` overrides them. Omitting `PROPERTIES` exposes all columns. See [Property Graph Schema](/data-lake/property-graph-schema/) for the full syntax, type rules and required permissions.
+
 ## Instance management
 
 For explicit control over Neptune Analytics instance lifecycle (create, start, stop, delete), see the instance management module:

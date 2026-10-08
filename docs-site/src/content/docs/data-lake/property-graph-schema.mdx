@@ -1,0 +1,136 @@
+---
+title: Property Graph Schema
+---
+
+Declare how your source tables map to a graph using the standard SQL/PGQ (SQL:2023) `CREATE PROPERTY GRAPH` DDL, instead of hand-writing the Athena projection queries.
+
+## Overview
+
+The [Session Manager](/data-lake/session-manager/) import path expects Athena `SELECT` statements that alias source columns into Neptune Analytics' Gremlin CSV load format — `~id`/`~label` for vertices and `~from`/`~to`/`~label` for edges, with typed property headers such as `amount:Double`. Writing those by hand is repetitive and easy to get subtly wrong.
+
+`import_from_graph_schema` lets you declare the mapping instead. It reads each source table's columns and types from the Athena catalog, resolves the DDL into the same projection queries, and runs them through the unchanged Athena → S3 → Neptune import path — so only the front-end differs from `import_from_table`.
+
+## Example
+
+```python
+DDL = """
+CREATE PROPERTY GRAPH financial
+  VERTEX TABLES (
+    accounts AS customer
+      KEY (name)
+      LABEL customer
+      PROPERTIES (name)
+  )
+  EDGE TABLES (
+    transactions
+      SOURCE KEY (nameOrig) REFERENCES customer
+      DESTINATION KEY (nameDest) REFERENCES customer
+      LABEL transfer
+      PROPERTIES (step, CAST(amount AS DOUBLE) AS amount, isFraud)
+  )
+"""
+
+graph = await session.get_or_create_graph()
+await session.import_from_graph_schema(
+    graph, s3_location, DDL, catalog=catalog, database=database
+)
+```
+
+With `step` and `isFraud` stored as `int` and `amount` as `decimal(10,2)`, this translates to one projection query per vertex table, then one per edge table. Each edge endpoint is joined to the keys of the vertex table it `REFERENCES`:
+
+```sql
+SELECT DISTINCT "name" AS "~id", 'customer' AS "~label", "name" AS "name"
+FROM "accounts" WHERE "name" IS NOT NULL;
+
+SELECT "nameorig" AS "~from", "namedest" AS "~to", 'transfer' AS "~label",
+       "step" AS "step:Int", CAST("amount" AS DOUBLE) AS "amount:Double",
+       "isfraud" AS "isFraud:Int"
+FROM "transactions"
+JOIN (SELECT DISTINCT "name" AS "~key" FROM "accounts") "~source"
+  ON "nameorig" = "~source"."~key"
+JOIN (SELECT DISTINCT "name" AS "~key" FROM "accounts") "~destination"
+  ON "namedest" = "~destination"."~key";
+```
+
+## Syntax
+
+```
+CREATE PROPERTY GRAPH <name>
+  VERTEX TABLES (
+    <table> [ [AS] <alias> ]
+      KEY ( <column> )
+      [ LABEL <label> ]
+      [ <properties> ]
+    [, ...]
+  )
+  [ EDGE TABLES (
+    <table> [ [AS] <alias> ]
+      [ KEY ( <column> ) ]
+      SOURCE      [ KEY ] ( <column> ) REFERENCES <vertex table> [ ( <column> ) ]
+      DESTINATION [ KEY ] ( <column> ) REFERENCES <vertex table> [ ( <column> ) ]
+      [ LABEL <label> ]
+      [ <properties> ]
+    [, ...]
+  ) ]
+
+<properties> ::= PROPERTIES ( <property> [, <property>]* )
+               | PROPERTIES [ARE] ALL COLUMNS [ EXCEPT ( <column> [, ...] ) ]
+               | NO PROPERTIES
+<property>   ::= <column> [ AS <name> ]
+               | CAST ( <column> AS <sql type> ) [ AS <name> ]
+```
+
+- Each vertex and edge table is named by its alias, which defaults to its table name; names must be unique, so give each use of a table its own alias.
+- `REFERENCES` names a vertex table that way, not by its underlying table or label: with `accounts AS customer`, write `REFERENCES customer`.
+- Omitting `<properties>` means `ALL COLUMNS`, as in the standard. Partition columns are included.
+- `LABEL` defaults to the table's alias, then its table name.
+- Vertex `KEY` becomes `~id`; edge `SOURCE`/`DESTINATION` become `~from`/`~to`. A column list after `REFERENCES` must name the referenced vertex's `KEY`, since Neptune links edges to vertices by `~id`.
+- Edges are loaded only when both endpoints match a key in the referenced vertex tables; edges whose source or destination has no vertex are dropped rather than loaded against unlabeled vertices.
+- Tables may be written `table`, `database.table` or `catalog.database.table`; unqualified parts use the `catalog`/`database` arguments.
+
+## Property types
+
+Each property's type comes from its source column's type in the catalog:
+
+| Catalog type | Neptune type |
+|---|---|
+| `boolean` | `Bool` |
+| `tinyint`, `smallint`, `int`/`integer`, `bigint` | `Byte`, `Short`, `Int`, `Long` |
+| `real`/`float`, `double`, `decimal(p,s)` | `Float`, `Double`, `Double` |
+| `string`, `varchar(n)`, `char(n)` | `String` |
+| `date` | `Date` |
+| `timestamp` | `Datetime` (rendered as ISO-8601) |
+
+`CAST(column AS <sql type>)` overrides the catalog type. Columns of other types (arrays, maps, structs, binary) cannot be loaded as properties: leave them out with `PROPERTIES ALL COLUMNS EXCEPT (...)` or an explicit property list.
+
+Properties that share a name under the same label must resolve to the same type. When they do not — for example, two tables feeding the `txn` label store `amount` as `double` and `bigint` — translation fails and the error includes the `CAST` that makes them agree:
+
+```
+Property 'amount' of vertex label 'txn' has conflicting types: Double in 'wires' (column amount: double),
+Long in 'cards' (column amount: bigint). Cast to a common type (Double) in the PROPERTIES clause:
+  in 'cards': PROPERTIES (CAST(amount AS DOUBLE) AS amount)
+```
+
+## Permissions
+
+Reading table metadata needs `athena:GetTableMetadata`, plus `glue:GetTable` for Glue-backed catalogs, in addition to the [Athena import permissions](/getting-started/prerequisites/).
+
+## Inspecting generated SQL
+
+To see the translated queries without running an import:
+
+```python
+from nx_neptune import AthenaTableMetadata, property_graph_to_sql
+
+metadata = AthenaTableMetadata(catalog=catalog, database=database)
+for query in property_graph_to_sql(DDL, metadata):
+    print(query)
+```
+
+`AthenaTableMetadata` uses the library's shared Athena client unless you pass one. Each source table is read once per translation, and nothing is cached between calls. `StaticTableMetadata({"accounts": [("name", "varchar(64)")], ...})` supplies columns offline instead of reading the catalog.
+
+## Limitations
+
+- Keys must be single-column; composite keys are rejected.
+- Keys and references are not inferred from primary/foreign keys, since Iceberg and Athena do not enforce them.
+- Each element table has a single label.

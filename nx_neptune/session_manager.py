@@ -13,6 +13,11 @@ from botocore.exceptions import ClientError
 from . import NeptuneGraph, instance_management
 from .clients import IamClientWrapper, NeptuneAnalyticsClient
 from .clients.client_factory import ClientFactory
+from .property_graph import (
+    AthenaTableMetadata,
+    PropertyGraph,
+    property_graph_to_sql,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -418,6 +423,60 @@ class SessionManager:
             f"Graph data imported to graph {graph.graph_id} using task {task_id}"
         )
         return task_id
+
+    async def import_from_graph_schema(
+        self,
+        graph: NeptuneAnalyticsClient,
+        s3_location: str,
+        property_graph: Union[str, PropertyGraph],
+        catalog=None,
+        database=None,
+        remove_buckets=True,
+    ) -> str:
+        """Import data described by a ``CREATE PROPERTY GRAPH`` statement.
+
+        A schema-first front-end over :meth:`import_from_table`: instead of
+        hand-writing the Athena ``SELECT`` projections that alias source columns
+        into Neptune's ``~id``/``~label``/``~from``/``~to`` load format, declare
+        the mapping with the standard SQL/PGQ (SQL:2023) ``CREATE PROPERTY
+        GRAPH`` DDL. Each source table's columns and types are read from the
+        Athena catalog (``athena:GetTableMetadata``, plus ``glue:GetTable`` for
+        Glue catalogs) to resolve the DDL into projection queries, which are
+        imported through the unchanged Athena -> S3 -> Neptune path.
+
+        Args:
+            graph (NeptuneAnalyticsClient): Graph to import into.
+            s3_location (str): S3 location to store intermediate CSV data.
+            property_graph: A ``CREATE PROPERTY GRAPH`` statement, or its parsed
+                :class:`PropertyGraph`.
+            catalog (str, optional): Athena catalog for unqualified tables.
+                Defaults to AwsDataCatalog.
+            database (str, optional): Athena database for unqualified tables.
+            remove_buckets (bool): Delete intermediate S3 CSV data after a
+                successful import if True.
+
+        Returns:
+            str: Task ID of the import operation.
+
+        Raises:
+            PropertyGraphSyntaxError: If the DDL cannot be parsed.
+            PropertyGraphSchemaError: If the DDL does not match the source tables.
+        """
+        metadata = AthenaTableMetadata(
+            self._athena_client, catalog=catalog, database=database
+        )
+        sql_queries = property_graph_to_sql(property_graph, metadata)
+        logger.info(
+            f"Translated property graph into {len(sql_queries)} projection queries"
+        )
+        return await self.import_from_table(
+            graph,
+            s3_location,
+            sql_queries,
+            catalog=catalog,
+            database=database,
+            remove_buckets=remove_buckets,
+        )
 
     async def export_to_table(
         self,

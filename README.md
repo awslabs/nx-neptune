@@ -26,6 +26,33 @@ What previously required complex ETL pipelines to get data into a graph database
 
 For data already in S3-compatible formats (CSV, Parquet), Neptune Analytics also supports [native S3 import](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/import-s3.html) without Athena.
 
+**Declaring the graph with `CREATE PROPERTY GRAPH`:**
+
+Rather than hand-writing the Athena `SELECT` statements that alias source columns into Neptune's load format (`~id`/`~label` for vertices, `~from`/`~to`/`~label` for edges), you can declare a property-graph schema with the standard SQL/PGQ (SQL:2023) `CREATE PROPERTY GRAPH` DDL. `nx-neptune` translates it into those projection queries and runs the unchanged Athena → S3 → Neptune import path:
+
+```python
+DDL = """
+CREATE PROPERTY GRAPH financial
+  VERTEX TABLES (
+    accounts AS customer KEY (name) LABEL customer PROPERTIES (name)
+  )
+  EDGE TABLES (
+    transactions
+      SOURCE KEY (nameOrig) REFERENCES customer
+      DESTINATION KEY (nameDest) REFERENCES customer
+      LABEL transfer
+      PROPERTIES (step, CAST(amount AS DOUBLE) AS amount, isFraud)
+  )
+"""
+
+graph = await session.get_or_create_graph()
+await session.import_from_graph_schema(
+    graph, s3_location, DDL, catalog=catalog, database=database
+)
+```
+
+Property types come from each source column's type in the Athena catalog; `CAST` overrides them, and a type mismatch between tables sharing a label fails with the `CAST` that fixes it. As in the standard, omitting `PROPERTIES` exposes all columns (`PROPERTIES ALL COLUMNS EXCEPT (...)` drops some), and `LABEL` defaults to the table alias/name. `REFERENCES` names a vertex table by its alias, and each edge endpoint is joined to that table's keys, so only edges between declared vertices are loaded. Reading the catalog needs `athena:GetTableMetadata`, plus `glue:GetTable` for Glue catalogs. To see the generated SQL without importing, call `nx_neptune.property_graph_to_sql(DDL, AthenaTableMetadata(athena_client, catalog, database))`.
+
 **Use cases demonstrated in the notebooks:**
 
 - **Fraud detection** — project financial transactions as a graph, run community detection (Louvain) to identify fraud rings ([S3 Tables demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_s3_table_demo.ipynb), [Databricks demo](https://github.com/awslabs/nx-neptune/blob/main/notebooks/import_databricks_demo.ipynb))
@@ -138,6 +165,7 @@ In Addition to the S3 import/export permissions, to read from/write to an existi
 
   - `athena:StartQueryExecution`
   - `athena:GetQueryExecution`
+  - `athena:GetTableMetadata` and `glue:GetTable` (for `import_from_graph_schema`, which reads source table columns)
 
 The ARN with the above permissions must be added to your environment variables
 

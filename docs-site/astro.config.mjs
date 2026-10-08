@@ -53,6 +53,7 @@ export default defineConfig({
           label: 'Graph Over Data Lake',
           items: [
             { label: 'Session Manager', slug: 'data-lake/session-manager' },
+            { label: 'Property Graph Schema', slug: 'data-lake/property-graph-schema' },
             { label: 'S3 Tables', slug: 'data-lake/s3-tables' },
             { label: 'S3 Vectors', slug: 'data-lake/s3-vectors' },
             { label: 'Databricks', slug: 'data-lake/databricks' },
