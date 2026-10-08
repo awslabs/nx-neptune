@@ -13,6 +13,7 @@ from nx_neptune.instance_management import (
     _execute_athena_query,
     get_athena_query_results,
 )
+from nx_neptune.property_graph import PropertyGraphError
 from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
 from nx_neptune.validators import (
     check_athena_query,
@@ -167,7 +168,6 @@ def translate_projection(projection_id: str, body: TranslateRequest):
     them via the queries endpoint). Invalid DDL or schema mismatches are
     returned as a 200 with ``error`` set, so the UI can display the message.
     """
-    from nx_neptune.property_graph import PropertyGraphError
 
     _get_projection_or_404(projection_id)
     try:
