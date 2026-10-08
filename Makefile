@@ -79,6 +79,10 @@ proxy-lint:       ## Run flake8, black, mypy linters on the proxy module.
 	$(ENV_PREFIX)black --check proxy/src/ proxy/tests/
 	$(ENV_PREFIX)mypy --ignore-missing-imports proxy/src/
 
+.PHONY: proxy-test
+proxy-test:       ## Run the proxy module test suite.
+	cd proxy && $(if $(ENV_PREFIX),$(CURDIR)/$(ENV_PREFIX))pytest tests/ -v
+
 .PHONY: test
 test: lint        ## Run tests and generate coverage report.
 	$(ENV_PREFIX)pytest -v --cov-config=.coveragerc --cov=nx_neptune -l --tb=short --maxfail=1 --cov-fail-under=80 tests/
