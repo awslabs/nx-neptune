@@ -27,9 +27,10 @@ router = APIRouter(prefix="/api/v0/metadata", tags=["metadata"])
 
 logger = logging.getLogger(__name__)
 
-# TTL (seconds) for cached Athena discovery lists backing the UI dropdowns;
-# 0 disables caching. Separate from the schema cache (ATHENA_METADATA_TTL) so
-# dropdown freshness can be tuned independently.
+
+#
+# Cache control
+#
 _LIST_TTL = float(os.environ.get("ATHENA_LIST_TTL", "60"))
 
 # Each dropdown endpoint keeps its own cache with its own key shape.
