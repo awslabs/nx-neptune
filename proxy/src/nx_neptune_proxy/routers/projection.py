@@ -6,7 +6,7 @@ import time
 from dataclasses import asdict
 
 from botocore.exceptions import ClientError
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune.clients.response_utils import get_query_failure_reason, get_query_state
 from nx_neptune.instance_management import (
@@ -84,10 +84,12 @@ def get_projection(projection_id: str):
 
 
 @router.put(
-    "/{projection_id}", summary="Update projection", response_model=ProjectionResponse
+    "/{projection_id}",
+    summary="Update projection",
+    response_model=ProjectionResponse,
+    dependencies=[Depends(_get_projection_or_404)],
 )
 def update_projection(projection_id: str, body: ProjectionUpdate):
-    _get_projection_or_404(projection_id)
     projection = projection_service.update(
         projection_id, **body.model_dump(exclude_unset=True)
     )
@@ -310,10 +312,10 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
     "/{projection_id}/queries",
     summary="Get node and edge queries for a projection",
     response_model=QueriesResponse,
+    dependencies=[Depends(_get_projection_or_404)],
 )
 def get_queries(projection_id: str):
     """Return all node and edge queries for a projection."""
-    _get_projection_or_404(projection_id)
     node_queries, edge_queries = projection_service.get_queries(projection_id)
     return QueriesResponse(
         node_queries=node_queries,  # type: ignore[arg-type]
@@ -325,10 +327,10 @@ def get_queries(projection_id: str):
     "/{projection_id}/queries",
     summary="Save node and edge queries for a projection",
     response_model=QueriesResponse,
+    dependencies=[Depends(_get_projection_or_404)],
 )
 def save_queries(projection_id: str, body: QueriesPayload):
     """Replace all node and edge queries for a projection."""
-    _get_projection_or_404(projection_id)
     node_queries, edge_queries = projection_service.save_queries(
         projection_id, body.node_queries, body.edge_queries
     )
