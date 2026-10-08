@@ -18,12 +18,14 @@ def _clear_metadata_list_caches():
     for cache in (
         metadata_router._databases_cache,
         metadata_router._tables_cache,
+        metadata_router._buckets_cache,
     ):
         cache.clear()
     yield
     for cache in (
         metadata_router._databases_cache,
         metadata_router._tables_cache,
+        metadata_router._buckets_cache,
     ):
         cache.clear()
 
