@@ -21,6 +21,12 @@ from typing import List, Optional
 from .projection_store import Projection, store as projection_store
 from .query_store import EdgeQuery, NodeQuery, query_store
 from .db import connection
+from nx_neptune.clients.client_factory import ClientFactory
+from nx_neptune.property_graph import (
+    AthenaTableMetadata,
+    parse_property_graph,
+    property_graph_to_sql,
+)
 
 
 class ProjectionNotFound(Exception):
@@ -111,6 +117,35 @@ class ProjectionService:
         query_store.save_node_from_payload(projection_id, node_models)
         query_store.save_edge_from_payload(projection_id, edge_models)
         return self.get_queries(projection_id)
+
+    def translate(
+        self, projection_id: str, property_graph: Optional[str] = None
+    ) -> tuple[List[str], List[str]]:
+        """Translate a CREATE PROPERTY GRAPH statement into (node, edge) SQL.
+
+        ``property_graph`` is translated when provided; otherwise the
+        projection's saved ``property_graph`` is used. Pure — does not persist
+        the generated queries (the caller does that via ``save_queries``).
+
+        Raises:
+            ValueError: If there is no DDL to translate.
+            PropertyGraphError: If the DDL is invalid or does not match the
+                source tables (surfaced to the client as an error message).
+        """
+
+        p = self.get_or_raise(projection_id)
+        ddl = property_graph if property_graph is not None else p.property_graph
+        if not ddl:
+            raise ValueError("No property graph schema to translate.")
+
+        graph = parse_property_graph(ddl)
+        metadata = AthenaTableMetadata(
+            ClientFactory().athena(), catalog=p.catalog, database=p.database
+        )
+        queries = property_graph_to_sql(graph, metadata)
+        # property_graph_to_sql returns vertex queries first, then edge queries.
+        n_vertex = len(graph.vertex_tables)
+        return queries[:n_vertex], queries[n_vertex:]
 
     # --- Import / export helpers ---
 

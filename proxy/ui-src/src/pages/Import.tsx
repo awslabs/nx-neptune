@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
-import { Play, CheckCircle, Eye, Plus, Trash2 } from "lucide-react";
+import { Play, CheckCircle, Eye, Wand2, ChevronRight, Plus, Trash2 } from "lucide-react";
 
 export function Import() {
   const [searchParams] = useSearchParams();
@@ -20,6 +20,10 @@ export function Import() {
   // --- Form state ---
   const [catalog, setCatalog] = useState("AwsDataCatalog");
   const [database, setDatabase] = useState("");
+  const [propertyGraph, setPropertyGraph] = useState("");
+  const [pgqOpen, setPgqOpen] = useState(false);
+  const [nodeQuery, setNodeQuery] = useState("");
+  const [edgeQuery, setEdgeQuery] = useState("");
   const [bucket, setBucket] = useState("");
   const [graphName, setGraphName] = useState("");
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
@@ -97,48 +101,35 @@ export function Import() {
 
   // --- Projection management ---
 
-  // Auto-create projection once user starts filling the form
-  useEffect(() => {
-    if (currentId) return;
-    const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
-    if (!hasContent) return;
-    projection.create({
-      catalog,
-      database,
-      s3_staging_bucket: bucket,
-      graph_name: graphName,
-      graph_memory_gb: graphMemoryGb,
-      project_id: projectId || undefined,
-    }).then((p) => {
-      setCurrentId(p.id);
-      loadProjections();
-      window.dispatchEvent(new Event("projects-changed"));
-    });
-  }, [database, bucket, graphName, nodeQueries, edgeQueries]);
-
   // Auto-create projection once user starts filling the form, then auto-save config on changes
   const configTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const creatingRef = useRef(false);
 
   useEffect(() => {
-    const hasContent = database || bucket || graphName || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
+    const hasContent = database || bucket || graphName || propertyGraph.trim() || nodeQueries.some(q => q.sql.trim()) || edgeQueries.some(q => q.sql.trim());
     if (!hasContent) return;
 
     const data = {
       catalog,
       database,
+      property_graph: propertyGraph || undefined,
       s3_staging_bucket: bucket,
-      graph_name: graphName,
+      graph_name: graphName || undefined,
       graph_memory_gb: graphMemoryGb,
       project_id: projectId || undefined,
     };
 
     if (!currentId) {
-      // First time — create
-      projection.create(data).then((p) => {
-        setCurrentId(p.id);
-        loadProjections();
-        window.dispatchEvent(new Event("projects-changed"));
-      });
+      // First time — create (guard against double-fire before currentId lands)
+      if (creatingRef.current) return;
+      creatingRef.current = true;
+      projection.create(data)
+        .then((p) => {
+          setCurrentId(p.id);
+          loadProjections();
+          window.dispatchEvent(new Event("projects-changed"));
+        })
+        .finally(() => { creatingRef.current = false; });
     } else {
       // Subsequent changes — debounced update
       if (configTimer.current) clearTimeout(configTimer.current);
@@ -146,14 +137,18 @@ export function Import() {
         projection.update(currentId, data);
       }, 1000);
     }
-  }, [catalog, database, bucket, graphName, graphMemoryGb, projectId]);
+  }, [catalog, database, propertyGraph, bucket, graphName, graphMemoryGb, projectId]);
 
   async function ensureProjection(): Promise<string> {
+    if (!projectId) {
+      throw new Error("No project selected. Open Import from a project to continue.");
+    }
     const data = {
       catalog,
       database,
+      property_graph: propertyGraph || undefined,
       s3_staging_bucket: bucket,
-      graph_name: graphName,
+      graph_name: graphName || undefined,
       graph_memory_gb: graphMemoryGb,
       project_id: projectId || undefined,
     };
@@ -174,6 +169,9 @@ export function Import() {
     setCurrentId(p.id);
     if (p.catalog) setCatalog(p.catalog);
     if (p.database) setDatabase(p.database);
+    if (p.node_query) setNodeQuery(p.node_query);
+    if (p.edge_query) setEdgeQuery(p.edge_query);
+    if (p.property_graph) { setPropertyGraph(p.property_graph); setPgqOpen(true); }
     if (p.s3_staging_bucket) setBucket(p.s3_staging_bucket);
     if (p.graph_name) setGraphName(p.graph_name);
     if (p.graph_memory_gb) setGraphMemoryGb(p.graph_memory_gb);
@@ -265,6 +263,25 @@ export function Import() {
       const id = await ensureProjection();
       const res = await projection.validateQuery(id);
       setChecks(res.checks);
+    } catch (e: any) { setError(e.message); } finally { setLoading(null); }
+  }
+
+  async function handleTranslate() {
+    setChecks([]);
+    setPreview(null);
+    setError(null);
+    setLoading("translate");
+    try {
+      const id = await ensureProjection();
+      const res = await projection.translate(id, propertyGraph);
+      if (res.error) { setError(res.error); return; }
+      const nodes = (res.node_queries ?? []).map((sql) => ({ sql }));
+      const edges = (res.edge_queries ?? []).map((sql) => ({ sql }));
+      if (nodes.length) setNodeQueries(nodes);
+      if (edges.length) setEdgeQueries(edges);
+      // Persist the generated queries through the normal save path (the
+      // programmatic setState above fires no onChange/onBlur).
+      scheduleSave(nodes.length ? nodes : nodeQueries, edges.length ? edges : edgeQueries);
     } catch (e: any) { setError(e.message); } finally { setLoading(null); }
   }
 
@@ -415,71 +432,100 @@ export function Import() {
         </div>
       </Card>
 
-      {/* Node Queries */}
+      {/* Queries — PGQ generator + node/edge query editors */}
       <Card>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Node Queries</h2>
-            <button onClick={addNodeQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
-              <Plus className="h-3 w-3" /> Add
+        <div className="space-y-5">
+          {/* PGQ generator (optional, collapsible) */}
+          <div className="rounded-md border border-gray-200">
+            <button
+              type="button"
+              onClick={() => setPgqOpen((o) => !o)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <ChevronRight className={`h-4 w-4 transition-transform ${pgqOpen ? "rotate-90" : ""}`} />
+              Generate from Property Graph Schema (PGQ)
+              <span className="font-normal text-gray-400">optional</span>
             </button>
-          </div>
-          <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
-            {nodeQueries.map((nq, i) => (
-              <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
-                <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
-                  <span className="text-xs font-medium text-gray-700">Node {i + 1}</span>
-                  {nodeQueries.length > 1 && (
-                    <button onClick={() => removeNodeQuery(i)} className="text-gray-400 hover:text-red-600">
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
+            {pgqOpen && (
+              <div className="space-y-2 border-t border-gray-200 p-3">
+                <p className="text-xs text-gray-500">Declare a <code>CREATE PROPERTY GRAPH</code> statement and click Translate to fill the Node and Edge queries below. Column types are resolved from the selected catalog/database; you can edit the generated queries afterward.</p>
                 <textarea
-                  className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
-                  rows={3}
-                  placeholder="SELECT id AS &quot;~id&quot;, 'Label' AS &quot;~label&quot;, col1 FROM table"
-                  value={nq.sql}
-                  onChange={(e) => updateNodeQuery(i, e.target.value)}
-                  onBlur={() => saveCurrentQueries()}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  rows={10}
+                  placeholder={"CREATE PROPERTY GRAPH g\n  VERTEX TABLES (\n    accounts AS account KEY (id) LABEL account PROPERTIES (name)\n  )\n  EDGE TABLES (\n    transfers SOURCE (src) REFERENCES account\n              DESTINATION (dst) REFERENCES account\n              LABEL transfer PROPERTIES (amount)\n  )"}
+                  value={propertyGraph}
+                  onChange={(e) => setPropertyGraph(e.target.value)}
                 />
+                <Button variant="secondary" onClick={handleTranslate} disabled={!!loading || !propertyGraph.trim()}>
+                  <Wand2 className="h-4 w-4" /> {loading === "translate" ? "Translating..." : "Translate → Node/Edge queries"}
+                </Button>
               </div>
-            ))}
+            )}
+          </div>
+
+          {/* Node Queries */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Node Queries</h2>
+              <button onClick={addNodeQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+                <Plus className="h-3 w-3" /> Add
+              </button>
+            </div>
+            <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+              {nodeQueries.map((nq, i) => (
+                <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
+                  <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
+                    <span className="text-xs font-medium text-gray-700">Node {i + 1}</span>
+                    {nodeQueries.length > 1 && (
+                      <button onClick={() => removeNodeQuery(i)} className="text-gray-400 hover:text-red-600">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                  <textarea
+                    className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
+                    rows={3}
+                    placeholder="SELECT id AS &quot;~id&quot;, 'Label' AS &quot;~label&quot;, col1 FROM table"
+                    value={nq.sql}
+                    onChange={(e) => updateNodeQuery(i, e.target.value)}
+                    onBlur={() => saveCurrentQueries()}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Edge Queries */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Edge Queries</h2>
+              <button onClick={addEdgeQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+                <Plus className="h-3 w-3" /> Add
+              </button>
+            </div>
+            <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+              {edgeQueries.map((eq, i) => (
+                <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
+                  <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
+                    <span className="text-xs font-medium text-gray-700">Edge {i + 1}</span>
+                    {edgeQueries.length > 1 && (
+                      <button onClick={() => removeEdgeQuery(i)} className="text-gray-400 hover:text-red-600">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                  <textarea
+                    className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
+                    rows={3}
+                    placeholder="SELECT id AS &quot;~id&quot;, src AS &quot;~from&quot;, dst AS &quot;~to&quot;, 'Label' AS &quot;~label&quot; FROM table"
+                    value={eq.sql}
+                    onChange={(e) => updateEdgeQuery(i, { sql: e.target.value })}
+                    onBlur={() => saveCurrentQueries()}
+                  />
+                </div>
+              ))}
           </div>
         </div>
-      </Card>
-
-      {/* Edge Queries */}
-      <Card>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Edge Queries</h2>
-            <button onClick={addEdgeQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
-              <Plus className="h-3 w-3" /> Add
-            </button>
-          </div>
-          <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
-            {edgeQueries.map((eq, i) => (
-              <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
-                <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
-                  <span className="text-xs font-medium text-gray-700">Edge {i + 1}</span>
-                  {edgeQueries.length > 1 && (
-                    <button onClick={() => removeEdgeQuery(i)} className="text-gray-400 hover:text-red-600">
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
-                <textarea
-                  className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
-                  rows={3}
-                  placeholder="SELECT id AS &quot;~id&quot;, src AS &quot;~from&quot;, dst AS &quot;~to&quot;, 'Label' AS &quot;~label&quot; FROM table"
-                  value={eq.sql}
-                  onChange={(e) => updateEdgeQuery(i, { sql: e.target.value })}
-                  onBlur={() => saveCurrentQueries()}
-                />
-              </div>
-            ))}
-          </div>
         </div>
       </Card>
 

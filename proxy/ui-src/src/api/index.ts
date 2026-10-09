@@ -74,6 +74,10 @@ export interface Projection {
   status: string;
   catalog: string;
   database?: string;
+  sql_query?: string;
+  node_query?: string;
+  edge_query?: string;
+  property_graph?: string;
   graph_name?: string;
   graph_id?: string;
   graph_endpoint?: string;
@@ -105,6 +109,7 @@ export const projection = {
   status: (id: string) => request<ProjectionStatus>(`/projection/${id}/status`),
   validate: (id: string) => request<{ valid: boolean; checks: { check: string; passed: boolean; message?: string }[] }>(`/projection/${id}/validate`, { method: "POST" }),
   validateQuery: (id: string) => request<{ valid: boolean; checks: { check: string; passed: boolean; message?: string }[] }>(`/projection/${id}/validate-query`, { method: "POST" }),
+  translate: (id: string, propertyGraph?: string) => request<{ node_queries?: string[]; edge_queries?: string[]; error?: string }>(`/projection/${id}/translate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(propertyGraph !== undefined ? { property_graph: propertyGraph } : {}) }),
   preview: (id: string, limit = 10) => request<{ error?: string; results: { columns: string[]; rows: string[][] }[] }>(`/projection/${id}/preview?limit=${limit}`, { method: "POST" }),
   execute: (id: string) => request<{ message: string }>(`/projection/${id}/execute`, { method: "POST" }),
   getQueries: (id: string) => request<QueriesResponse>(`/projection/${id}/queries`),

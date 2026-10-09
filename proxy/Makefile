@@ -5,9 +5,9 @@ RUNTIME ?= finch
 ui:               ## Build frontend into ui/ directory.
 	cd ui-src && npm install && npm run build
 
-dev:              ## Run with auto-reload for development.
-	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
-	uvicorn nx_neptune_proxy.app:app --reload --host 127.0.0.1 --port 8080
+dev:              ## Run with auto-reload for development (human-readable logs).
+	LOG_FORMAT=text NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
+	uvicorn nx_neptune_proxy.app:app --reload --no-access-log --host 127.0.0.1 --port 8080
 
 install:          ## Install proxy in editable mode with test deps.
 	pip install -e ".[test]"
