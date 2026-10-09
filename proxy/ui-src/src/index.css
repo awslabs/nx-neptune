@@ -1,6 +1,20 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.ts";
+
+/*
+  Tailwind v4 changed the default border/divide color from gray-200 to
+  currentColor. Restore the v3 default so colorless `border`/`border-b`/etc.
+  render as light-gray dividers instead of the element's text color.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+}
 
 body {
   @apply bg-gray-50 text-gray-900 antialiased;
