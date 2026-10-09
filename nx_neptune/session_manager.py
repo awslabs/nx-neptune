@@ -770,6 +770,18 @@ class SessionManager:
     def _graph_bulk_operation(
         self, operation: Callable, status_to_check: str, graph_names: list[str]
     ):
+        # Guard: an empty graph_names means "all graphs in this session", which
+        # relies on session_name to scope list_graphs(). With no session_name,
+        # list_graphs() returns every graph in the account/region, so a bulk
+        # "*_all_graphs" call would operate on unrelated graphs. Refuse it.
+        if not graph_names and not self.session_name:
+            raise ValueError(
+                "Refusing a bulk operation over all graphs: this session has no "
+                "session_name, so an empty selection would match every Neptune "
+                "Analytics graph in the account/region. Create the session with a "
+                "session_name to scope it, or pass explicit graph names."
+            )
+
         # Get all graphs matching name filter if specified
         graphs = [
             graph
