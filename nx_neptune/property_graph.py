@@ -276,19 +276,12 @@ class AthenaTableMetadata:
     Serves Glue-backed and federated (connector) catalogs alike. Table names may
     be ``table``, ``database.table`` or ``catalog.database.table``; missing parts
     fall back to ``catalog`` and ``database``.
-
-    Results are cached in a process-wide, time-bounded cache shared across all
-    instances, keyed by the resolved ``(catalog, database, name)``. An entry is
-    reused for up to ``ATHENA_METADATA_TTL`` seconds (default 60; set ``0`` to
-    disable), so repeated lookups of the same table within that window — within
-    a single translation or across translations — do not re-call Athena. Set
-    ``ATHENA_METADATA_TTL=0`` to always read fresh.
+.
     """
 
     DEFAULT_CATALOG = "AwsDataCatalog"
 
-    # Shared across instances (a new provider is often built per request), so
-    # the cache must outlive any single instance. Keyed by (catalog, db, name).
+    # the cache must outlive any single instance lifecycle. Keyed by (catalog, db, name).
     _cache: "TTLCache[Tuple[str, str, str], List[Column]]" = TTLCache(_METADATA_TTL)
 
     def __init__(
