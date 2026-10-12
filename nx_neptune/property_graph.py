@@ -276,7 +276,6 @@ class AthenaTableMetadata:
     Serves Glue-backed and federated (connector) catalogs alike. Table names may
     be ``table``, ``database.table`` or ``catalog.database.table``; missing parts
     fall back to ``catalog`` and ``database``.
-.
     """
 
     DEFAULT_CATALOG = "AwsDataCatalog"

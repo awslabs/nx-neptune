@@ -88,3 +88,22 @@ def init_db() -> None:
             FOREIGN KEY (projection_id) REFERENCES projections(id) ON DELETE CASCADE
         );
     """)
+        _migrate_projections(conn)
+
+
+def _migrate_projections(conn: sqlite3.Connection) -> None:
+    """Apply additive, idempotent column migrations to the projections table.
+
+    ``CREATE TABLE IF NOT EXISTS`` does not alter a table that already exists,
+    so a database created by an older version will be missing columns added
+    later. Add them in place rather than requiring users to drop their data on
+    upgrade. Each ALTER is guarded by the current column set so re-running is a
+    no-op.
+    """
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(projections)")}
+    added_columns = {
+        "property_graph": "TEXT",
+    }
+    for column, decl in added_columns.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE projections ADD COLUMN {column} {decl}")

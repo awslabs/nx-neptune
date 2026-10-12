@@ -74,12 +74,16 @@ def list_athena_catalogs():
     response_model=DatabasesResponse,
 )
 def list_athena_databases(
-    catalog: str = Query("AwsDataCatalog", description="Athena catalog name")
+    catalog: str = Query("AwsDataCatalog", description="Athena catalog name"),
+    refresh: bool = Query(
+        False, description="Bypass the cache and refresh the list (manual Refresh)"
+    ),
 ):
     """List all databases in the specified Athena catalog"""
-    cached = _databases_cache.get(catalog)
-    if cached is not None:
-        return {"databases": cached}
+    if not refresh:
+        cached = _databases_cache.get(catalog)
+        if cached is not None:
+            return {"databases": cached}
     logger.info("Fetching Athena databases for catalog=%s", catalog)
     client = ClientFactory().athena()
     items = paginate_aws(client.list_databases, "DatabaseList", CatalogName=catalog)
@@ -94,12 +98,16 @@ def list_athena_databases(
 def list_athena_tables(
     database: str = Query(..., description="Database name"),
     catalog: str = Query("AwsDataCatalog", description="Athena catalog name"),
+    refresh: bool = Query(
+        False, description="Bypass the cache and refresh the list (manual Refresh)"
+    ),
 ):
     """List all tables in the specified Athena database"""
     key = (catalog, database)
-    cached = _tables_cache.get(key)
-    if cached is not None:
-        return {"tables": cached}
+    if not refresh:
+        cached = _tables_cache.get(key)
+        if cached is not None:
+            return {"tables": cached}
     logger.info(
         "Fetching Athena tables for catalog=%s database=%s",
         catalog,
@@ -137,14 +145,19 @@ def list_athena_columns(
 
 
 @router.get("/s3/buckets", summary="List S3 buckets", response_model=BucketsResponse)
-def list_s3_buckets():
+def list_s3_buckets(
+    refresh: bool = Query(
+        False, description="Bypass the cache and refresh the list (manual Refresh)"
+    ),
+):
     """List S3 buckets in the configured region"""
     filter_region = get_settings().region
     if not filter_region:
         return {"buckets": []}
-    cached = _buckets_cache.get(filter_region)
-    if cached is not None:
-        return {"buckets": cached}
+    if not refresh:
+        cached = _buckets_cache.get(filter_region)
+        if cached is not None:
+            return {"buckets": cached}
     logger.info("Fetching S3 buckets for region=%s", filter_region)
     client = ClientFactory().s3()
     buckets = [

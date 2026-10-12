@@ -22,8 +22,6 @@ export function Import() {
   const [database, setDatabase] = useState("");
   const [propertyGraph, setPropertyGraph] = useState("");
   const [pgqOpen, setPgqOpen] = useState(false);
-  const [nodeQuery, setNodeQuery] = useState("");
-  const [edgeQuery, setEdgeQuery] = useState("");
   const [bucket, setBucket] = useState("");
   const [graphName, setGraphName] = useState("");
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
@@ -169,8 +167,6 @@ export function Import() {
     setCurrentId(p.id);
     if (p.catalog) setCatalog(p.catalog);
     if (p.database) setDatabase(p.database);
-    if (p.node_query) setNodeQuery(p.node_query);
-    if (p.edge_query) setEdgeQuery(p.edge_query);
     if (p.property_graph) { setPropertyGraph(p.property_graph); setPgqOpen(true); }
     if (p.s3_staging_bucket) setBucket(p.s3_staging_bucket);
     if (p.graph_name) setGraphName(p.graph_name);
@@ -205,11 +201,12 @@ export function Import() {
     projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: edgeQueries });
   }
 
-  function scheduleSave(nq: NodeQueryInput[], eq: EdgeQueryInput[]) {
-    if (!currentId) return;
+  function scheduleSave(nq: NodeQueryInput[], eq: EdgeQueryInput[], id?: string) {
+    const targetId = id ?? currentId;
+    if (!targetId) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      projection.saveQueries(currentId, { node_queries: nq, edge_queries: eq });
+      projection.saveQueries(targetId, { node_queries: nq, edge_queries: eq });
     }, 1000);
   }
 
@@ -280,8 +277,10 @@ export function Import() {
       if (nodes.length) setNodeQueries(nodes);
       if (edges.length) setEdgeQueries(edges);
       // Persist the generated queries through the normal save path (the
-      // programmatic setState above fires no onChange/onBlur).
-      scheduleSave(nodes.length ? nodes : nodeQueries, edges.length ? edges : edgeQueries);
+      // programmatic setState above fires no onChange/onBlur). Pass the id
+      // returned by ensureProjection(): on a first-time create, currentId is
+      // still null in this closure, so scheduleSave would otherwise no-op.
+      scheduleSave(nodes.length ? nodes : nodeQueries, edges.length ? edges : edgeQueries, id);
     } catch (e: any) { setError(e.message); } finally { setLoading(null); }
   }
 
