@@ -97,7 +97,7 @@ from .utils.ttl_cache import TTLCache
 logger = logging.getLogger(__name__)
 
 # TTL (seconds) for cached Athena GetTableMetadata results; 0 disables caching.
-_METADATA_TTL = float(os.environ.get("ATHENA_METADATA_TTL", "60"))
+_METADATA_TTL = float(os.environ.get("ATHENA_METADATA_TTL", "20"))
 
 QualifiedName = Tuple[str, ...]
 
