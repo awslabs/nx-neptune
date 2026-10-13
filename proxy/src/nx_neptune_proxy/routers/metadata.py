@@ -31,7 +31,11 @@ logger = logging.getLogger(__name__)
 #
 # Cache control
 #
-_LIST_TTL = float(os.environ.get("ATHENA_LIST_TTL", "60"))
+# Best-effort TTL cache for dropdown lists: absorbs rapid repeat calls without
+# intruding on the flow. Kept short (20s) so a DB/table/bucket created outside
+# the app appears quickly without needing a manual refresh. Override via
+# ATHENA_LIST_TTL (0 disables).
+_LIST_TTL = float(os.environ.get("ATHENA_LIST_TTL", "20"))
 
 # Each dropdown endpoint keeps its own cache with its own key shape.
 _databases_cache: "TTLCache[str, list]" = TTLCache(_LIST_TTL)  # key: catalog
@@ -75,15 +79,11 @@ def list_athena_catalogs():
 )
 def list_athena_databases(
     catalog: str = Query("AwsDataCatalog", description="Athena catalog name"),
-    refresh: bool = Query(
-        False, description="Bypass the cache and refresh the list (manual Refresh)"
-    ),
 ):
     """List all databases in the specified Athena catalog"""
-    if not refresh:
-        cached = _databases_cache.get(catalog)
-        if cached is not None:
-            return {"databases": cached}
+    cached = _databases_cache.get(catalog)
+    if cached is not None:
+        return {"databases": cached}
     logger.info("Fetching Athena databases for catalog=%s", catalog)
     client = ClientFactory().athena()
     items = paginate_aws(client.list_databases, "DatabaseList", CatalogName=catalog)
@@ -98,16 +98,12 @@ def list_athena_databases(
 def list_athena_tables(
     database: str = Query(..., description="Database name"),
     catalog: str = Query("AwsDataCatalog", description="Athena catalog name"),
-    refresh: bool = Query(
-        False, description="Bypass the cache and refresh the list (manual Refresh)"
-    ),
 ):
     """List all tables in the specified Athena database"""
     key = (catalog, database)
-    if not refresh:
-        cached = _tables_cache.get(key)
-        if cached is not None:
-            return {"tables": cached}
+    cached = _tables_cache.get(key)
+    if cached is not None:
+        return {"tables": cached}
     logger.info(
         "Fetching Athena tables for catalog=%s database=%s",
         catalog,
@@ -145,19 +141,14 @@ def list_athena_columns(
 
 
 @router.get("/s3/buckets", summary="List S3 buckets", response_model=BucketsResponse)
-def list_s3_buckets(
-    refresh: bool = Query(
-        False, description="Bypass the cache and refresh the list (manual Refresh)"
-    ),
-):
+def list_s3_buckets():
     """List S3 buckets in the configured region"""
     filter_region = get_settings().region
     if not filter_region:
         return {"buckets": []}
-    if not refresh:
-        cached = _buckets_cache.get(filter_region)
-        if cached is not None:
-            return {"buckets": cached}
+    cached = _buckets_cache.get(filter_region)
+    if cached is not None:
+        return {"buckets": cached}
     logger.info("Fetching S3 buckets for region=%s", filter_region)
     client = ClientFactory().s3()
     buckets = [
