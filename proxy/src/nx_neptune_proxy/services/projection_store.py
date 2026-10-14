@@ -17,6 +17,7 @@ _FIELDS = [
     "database",
     "node_query",
     "edge_query",
+    "property_graph",
     "graph_name",
     "graph_memory_gb",
     "s3_staging_bucket",
@@ -41,6 +42,7 @@ class Projection:
     database: Optional[str] = None
     node_query: Optional[str] = None
     edge_query: Optional[str] = None
+    property_graph: Optional[str] = None
     graph_name: Optional[str] = None
     graph_memory_gb: int = 16
     s3_staging_bucket: Optional[str] = None
@@ -61,6 +63,7 @@ class ProjectionStore:
         database: Optional[str] = None,
         node_query: Optional[str] = None,
         edge_query: Optional[str] = None,
+        property_graph: Optional[str] = None,
         graph_name: Optional[str] = None,
         graph_memory_gb: int = 16,
         s3_staging_bucket: Optional[str] = None,
@@ -73,6 +76,7 @@ class ProjectionStore:
             database=database,
             node_query=node_query,
             edge_query=edge_query,
+            property_graph=property_graph,
             graph_name=graph_name,
             graph_memory_gb=graph_memory_gb,
             s3_staging_bucket=s3_staging_bucket,
@@ -116,6 +120,7 @@ class ProjectionStore:
         "database",
         "node_query",
         "edge_query",
+        "property_graph",
         "graph_name",
         "graph_memory_gb",
         "s3_staging_bucket",
@@ -164,6 +169,7 @@ class ProjectionStore:
             database=row["database"],
             node_query=row["node_query"],
             edge_query=row["edge_query"],
+            property_graph=row["property_graph"],
             graph_name=row["graph_name"],
             graph_memory_gb=row["graph_memory_gb"] or 16,
             s3_staging_bucket=row["s3_staging_bucket"],

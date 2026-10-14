@@ -62,6 +62,8 @@ error for a mismatch includes the ``CAST`` that fixes it.
 """
 
 import difflib
+import logging
+import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -90,6 +92,12 @@ from lark.exceptions import (
 
 from .clients.client_factory import ClientFactory
 from .clients.response_utils import get_table_column_types, is_entity_not_found
+from .utils.ttl_cache import TTLCache
+
+logger = logging.getLogger(__name__)
+
+# TTL (seconds) for cached Athena GetTableMetadata results; 0 disables caching.
+_METADATA_TTL = float(os.environ.get("ATHENA_METADATA_TTL", "20"))
 
 QualifiedName = Tuple[str, ...]
 
@@ -272,6 +280,9 @@ class AthenaTableMetadata:
 
     DEFAULT_CATALOG = "AwsDataCatalog"
 
+    # the cache must outlive any single instance lifecycle. Keyed by (catalog, db, name).
+    _cache: "TTLCache[Tuple[str, str, str], List[Column]]" = TTLCache(_METADATA_TTL)
+
     def __init__(
         self,
         athena_client: Optional[BaseClient] = None,
@@ -284,8 +295,20 @@ class AthenaTableMetadata:
 
     def get_columns(self, table: QualifiedName) -> List[Column]:
         location = self._qualify(table)
+
+        cached = self._cache.get(location)
+        if cached is not None:
+            logger.debug("Athena metadata cache hit for %s", ".".join(location))
+            return cached
+
         catalog, database, name = location
         try:
+            logger.info(
+                "Fetching Athena table metadata for %s.%s.%s",
+                catalog,
+                database,
+                name,
+            )
             resp = self._client.get_table_metadata(
                 CatalogName=catalog, DatabaseName=database, TableName=name
             )
@@ -300,7 +323,9 @@ class AthenaTableMetadata:
                 f"athena:GetTableMetadata, and glue:GetTable for Glue "
                 f"catalogs): {e}"
             ) from e
-        return [Column(col, typ) for col, typ in get_table_column_types(resp)]
+        columns = [Column(col, typ) for col, typ in get_table_column_types(resp)]
+        self._cache.set(location, columns)
+        return columns
 
     def _qualify(self, table: QualifiedName) -> Tuple[str, str, str]:
         if len(table) == 3:

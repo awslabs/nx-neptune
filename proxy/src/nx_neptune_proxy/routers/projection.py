@@ -6,13 +6,14 @@ import time
 from dataclasses import asdict
 
 from botocore.exceptions import ClientError
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune.clients.response_utils import get_query_failure_reason, get_query_state
 from nx_neptune.instance_management import (
     _execute_athena_query,
     get_athena_query_results,
 )
+from nx_neptune.property_graph import PropertyGraphError
 from nx_neptune.utils.task_future import TaskType, wait_until_all_complete
 from nx_neptune.validators import (
     check_athena_query,
@@ -28,6 +29,8 @@ from nx_neptune_proxy.routers.schemas import (
     ProjectionUpdate,
     QueriesPayload,
     QueriesResponse,
+    TranslateRequest,
+    TranslateResponse,
     ValidateResponse,
 )
 from nx_neptune_proxy.services.pipeline import run_pipeline
@@ -81,10 +84,12 @@ def get_projection(projection_id: str):
 
 
 @router.put(
-    "/{projection_id}", summary="Update projection", response_model=ProjectionResponse
+    "/{projection_id}",
+    summary="Update projection",
+    response_model=ProjectionResponse,
+    dependencies=[Depends(_get_projection_or_404)],
 )
 def update_projection(projection_id: str, body: ProjectionUpdate):
-    _get_projection_or_404(projection_id)
     projection = projection_service.update(
         projection_id, **body.model_dump(exclude_unset=True)
     )
@@ -151,6 +156,31 @@ def validate_query(projection_id: str):
         )
     valid = all(c["passed"] for c in checks) if checks else False
     return {"valid": valid, "checks": checks}
+
+
+@router.post(
+    "/{projection_id}/translate",
+    summary="Translate a CREATE PROPERTY GRAPH statement into node/edge queries",
+    response_model=TranslateResponse,
+    dependencies=[Depends(_get_projection_or_404)],
+)
+def translate_pgq_statement(projection_id: str, body: TranslateRequest):
+    """Translate PGQ DDL into node/edge projection SQL.
+
+    Pure: the generated queries are returned, not persisted (the client saves
+    them via the queries endpoint). Invalid DDL or schema mismatches are
+    returned as a 200 with ``error`` set, so the UI can display the message.
+    """
+
+    try:
+        node_queries, edge_queries = projection_service.translate(
+            projection_id, body.property_graph
+        )
+    except PropertyGraphError as e:
+        return TranslateResponse(error=str(e))
+    except ValueError as e:
+        return TranslateResponse(error=str(e))
+    return TranslateResponse(node_queries=node_queries, edge_queries=edge_queries)
 
 
 @router.post(
@@ -282,10 +312,10 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
     "/{projection_id}/queries",
     summary="Get node and edge queries for a projection",
     response_model=QueriesResponse,
+    dependencies=[Depends(_get_projection_or_404)],
 )
 def get_queries(projection_id: str):
     """Return all node and edge queries for a projection."""
-    _get_projection_or_404(projection_id)
     node_queries, edge_queries = projection_service.get_queries(projection_id)
     return QueriesResponse(
         node_queries=node_queries,  # type: ignore[arg-type]
@@ -297,10 +327,10 @@ def get_queries(projection_id: str):
     "/{projection_id}/queries",
     summary="Save node and edge queries for a projection",
     response_model=QueriesResponse,
+    dependencies=[Depends(_get_projection_or_404)],
 )
 def save_queries(projection_id: str, body: QueriesPayload):
     """Replace all node and edge queries for a projection."""
-    _get_projection_or_404(projection_id)
     node_queries, edge_queries = projection_service.save_queries(
         projection_id, body.node_queries, body.edge_queries
     )
