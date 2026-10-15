@@ -312,8 +312,9 @@ def get_config() -> NeptuneConfig:
     if NETWORKX_GRAPH_ID is not None:
         config.graph_id = NETWORKX_GRAPH_ID
 
-    if NETWORKX_S3_IAM_ROLE_ARN is not None:
-        config.role_arn = NETWORKX_S3_IAM_ROLE_ARN
+    # The env var is a default only: a role set in code wins, and "" counts as unset.
+    if NETWORKX_S3_IAM_ROLE_ARN and config.s3_iam_role is None:
+        config.s3_iam_role = NETWORKX_S3_IAM_ROLE_ARN
 
     return config
 
