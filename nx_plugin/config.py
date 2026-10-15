@@ -44,8 +44,8 @@ class NeptuneConfig(Config):
         use graph by graph_id; overridden by the environment variable NETWORKX_GRAPH_ID.  Otherwise, defaults to None.
 
     s3_iam_role: Optional[str]
-        IAM role for Neptune Analytics to use to import/export from S3. Overridden by NETWORKX_S3_IAM_ROLE_ARN.
-        Otherwise, defaults to None.
+        IAM role for Neptune Analytics to use to import/export from S3. If not set, the environment variable
+        NETWORKX_S3_IAM_ROLE_ARN is used. Otherwise, defaults to None.
 
     Neptune Analytics Setup Parameters
     ----------------------------------

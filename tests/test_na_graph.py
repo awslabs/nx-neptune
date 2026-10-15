@@ -20,7 +20,7 @@ from nx_neptune.clients import (
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
 )
-from nx_neptune.na_graph import NeptuneGraph
+from nx_neptune.na_graph import NeptuneGraph, get_config
 from nx_neptune.clients import (
     NeptuneAnalyticsClient,
     insert_node,
@@ -262,3 +262,32 @@ class TestNeptuneGraph:
         expected_query = match_all_edges()
         mock_client.execute_generic_query.assert_called_once_with(expected_query)
         assert result == ["relationship1", "relationship1"]
+
+
+class TestGetConfigS3IamRole:
+    ROLE_ARN = "arn:aws:iam::123456789012:role/example"
+
+    @pytest.fixture(autouse=True)
+    def reset_s3_iam_role(self):
+        config = nx.config.backends.neptune
+        original = config.s3_iam_role
+        config.s3_iam_role = None
+        yield
+        config.s3_iam_role = original
+
+    def test_get_config_env_role_set_applies_to_s3_iam_role(self):
+        with patch("nx_neptune.na_graph.NETWORKX_S3_IAM_ROLE_ARN", self.ROLE_ARN):
+            config = get_config()
+        assert config.s3_iam_role == self.ROLE_ARN
+
+    def test_get_config_role_set_in_code_keeps_code_value(self):
+        nx.config.backends.neptune.s3_iam_role = "arn:aws:iam::123456789012:role/code"
+        with patch("nx_neptune.na_graph.NETWORKX_S3_IAM_ROLE_ARN", self.ROLE_ARN):
+            config = get_config()
+        assert config.s3_iam_role == "arn:aws:iam::123456789012:role/code"
+
+    @pytest.mark.parametrize("env_value", ["", None])
+    def test_get_config_env_role_empty_or_unset_leaves_s3_iam_role(self, env_value):
+        with patch("nx_neptune.na_graph.NETWORKX_S3_IAM_ROLE_ARN", env_value):
+            config = get_config()
+        assert config.s3_iam_role is None
