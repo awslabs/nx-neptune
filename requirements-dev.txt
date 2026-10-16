@@ -79,7 +79,7 @@ pathspec==1.1.1
     #   mypy
 pip-licenses==5.5.5
     # via nx-neptune (pyproject.toml)
-platformdirs==4.12.4
+platformdirs==4.13.0
     # via
     #   black
     #   virtualenv
