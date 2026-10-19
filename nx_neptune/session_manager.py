@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
 import logging
+import os
+import weakref
 from enum import Enum
 from typing import Callable, Optional, Union
 
@@ -25,6 +27,52 @@ __all__ = [
     "CleanupTask",
     "SessionManager",
 ]
+
+
+def _request_stop(client, graph_ids: list, session_name, owner_pid: int) -> None:
+    """Best-effort synchronous stop of the given graphs. Never raises.
+
+    This runs from ``weakref.finalize``, i.e. during garbage collection or at
+    interpreter exit, so it is deliberately minimal: no asyncio, no polling, no
+    new boto3 clients, and no permission pre-checks. It issues ``stop_graph``
+    on the client captured when the session was created and returns.
+
+    Before stopping, each graph must pass every guard:
+
+    * the current process is the one that armed the finalizer - a forked child
+      inherits the registry and must not stop its parent's graphs;
+    * the graph is still ``AVAILABLE`` - already stopping, stopped or deleting
+      graphs are left alone;
+    * the graph's name carries this session's prefix, when one was given.
+    """
+    if os.getpid() != owner_pid:
+        return
+
+    for graph_id in list(graph_ids):
+        try:
+            graph = client.get_graph(graphIdentifier=graph_id)
+            if graph.get("status") != "AVAILABLE":
+                logger.debug(
+                    f"Not stopping graph {graph_id}: status is {graph.get('status')}"
+                )
+                continue
+            if session_name and not str(graph.get("name", "")).startswith(session_name):
+                logger.warning(
+                    f"Not stopping graph {graph_id}: name {graph.get('name')!r} is "
+                    f"outside session {session_name!r}"
+                )
+                continue
+            client.stop_graph(graphIdentifier=graph_id)
+            logger.info(f"Stop requested for graph {graph_id} (session released)")
+        except Exception as e:  # noqa: BLE001 - a finalizer must never raise
+            try:
+                logger.warning(
+                    f"Could not stop graph {graph_id}: {e}. It may still be running "
+                    f"and billed; stop it with: "
+                    f"aws neptune-graph stop-graph --graph-identifier {graph_id}"
+                )
+            except Exception:  # noqa: BLE001 - logging can fail during shutdown
+                pass
 
 
 class CleanupTask(Enum):
@@ -60,6 +108,26 @@ class SessionManager:
         self._s3_client = self._clients.s3()
         self._athena_client = self._clients.athena()
 
+        # Graphs this session created, and the safety net that stops them if the
+        # session is released without an explicit cleanup. The finalizer captures
+        # plain data only - never ``self``, which would keep the session alive.
+        self._owned_graph_ids: list[str] = []
+        self._finalizer = None
+        if self.cleanup_task == CleanupTask.STOP:
+            self._finalizer = weakref.finalize(
+                self,
+                _request_stop,
+                self._neptune_client,
+                self._owned_graph_ids,
+                self.session_name,
+                os.getpid(),
+            )
+
+    def _own(self, graph_id: str) -> None:
+        """Record a graph this session created, for automatic cleanup."""
+        if graph_id and graph_id not in self._owned_graph_ids:
+            self._owned_graph_ids.append(graph_id)
+
     @classmethod
     def session(cls, session_name=None, cleanup_task=None):
         """Create a new SessionManager instance.
@@ -85,6 +153,23 @@ class SessionManager:
 
         if self.cleanup_task == CleanupTask.DESTROY:
             self.destroy_all_graphs()
+        elif self.cleanup_task == CleanupTask.STOP:
+            asyncio.run(self._await_stop_all_graphs())
+            self._disarm()
+
+    def _disarm(self) -> None:
+        """Cancel the automatic stop; cleanup has already been handled explicitly."""
+        if self._finalizer is not None:
+            self._finalizer.detach()
+            self._finalizer = None
+
+    async def _await_stop_all_graphs(self):
+        """Stop every graph in this session, awaited to completion.
+
+        The bulk helpers return an un-awaited ``asyncio.gather(...)``, so the
+        gather must be built *and* awaited inside a running loop.
+        """
+        await self.stop_all_graphs()
 
     def validate_permissions(self):
         """Validate AWS permissions for Neptune Analytics operations.
@@ -208,6 +293,7 @@ class SessionManager:
             graph_name_prefix=self.session_name,
             on_created=on_created,
         )
+        self._own(graph_id)
         return self.get_graph(graph_id)
 
     async def create_from_snapshot(
@@ -235,6 +321,7 @@ class SessionManager:
             sts_client=self._sts_client,
             iam_client=self._iam_client,
         )
+        self._own(graph_id)
         return self.get_graph(graph_id)
 
     async def create_from_csv(
@@ -262,6 +349,7 @@ class SessionManager:
             sts_client=self._sts_client,
             iam_client=self._iam_client,
         )
+        self._own(graph_id)
         return self.get_graph(graph_id)
 
     async def create_multiple_instances(
@@ -287,6 +375,8 @@ class SessionManager:
             for _ in range(count)
         ]
         graph_ids = await asyncio.gather(*tasks)
+        for graph_id in graph_ids:
+            self._own(graph_id)
         return graph_ids
 
     async def export_to_csv(
