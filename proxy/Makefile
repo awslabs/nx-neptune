@@ -1,9 +1,15 @@
-.PHONY: dev install test build run stop clean ui
+.PHONY: dev install test build run stop clean ui relock
 
 RUNTIME ?= finch
 
 ui:               ## Build frontend into ui/ directory.
 	cd ui-src && npm install && npm run build
+
+relock:           ## Rebuild the ui-src lockfile and print a clean version diff.
+	@cd ui-src && jq -r '.packages | to_entries[] | select(.key != "") | "\(.key | sub("^node_modules/";""))@\(.value.version)"' package-lock.json 2>/dev/null | sort > /tmp/npm-before.txt || true
+	cd ui-src && rm -rf node_modules package-lock.json && npm install
+	@cd ui-src && jq -r '.packages | to_entries[] | select(.key != "") | "\(.key | sub("^node_modules/";""))@\(.value.version)"' package-lock.json 2>/dev/null | sort > /tmp/npm-after.txt || true
+	@echo "=== dependency version changes ==="; diff /tmp/npm-before.txt /tmp/npm-after.txt || true
 
 dev:              ## Run with auto-reload for development (human-readable logs).
 	LOG_FORMAT=text NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
