@@ -250,6 +250,30 @@ class TestSessionManager:
         assert isinstance(result, NeptuneAnalyticsClient)
         assert result.graph_id == "test-session-graph-id"
 
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
+    async def test_get_or_create_graph_reuse_existing_false_creates_new(
+        self, mock_create, mock_boto3_client
+    ):
+        """With reuse_existing=False an AVAILABLE prefix match is not adopted."""
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        mock_client.list_graphs.return_value = {
+            "graphs": [
+                {"name": "test-other-graph", "id": "g-other", "status": "AVAILABLE"},
+                {"name": "test-new-graph", "id": "g-new", "status": "AVAILABLE"},
+            ]
+        }
+        mock_create.return_value = "g-new"
+
+        sm = SessionManager(session_name="test")
+        result = await sm.get_or_create_graph(reuse_existing=False)
+
+        mock_create.assert_called_once()
+        assert result.graph_id == "g-new"
+
     @patch("boto3.client")
     def test_list_graphs_with_details(self, mock_boto3_client):
         """Test listing graphs with full details."""

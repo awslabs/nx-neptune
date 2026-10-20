@@ -93,6 +93,8 @@ async def test_first_run_never_adopts_existing_graph(mock_sm_cls, mock_cf, clear
 
     # Brand-new graph created; no reset of any pre-existing graph.
     sm.get_or_create_graph.assert_awaited_once()
+    # ...and it must ask for a new graph, not the first prefix match.
+    assert sm.get_or_create_graph.await_args.kwargs["reuse_existing"] is False
     sm.reset_graph.assert_not_called()
     # The neptune client is only consulted when a graph_id is recorded.
     mock_cf.return_value.neptune.assert_not_called()
