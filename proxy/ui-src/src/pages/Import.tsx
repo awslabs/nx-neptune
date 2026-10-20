@@ -165,6 +165,7 @@ export function Import() {
 
   function loadProjection(p: Projection) {
     setCurrentId(p.id);
+    if (p.project_id) setProjectId(p.project_id);
     if (p.catalog) setCatalog(p.catalog);
     if (p.database) setDatabase(p.database);
     if (p.property_graph) { setPropertyGraph(p.property_graph); setPgqOpen(true); }
