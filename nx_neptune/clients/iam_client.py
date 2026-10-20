@@ -199,8 +199,7 @@ class IamClientWrapper:
         Raises:
             ValueError: If versioning is not enabled or status cannot be determined
         """
-        if s3_client is None:
-            s3_client = ClientFactory().s3()
+        s3_client = s3_client or ClientFactory().s3()
         bucket_name, _ = split_s3_arn_to_bucket_and_path(bucket_arn)
         try:
             response = s3_client.get_bucket_versioning(Bucket=bucket_name)
