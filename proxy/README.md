@@ -26,7 +26,7 @@ The UI is available at `http://localhost:8080`.
 
 ## Docker Compose
 
-The `docker-compose.yml` runs both the proxy and Graph Explorer locally.
+The `docker-compose.yml` runs both the proxy and Graph Explorer locally. `make up` recreates the containers each time; the `proxy-db` volume keeps `~/.nx-neptune/proxy.db` so project and projection rows survive a restart.
 
 ### ⚠️ Security: AWS Credentials
 
