@@ -244,6 +244,14 @@ export function Import() {
     setChecks([]);
     setPreview(null);
     setError(null);
+    const missing: { check: string; passed: boolean; message?: string }[] = [];
+    if (!bucket) missing.push({ check: "S3 staging bucket", passed: false, message: "No S3 staging bucket selected." });
+    if (!catalog) missing.push({ check: "Athena catalog", passed: false, message: "No Athena catalog selected." });
+    if (!database) missing.push({ check: "Athena database", passed: false, message: "No Athena database selected." });
+    if (missing.length > 0) {
+      setChecks(missing);
+      return;
+    }
     setLoading("validate");
     try {
       const id = await ensureProjection();
