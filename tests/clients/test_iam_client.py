@@ -14,8 +14,9 @@ import pytest
 
 from nx_neptune.clients.iam_client import (
     IamClientWrapper,
-    _get_s3_in_arn,
     _convert_sts_to_iam_arn,
+    _get_s3_in_arn,
+    _s3_simulation_targets,
     split_s3_arn_to_bucket_and_path,
 )
 
@@ -53,6 +54,12 @@ def test_get_s3_in_arn(s3_path, expected):
     assert result == expected
 
 
+def test_get_s3_in_arn_gov_partition():
+    assert _get_s3_in_arn("s3://my-bucket/my-folder", "aws-us-gov") == (
+        "arn:aws-us-gov:s3:::my-bucket/my-folder"
+    )
+
+
 @pytest.mark.parametrize(
     "arn",
     ["test/", "arn:aws:s3:::andy-networkx-test/"],
@@ -78,6 +85,10 @@ def test_validate_arns(arn):
         (
             "arn:aws:sts::123456789012:assumed-role/path/to/MyRole/session-name",
             "arn:aws:iam::123456789012:role/path/to/MyRole",
+        ),
+        (
+            "arn:aws-us-gov:sts::123456789012:assumed-role/ROLE_NAME/SESSION_NAME",
+            "arn:aws-us-gov:iam::123456789012:role/ROLE_NAME",
         ),
     ],
 )
@@ -353,7 +364,7 @@ class TestIamClientWrapper:
 
     def test_has_export_to_s3_permissions_success(self, mock_iam_client):
         """Test has_export_to_s3_permissions with valid permissions and versioning enabled."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         iam_client, mock_client = mock_iam_client
 
@@ -385,7 +396,7 @@ class TestIamClientWrapper:
 
     def test_has_export_to_s3_permissions_versioning_disabled(self, mock_iam_client):
         """Test has_export_to_s3_permissions raises when versioning is not enabled."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         iam_client, mock_client = mock_iam_client
 
@@ -647,7 +658,7 @@ class TestIamClientWrapper:
 
     def test_has_athena_permissions_success(self, mock_iam_client):
         """Test has_athena_permissions with valid permissions."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         iam_client, mock_client = mock_iam_client
 
@@ -677,3 +688,140 @@ class TestIamClientWrapper:
                 "s3://test-bucket/", "arn:aws:kms:us-east-1:123456789012:key/test-key"
             )
             assert result is True
+
+    def test_create_graph_uses_star_and_tag_uses_graph_arn(self, mock_iam_client):
+        """CreateGraph stays on *; TagResource is simulated against graph/* (#576)."""
+        iam_client, mock_client = mock_iam_client
+        mock_client.meta.region_name = "us-west-2"
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {
+                    "EvalActionName": "neptune-graph:CreateGraph",
+                    "EvalDecision": "allowed",
+                },
+                {
+                    "EvalActionName": "neptune-graph:TagResource",
+                    "EvalDecision": "allowed",
+                },
+            ]
+        }
+
+        iam_client.has_create_na_permissions()
+
+        calls = mock_client.simulate_principal_policy.call_args_list
+        resources = [c.kwargs["ResourceArns"][0] for c in calls]
+        assert "*" in resources
+        assert "arn:aws:neptune-graph:us-west-2:123456789012:graph/*" in resources
+        create_call = next(
+            c for c in calls if "neptune-graph:CreateGraph" in c.kwargs["ActionNames"]
+        )
+        tag_call = next(
+            c for c in calls if "neptune-graph:TagResource" in c.kwargs["ActionNames"]
+        )
+        assert create_call.kwargs["ResourceArns"] == ["*"]
+        assert tag_call.kwargs["ResourceArns"] == [
+            "arn:aws:neptune-graph:us-west-2:123456789012:graph/*"
+        ]
+        assert tag_call.kwargs["ContextEntries"][0]["ContextKeyName"] == (
+            "aws:RequestTag/agent"
+        )
+        assert tag_call.kwargs["ContextEntries"][0]["ContextKeyValues"] == [
+            "nx-neptune"
+        ]
+
+    def test_least_privilege_tag_resource_denied_on_star(self, mock_iam_client):
+        """A graph-scoped TagResource policy fails if simulated against *."""
+        iam_client, mock_client = mock_iam_client
+        mock_client.meta.region_name = "us-east-1"
+
+        def mock_simulate(**kwargs):
+            action_names = kwargs["ActionNames"]
+            resource = kwargs["ResourceArns"][0]
+            results = []
+            for action in action_names:
+                if action == "neptune-graph:TagResource" and resource == "*":
+                    decision = "implicitDeny"
+                else:
+                    decision = "allowed"
+                results.append({"EvalActionName": action, "EvalDecision": decision})
+            return {"EvaluationResults": results}
+
+        mock_client.simulate_principal_policy.side_effect = mock_simulate
+        iam_client.has_create_na_permissions()
+
+    def test_s3_list_bucket_uses_bucket_arn(self, mock_iam_client):
+        """ListBucket is simulated on the bucket; object actions on prefix/*."""
+        iam_client, mock_client = mock_iam_client
+        mock_client.get_role.return_value = {
+            "Role": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {"Service": "neptune-graph.amazonaws.com"},
+                            "Action": "sts:AssumeRole",
+                        }
+                    ]
+                }
+            }
+        }
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "s3:PutObject", "EvalDecision": "allowed"},
+                {"EvalActionName": "s3:DeleteObject", "EvalDecision": "allowed"},
+                {"EvalActionName": "s3:ListBucket", "EvalDecision": "allowed"},
+            ]
+        }
+        from unittest.mock import patch
+
+        with patch.object(iam_client, "check_s3_versioning_enabled"):
+            iam_client.has_export_to_s3_permissions("s3://stage/proj-1/")
+
+        calls = mock_client.simulate_principal_policy.call_args_list
+        by_action = {
+            tuple(c.kwargs["ActionNames"]): c.kwargs["ResourceArns"][0] for c in calls
+        }
+        assert by_action[("s3:ListBucket",)] == "arn:aws:s3:::stage"
+        assert by_action[("s3:PutObject", "s3:DeleteObject")] == (
+            "arn:aws:s3:::stage/proj-1/*"
+        )
+
+    def test_gov_partition_neptune_arn(self, mock_iam_client):
+        iam_client, mock_client = mock_iam_client
+        iam_client.role_arn = "arn:aws-us-gov:iam::123456789012:role/test-role"
+        mock_client.meta.region_name = "us-gov-west-1"
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {
+                    "EvalActionName": "neptune-graph:DeleteGraph",
+                    "EvalDecision": "allowed",
+                }
+            ]
+        }
+        iam_client.has_delete_na_permissions()
+        kwargs = mock_client.simulate_principal_policy.call_args.kwargs
+        assert kwargs["ResourceArns"] == [
+            "arn:aws-us-gov:neptune-graph:us-gov-west-1:123456789012:graph/*"
+        ]
+
+
+@pytest.mark.parametrize(
+    "s3_path,partition,bucket,obj",
+    [
+        (
+            "s3://stage/proj-1/",
+            "aws",
+            "arn:aws:s3:::stage",
+            "arn:aws:s3:::stage/proj-1/*",
+        ),
+        ("s3://stage/", "aws", "arn:aws:s3:::stage", "arn:aws:s3:::stage/*"),
+        (
+            "arn:aws-us-gov:s3:::stage/proj-1",
+            "aws",
+            "arn:aws-us-gov:s3:::stage",
+            "arn:aws-us-gov:s3:::stage/proj-1/*",
+        ),
+    ],
+)
+def test_s3_simulation_targets(s3_path, partition, bucket, obj):
+    assert _s3_simulation_targets(s3_path, partition) == (bucket, obj)
