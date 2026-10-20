@@ -19,6 +19,11 @@ services:
       # defaults (private graph + deletion protection). `make up` sets both.
       - NETWORKX_PUBLIC_CONNECTIVITY
       - NETWORKX_DELETION_PROTECTION
+    volumes:
+      # Persist the proxy state (SQLite database) across container recreation.
+      # Without this, every `make up` starts with an empty database and the
+      # projects/projections defined in the UI are lost.
+      - proxy-state:/home/appuser/.nx-neptune
     healthcheck:
       test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:8080/health"]
       interval: 10s
@@ -40,3 +45,6 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+
+volumes:
+  proxy-state:
