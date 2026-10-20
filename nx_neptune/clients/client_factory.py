@@ -41,6 +41,9 @@ class ClientFactory:
         region: AWS region name. If None, uses boto3 default.
         timeout_seconds: Read timeout for long-running operations (e.g., queries).
             Applied to the Neptune Analytics client.
+        max_attempts: Total attempts (first call plus retries) for Neptune Analytics
+            calls. Use 1 for calls that must not be re-sent, such as a bulk load.
+            If None, botocore's default retry behaviour applies.
     """
 
     _default: Optional["ClientFactory"] = None
@@ -49,8 +52,9 @@ class ClientFactory:
         cls,
         region: Optional[str] = None,
         timeout_seconds: Optional[int] = None,
+        max_attempts: Optional[int] = None,
     ):
-        if region is None and timeout_seconds is None:
+        if region is None and timeout_seconds is None and max_attempts is None:
             if cls._default is None:
                 cls._default = super().__new__(cls)
             return cls._default
@@ -60,11 +64,13 @@ class ClientFactory:
         self,
         region: Optional[str] = None,
         timeout_seconds: Optional[int] = None,
+        max_attempts: Optional[int] = None,
     ):
         if hasattr(self, "_clients"):
             return
         self._region = region
         self._timeout_seconds = timeout_seconds
+        self._max_attempts = max_attempts
         self._clients: dict[str, BaseClient] = {}
 
     def _base_kwargs(self) -> dict[str, Any]:
@@ -77,6 +83,13 @@ class ClientFactory:
         config_kwargs: dict[str, Any] = {"user_agent_appid": APP_ID_NX}
         if self._timeout_seconds:
             config_kwargs["read_timeout"] = self._timeout_seconds
+        if self._max_attempts:
+            # total_max_attempts counts the first call; botocore's max_attempts
+            # counts retries only, so max_attempts=1 would still send twice.
+            config_kwargs["retries"] = {
+                "total_max_attempts": self._max_attempts,
+                "mode": "standard",
+            }
         return Config(**config_kwargs)
 
     def neptune(self) -> BaseClient:

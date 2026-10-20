@@ -9,6 +9,11 @@ import networkx as nx
 from botocore.exceptions import ClientError
 
 from . import NeptuneGraph, instance_management
+from .instance_management import (
+    GraphType,
+    graph_type_from_details,
+    provisioned_memory_from_details,
+)
 from .clients import IamClientWrapper, NeptuneAnalyticsClient
 from .clients.client_factory import ClientFactory
 from .property_graph import (
@@ -547,11 +552,15 @@ class SessionManager:
                     skip_snapshot,
                 )
             except ClientError as e:
-                current_size = self.get_graph(graph.graph_id).details[
-                    "provisionedMemory"
-                ]
+                details = self.get_graph(graph.graph_id).details
+                # Scale only a graph confirmed as provisioned whose size is known.
+                # Session graphs cannot be scaled, and a graph that does not report
+                # its size is not guessed at; both re-raise the original error.
+                current_size = provisioned_memory_from_details(details)
                 if (
-                    max_size is not None
+                    graph_type_from_details(details) == GraphType.PROVISIONED
+                    and current_size is not None
+                    and max_size is not None
                     and e.response["Error"]["Code"] == "InsufficientMemory"
                     and max_size > current_size
                 ):

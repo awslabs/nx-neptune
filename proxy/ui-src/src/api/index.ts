@@ -67,13 +67,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // --- Metadata ---
 
 export const metadata = {
-  config: () => request<{ region: string; graph_prefix: string }>("/metadata/config"),
+  config: () => request<{ region: string; graph_prefix: string; session_memory_sizes: number[]; memory_sizes: number[] }>("/metadata/config"),
   catalogs: () => request<{ catalogs: { name: string; status: string }[] }>("/metadata/athena/catalogs"),
   databases: (catalog: string) => request<{ databases: string[] }>(`/metadata/athena/databases?catalog=${encodeURIComponent(catalog)}`),
   tables: (database: string, catalog: string) => request<{ tables: string[] }>(`/metadata/athena/tables?database=${encodeURIComponent(database)}&catalog=${encodeURIComponent(catalog)}`),
   columns: (database: string, table: string, catalog: string) => request<{ columns: { name: string; type: string }[] }>(`/metadata/athena/columns?database=${encodeURIComponent(database)}&table=${encodeURIComponent(table)}&catalog=${encodeURIComponent(catalog)}`),
   buckets: () => request<{ buckets: string[] }>("/metadata/s3/buckets"),
-  graphs: () => request<{ graphs: { id: string; name: string; status: string }[] }>("/metadata/neptune/graph-analytics"),
+  graphs: () => request<{ graphs: { id: string; name: string; status: string; graph_type: "session" | "provisioned" | "unknown" }[] }>("/metadata/neptune/graph-analytics"),
   deleteGraph: (id: string) => request<{ id: string; status: string }>(`/metadata/neptune/graph-analytics/${id}`, { method: "DELETE" }),
   graphSummary: (id: string) => request<{ numNodes: number; numEdges: number; nodeLabels: string[]; edgeLabels: string[] }>(`/metadata/neptune/graph-analytics/${id}/summary`),
 };

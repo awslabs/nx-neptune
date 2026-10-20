@@ -1595,3 +1595,165 @@ class TestAsyncExitCancellationReachesTheCaller:
                             pass
 
         assert any("CancelledError" in r.getMessage() for r in caplog.records)
+
+    @pytest.mark.asyncio
+    @patch("nx_neptune.session_manager.instance_management")
+    @patch("boto3.client")
+    async def test_import_from_csv_session_graph_does_not_scale(
+        self, mock_boto3_client, mock_im
+    ):
+        """A session graph re-raises InsufficientMemory instead of scaling."""
+        from botocore.exceptions import ClientError
+
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+
+        err = ClientError(
+            {"Error": {"Code": "InsufficientMemory", "Message": "too small"}},
+            "ImportTask",
+        )
+
+        async def _raise(*_a, **_k):
+            raise err
+
+        mock_im.import_csv_from_s3.side_effect = _raise
+
+        sm = SessionManager(session_name="test")
+        graph = NeptuneAnalyticsClient(
+            graph_id="g-session", client=mock_client, name="test", status="AVAILABLE"
+        )
+        # Session graph: computeConfiguration.graphSession present, and
+        # provisionedMemory omitted (as a real session graph may report).
+        sm.get_graph = MagicMock(
+            return_value=NeptuneAnalyticsClient(
+                graph_id="g-session",
+                client=mock_client,
+                name="test",
+                status="AVAILABLE",
+                details={
+                    "computeConfiguration": {"graphSession": {"minMemory": 8}},
+                },
+            )
+        )
+
+        with pytest.raises(ClientError):
+            await sm.import_from_csv(graph, "s3://bucket/prefix/", max_size=256)
+
+        mock_im.update_na_instance_size.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("nx_neptune.session_manager.instance_management")
+    @patch("boto3.client")
+    async def test_import_from_csv_provisioned_graph_scales(
+        self, mock_boto3_client, mock_im
+    ):
+        """A provisioned graph scales up once on InsufficientMemory, then succeeds."""
+        from botocore.exceptions import ClientError
+
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+
+        err = ClientError(
+            {"Error": {"Code": "InsufficientMemory", "Message": "too small"}},
+            "ImportTask",
+        )
+        calls = {"n": 0}
+
+        async def _first_fail_then_ok(*_a, **_k):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise err
+            return "task-ok"
+
+        mock_im.import_csv_from_s3.side_effect = _first_fail_then_ok
+
+        async def _resize(*_a, **_k):
+            return None
+
+        mock_im.update_na_instance_size.side_effect = _resize
+
+        sm = SessionManager(session_name="test")
+        graph = NeptuneAnalyticsClient(
+            graph_id="g-prov", client=mock_client, name="test", status="AVAILABLE"
+        )
+        # Provisioned graph: no graphSession.
+        sm.get_graph = MagicMock(
+            return_value=NeptuneAnalyticsClient(
+                graph_id="g-prov",
+                client=mock_client,
+                name="test",
+                status="AVAILABLE",
+                details={"provisionedMemory": 16},
+            )
+        )
+
+        result = await sm.import_from_csv(graph, "s3://bucket/prefix/", max_size=256)
+
+        assert result == "task-ok"
+        mock_im.update_na_instance_size.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "details, scales",
+        [
+            ({"provisionedMemory": 16}, True),
+            ({"computeConfiguration": {"provisionedGraph": {"memory": 16}}}, True),
+            # No size reported: re-raise the original error, not a KeyError.
+            ({"computeConfiguration": {"provisionedGraph": {}}}, False),
+            # Unknown graph type: never scaled.
+            ({}, False),
+        ],
+    )
+    @patch("nx_neptune.session_manager.instance_management")
+    @patch("boto3.client")
+    async def test_import_from_csv_resize_reads_memory_from_either_place(
+        self, mock_boto3_client, mock_im, details, scales
+    ):
+        from botocore.exceptions import ClientError
+
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        err = ClientError(
+            {"Error": {"Code": "InsufficientMemory", "Message": "too small"}},
+            "ImportTask",
+        )
+        calls = {"n": 0}
+
+        async def _first_fail_then_ok(*_a, **_k):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise err
+            return "task-ok"
+
+        async def _resize(*_a, **_k):
+            return None
+
+        mock_im.import_csv_from_s3.side_effect = _first_fail_then_ok
+        mock_im.update_na_instance_size.side_effect = _resize
+
+        sm = SessionManager(session_name="test")
+        graph = NeptuneAnalyticsClient(
+            graph_id="g-1", client=mock_client, name="test", status="AVAILABLE"
+        )
+        sm.get_graph = MagicMock(
+            return_value=NeptuneAnalyticsClient(
+                graph_id="g-1",
+                client=mock_client,
+                name="test",
+                status="AVAILABLE",
+                details=details,
+            )
+        )
+
+        if scales:
+            result = await sm.import_from_csv(graph, "s3://b/p/", max_size=256)
+            assert result == "task-ok"
+            mock_im.update_na_instance_size.assert_called_once()
+        else:
+            with pytest.raises(ClientError) as exc:
+                await sm.import_from_csv(graph, "s3://b/p/", max_size=256)
+            assert exc.value is err
+            mock_im.update_na_instance_size.assert_not_called()

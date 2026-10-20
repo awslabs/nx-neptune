@@ -44,8 +44,6 @@ def client():
 
 
 # --- Athena databases ---
-
-
 @pytest.mark.asyncio
 @patch("nx_neptune_proxy.routers.metadata.ClientFactory")
 async def test_list_catalogs(mock_cf, client):
@@ -66,6 +64,19 @@ async def test_list_catalogs(mock_cf, client):
             {"name": "MyCatalog", "status": "CREATE_COMPLETE"},
         ]
     }
+
+
+@pytest.mark.asyncio
+async def test_config_memory_sizes(client):
+    resp = await client.get("/api/v0/metadata/config")
+    assert resp.status_code == 200
+    body = resp.json()
+    sizes = body["memory_sizes"]
+    # Smallest-first full list; session sizes are a subset.
+    assert sizes == sorted(sizes)
+    assert sizes == [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]
+    assert set(body["session_memory_sizes"]).issubset(set(sizes))
+    assert set(body["session_memory_sizes"]) == {4, 8}
 
 
 @pytest.mark.asyncio
@@ -220,6 +231,18 @@ async def test_list_neptune_graphs(mock_cf, client):
     mock_neptune.list_graphs.return_value = {
         "graphs": [
             {"id": "g-123", "name": "nxp-my-graph", "status": "AVAILABLE"},
+            {
+                "id": "g-789",
+                "name": "nxp-tiny-graph",
+                "status": "AVAILABLE",
+                "computeConfiguration": {"graphSession": {"minMemory": 8}},
+            },
+            {
+                "id": "g-321",
+                "name": "nxp-big-graph",
+                "status": "AVAILABLE",
+                "computeConfiguration": {"provisionedGraph": {"memory": 16}},
+            },
             {"id": "g-456", "name": "other", "status": "CREATING"},
         ]
     }
@@ -227,11 +250,31 @@ async def test_list_neptune_graphs(mock_cf, client):
 
     resp = await client.get("/api/v0/metadata/neptune/graph-analytics")
     assert resp.status_code == 200
+    # graph_type comes from the list response itself, so no per-graph call is made
     assert resp.json() == {
         "graphs": [
-            {"id": "g-123", "name": "nxp-my-graph", "status": "AVAILABLE"},
+            {
+                "id": "g-123",
+                "name": "nxp-my-graph",
+                "status": "AVAILABLE",
+                "graph_type": "unknown",
+            },
+            {
+                "id": "g-789",
+                "name": "nxp-tiny-graph",
+                "status": "AVAILABLE",
+                "graph_type": "session",
+            },
+            {
+                "id": "g-321",
+                "name": "nxp-big-graph",
+                "status": "AVAILABLE",
+                "graph_type": "provisioned",
+            },
         ]
     }
+    mock_neptune.get_graph.assert_not_called()
+    mock_neptune.get_graph_summary.assert_not_called()
 
 
 @pytest.mark.asyncio

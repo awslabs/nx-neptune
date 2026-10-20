@@ -2,7 +2,9 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
-import { Play, CheckCircle, Eye, Wand2, ChevronRight, Plus, Trash2, AlertTriangle } from "lucide-react";
+import { Play, CheckCircle, Eye, Wand2, ChevronRight, Plus, Trash2, AlertTriangle, Info } from "lucide-react";
+
+const DEFAULT_MEMORY_SIZES = [16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
 
 type UiNodeQuery = NodeQueryInput & { failed?: boolean };
 type UiEdgeQuery = EdgeQueryInput & { failed?: boolean };
@@ -48,6 +50,9 @@ export function Import() {
   const [catalogs, setCatalogs] = useState<{ name: string; status: string }[]>([]);
   const [databases, setDatabases] = useState<string[]>([]);
   const [buckets, setBuckets] = useState<string[]>([]);
+  const [sessionSizes, setSessionSizes] = useState<number[]>([]);
+  // Shown until the proxy reports the sizes it supports, and kept if it cannot.
+  const [memorySizes, setMemorySizes] = useState<number[]>(DEFAULT_MEMORY_SIZES);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
 
@@ -92,7 +97,12 @@ export function Import() {
   useEffect(() => {
     metadata.catalogs().then((d) => setCatalogs(d.catalogs));
     metadata.buckets().then((d) => setBuckets(d.buckets));
-    metadata.config().then((c) => setGraphPrefix(c.graph_prefix)).catch(() => {});
+    metadata.config().then((c) => {
+      setGraphPrefix(c.graph_prefix);
+      // An older proxy does not send the size lists; keep the defaults then.
+      if (c.session_memory_sizes) setSessionSizes(c.session_memory_sizes);
+      if (c.memory_sizes) setMemorySizes(c.memory_sizes);
+    }).catch(() => {});
     projectApi.list().then(setProjects);
     loadProjections().then(() => {
       const projectionId = searchParams.get("projection");
@@ -540,10 +550,22 @@ export function Import() {
               </Select>
             </label>
             <label className="space-y-1">
-              <span className="text-sm font-medium text-gray-700">Memory (m-NCU)</span>
-              <Select value={graphMemoryGb} onChange={(e) => setGraphMemoryGb(Number(e.target.value))}>
-                {[16, 32, 64, 128, 256, 512, 1024, 2048, 4096].map((size) => (
-                  <option key={size} value={size}>{size} GB</option>
+              <span className="flex items-center gap-1 text-sm font-medium text-gray-700">
+                Memory (m-NCU)
+                {sessionSizes.includes(graphMemoryGb) && (
+                  <span title="Session tier: faster start-up.">
+                    <Info className="h-3.5 w-3.5 text-gray-400" aria-label="Session tier info" />
+                  </span>
+                )}
+              </span>
+              <Select
+                value={graphMemoryGb}
+                onChange={(e) => setGraphMemoryGb(Number(e.target.value))}
+              >
+                {memorySizes.map((size) => (
+                  <option key={size} value={size}>
+                    {sessionSizes.includes(size) ? `${size} m-NCU \u26A1` : `${size} m-NCU`}
+                  </option>
                 ))}
               </Select>
               {graphMemoryGb > 1024 && (
