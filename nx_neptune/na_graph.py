@@ -109,6 +109,29 @@ class NeptuneGraph:
             iam_client=iam_client,
         )
 
+    @classmethod
+    def from_graph_id(
+        cls,
+        graph_id: str,
+    ):
+        """
+        Build a NeptuneGraph for an existing graph id, resolving the Neptune
+        Analytics client and IAM wrapper from the default ClientFactory.
+
+        Args:
+            graph_id (str): The id of the existing Neptune Analytics graph.
+        """
+        logger = logging.getLogger(__name__)
+
+        na_client = NeptuneAnalyticsClient(graph_id, logger=logger)
+        iam_client = IamClientWrapper.default()
+        return cls(
+            graph=Graph(),
+            logger=logger,
+            na_client=na_client,
+            iam_client=iam_client,
+        )
+
     def graph_object(self) -> Graph | DiGraph:
         return self.graph
 
