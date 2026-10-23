@@ -262,3 +262,25 @@ class TestNeptuneGraph:
         expected_query = match_all_edges()
         mock_client.execute_generic_query.assert_called_once_with(expected_query)
         assert result == ["relationship1", "relationship1"]
+
+    @patch("nx_neptune.na_graph.IamClientWrapper")
+    @patch("nx_neptune.na_graph.NeptuneAnalyticsClient")
+    def test_from_graph_id(self, mock_na_client_cls, mock_iam_cls):
+        """from_graph_id builds a graph for the id with an empty local graph."""
+        mock_na_client = MagicMock()
+        mock_na_client_cls.return_value = mock_na_client
+        mock_iam = MagicMock()
+        mock_iam_cls.default.return_value = mock_iam
+
+        result = NeptuneGraph.from_graph_id("g-abc123")
+
+        assert isinstance(result, NeptuneGraph)
+        # Remote client is created for the given id.
+        assert mock_na_client_cls.call_args.args[0] == "g-abc123"
+        assert result.na_client is mock_na_client
+        # IAM wrapper comes from the default() constructor (no manual STS/IAM).
+        mock_iam_cls.default.assert_called_once_with()
+        assert result.iam_client is mock_iam
+        # Local graph starts empty and is a plain undirected Graph.
+        assert isinstance(result.graph, nx.Graph)
+        assert result.graph.number_of_nodes() == 0
