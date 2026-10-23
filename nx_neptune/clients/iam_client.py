@@ -56,6 +56,22 @@ class IamClientWrapper:
         self.client = client
         self.logger = logger or logging.getLogger(__name__)
 
+    @classmethod
+    def default(cls) -> "IamClientWrapper":
+        """
+        Build an IamClientWrapper for the current caller, resolving the role
+        ARN and IAM client from the default ClientFactory (STS caller identity
+        + IAM client).
+
+        Returns:
+            IamClientWrapper: Wrapper bound to the caller's role ARN.
+        """
+        factory = ClientFactory()
+        return cls(
+            role_arn=factory.sts().get_caller_identity()["Arn"],
+            client=factory.iam(),
+        )
+
     def check_assume_role(self, service_name: str) -> bool:
         """
         Check if a specific AWS service has permission to assume the configured IAM role
