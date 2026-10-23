@@ -1737,9 +1737,7 @@ def empty_s3_bucket(
 
 
 def validate_permissions():
-    factory = ClientFactory()
-    user_arn = factory.sts().get_caller_identity()["Arn"]
-    iam_client_wrapper = IamClientWrapper(role_arn=user_arn, client=factory.iam())
+    iam_client_wrapper = IamClientWrapper.default()
 
     s3_import = os.getenv("NETWORKX_S3_IMPORT_BUCKET_PATH")
     s3_export = os.getenv("NETWORKX_S3_EXPORT_BUCKET_PATH")
