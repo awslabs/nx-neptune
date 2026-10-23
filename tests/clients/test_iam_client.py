@@ -148,6 +148,24 @@ class TestIamClientWrapper:
         assert iam_client.role_arn == "arn:aws:iam::123456789012:role/test-role"
         assert iam_client.client == mock_client
 
+    def test_default_resolves_caller_identity(self):
+        """default() builds a wrapper from the factory's STS identity + IAM client."""
+        from unittest.mock import patch, MagicMock
+
+        mock_iam = MagicMock()
+        with patch("nx_neptune.clients.iam_client.ClientFactory") as mock_factory_cls:
+            factory = mock_factory_cls.return_value
+            factory.sts.return_value.get_caller_identity.return_value = {
+                "Arn": "arn:aws:iam::123456789012:role/caller-role"
+            }
+            factory.iam.return_value = mock_iam
+
+            wrapper = IamClientWrapper.default()
+
+        assert isinstance(wrapper, IamClientWrapper)
+        assert wrapper.role_arn == "arn:aws:iam::123456789012:role/caller-role"
+        assert wrapper.client is mock_iam
+
     def test_check_assume_role_success(self, mock_iam_client):
         """Test check_assume_role with valid service."""
         iam_client, mock_client = mock_iam_client
