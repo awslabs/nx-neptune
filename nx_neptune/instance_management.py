@@ -648,8 +648,7 @@ async def reset_graph(
         ClientError: If there's an issue with the AWS API call
         Exception: If an invalid status code is returned
     """
-    if na_client is None:
-        na_client = ClientFactory().neptune()
+    na_client = na_client or ClientFactory().neptune()
 
     logger.info(
         f"Perform reset_graph action on graph: [{graph_id}] with skip_snapshot: [{skip_snapshot}]"
@@ -1687,8 +1686,7 @@ def empty_s3_bucket(
         raise ValueError("s3_arn must be a non-empty string")
 
     # Create S3 client if not provided
-    if s3_client is None:
-        s3_client = ClientFactory().s3()
+    s3_client = s3_client or ClientFactory().s3()
 
     iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
 
@@ -1915,11 +1913,9 @@ def _create_iam_wrapper(
         IamClientWrapper: Wrapper with the caller's role ARN
     """
     factory = ClientFactory()
-    if sts_client is None:
-        sts_client = factory.sts()
+    sts_client = sts_client or factory.sts()
     user_arn = sts_client.get_caller_identity()["Arn"]
-    if iam_client is None:
-        iam_client = factory.iam()
+    iam_client = iam_client or factory.iam()
     return IamClientWrapper(role_arn=user_arn, client=iam_client)
 
 
@@ -1957,8 +1953,7 @@ def execute_athena_query(
         ClientError: If there's an issue with the AWS API call
         Exception: If the query execution fails or times out
     """
-    if client is None:
-        client = ClientFactory().athena()
+    client = client or ClientFactory().athena()
     execution_id = _execute_athena_query(
         client, sql_statement, output_location, sql_parameters, catalog, database
     )
@@ -1990,8 +1985,7 @@ def get_athena_query_results(
         The caller is responsible for skipping the first row if headers
         are not needed.
     """
-    if client is None:
-        client = ClientFactory().athena()
+    client = client or ClientFactory().athena()
 
     rows = []
     try:
