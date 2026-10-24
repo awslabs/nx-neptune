@@ -20,7 +20,7 @@ from nx_neptune.clients import (
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
 )
-from nx_neptune.na_graph import NeptuneGraph
+from nx_neptune.na_graph import NeptuneGraph, get_config
 from nx_neptune.clients import (
     NeptuneAnalyticsClient,
     insert_node,
@@ -262,3 +262,18 @@ class TestNeptuneGraph:
         expected_query = match_all_edges()
         mock_client.execute_generic_query.assert_called_once_with(expected_query)
         assert result == ["relationship1", "relationship1"]
+
+
+class TestGetConfig:
+    def test_get_config_applies_s3_iam_role_arn_env_var(self):
+        """get_config() should set s3_iam_role from NETWORKX_S3_IAM_ROLE_ARN"""
+        original_role = nx.config.backends.neptune.s3_iam_role
+        try:
+            with patch(
+                "nx_neptune.na_graph.NETWORKX_S3_IAM_ROLE_ARN",
+                "arn:aws:iam::123456789012:role/example",
+            ):
+                config = get_config()
+                assert config.s3_iam_role == "arn:aws:iam::123456789012:role/example"
+        finally:
+            nx.config.backends.neptune.s3_iam_role = original_role

@@ -313,7 +313,7 @@ def get_config() -> NeptuneConfig:
         config.graph_id = NETWORKX_GRAPH_ID
 
     if NETWORKX_S3_IAM_ROLE_ARN is not None:
-        config.role_arn = NETWORKX_S3_IAM_ROLE_ARN
+        config.s3_iam_role = NETWORKX_S3_IAM_ROLE_ARN
 
     return config
 
