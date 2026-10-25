@@ -164,16 +164,24 @@ class SessionManager:
         raise Exception(f"No graph instance with id {graph_id} found")
 
     async def get_or_create_graph(
-        self, config: Optional[dict] = None
+        self, config: Optional[dict] = None, reuse_existing: bool = True
     ) -> NeptuneAnalyticsClient:
         """Get the first available graph or create a new one if none exist.
+
+        Args:
+            config: Optional graph configuration used when a new graph is created.
+            reuse_existing: When True (default), return the first AVAILABLE graph
+                whose name starts with the session name. Graph names are not
+                unique, so that match can be a graph that belongs to something
+                else. Pass False to always create a new graph.
 
         Returns:
             NeptuneAnalyticsClient: graph object for an available instance
         """
-        graph = self._get_existing_graph(filter_status=["AVAILABLE"])
-        if graph:
-            return graph
+        if reuse_existing:
+            graph = self._get_existing_graph(filter_status=["AVAILABLE"])
+            if graph:
+                return graph
         # create a new graph and return
         logger.info(f"Creating new graph named with prefix: {self.session_name}")
         graph_id = await instance_management.create_na_instance(
