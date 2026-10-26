@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import weakref
+from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from typing import Callable, Optional, Union
 
@@ -27,6 +28,23 @@ __all__ = [
     "CleanupTask",
     "SessionManager",
 ]
+
+
+def _run_sync(coro):
+    """Run ``coro`` to completion from synchronous code.
+
+    ``asyncio.run`` raises when a loop is already running, which is the common
+    case here because every ``SessionManager`` create method is ``async`` - a
+    ``with`` block in a notebook or an ``async def`` exits inside a live loop.
+    In that case the coroutine runs on its own loop in a worker thread.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 def _request_stop(client, graph_ids: list, session_name, owner_pid: int) -> None:
@@ -56,7 +74,9 @@ def _request_stop(client, graph_ids: list, session_name, owner_pid: int) -> None
                     f"Not stopping graph {graph_id}: status is {graph.get('status')}"
                 )
                 continue
-            if session_name and not str(graph.get("name", "")).startswith(session_name):
+            if session_name and not str(graph.get("name", "")).startswith(
+                f"{session_name}-"
+            ):
                 logger.warning(
                     f"Not stopping graph {graph_id}: name {graph.get('name')!r} is "
                     f"outside session {session_name!r}"
@@ -100,6 +120,11 @@ class SessionManager:
         """
         self.session_name = session_name
         self.cleanup_task = cleanup_task or CleanupTask.NONE
+        if self.cleanup_task == CleanupTask.STOP and not session_name:
+            raise ValueError(
+                "CleanupTask.STOP requires a session_name: without one the cleanup "
+                "would target every Neptune Analytics graph in the account/region."
+            )
         self._clients = ClientFactory()
         self._neptune_client = self._clients.neptune()
         self._sts_client = self._clients.sts()
@@ -149,13 +174,32 @@ class SessionManager:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit the context manager and clean up graphs."""
+        """Exit the context manager and clean up graphs.
+
+        Note that STOP waits for each graph to reach ``STOPPED``, so exiting the
+        block can take minutes.
+
+        A cleanup failure is never allowed to replace an exception raised by the
+        ``with`` body: that error is the one the caller needs to see, so a failed
+        cleanup is logged instead and the original exception propagates.
+        """
 
         if self.cleanup_task == CleanupTask.DESTROY:
             self.destroy_all_graphs()
         elif self.cleanup_task == CleanupTask.STOP:
-            asyncio.run(self._await_stop_all_graphs())
-            self._disarm()
+            try:
+                _run_sync(self._await_stop_all_graphs())
+            except Exception as e:  # noqa: BLE001 - see docstring
+                logger.warning(
+                    f"Session cleanup failed to stop graphs: {e}. They may still be "
+                    f"running and billed; list them with "
+                    f"`aws neptune-graph list-graphs` and stop them with "
+                    f"`aws neptune-graph stop-graph --graph-identifier <id>`"
+                )
+                if exc_type is None:
+                    raise
+            finally:
+                self._disarm()
 
     def _disarm(self) -> None:
         """Cancel the automatic stop; cleanup has already been handled explicitly."""
