@@ -12,8 +12,8 @@
 # language governing permissions and limitations under the License.
 import asyncio
 import gc
-import os
 import itertools
+import os
 import weakref
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -572,21 +572,22 @@ class TestSessionManagerAutoStopOnDestroy:
 
     @patch("boto3.client")
     def test_gc_of_session_that_created_nothing_stops_nothing(self, mock_boto3_client):
-        """A session that created no graph must never stop graphs it merely saw.
+        """A session that created no graph stops nothing, even inside its own prefix.
 
-        With session_name=None, list_graphs() returns every graph in the account,
-        so a prefix-based sweep here would stop unrelated production graphs.
+        Cleanup acts on the graphs this session created, not on everything a
+        prefix scan happens to return, so a graph someone else made under the
+        same prefix is left running.
         """
         mock_client = MagicMock()
         mock_boto3_client.return_value = mock_client
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
         mock_client.list_graphs.return_value = {
             "graphs": [
-                {"name": "prod-analytics", "id": "g-prod", "status": "AVAILABLE"}
+                {"name": "test-session-theirs", "id": "g-theirs", "status": "AVAILABLE"}
             ]
         }
 
-        sm = SessionManager(cleanup_task=CleanupTask.STOP)
+        sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
         ref = weakref.ref(sm)
         del sm
 
@@ -911,3 +912,84 @@ class TestSessionManagerOwnershipAndGuards:
             gc.collect()
             assert ref() is None
         mock_client.stop_graph.assert_not_called()
+
+
+class TestSessionManagerExitRobustness:
+    """Exit-time cleanup must survive the contexts the library is actually used in."""
+
+    @staticmethod
+    def _client(name="test-1", status="AVAILABLE"):
+        client = MagicMock()
+        client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        client.get_graph.return_value = {"id": "g-1", "name": name, "status": status}
+        client.list_graphs.return_value = {
+            "graphs": [{"name": name, "id": "g-1", "status": status}]
+        }
+        return client
+
+    @pytest.mark.asyncio
+    async def test_exit_works_inside_a_running_event_loop(self):
+        """Every create method is async, so the with-block usually exits inside a loop."""
+        with patch("boto3.client", return_value=self._client()):
+            with patch(
+                "nx_neptune.session_manager.instance_management.stop_na_instance",
+                new_callable=AsyncMock,
+            ) as mock_stop:
+                with SessionManager(session_name="test", cleanup_task=CleanupTask.STOP):
+                    pass
+
+        mock_stop.assert_awaited_once_with("g-1")
+
+    def test_stop_cleanup_task_requires_a_session_name(self):
+        """STOP with no session_name would target every graph in the account."""
+        with patch("boto3.client", return_value=self._client()):
+            with pytest.raises(ValueError, match="session_name"):
+                SessionManager(cleanup_task=CleanupTask.STOP)
+
+    def test_exit_cleanup_failure_does_not_mask_the_body_exception(self):
+        """The caller must see their own error, not a cleanup error raised on the way out."""
+        with patch("boto3.client", return_value=self._client()):
+            with patch(
+                "nx_neptune.session_manager.instance_management.stop_na_instance",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("stop failed"),
+            ):
+                with pytest.raises(ValueError, match="THE REAL ERROR"):
+                    with SessionManager(
+                        session_name="test", cleanup_task=CleanupTask.STOP
+                    ):
+                        raise ValueError("THE REAL ERROR")
+
+    def test_exit_cleanup_failure_raises_when_the_body_succeeded(self):
+        """With no error to mask, a failed stop must not pass silently."""
+        with patch("boto3.client", return_value=self._client()):
+            with patch(
+                "nx_neptune.session_manager.instance_management.stop_na_instance",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("stop failed"),
+            ):
+                with pytest.raises(RuntimeError, match="stop failed"):
+                    with SessionManager(
+                        session_name="test", cleanup_task=CleanupTask.STOP
+                    ):
+                        pass
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
+    async def test_finalizer_requires_an_exact_session_prefix(
+        self, mock_create, mock_boto3_client
+    ):
+        """Generated names are '<prefix>-<uuid>', so session 'test' must not own 'testing-1'."""
+        client = self._client(name="testing-1")
+        mock_boto3_client.return_value = client
+        mock_create.return_value = "g-1"
+
+        sm = SessionManager(session_name="test", cleanup_task=CleanupTask.STOP)
+        sm._own("g-1")
+        ref = weakref.ref(sm)
+        del sm
+
+        gc.collect()
+        assert ref() is None
+        client.stop_graph.assert_not_called()
