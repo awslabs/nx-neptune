@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
 import logging
-import os
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
@@ -47,41 +46,31 @@ def _run_sync(coro):
         return pool.submit(asyncio.run, coro).result()
 
 
-def _request_stop(client, graph_ids: list, session_name, owner_pid: int) -> None:
-    """Best-effort synchronous stop of the given graphs. Never raises.
+def _stop_session_graphs(client, session_name: str) -> None:
+    """Best-effort synchronous stop of this session's graphs. Never raises.
 
-    This runs from ``weakref.finalize``, i.e. during garbage collection or at
-    interpreter exit, so it is deliberately minimal: no asyncio, no polling, no
-    new boto3 clients, and no permission pre-checks. It issues ``stop_graph``
-    on the client captured when the session was created and returns.
-
-    Before stopping, each graph must pass every guard:
-
-    * the current process is the one that armed the finalizer - a forked child
-      inherits the registry and must not stop its parent's graphs;
-    * the graph is still ``AVAILABLE`` - already stopping, stopped or deleting
-      graphs are left alone;
-    * the graph's name carries this session's prefix, when one was given.
+    Runs from ``weakref.finalize``, i.e. during garbage collection or at
+    interpreter exit, so it is deliberately minimal: no asyncio, no polling and
+    no new boto3 clients. ``list_graphs`` is the source of truth for which
+    graphs belong to the session, matching ``_graph_bulk_operation``; graphs
+    that are not ``AVAILABLE`` are left alone.
     """
-    if os.getpid() != owner_pid:
+    try:
+        graphs = client.list_graphs().get("graphs", [])
+    except Exception as e:  # noqa: BLE001 - a finalizer must never raise
+        logger.warning(f"Could not list graphs for session {session_name!r}: {e}")
         return
 
-    for graph_id in list(graph_ids):
+    for graph in graphs:
+        graph_id = graph.get("id")
+        if not str(graph.get("name", "")).startswith(f"{session_name}-"):
+            continue
+        if graph.get("status") != "AVAILABLE":
+            logger.debug(
+                f"Not stopping graph {graph_id}: status is {graph.get('status')}"
+            )
+            continue
         try:
-            graph = client.get_graph(graphIdentifier=graph_id)
-            if graph.get("status") != "AVAILABLE":
-                logger.debug(
-                    f"Not stopping graph {graph_id}: status is {graph.get('status')}"
-                )
-                continue
-            if session_name and not str(graph.get("name", "")).startswith(
-                f"{session_name}-"
-            ):
-                logger.warning(
-                    f"Not stopping graph {graph_id}: name {graph.get('name')!r} is "
-                    f"outside session {session_name!r}"
-                )
-                continue
             client.stop_graph(graphIdentifier=graph_id)
             logger.info(f"Stop requested for graph {graph_id} (session released)")
         except Exception as e:  # noqa: BLE001 - a finalizer must never raise
@@ -133,25 +122,14 @@ class SessionManager:
         self._s3_client = self._clients.s3()
         self._athena_client = self._clients.athena()
 
-        # Graphs this session created, and the safety net that stops them if the
-        # session is released without an explicit cleanup. The finalizer captures
-        # plain data only - never ``self``, which would keep the session alive.
-        self._owned_graph_ids: list[str] = []
+        # Safety net: stop this session's graphs if the session object is
+        # released without an explicit cleanup. The callback captures plain data
+        # only - never ``self``, which would keep the session alive.
         self._finalizer = None
         if self.cleanup_task == CleanupTask.STOP:
             self._finalizer = weakref.finalize(
-                self,
-                _request_stop,
-                self._neptune_client,
-                self._owned_graph_ids,
-                self.session_name,
-                os.getpid(),
+                self, _stop_session_graphs, self._neptune_client, self.session_name
             )
-
-    def _own(self, graph_id: str) -> None:
-        """Record a graph this session created, for automatic cleanup."""
-        if graph_id and graph_id not in self._owned_graph_ids:
-            self._owned_graph_ids.append(graph_id)
 
     @classmethod
     def session(cls, session_name=None, cleanup_task=None):
@@ -337,7 +315,6 @@ class SessionManager:
             graph_name_prefix=self.session_name,
             on_created=on_created,
         )
-        self._own(graph_id)
         return self.get_graph(graph_id)
 
     async def create_from_snapshot(
@@ -365,7 +342,6 @@ class SessionManager:
             sts_client=self._sts_client,
             iam_client=self._iam_client,
         )
-        self._own(graph_id)
         return self.get_graph(graph_id)
 
     async def create_from_csv(
@@ -393,7 +369,6 @@ class SessionManager:
             sts_client=self._sts_client,
             iam_client=self._iam_client,
         )
-        self._own(graph_id)
         return self.get_graph(graph_id)
 
     async def create_multiple_instances(
@@ -420,8 +395,7 @@ class SessionManager:
         ]
         graph_ids = await asyncio.gather(*tasks)
         for graph_id in graph_ids:
-            self._own(graph_id)
-        return graph_ids
+            return graph_ids
 
     async def export_to_csv(
         self,

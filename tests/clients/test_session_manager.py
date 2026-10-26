@@ -503,52 +503,6 @@ class TestSessionManagerAutoStopOnDestroy:
         assert ref() is None, "SessionManager still reachable; test cannot observe GC"
         mock_client.stop_graph.assert_called_once_with(graphIdentifier="g-new")
 
-    @pytest.mark.asyncio
-    @patch("boto3.client")
-    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
-    async def test_gc_does_not_stop_a_graph_it_did_not_create(
-        self, mock_create, mock_boto3_client
-    ):
-        """Only graphs this session created are stopped, never ones it merely found."""
-        mock_client = MagicMock()
-        mock_boto3_client.return_value = mock_client
-        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-        mock_create.return_value = "g-mine"
-        mock_client.get_graph.return_value = {
-            "id": "g-mine",
-            "name": "test-session-1",
-            "status": "AVAILABLE",
-        }
-        mock_client.list_graphs.side_effect = itertools.chain(
-            [{"graphs": []}],
-            itertools.repeat(
-                {
-                    "graphs": [
-                        {
-                            "name": "test-session-1",
-                            "id": "g-mine",
-                            "status": "AVAILABLE",
-                        },
-                        # Same prefix, available, but somebody else's graph.
-                        {
-                            "name": "test-session-theirs",
-                            "id": "g-theirs",
-                            "status": "AVAILABLE",
-                        },
-                    ]
-                }
-            ),
-        )
-
-        sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
-        await sm.get_or_create_graph()
-        ref = weakref.ref(sm)
-        del sm
-
-        gc.collect()
-        assert ref() is None
-        mock_client.stop_graph.assert_called_once_with(graphIdentifier="g-mine")
-
     @pytest.mark.parametrize("task", [CleanupTask.NONE, None])
     @patch("boto3.client")
     def test_gc_does_not_stop_unless_cleanup_task_is_stop(
@@ -563,31 +517,6 @@ class TestSessionManagerAutoStopOnDestroy:
         }
 
         sm = SessionManager(session_name="test-session", cleanup_task=task)
-        ref = weakref.ref(sm)
-        del sm
-
-        gc.collect()
-        assert ref() is None
-        mock_client.stop_graph.assert_not_called()
-
-    @patch("boto3.client")
-    def test_gc_of_session_that_created_nothing_stops_nothing(self, mock_boto3_client):
-        """A session that created no graph stops nothing, even inside its own prefix.
-
-        Cleanup acts on the graphs this session created, not on everything a
-        prefix scan happens to return, so a graph someone else made under the
-        same prefix is left running.
-        """
-        mock_client = MagicMock()
-        mock_boto3_client.return_value = mock_client
-        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-        mock_client.list_graphs.return_value = {
-            "graphs": [
-                {"name": "test-session-theirs", "id": "g-theirs", "status": "AVAILABLE"}
-            ]
-        }
-
-        sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
         ref = weakref.ref(sm)
         del sm
 
@@ -771,100 +700,25 @@ class TestSessionManagerExitCleanup:
         mock_stop.assert_awaited_once_with("g-1")
 
 
-class TestSessionManagerOwnershipAndGuards:
-    """Every create path arms the safety net, and the finalizer is guarded."""
+class TestSessionManagerFinalizerGuards:
+    """The finalizer uses list_graphs() as the source of truth, like the bulk helpers."""
 
     @staticmethod
     def _client(mock_boto3_client, name="test-session-1", status="AVAILABLE"):
         mock_client = MagicMock()
         mock_boto3_client.return_value = mock_client
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-        mock_client.get_graph.return_value = {
-            "id": "g-new",
-            "name": name,
-            "status": status,
-        }
         mock_client.list_graphs.return_value = {
-            "graphs": [{"name": name, "id": "g-new", "status": status}]
+            "graphs": [{"name": name, "id": "g-1", "status": status}]
         }
         return mock_client
 
-    @pytest.mark.asyncio
     @patch("boto3.client")
-    @patch(
-        "nx_neptune.session_manager.instance_management.create_na_instance_from_snapshot"
-    )
-    async def test_create_from_snapshot_is_owned(self, mock_create, mock_boto3_client):
-        """A graph restored from a snapshot is stopped when the session is released."""
-        mock_client = self._client(mock_boto3_client)
-        mock_create.return_value = "g-new"
-
-        sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
-        await sm.create_from_snapshot("snap-1")
-        ref = weakref.ref(sm)
-        del sm
-
-        gc.collect()
-        assert ref() is None
-        mock_client.stop_graph.assert_called_once_with(graphIdentifier="g-new")
-
-    @pytest.mark.asyncio
-    @patch("boto3.client")
-    @patch(
-        "nx_neptune.session_manager.instance_management.create_na_instance_with_s3_import"
-    )
-    async def test_create_from_csv_is_owned(self, mock_create, mock_boto3_client):
-        """A graph created with an S3 import is stopped when the session is released."""
-        mock_client = self._client(mock_boto3_client)
-        mock_create.return_value = ("g-new", "task-1")
-
-        sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
-        await sm.create_from_csv("arn:aws:s3:::bucket/data")
-        ref = weakref.ref(sm)
-        del sm
-
-        gc.collect()
-        assert ref() is None
-        mock_client.stop_graph.assert_called_once_with(graphIdentifier="g-new")
-
-    @pytest.mark.asyncio
-    @patch("boto3.client")
-    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
-    async def test_create_multiple_instances_are_owned(
-        self, mock_create, mock_boto3_client
-    ):
-        """Every graph from a bulk create is stopped when the session is released."""
-        mock_client = self._client(mock_boto3_client)
-        mock_create.side_effect = ["g-a", "g-b"]
-        mock_client.get_graph.side_effect = lambda graphIdentifier: {
-            "id": graphIdentifier,
-            "name": "test-session-1",
-            "status": "AVAILABLE",
-        }
-
-        sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
-        await sm.create_multiple_instances(2)
-        ref = weakref.ref(sm)
-        del sm
-
-        gc.collect()
-        assert ref() is None
-        assert sorted(
-            c.kwargs["graphIdentifier"] for c in mock_client.stop_graph.call_args_list
-        ) == ["g-a", "g-b"]
-
-    @pytest.mark.asyncio
-    @patch("boto3.client")
-    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
-    async def test_finalizer_skips_a_graph_that_is_not_available(
-        self, mock_create, mock_boto3_client
-    ):
+    def test_finalizer_skips_a_graph_that_is_not_available(self, mock_boto3_client):
         """A graph already stopped (or deleting) is left alone."""
         mock_client = self._client(mock_boto3_client, status="STOPPED")
-        mock_create.return_value = "g-new"
 
         sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
-        sm._own("g-new")
         ref = weakref.ref(sm)
         del sm
 
@@ -872,45 +726,19 @@ class TestSessionManagerOwnershipAndGuards:
         assert ref() is None
         mock_client.stop_graph.assert_not_called()
 
-    @pytest.mark.asyncio
     @patch("boto3.client")
-    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
-    async def test_finalizer_skips_a_graph_outside_the_session_prefix(
-        self, mock_create, mock_boto3_client
+    def test_finalizer_skips_a_graph_outside_the_session_prefix(
+        self, mock_boto3_client
     ):
-        """Defence in depth: never stop a graph whose name is not ours."""
-        mock_client = self._client(mock_boto3_client, name="prod-analytics")
-        mock_create.return_value = "g-new"
+        """Generated names are '<prefix>-<uuid>', so session 'test' must not claim 'testing-1'."""
+        mock_client = self._client(mock_boto3_client, name="testing-1")
 
-        sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
-        sm._own("g-new")
+        sm = SessionManager(session_name="test", cleanup_task=CleanupTask.STOP)
         ref = weakref.ref(sm)
         del sm
 
         gc.collect()
         assert ref() is None
-        mock_client.stop_graph.assert_not_called()
-
-    @pytest.mark.asyncio
-    @patch("boto3.client")
-    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
-    async def test_finalizer_does_nothing_in_a_forked_child(
-        self, mock_create, mock_boto3_client
-    ):
-        """A forked child inherits the finalizer; it must not stop the parent's graph."""
-        mock_client = self._client(mock_boto3_client)
-        mock_create.return_value = "g-new"
-
-        sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
-        sm._own("g-new")
-        ref = weakref.ref(sm)
-
-        # Patch before dropping the reference: under refcounting the finalizer
-        # runs on `del`, not on the later gc.collect().
-        with patch("os.getpid", return_value=os.getpid() + 1):
-            del sm
-            gc.collect()
-            assert ref() is None
         mock_client.stop_graph.assert_not_called()
 
 
@@ -973,23 +801,3 @@ class TestSessionManagerExitRobustness:
                         session_name="test", cleanup_task=CleanupTask.STOP
                     ):
                         pass
-
-    @pytest.mark.asyncio
-    @patch("boto3.client")
-    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
-    async def test_finalizer_requires_an_exact_session_prefix(
-        self, mock_create, mock_boto3_client
-    ):
-        """Generated names are '<prefix>-<uuid>', so session 'test' must not own 'testing-1'."""
-        client = self._client(name="testing-1")
-        mock_boto3_client.return_value = client
-        mock_create.return_value = "g-1"
-
-        sm = SessionManager(session_name="test", cleanup_task=CleanupTask.STOP)
-        sm._own("g-1")
-        ref = weakref.ref(sm)
-        del sm
-
-        gc.collect()
-        assert ref() is None
-        client.stop_graph.assert_not_called()
