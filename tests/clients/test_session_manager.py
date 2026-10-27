@@ -10,15 +10,9 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
-import asyncio
-import gc
-import itertools
-import logging
-import weakref
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from botocore.exceptions import ClientError
 
 from nx_neptune.session_manager import (
     CleanupTask,
@@ -462,156 +456,6 @@ class TestSessionManager:
         mock_create.assert_not_called()
 
 
-class TestSessionManagerAutoStopOnDestroy:
-    """A STOP session stops the graphs it created when it is garbage collected."""
-
-    @pytest.mark.asyncio
-    @patch("boto3.client")
-    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
-    async def test_gc_stops_graph_created_by_session(
-        self, mock_create, mock_boto3_client
-    ):
-        """Dropping the last reference to a STOP session stops the graph it created."""
-        mock_client = MagicMock()
-        mock_boto3_client.return_value = mock_client
-        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-        mock_create.return_value = "g-new"
-        mock_client.get_graph.return_value = {
-            "id": "g-new",
-            "name": "test-session-1",
-            "status": "AVAILABLE",
-        }
-        # First call: nothing exists yet. Every later call: the created graph.
-        mock_client.list_graphs.side_effect = itertools.chain(
-            [{"graphs": []}],
-            itertools.repeat(
-                {
-                    "graphs": [
-                        {"name": "test-session-1", "id": "g-new", "status": "AVAILABLE"}
-                    ]
-                }
-            ),
-        )
-
-        sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
-        await sm.get_or_create_graph()
-        ref = weakref.ref(sm)
-        del sm
-
-        # Prove the object really died before judging the side effect, otherwise a
-        # missing stop is ambiguous: broken finalizer, or test still holding a ref?
-        gc.collect()
-        assert ref() is None, "SessionManager still reachable; test cannot observe GC"
-        mock_client.stop_graph.assert_called_once_with(graphIdentifier="g-new")
-
-    @pytest.mark.parametrize("task", [CleanupTask.NONE, None])
-    @patch("boto3.client")
-    def test_gc_does_not_stop_unless_cleanup_task_is_stop(
-        self, mock_boto3_client, task
-    ):
-        """Without CleanupTask.STOP, releasing the session touches nothing."""
-        mock_client = MagicMock()
-        mock_boto3_client.return_value = mock_client
-        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-        mock_client.list_graphs.return_value = {
-            "graphs": [{"name": "test-session-1", "id": "g-new", "status": "AVAILABLE"}]
-        }
-
-        sm = SessionManager(session_name="test-session", cleanup_task=task)
-        ref = weakref.ref(sm)
-        del sm
-
-        gc.collect()
-        assert ref() is None
-        mock_client.stop_graph.assert_not_called()
-
-    @pytest.mark.asyncio
-    @patch("boto3.client")
-    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
-    async def test_gc_stop_failure_is_swallowed(self, mock_create, mock_boto3_client):
-        """A failing stop during finalization must not raise.
-
-        Exceptions in a finalizer never propagate; Python routes them to
-        sys.unraisablehook. Asserting the hook stays unused is the only way to
-        prove the failure was handled rather than merely ignored.
-        """
-        mock_client = MagicMock()
-        mock_boto3_client.return_value = mock_client
-        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-        mock_create.return_value = "g-new"
-        mock_client.get_graph.return_value = {
-            "id": "g-new",
-            "name": "test-session-1",
-            "status": "AVAILABLE",
-        }
-        mock_client.list_graphs.side_effect = itertools.chain(
-            [{"graphs": []}],
-            itertools.repeat(
-                {
-                    "graphs": [
-                        {"name": "test-session-1", "id": "g-new", "status": "AVAILABLE"}
-                    ]
-                }
-            ),
-        )
-        mock_client.stop_graph.side_effect = ClientError(
-            {"Error": {"Code": "AccessDeniedException", "Message": "nope"}}, "StopGraph"
-        )
-
-        sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
-        await sm.get_or_create_graph()
-        ref = weakref.ref(sm)
-        del sm
-
-        with patch("sys.unraisablehook") as unraisable:
-            gc.collect()
-            assert ref() is None
-        mock_client.stop_graph.assert_called_once_with(graphIdentifier="g-new")
-        unraisable.assert_not_called()
-
-    @patch("boto3.client")
-    @patch(
-        "nx_neptune.session_manager.instance_management.stop_na_instance",
-        new_callable=AsyncMock,
-    )
-    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
-    def test_no_second_stop_when_exited_then_collected(
-        self, mock_create, mock_stop, mock_boto3_client
-    ):
-        """An explicit context exit disarms the safety net; the graph is stopped once."""
-        mock_client = MagicMock()
-        mock_boto3_client.return_value = mock_client
-        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-        mock_create.return_value = "g-new"
-        mock_client.get_graph.return_value = {
-            "id": "g-new",
-            "name": "test-session-1",
-            "status": "AVAILABLE",
-        }
-        mock_client.list_graphs.side_effect = itertools.chain(
-            [{"graphs": []}],
-            itertools.repeat(
-                {
-                    "graphs": [
-                        {"name": "test-session-1", "id": "g-new", "status": "AVAILABLE"}
-                    ]
-                }
-            ),
-        )
-
-        sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
-        with sm:
-            asyncio.run(sm.get_or_create_graph())
-        assert mock_stop.await_count == 1  # stopped by __exit__
-        ref = weakref.ref(sm)
-        del sm
-
-        gc.collect()
-        assert ref() is None
-        assert mock_stop.await_count == 1
-        mock_client.stop_graph.assert_not_called()  # finalizer must not fire again
-
-
 class TestSessionManagerExitCleanup:
     """__exit__ honours the configured CleanupTask, not just DESTROY."""
 
@@ -701,69 +545,6 @@ class TestSessionManagerExitCleanup:
         mock_stop.assert_awaited_once_with("g-1")
 
 
-class TestSessionManagerFinalizerGuards:
-    """The finalizer uses list_graphs() as the source of truth, like the bulk helpers."""
-
-    @staticmethod
-    def _client(mock_boto3_client, name="test-session-1", status="AVAILABLE"):
-        mock_client = MagicMock()
-        mock_boto3_client.return_value = mock_client
-        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-        mock_client.list_graphs.return_value = {
-            "graphs": [{"name": name, "id": "g-1", "status": status}]
-        }
-        return mock_client
-
-    @patch("boto3.client")
-    def test_finalizer_skips_a_graph_that_is_not_available(self, mock_boto3_client):
-        """A graph already stopped (or deleting) is left alone."""
-        mock_client = self._client(mock_boto3_client, status="STOPPED")
-
-        sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
-        ref = weakref.ref(sm)
-        del sm
-
-        gc.collect()
-        assert ref() is None
-        mock_client.stop_graph.assert_not_called()
-
-    @patch("boto3.client")
-    def test_finalizer_warns_about_a_graph_it_cannot_stop(
-        self, mock_boto3_client, caplog
-    ):
-        """A graph left running because it was mid-create must be reported, not hidden.
-
-        Skipping a non-AVAILABLE graph is the only correct action, but it is also
-        how a billed graph gets leaked, so it has to be visible at warning level.
-        """
-        self._client(mock_boto3_client, status="CREATING")
-
-        sm = SessionManager(session_name="test-session", cleanup_task=CleanupTask.STOP)
-        ref = weakref.ref(sm)
-        del sm
-
-        with caplog.at_level(logging.WARNING, logger="nx_neptune.session_manager"):
-            gc.collect()
-        assert ref() is None
-        assert "CREATING" in caplog.text
-        assert "stop-graph --graph-identifier g-1" in caplog.text
-
-    @patch("boto3.client")
-    def test_finalizer_skips_a_graph_outside_the_session_prefix(
-        self, mock_boto3_client
-    ):
-        """Generated names are '<prefix>-<uuid>', so session 'test' must not claim 'testing-1'."""
-        mock_client = self._client(mock_boto3_client, name="testing-1")
-
-        sm = SessionManager(session_name="test", cleanup_task=CleanupTask.STOP)
-        ref = weakref.ref(sm)
-        del sm
-
-        gc.collect()
-        assert ref() is None
-        mock_client.stop_graph.assert_not_called()
-
-
 class TestSessionManagerExitRobustness:
     """Exit-time cleanup must survive the contexts the library is actually used in."""
 
@@ -826,12 +607,11 @@ class TestSessionManagerExitRobustness:
 
 
 class TestSessionMembership:
-    """Every cleanup path must agree on which graphs belong to the session.
+    """Which graphs a session owns, and so which ones cleanup may touch.
 
-    The explicit path (``__exit__`` -> ``_graph_bulk_operation`` -> ``list_graphs``)
-    and the automatic one (``weakref.finalize`` -> ``_stop_session_graphs``) share
-    ``_belongs_to_session``; if they drift, a graph gets stopped by one and leaked
-    by the other depending on how the session happened to end.
+    ``__exit__`` -> ``_graph_bulk_operation`` -> ``list_graphs`` all narrow down
+    to ``_belongs_to_session``, so a bug here either leaks a graph or stops one
+    belonging to a different session.
     """
 
     @pytest.mark.parametrize(
@@ -858,8 +638,8 @@ class TestSessionMembership:
         return client
 
     @pytest.mark.parametrize("graph_name", ["testgraph", "testing-1"])
-    def test_exit_and_finalizer_agree_on_a_sibling_prefix(self, graph_name):
-        """Neither path may claim a graph whose name only shares the prefix."""
+    def test_exit_skips_a_sibling_prefix(self, graph_name):
+        """Cleanup may not claim a graph whose name only shares the prefix."""
         client = self._client(graph_name)
 
         with patch("boto3.client", return_value=client):
@@ -867,21 +647,13 @@ class TestSessionMembership:
                 "nx_neptune.session_manager.instance_management.stop_na_instance",
                 new_callable=AsyncMock,
             ) as mock_stop:
-                sm = SessionManager(session_name="test", cleanup_task=CleanupTask.STOP)
-                with sm:
+                with SessionManager(session_name="test", cleanup_task=CleanupTask.STOP):
                     pass
-                mock_stop.assert_not_awaited()  # explicit cleanup skipped it
 
-                sm = SessionManager(session_name="test", cleanup_task=CleanupTask.STOP)
-                ref = weakref.ref(sm)
-                del sm
-                gc.collect()
+        mock_stop.assert_not_awaited()
 
-        assert ref() is None
-        client.stop_graph.assert_not_called()  # the finalizer skipped it too
-
-    def test_exit_and_finalizer_agree_on_a_session_graph(self):
-        """Both paths act on a graph named '{session_name}-{uuid}'."""
+    def test_exit_stops_a_session_graph(self):
+        """Cleanup acts on a graph named '{session_name}-{uuid}'."""
         client = self._client("test-abc123")
 
         with patch("boto3.client", return_value=client):
@@ -891,15 +663,8 @@ class TestSessionMembership:
             ) as mock_stop:
                 with SessionManager(session_name="test", cleanup_task=CleanupTask.STOP):
                     pass
-                mock_stop.assert_awaited_once_with("g-1")
 
-                sm = SessionManager(session_name="test", cleanup_task=CleanupTask.STOP)
-                ref = weakref.ref(sm)
-                del sm
-                gc.collect()
-
-        assert ref() is None
-        client.stop_graph.assert_called_once_with(graphIdentifier="g-1")
+        mock_stop.assert_awaited_once_with("g-1")
 
     @patch("boto3.client")
     def test_list_graphs_ignores_a_sibling_prefix(self, mock_boto3_client):

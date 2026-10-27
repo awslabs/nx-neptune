@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
 import logging
-import weakref
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from typing import Callable, Optional, Union
@@ -53,57 +52,8 @@ def _belongs_to_session(graph_name, session_name: str) -> bool:
     ``instance_management._create_random_graph_name``), so the separator is part
     of the match: session ``'test'`` owns ``'test-<uuid>'`` but must not claim
     ``'testing-<uuid>'``, which belongs to session ``'testing'``.
-
-    Shared by :meth:`SessionManager.list_graphs` and
-    :func:`_stop_session_graphs` so that every cleanup path - explicit or
-    automatic - operates on exactly the same set of graphs.
     """
     return str(graph_name or "").startswith(f"{session_name}-")
-
-
-def _stop_session_graphs(client, session_name: str) -> None:
-    """Best-effort synchronous stop of this session's graphs. Never raises.
-
-    Runs from ``weakref.finalize``, i.e. during garbage collection or at
-    interpreter exit, so it is deliberately minimal: no asyncio, no polling and
-    no new boto3 clients. Session membership is decided by
-    :func:`_belongs_to_session`, the same predicate ``list_graphs`` uses, so
-    this agrees with the explicit cleanup in ``__exit__``. Graphs that are not
-    ``AVAILABLE`` are left alone.
-    """
-    try:
-        graphs = client.list_graphs().get("graphs", [])
-    except Exception as e:  # noqa: BLE001 - a finalizer must never raise
-        logger.warning(f"Could not list graphs for session {session_name!r}: {e}")
-        return
-
-    for graph in graphs:
-        graph_id = graph.get("id")
-        if not _belongs_to_session(graph.get("name"), session_name):
-            continue
-        if graph.get("status") != "AVAILABLE":
-            # Only AVAILABLE graphs can be stopped, so this is the right action,
-            # but it is also how a billed graph gets left behind (e.g. one still
-            # CREATING when the session was released) - say so at warning level.
-            logger.warning(
-                f"Not stopping graph {graph_id}: status is {graph.get('status')}, "
-                f"expected AVAILABLE. If it becomes available it will keep running "
-                f"and billed; stop it with: "
-                f"aws neptune-graph stop-graph --graph-identifier {graph_id}"
-            )
-            continue
-        try:
-            client.stop_graph(graphIdentifier=graph_id)
-            logger.info(f"Stop requested for graph {graph_id} (session released)")
-        except Exception as e:  # noqa: BLE001 - a finalizer must never raise
-            try:
-                logger.warning(
-                    f"Could not stop graph {graph_id}: {e}. It may still be running "
-                    f"and billed; stop it with: "
-                    f"aws neptune-graph stop-graph --graph-identifier {graph_id}"
-                )
-            except Exception:  # noqa: BLE001 - logging can fail during shutdown
-                pass
 
 
 class CleanupTask(Enum):
@@ -144,15 +94,6 @@ class SessionManager:
         self._s3_client = self._clients.s3()
         self._athena_client = self._clients.athena()
 
-        # Safety net: stop this session's graphs if the session object is
-        # released without an explicit cleanup. The callback captures plain data
-        # only - never ``self``, which would keep the session alive.
-        self._finalizer = None
-        if self.cleanup_task == CleanupTask.STOP:
-            self._finalizer = weakref.finalize(
-                self, _stop_session_graphs, self._neptune_client, self.session_name
-            )
-
     @classmethod
     def session(cls, session_name=None, cleanup_task=None):
         """Create a new SessionManager instance.
@@ -176,6 +117,9 @@ class SessionManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit the context manager and clean up graphs.
 
+        This is the only cleanup hook: a ``SessionManager`` used without a
+        ``with`` block never stops its graphs automatically.
+
         Note that STOP waits for each graph to reach ``STOPPED``, so exiting the
         block can take minutes.
 
@@ -198,14 +142,6 @@ class SessionManager:
                 )
                 if exc_type is None:
                     raise
-            finally:
-                self._disarm()
-
-    def _disarm(self) -> None:
-        """Cancel the automatic stop; cleanup has already been handled explicitly."""
-        if self._finalizer is not None:
-            self._finalizer.detach()
-            self._finalizer = None
 
     async def _await_stop_all_graphs(self):
         """Stop every graph in this session, awaited to completion.
