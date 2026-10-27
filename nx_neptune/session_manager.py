@@ -46,14 +46,30 @@ def _run_sync(coro):
         return pool.submit(asyncio.run, coro).result()
 
 
+def _belongs_to_session(graph_name, session_name: str) -> bool:
+    """Whether ``graph_name`` is a graph of the session called ``session_name``.
+
+    Generated names are ``'{prefix}-{uuid}'`` (see
+    ``instance_management._create_random_graph_name``), so the separator is part
+    of the match: session ``'test'`` owns ``'test-<uuid>'`` but must not claim
+    ``'testing-<uuid>'``, which belongs to session ``'testing'``.
+
+    Shared by :meth:`SessionManager.list_graphs` and
+    :func:`_stop_session_graphs` so that every cleanup path - explicit or
+    automatic - operates on exactly the same set of graphs.
+    """
+    return str(graph_name or "").startswith(f"{session_name}-")
+
+
 def _stop_session_graphs(client, session_name: str) -> None:
     """Best-effort synchronous stop of this session's graphs. Never raises.
 
     Runs from ``weakref.finalize``, i.e. during garbage collection or at
     interpreter exit, so it is deliberately minimal: no asyncio, no polling and
-    no new boto3 clients. ``list_graphs`` is the source of truth for which
-    graphs belong to the session, matching ``_graph_bulk_operation``; graphs
-    that are not ``AVAILABLE`` are left alone.
+    no new boto3 clients. Session membership is decided by
+    :func:`_belongs_to_session`, the same predicate ``list_graphs`` uses, so
+    this agrees with the explicit cleanup in ``__exit__``. Graphs that are not
+    ``AVAILABLE`` are left alone.
     """
     try:
         graphs = client.list_graphs().get("graphs", [])
@@ -63,11 +79,17 @@ def _stop_session_graphs(client, session_name: str) -> None:
 
     for graph in graphs:
         graph_id = graph.get("id")
-        if not str(graph.get("name", "")).startswith(f"{session_name}-"):
+        if not _belongs_to_session(graph.get("name"), session_name):
             continue
         if graph.get("status") != "AVAILABLE":
-            logger.debug(
-                f"Not stopping graph {graph_id}: status is {graph.get('status')}"
+            # Only AVAILABLE graphs can be stopped, so this is the right action,
+            # but it is also how a billed graph gets left behind (e.g. one still
+            # CREATING when the session was released) - say so at warning level.
+            logger.warning(
+                f"Not stopping graph {graph_id}: status is {graph.get('status')}, "
+                f"expected AVAILABLE. If it becomes available it will keep running "
+                f"and billed; stop it with: "
+                f"aws neptune-graph stop-graph --graph-identifier {graph_id}"
             )
             continue
         try:
@@ -204,8 +226,8 @@ class SessionManager:
     def list_graphs(self) -> list[NeptuneAnalyticsClient]:
         """List available Neptune Analytics graphs.
 
-        If session_name is set, filters graphs to those named session_name or
-        '{session_name}-{uuid}'.
+        If session_name is set, filters graphs to this session's graphs, i.e.
+        those named ``'{session_name}-...'`` - see :func:`_belongs_to_session`.
 
         Returns:
             list: List of NeptuneAnalyticsClient objects containing graph metadata.
@@ -217,9 +239,7 @@ class SessionManager:
             graphs = [
                 NeptuneAnalyticsClient.from_response(g, self._neptune_client)
                 for g in graphs
-                if instance_management._is_session_graph(
-                    g.get("name", ""), self.session_name
-                )
+                if _belongs_to_session(g.get("name"), self.session_name)
             ]
         else:
             graphs = [
@@ -394,8 +414,7 @@ class SessionManager:
             for _ in range(count)
         ]
         graph_ids = await asyncio.gather(*tasks)
-        for graph_id in graph_ids:
-            return graph_ids
+        return graph_ids
 
     async def export_to_csv(
         self,
