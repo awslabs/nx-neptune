@@ -4,7 +4,7 @@ import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Sequence, Union
 
 import boto3
 import networkx as nx
@@ -65,6 +65,20 @@ class CleanupTask(Enum):
     STOP = "stop"
 
 
+# Graph statuses each operation acts on; any other status is skipped with a warning.
+_ACTIVE_STATUSES = ("AVAILABLE",)
+# A STOPPED graph is deletable (and still bills for storage), so DESTROY includes it.
+_DESTROYABLE_STATUSES = ("AVAILABLE", "STOPPED")
+
+# cleanup task -> (instance_management function to run, `aws neptune-graph` verb,
+#                  graph statuses the task acts on)
+_CLEANUP_OPERATIONS = {
+    CleanupTask.STOP: ("stop_na_instance", "stop-graph", _ACTIVE_STATUSES),
+    CleanupTask.RESET: ("reset_graph", "reset-graph", _ACTIVE_STATUSES),
+    CleanupTask.DESTROY: ("delete_na_instance", "delete-graph", _DESTROYABLE_STATUSES),
+}
+
+
 class SessionManager:
     """Manages Neptune Analytics sessions and graph operations."""
 
@@ -78,12 +92,14 @@ class SessionManager:
               When set to DESTROY, will destroy all instances in the session on exit.
               When set to RESET, will reset all instances in the session on exit.
               When set to STOP, will stop all instances in the session on exit.
+              STOP, RESET and DESTROY each require a session_name and raise
+              ValueError without one.
         """
         self.session_name = session_name
         self.cleanup_task = cleanup_task or CleanupTask.NONE
-        if self.cleanup_task == CleanupTask.STOP and not session_name:
+        if self.cleanup_task in _CLEANUP_OPERATIONS and not session_name:
             raise ValueError(
-                "CleanupTask.STOP requires a session_name: without one the cleanup "
+                f"{self.cleanup_task} requires a session_name: without one the cleanup "
                 "would target every Neptune Analytics graph in the account/region."
             )
         self._clients = ClientFactory()
@@ -118,38 +134,66 @@ class SessionManager:
         """Exit the context manager and clean up graphs.
 
         This is the only cleanup hook: a ``SessionManager`` used without a
-        ``with`` block never stops its graphs automatically.
+        ``with`` block never cleans up its graphs automatically.
 
-        Note that STOP waits for each graph to reach ``STOPPED``, so exiting the
-        block can take minutes.
+        Exit runs the configured cleanup task (STOP, RESET or DESTROY) over every
+        graph in the session and waits for each to reach its terminal state, so
+        exiting the block can take minutes for any of them. STOP and RESET act
+        only on ``AVAILABLE`` graphs; DESTROY acts on ``AVAILABLE`` and ``STOPPED``
+        graphs. Graphs in any other (e.g. transitional) status are skipped with a
+        warning.
 
         A cleanup failure is never allowed to replace an exception raised by the
         ``with`` body: that error is the one the caller needs to see, so a failed
         cleanup is logged instead and the original exception propagates.
         """
 
-        if self.cleanup_task == CleanupTask.DESTROY:
-            self.destroy_all_graphs()
-        elif self.cleanup_task == CleanupTask.STOP:
-            try:
-                _run_sync(self._await_stop_all_graphs())
-            except Exception as e:  # noqa: BLE001 - see docstring
-                logger.warning(
-                    f"Session cleanup failed to stop graphs: {e}. They may still be "
-                    f"running and billed; list them with "
-                    f"`aws neptune-graph list-graphs` and stop them with "
-                    f"`aws neptune-graph stop-graph --graph-identifier <id>`"
-                )
-                if exc_type is None:
-                    raise
+        if self.cleanup_task not in _CLEANUP_OPERATIONS:
+            return
+        operation_name, verb, statuses = _CLEANUP_OPERATIONS[self.cleanup_task]
+        try:
+            _run_sync(self._await_cleanup_all_graphs(operation_name, statuses))
+        # BaseException is deliberate: it pairs with the BaseException filter in
+        # _await_cleanup_all_graphs, since gather(return_exceptions=True) returns
+        # e.g. CancelledError as a value that is then re-raised. Catching only
+        # Exception would let it replace the body's exception.
+        # KeyboardInterrupt and SystemExit are carved out: they are control-flow
+        # signals (e.g. Ctrl-C during a minutes-long cleanup), not cleanup
+        # failures, so they propagate even when the body already raised.
+        except BaseException as e:  # noqa: BLE001 - see docstring
+            logger.warning(
+                f"Session cleanup ({self.cleanup_task.value}) failed: {e}. Affected "
+                f"graphs may still be running and billed; list them with "
+                f"`aws neptune-graph list-graphs` and retry each with "
+                f"`aws neptune-graph {verb} --graph-identifier <id>`"
+            )
+            if exc_type is None or isinstance(e, (KeyboardInterrupt, SystemExit)):
+                raise
 
-    async def _await_stop_all_graphs(self):
-        """Stop every graph in this session, awaited to completion.
+    async def _await_cleanup_all_graphs(
+        self, operation_name: str, statuses: Sequence[str]
+    ):
+        """Run an instance_management operation on every graph, to completion.
 
-        The bulk helpers return an un-awaited ``asyncio.gather(...)``, so the
-        gather must be built *and* awaited inside a running loop.
+        The gather is built *and* awaited inside the running loop. Every graph
+        is attempted even if another fails (``return_exceptions=True``, kept on
+        this private path so the public bulk methods still raise); failures are
+        then logged per graph and the first one is raised.
         """
-        await self.stop_all_graphs()
+        operation = getattr(instance_management, operation_name)
+        graph_ids = self._select_graph_ids(statuses, [])
+        results = await asyncio.gather(
+            *[operation(graph_id) for graph_id in graph_ids], return_exceptions=True
+        )
+        failures = [
+            (graph_id, result)
+            for graph_id, result in zip(graph_ids, results)
+            if isinstance(result, BaseException)
+        ]
+        for graph_id, error in failures:
+            logger.warning(f"Session cleanup failed for graph {graph_id}: {error}")
+        if failures:
+            raise failures[0][1]
 
     def validate_permissions(self):
         """Validate AWS permissions for Neptune Analytics operations.
@@ -737,11 +781,15 @@ class SessionManager:
     def destroy_graph(self, graph_name: Union[str, list[str]]):
         """Destroy one or more Neptune Analytics graphs.
 
+        Deletes graphs in ``AVAILABLE`` and ``STOPPED`` status (a stopped graph is
+        permanently deleted too); graphs in other statuses are skipped with a
+        warning. This operation cannot be undone.
+
         Args:
-            graph_name (Union[str, list[str]]): Name or list of names of graphs to stop
+            graph_name (Union[str, list[str]]): Name or list of names of graphs to destroy
 
         Returns:
-            asyncio.Future: A future that resolves when the graphs have been stopped.
+            asyncio.Future: A future that resolves when the graphs have been deleted.
         """
         return self._destroy_graphs(graph_name)
 
@@ -749,7 +797,9 @@ class SessionManager:
         """Delete all Neptune Analytics graphs associated with this session.
 
         Fetches all graph IDs for the current session and permanently deletes each graph instance.
-        This operation cannot be undone.
+        This operation cannot be undone. Graphs in ``AVAILABLE`` and ``STOPPED``
+        status are deleted (previously ``STOPPED`` graphs were skipped); graphs in
+        other statuses are skipped with a warning.
 
         Returns:
             asyncio.Future: A future that resolves when all graphs have been deleted.
@@ -760,20 +810,20 @@ class SessionManager:
         """Start one or more Neptune Analytics graphs.
 
         Args:
-            graph_name (Union[str, list[str]]): Name or list of names of graphs to stop
+            graph_name (Union[str, list[str]]): Name or list of names of graphs to start
 
         Returns:
-            asyncio.Future: A future that resolves when the graphs have been stopped.
+            asyncio.Future: A future that resolves when the graphs have been started.
         """
         return self._start_graphs(graph_name)
 
     def start_all_graphs(self):
         """Start all Neptune Analytics graphs associated with this session.
 
-        Fetches all graph IDs for the current session and stops each graph instance.
+        Fetches all graph IDs for the current session and starts each graph instance.
 
         Returns:
-            asyncio.Future: A future that resolves when all graphs have been stopped.
+            asyncio.Future: A future that resolves when all graphs have been started.
         """
         return self._start_graphs([])
 
@@ -802,20 +852,20 @@ class SessionManager:
         """Reset one or more Neptune Analytics graphs.
 
         Args:
-            graph_name (Union[str, list[str]]): Name or list of names of graphs to stop
+            graph_name (Union[str, list[str]]): Name or list of names of graphs to reset
 
         Returns:
-            asyncio.Future: A future that resolves when the graphs have been stopped.
+            asyncio.Future: A future that resolves when the graphs have been reset.
         """
         return self._reset_graphs(graph_name)
 
     def reset_all_graphs(self):
-        """Stop all Neptune Analytics graphs associated with this session.
+        """Reset all Neptune Analytics graphs associated with this session.
 
-        Fetches all graph IDs for the current session and stops each graph instance.
+        Fetches all graph IDs for the current session and resets each graph instance.
 
         Returns:
-            asyncio.Future: A future that resolves when all graphs have been stopped.
+            asyncio.Future: A future that resolves when all graphs have been reset.
         """
         return self._reset_graphs([])
 
@@ -824,7 +874,7 @@ class SessionManager:
             graph_name = [graph_name]
         return self._graph_bulk_operation(
             operation=instance_management.delete_na_instance,
-            status_to_check="AVAILABLE",
+            status_to_check=_DESTROYABLE_STATUSES,
             graph_names=graph_name,
         )
 
@@ -856,8 +906,20 @@ class SessionManager:
         )
 
     def _graph_bulk_operation(
-        self, operation: Callable, status_to_check: str, graph_names: list[str]
+        self,
+        operation: Callable,
+        status_to_check: Union[str, Sequence[str]],
+        graph_names: list[str],
     ):
+        graph_ids = self._select_graph_ids(status_to_check, graph_names)
+        return asyncio.gather(*[operation(graph_id) for graph_id in graph_ids])
+
+    def _select_graph_ids(
+        self, status_to_check: Union[str, Sequence[str]], graph_names: list[str]
+    ):
+        if isinstance(status_to_check, str):
+            status_to_check = (status_to_check,)
+        expected = " or ".join(status_to_check)
         # Guard: an empty graph_names means "all graphs in this session", which
         # relies on session_name to scope list_graphs(). With no session_name,
         # list_graphs() returns every graph in the account/region, so a bulk
@@ -878,20 +940,17 @@ class SessionManager:
         ]
         if graph_names and len(graphs) == 0:
             logger.warning(
-                f"No graphs found matching name: {graph_names} and status: {status_to_check}"
+                f"No graphs found matching name: {graph_names} and status: {expected}"
             )
 
         # Filter for graphs in correct status, log warning for others
         graph_ids = []
         for graph in graphs:
-            if graph.status == status_to_check:
+            if graph.status in status_to_check:
                 graph_ids.append(graph.graph_id)
             else:
                 logger.warning(
-                    f"Skipping graph {graph.graph_id} - status is {graph.status}, expected {status_to_check}"
+                    f"Skipping graph {graph.graph_id} - status is {graph.status}, expected {expected}"
                 )
 
-        future_list = []
-        for graph_id in graph_ids:
-            future_list.append(operation(graph_id))
-        return asyncio.gather(*future_list)
+        return graph_ids
