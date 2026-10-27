@@ -23,6 +23,7 @@ export function Import() {
   const [propertyGraph, setPropertyGraph] = useState("");
   const [pgqOpen, setPgqOpen] = useState(true);
   const [nodeEdgeOpen, setNodeEdgeOpen] = useState(false);
+  const [generatedTick, setGeneratedTick] = useState(0);
   const [bucket, setBucket] = useState("");
   const [graphName, setGraphName] = useState("");
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
@@ -76,6 +77,16 @@ export function Import() {
     setDbLoading(true);
     metadata.databases(catalog).then((d) => { setDatabases(d.databases); setDbLoading(false); });
   }, [catalog]);
+
+  useEffect(() => {
+    if (generatedTick === 0) return;
+    const els = document.querySelectorAll<HTMLTextAreaElement>("textarea[data-autosize]");
+    els.forEach((el) => {
+      el.style.height = "auto";
+      const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 16;
+      el.style.height = `${el.scrollHeight + lineHeight}px`;
+    });
+  }, [generatedTick]);
 
   function resetForm() {
     setCurrentId(null);
@@ -291,7 +302,7 @@ export function Import() {
       const edges = (res.edge_queries ?? []).map((sql) => ({ sql }));
       if (nodes.length) setNodeQueries(nodes);
       if (edges.length) setEdgeQueries(edges);
-      if (nodes.length || edges.length) setNodeEdgeOpen(true);
+      if (nodes.length || edges.length) { setNodeEdgeOpen(true); setGeneratedTick((t) => t + 1); }
       // Persist the generated queries through the normal save path (the
       // programmatic setState above fires no onChange/onBlur). Pass the id
       // returned by ensureProjection(): on a first-time create, currentId is
@@ -515,6 +526,7 @@ export function Import() {
                         <textarea
                           className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
                           rows={3}
+                          data-autosize
                           placeholder="SELECT id AS &quot;~id&quot;, 'Label' AS &quot;~label&quot;, col1 FROM table"
                           value={nq.sql}
                           onChange={(e) => updateNodeQuery(i, e.target.value)}
@@ -547,6 +559,7 @@ export function Import() {
                         <textarea
                           className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
                           rows={3}
+                          data-autosize
                           placeholder="SELECT id AS &quot;~id&quot;, src AS &quot;~from&quot;, dst AS &quot;~to&quot;, 'Label' AS &quot;~label&quot; FROM table"
                           value={eq.sql}
                           onChange={(e) => updateEdgeQuery(i, { sql: e.target.value })}
