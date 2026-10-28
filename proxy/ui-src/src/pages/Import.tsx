@@ -21,8 +21,8 @@ export function Import() {
   const [catalog, setCatalog] = useState("AwsDataCatalog");
   const [database, setDatabase] = useState("");
   const [propertyGraph, setPropertyGraph] = useState("");
-  const [pgqOpen, setPgqOpen] = useState(false);
-  const [nodeEdgeOpen, setNodeEdgeOpen] = useState(true);
+  const [pgqOpen, setPgqOpen] = useState(true);
+  const [nodeEdgeOpen, setNodeEdgeOpen] = useState(false);
   const [bucket, setBucket] = useState("");
   const [graphName, setGraphName] = useState("");
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
