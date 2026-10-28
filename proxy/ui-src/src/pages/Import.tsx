@@ -23,6 +23,7 @@ export function Import() {
   const [propertyGraph, setPropertyGraph] = useState("");
   const [pgqOpen, setPgqOpen] = useState(true);
   const [nodeEdgeOpen, setNodeEdgeOpen] = useState(false);
+  const [translateValidated, setTranslateValidated] = useState(false);
   const [bucket, setBucket] = useState("");
   const [graphName, setGraphName] = useState("");
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
@@ -213,6 +214,7 @@ export function Import() {
   }
 
   function updateNodeQuery(index: number, sql: string) {
+    setTranslateValidated(false);
     const updated = nodeQueries.map((q, i) => (i === index ? { ...q, sql } : q));
     setNodeQueries(updated);
     scheduleSave(updated, edgeQueries);
@@ -221,12 +223,14 @@ export function Import() {
     setNodeQueries((prev) => [...prev, { sql: "" }]);
   }
   function removeNodeQuery(index: number) {
+    setTranslateValidated(false);
     const updated = nodeQueries.filter((_, i) => i !== index);
     setNodeQueries(updated);
     if (currentId) projection.saveQueries(currentId, { node_queries: updated, edge_queries: edgeQueries });
   }
 
   function updateEdgeQuery(index: number, updates: Partial<EdgeQueryInput>) {
+    setTranslateValidated(false);
     const updated = edgeQueries.map((q, i) => (i === index ? { ...q, ...updates } : q));
     setEdgeQueries(updated);
     scheduleSave(nodeQueries, updated);
@@ -235,6 +239,7 @@ export function Import() {
     setEdgeQueries((prev) => [...prev, { sql: "" }]);
   }
   function removeEdgeQuery(index: number) {
+    setTranslateValidated(false);
     const updated = edgeQueries.filter((_, i) => i !== index);
     setEdgeQueries(updated);
     if (currentId) projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: updated });
@@ -280,6 +285,7 @@ export function Import() {
   }
 
   async function handleTranslate() {
+    setTranslateValidated(false);
     setChecks([]);
     setPreview(null);
     setError(null);
@@ -290,13 +296,22 @@ export function Import() {
       if (res.error) { setError(res.error); return; }
       const nodes = (res.node_queries ?? []).map((sql) => ({ sql }));
       const edges = (res.edge_queries ?? []).map((sql) => ({ sql }));
-      if (nodes.length) setNodeQueries(nodes);
-      if (edges.length) setEdgeQueries(edges);
-      // Persist the generated queries through the normal save path (the
-      // programmatic setState above fires no onChange/onBlur). Pass the id
-      // returned by ensureProjection(): on a first-time create, currentId is
-      // still null in this closure, so scheduleSave would otherwise no-op.
-      scheduleSave(nodes.length ? nodes : nodeQueries, edges.length ? edges : edgeQueries, id);
+      const nq = nodes.length ? nodes : [{ sql: "" }];
+      const eq = edges.length ? edges : [{ sql: "" }];
+      setNodeQueries(nq);
+      setEdgeQueries(eq);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      await projection.saveQueries(id, { node_queries: nq, edge_queries: eq });
+      setLoading("translate-validate");
+      try {
+        const check = await projection.validateQuery(id);
+        setChecks(check.checks);
+        if (check.checks.some((c) => !c.passed)) setNodeEdgeOpen(true);
+        else setTranslateValidated(true);
+      } catch (e: any) {
+        setError(e.message);
+        setNodeEdgeOpen(true);
+      }
     } catch (e: any) { setError(e.message); } finally { setLoading(null); }
   }
 
@@ -480,11 +495,16 @@ export function Import() {
                   rows={10}
                   placeholder={"CREATE PROPERTY GRAPH g\n  VERTEX TABLES (\n    accounts AS account KEY (id) LABEL account PROPERTIES (name)\n  )\n  EDGE TABLES (\n    transfers SOURCE (src) REFERENCES account\n              DESTINATION (dst) REFERENCES account\n              LABEL transfer PROPERTIES (amount)\n  )"}
                   value={propertyGraph}
-                  onChange={(e) => setPropertyGraph(e.target.value)}
+                  onChange={(e) => { setPropertyGraph(e.target.value); setTranslateValidated(false); }}
                 />
                 <Button variant="secondary" onClick={handleTranslate} disabled={!!loading || !propertyGraph.trim()}>
-                  <Wand2 className="h-4 w-4" /> {loading === "translate" ? "Translating..." : "Translate → Node/Edge queries"}
+                  <Wand2 className="h-4 w-4" /> {loading === "translate" ? "Translating..." : loading === "translate-validate" ? "Validating..." : "Translate & Validate"}
                 </Button>
+                {translateValidated && (
+                  <span className="ml-2 inline-flex items-center gap-1 text-sm text-green-700">
+                    <CheckCircle className="h-4 w-4" /> Validated
+                  </span>
+                )}
               </div>
             )}
           </div>
