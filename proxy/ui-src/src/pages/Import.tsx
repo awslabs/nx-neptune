@@ -476,6 +476,7 @@ export function Import() {
       {/* Queries — PGQ generator + node/edge query editors */}
       <Card>
         <div className="space-y-5">
+          <p className="text-sm text-gray-600">Start with a PGQ schema and Translate &amp; Validate to generate Athena SQL node and edge queries. The Athena SQL is what runs on import and remains editable.</p>
           {/* PGQ generator (optional, collapsible) */}
           <div className="rounded-md border border-gray-200">
             <button
@@ -484,12 +485,12 @@ export function Import() {
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               <ChevronRight className={`h-4 w-4 transition-transform ${pgqOpen ? "rotate-90" : ""}`} />
-              Generate from Property Graph Schema (PGQ)
+              Property Graph Schema (PGQ)
               <span className="font-normal text-gray-400">optional</span>
             </button>
             {pgqOpen && (
               <div className="space-y-2 border-t border-gray-200 p-3">
-                <p className="text-xs text-gray-500">Declare a <code>CREATE PROPERTY GRAPH</code> statement and click Translate to fill the Node and Edge queries below. Column types are resolved from the selected catalog/database; you can edit the generated queries afterward.</p>
+                <p className="text-xs text-gray-500">Define the graph with a <code>CREATE PROPERTY GRAPH</code> statement. Translate &amp; Validate generates the node and edge SQL and checks it against the selected catalog and database.</p>
                 <textarea
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                   rows={10}
@@ -520,6 +521,7 @@ export function Import() {
             </button>
             {nodeEdgeOpen && (
               <div className="space-y-5 border-t border-gray-200 p-3">
+                <p className="text-xs text-gray-500">These queries are imported as written. Validate after making changes.</p>
                 {/* Node Queries */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
