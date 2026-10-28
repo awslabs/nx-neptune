@@ -4,6 +4,15 @@ import { metadata, projection, projectApi, type Projection, type ProjectionStatu
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
 import { Play, CheckCircle, Eye, Wand2, ChevronRight, Plus, Trash2, AlertTriangle } from "lucide-react";
 
+type UiNodeQuery = NodeQueryInput & { failed?: boolean };
+type UiEdgeQuery = EdgeQueryInput & { failed?: boolean };
+
+const stripUi = <T extends { failed?: boolean }>(qs: T[]) => qs.map(({ failed, ...q }) => q);
+
+function persistQueries(id: string, nq: UiNodeQuery[], eq: UiEdgeQuery[]) {
+  return projection.saveQueries(id, { node_queries: stripUi(nq), edge_queries: stripUi(eq) });
+}
+
 export function Import() {
   const [searchParams] = useSearchParams();
 
@@ -29,8 +38,8 @@ export function Import() {
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
 
   // --- Multi-query state ---
-  const [nodeQueries, setNodeQueries] = useState<NodeQueryInput[]>([{ sql: "" }]);
-  const [edgeQueries, setEdgeQueries] = useState<EdgeQueryInput[]>([{ sql: "" }]);
+  const [nodeQueries, setNodeQueries] = useState<UiNodeQuery[]>([{ sql: "" }]);
+  const [edgeQueries, setEdgeQueries] = useState<UiEdgeQuery[]>([{ sql: "" }]);
 
   // --- Projection state ---
   const [projectionsList, setProjectionsList] = useState<Projection[]>([]);
@@ -154,12 +163,12 @@ export function Import() {
     };
     if (currentId) {
       await projection.update(currentId, data);
-      await projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: edgeQueries });
+      await persistQueries(currentId, nodeQueries, edgeQueries);
       return currentId;
     }
     const p = await projection.create(data);
     setCurrentId(p.id);
-    await projection.saveQueries(p.id, { node_queries: nodeQueries, edge_queries: edgeQueries });
+    await persistQueries(p.id, nodeQueries, edgeQueries);
     await loadProjections();
     window.dispatchEvent(new Event("projects-changed"));
     return p.id;
@@ -201,21 +210,21 @@ export function Import() {
 
   function saveCurrentQueries() {
     if (!currentId) return;
-    projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: edgeQueries });
+    persistQueries(currentId, nodeQueries, edgeQueries);
   }
 
-  function scheduleSave(nq: NodeQueryInput[], eq: EdgeQueryInput[], id?: string) {
+  function scheduleSave(nq: UiNodeQuery[], eq: UiEdgeQuery[], id?: string) {
     const targetId = id ?? currentId;
     if (!targetId) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      projection.saveQueries(targetId, { node_queries: nq, edge_queries: eq });
+      persistQueries(targetId, nq, eq);
     }, 1000);
   }
 
   function updateNodeQuery(index: number, sql: string) {
     setTranslateValidated(false);
-    const updated = nodeQueries.map((q, i) => (i === index ? { ...q, sql } : q));
+    const updated = nodeQueries.map((q, i) => (i === index ? { ...q, sql, failed: undefined } : q));
     setNodeQueries(updated);
     scheduleSave(updated, edgeQueries);
   }
@@ -226,12 +235,12 @@ export function Import() {
     setTranslateValidated(false);
     const updated = nodeQueries.filter((_, i) => i !== index);
     setNodeQueries(updated);
-    if (currentId) projection.saveQueries(currentId, { node_queries: updated, edge_queries: edgeQueries });
+    if (currentId) persistQueries(currentId, updated, edgeQueries);
   }
 
   function updateEdgeQuery(index: number, updates: Partial<EdgeQueryInput>) {
     setTranslateValidated(false);
-    const updated = edgeQueries.map((q, i) => (i === index ? { ...q, ...updates } : q));
+    const updated = edgeQueries.map((q, i) => (i === index ? { ...q, ...updates, failed: undefined } : q));
     setEdgeQueries(updated);
     scheduleSave(nodeQueries, updated);
   }
@@ -242,10 +251,16 @@ export function Import() {
     setTranslateValidated(false);
     const updated = edgeQueries.filter((_, i) => i !== index);
     setEdgeQueries(updated);
-    if (currentId) projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: updated });
+    if (currentId) persistQueries(currentId, nodeQueries, updated);
   }
 
   // --- Actions ---
+  function markFailures(results: { check: string; passed: boolean }[]) {
+    const failed = new Set(results.filter((c) => !c.passed).map((c) => c.check));
+    setNodeQueries((prev) => prev.map((q, i) => ({ ...q, failed: failed.has(`node_query_${i + 1}`) || undefined })));
+    setEdgeQueries((prev) => prev.map((q, i) => ({ ...q, failed: failed.has(`edge_query_${i + 1}`) || undefined })));
+  }
+
   function missingFields() {
     const missing: { check: string; passed: boolean; message?: string }[] = [];
     if (!bucket) missing.push({ check: "S3 staging bucket", passed: false, message: "No S3 staging bucket selected." });
@@ -281,6 +296,7 @@ export function Import() {
       const id = await ensureProjection();
       const res = await projection.validateQuery(id);
       setChecks(res.checks);
+      markFailures(res.checks);
     } catch (e: any) { setError(e.message); } finally { setLoading(null); }
   }
 
@@ -301,11 +317,12 @@ export function Import() {
       setNodeQueries(nq);
       setEdgeQueries(eq);
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      await projection.saveQueries(id, { node_queries: nq, edge_queries: eq });
+      await persistQueries(id, nq, eq);
       setLoading("translate-validate");
       try {
         const check = await projection.validateQuery(id);
         setChecks(check.checks);
+        markFailures(check.checks);
         if (check.checks.some((c) => !c.passed)) setNodeEdgeOpen(true);
         else setTranslateValidated(true);
       } catch (e: any) {
@@ -532,9 +549,11 @@ export function Import() {
                   </div>
                   <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
                     {nodeQueries.map((nq, i) => (
-                      <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
-                        <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
-                          <span className="text-xs font-medium text-gray-700">Node {i + 1}</span>
+                      <div key={i} className={`rounded-md border overflow-hidden ${nq.failed ? "border-red-400" : "border-gray-200"}`}>
+                        <div className={`flex items-center justify-between px-3 py-1.5 border-b ${nq.failed ? "bg-red-50 border-red-200" : "bg-gray-50 border-gray-200"}`}>
+                          <span className={`text-xs font-medium ${nq.failed ? "text-red-700" : "text-gray-700"}`}>
+                            Node {i + 1}{nq.failed && " — failed validation"}
+                          </span>
                           {nodeQueries.length > 1 && (
                             <button onClick={() => removeNodeQuery(i)} className="text-gray-400 hover:text-red-600">
                               <Trash2 className="h-3 w-3" />
@@ -564,9 +583,11 @@ export function Import() {
                   </div>
                   <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
                     {edgeQueries.map((eq, i) => (
-                      <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
-                        <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
-                          <span className="text-xs font-medium text-gray-700">Edge {i + 1}</span>
+                      <div key={i} className={`rounded-md border overflow-hidden ${eq.failed ? "border-red-400" : "border-gray-200"}`}>
+                        <div className={`flex items-center justify-between px-3 py-1.5 border-b ${eq.failed ? "bg-red-50 border-red-200" : "bg-gray-50 border-gray-200"}`}>
+                          <span className={`text-xs font-medium ${eq.failed ? "text-red-700" : "text-gray-700"}`}>
+                            Edge {i + 1}{eq.failed && " — failed validation"}
+                          </span>
                           {edgeQueries.length > 1 && (
                             <button onClick={() => removeEdgeQuery(i)} className="text-gray-400 hover:text-red-600">
                               <Trash2 className="h-3 w-3" />
