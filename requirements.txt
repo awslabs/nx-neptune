@@ -4,9 +4,9 @@
 #
 #    pip-compile --output-file=requirements.txt --strip-extras pyproject.toml
 #
-boto3==1.43.115
+boto3==1.43.122
     # via nx-neptune (pyproject.toml)
-botocore==1.43.115
+botocore==1.43.122
     # via
     #   boto3
     #   s3transfer
@@ -26,7 +26,7 @@ s3transfer==0.19.3
     # via boto3
 six==1.17.0
     # via python-dateutil
-sqlglot==30.23.0
+sqlglot==30.25.0
     # via nx-neptune (pyproject.toml)
 urllib3==2.8.0
     # via botocore
