@@ -271,14 +271,25 @@ async def test_execute_conflict_if_already_running(client):
 
 
 @pytest.mark.asyncio
-async def test_execute_rejects_missing_graph_name(client):
+@pytest.mark.parametrize(
+    "field, value, label",
+    [
+        ("graph_name", None, "graph name"),
+        ("s3_staging_bucket", None, "S3 staging bucket"),
+        ("database", None, "Athena database"),
+    ],
+)
+async def test_execute_rejects_missing_required_field(client, field, value, label):
     body = SAMPLE_BODY()
-    del body["graph_name"]
+    body.pop(field, None)
+    if value is not None:
+        body[field] = value
     pid = (await client.post("/api/v0/projection", json=body)).json()["id"]
 
     with patch("nx_neptune_proxy.routers.projection.run_pipeline") as mock_run:
         resp = await client.post(f"/api/v0/projection/{pid}/execute")
     assert resp.status_code == 400
+    assert resp.json()["detail"] == f"Missing required fields: {label}."
     mock_run.assert_not_called()
 
 
