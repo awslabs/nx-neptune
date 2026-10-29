@@ -1910,11 +1910,7 @@ def _create_iam_wrapper(
     Returns:
         IamClientWrapper: Wrapper with the caller's role ARN
     """
-    factory = ClientFactory()
-    sts_client = sts_client or factory.sts()
-    user_arn = sts_client.get_caller_identity()["Arn"]
-    iam_client = iam_client or factory.iam()
-    return IamClientWrapper(role_arn=user_arn, client=iam_client)
+    return IamClientWrapper.default(sts_client=sts_client, iam_client=iam_client)
 
 
 def execute_athena_query(
