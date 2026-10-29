@@ -422,7 +422,7 @@ export function Import() {
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">Memory (m-NCU)</span>
               <Select value={graphMemoryGb} onChange={(e) => setGraphMemoryGb(Number(e.target.value))}>
-                {[16, 32, 64, 128, 256, 512, 1024, 2048, 4096].map((size) => (
+                {[16, 32, 64, 128, 256, 512, 1024].map((size) => (
                   <option key={size} value={size}>{size} GB</option>
                 ))}
               </Select>
