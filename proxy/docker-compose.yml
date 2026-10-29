@@ -24,6 +24,11 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+    # make up passes --force-recreate. Without a volume the SQLite file in
+    # /home/appuser/.nx-neptune/proxy.db is wiped every restart and the
+    # Neptune graphs it pointed at stay billed in AWS.
+    volumes:
+      - proxy-db:/home/appuser/.nx-neptune
 
   graph-explorer:
     image: ${GRAPH_EXPLORER_IMAGE:-public.ecr.aws/neptune/graph-explorer:latest}
@@ -40,3 +45,6 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+
+volumes:
+  proxy-db:
