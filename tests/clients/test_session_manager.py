@@ -831,7 +831,7 @@ def _mixed_client(statuses):
 
 
 class TestExitCleanupDestroyStatusPolicy:
-    """DESTROY deletes AVAILABLE and STOPPED graphs; transitional ones are skipped."""
+    """DESTROY deletes AVAILABLE graphs only; every other status is skipped."""
 
     def _exit(
         self, statuses, task=CleanupTask.DESTROY, operation_name="delete_na_instance"
@@ -843,11 +843,17 @@ class TestExitCleanupDestroyStatusPolicy:
                     pass
         return attempted, completed
 
-    def test_destroy_deletes_a_stopped_graph(self):
-        """A STOPPED graph still bills for storage, so exit must delete it."""
+    def test_destroy_leaves_a_stopped_graph_alone(self):
+        """A STOPPED graph may be someone else's data under a matching prefix.
+
+        Session membership is a name-prefix match, not a record of what this
+        session created, and delete_na_instance clears deletion protection and
+        skips the snapshot - so a graph stopped to preserve its data must not be
+        deleted on the way out.
+        """
         attempted, completed = self._exit({"g-1": "STOPPED"})
 
-        assert completed == ["g-1"]
+        assert attempted == []
 
     def test_destroy_skips_a_transitional_graph_and_warns(self, caplog):
         """A CREATING graph is not deletable here: no call, and the skip is logged."""
@@ -867,29 +873,30 @@ class TestExitCleanupDestroyStatusPolicy:
         assert attempted == []
 
     def test_destroy_handles_a_mixed_session(self):
-        """AVAILABLE and STOPPED are both deleted; CREATING is not touched."""
+        """Only AVAILABLE is deleted; STOPPED and CREATING are left alone."""
         attempted, completed = self._exit(
             {"g-1": "AVAILABLE", "g-2": "STOPPED", "g-3": "CREATING"}
         )
 
-        assert sorted(attempted) == ["g-1", "g-2"]
-        assert sorted(completed) == ["g-1", "g-2"]
+        assert attempted == ["g-1"]
+        assert completed == ["g-1"]
 
     @pytest.mark.parametrize(
         "task,operation_name",
         [
             pytest.param(CleanupTask.STOP, "stop_na_instance", id="stop"),
             pytest.param(CleanupTask.RESET, "reset_graph", id="reset"),
+            pytest.param(CleanupTask.DESTROY, "delete_na_instance", id="destroy"),
         ],
     )
-    def test_stop_and_reset_do_not_widen_to_stopped(self, task, operation_name):
-        """Regression guard: STOP/RESET stay AVAILABLE-only."""
+    def test_no_task_widens_to_stopped(self, task, operation_name):
+        """Regression guard: every cleanup task stays AVAILABLE-only."""
         attempted, completed = self._exit({"g-1": "STOPPED"}, task, operation_name)
 
         assert attempted == []
 
     @pytest.mark.asyncio
-    async def test_public_destroy_all_graphs_deletes_a_stopped_graph(self):
+    async def test_public_destroy_all_graphs_leaves_a_stopped_graph_alone(self):
         """The public API follows the same policy as the exit path."""
         operation, attempted, completed = _recording_operation()
 
@@ -897,7 +904,18 @@ class TestExitCleanupDestroyStatusPolicy:
             with patch(OPERATION.format("delete_na_instance"), side_effect=operation):
                 await SessionManager(session_name="test").destroy_all_graphs()
 
-        assert completed == ["g-1"]
+        assert attempted == []
+
+    @pytest.mark.asyncio
+    async def test_public_destroy_graph_leaves_a_stopped_graph_alone(self):
+        """Named-graph destroy follows it too, not just the bulk sweep."""
+        operation, attempted, completed = _recording_operation()
+
+        with patch("boto3.client", return_value=_mixed_client({"g-1": "STOPPED"})):
+            with patch(OPERATION.format("delete_na_instance"), side_effect=operation):
+                await SessionManager(session_name="test").destroy_graph("test-g-1")
+
+        assert attempted == []
 
 
 class TestExitCleanupAttemptsEveryGraph:
@@ -1273,3 +1291,218 @@ class TestSelectGraphIdsStatusIsNotSubstringMatched:
                     pass
 
         op.assert_not_awaited()
+
+
+async def _ticker(counter):
+    """Append to ``counter`` on every loop turn, to show the loop is still live."""
+    while True:
+        counter.append(None)
+        await asyncio.sleep(0)
+
+
+def _slow_operation():
+    """An instance_management stand-in that yields to the loop while it works."""
+    completed = []
+
+    async def operation(graph_id, *args, **kwargs):
+        for _ in range(5):
+            await asyncio.sleep(0.01)
+        completed.append(graph_id)
+        return graph_id
+
+    return operation, completed
+
+
+class TestAsyncContextManagerCleanup:
+    """``async with`` is the supported path in async code: it awaits cleanup."""
+
+    @pytest.mark.asyncio
+    async def test_aenter_returns_the_session(self):
+        with patch("boto3.client", return_value=_client()):
+            sm = SessionManager(session_name="test", cleanup_task=CleanupTask.NONE)
+            async with sm as entered:
+                assert entered is sm
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("task,operation_name,verb", CLEANUP_TASKS)
+    async def test_aexit_awaits_the_operation(self, task, operation_name, verb):
+        """Every task runs to completion on the way out of an ``async with``."""
+        operation, completed = _slow_operation()
+
+        with patch("boto3.client", return_value=_client()):
+            with patch(OPERATION.format(operation_name), side_effect=operation):
+                async with SessionManager(session_name="test", cleanup_task=task):
+                    pass
+
+        assert completed == ["g-1"]
+
+    @pytest.mark.asyncio
+    async def test_aexit_with_no_cleanup_task_touches_nothing(self):
+        with patch("boto3.client", return_value=_client()):
+            with patch(
+                OPERATION.format("stop_na_instance"), new_callable=AsyncMock
+            ) as op:
+                async with SessionManager(session_name="test"):
+                    pass
+
+        op.assert_not_awaited()
+
+
+class TestAsyncExitDoesNotBlockTheCallersLoop:
+    """The regression the sync hook causes in async code, and the async fix.
+
+    ``__exit__`` is synchronous, so inside a running loop it has to bridge to a
+    worker thread and block that loop until cleanup finishes - which is also why
+    Ctrl-C is held for the duration. ``__aexit__`` awaits on the caller's loop
+    instead, so other tasks keep running. Asserting on a concurrent task is what
+    distinguishes the two; mocking the cleanup to raise cannot see it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_async_exit_leaves_the_loop_running(self):
+        operation, completed = _slow_operation()
+        ticks = []
+        ticker = asyncio.create_task(_ticker(ticks))
+
+        with patch("boto3.client", return_value=_client()):
+            with patch(OPERATION.format("stop_na_instance"), side_effect=operation):
+                async with SessionManager(
+                    session_name="test", cleanup_task=CleanupTask.STOP
+                ):
+                    pass
+
+        ticker.cancel()
+        assert completed == ["g-1"]
+        assert ticks, "the caller's loop made no progress during `async with` cleanup"
+
+    @pytest.mark.asyncio
+    async def test_sync_exit_inside_a_loop_blocks_it(self):
+        """Documents why ``async with`` exists: the thread bridge stalls the loop."""
+        operation, completed = _slow_operation()
+        ticks = []
+        ticker = asyncio.create_task(_ticker(ticks))
+        await asyncio.sleep(0)
+        ticks.clear()
+
+        with patch("boto3.client", return_value=_client()):
+            with patch(OPERATION.format("stop_na_instance"), side_effect=operation):
+                with SessionManager(session_name="test", cleanup_task=CleanupTask.STOP):
+                    pass
+
+        ticker.cancel()
+        assert completed == ["g-1"]
+        assert ticks == [], "expected the sync exit to block the caller's loop"
+
+    @pytest.mark.asyncio
+    async def test_sync_exit_inside_a_loop_warns_and_points_at_async_with(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            with patch("boto3.client", return_value=_client()):
+                with patch(
+                    OPERATION.format("stop_na_instance"), new_callable=AsyncMock
+                ):
+                    with SessionManager(
+                        session_name="test", cleanup_task=CleanupTask.STOP
+                    ):
+                        pass
+
+        assert any("async with" in r.getMessage() for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_async_exit_does_not_warn(self):
+        """The supported path must stay quiet, or the warning becomes noise."""
+        with patch("boto3.client", return_value=_client()):
+            with patch(OPERATION.format("stop_na_instance"), new_callable=AsyncMock):
+                with patch("nx_neptune.session_manager.logger") as mock_logger:
+                    async with SessionManager(
+                        session_name="test", cleanup_task=CleanupTask.STOP
+                    ):
+                        pass
+
+        mock_logger.warning.assert_not_called()
+
+    def test_sync_exit_outside_a_loop_does_not_warn(self):
+        """Synchronous callers are a supported path too, so no warning there."""
+        with patch("boto3.client", return_value=_client()):
+            with patch(OPERATION.format("stop_na_instance"), new_callable=AsyncMock):
+                with patch("nx_neptune.session_manager.logger") as mock_logger:
+                    with SessionManager(
+                        session_name="test", cleanup_task=CleanupTask.STOP
+                    ):
+                        pass
+
+        mock_logger.warning.assert_not_called()
+
+
+class TestAsyncExitFailureHandling:
+    """``__aexit__`` must share ``__exit__``'s failure contract, not re-derive it."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("task,operation_name,verb", CLEANUP_TASKS)
+    async def test_failure_does_not_mask_the_body_exception(
+        self, task, operation_name, verb
+    ):
+        with patch("boto3.client", return_value=_client()):
+            with patch(
+                OPERATION.format(operation_name),
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("cleanup failed"),
+            ):
+                with pytest.raises(ValueError, match="THE REAL ERROR"):
+                    async with SessionManager(session_name="test", cleanup_task=task):
+                        raise ValueError("THE REAL ERROR")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("task,operation_name,verb", CLEANUP_TASKS)
+    async def test_failure_raises_when_the_body_succeeded(
+        self, task, operation_name, verb
+    ):
+        with patch("boto3.client", return_value=_client()):
+            with patch(
+                OPERATION.format(operation_name),
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("cleanup failed"),
+            ):
+                with pytest.raises(RuntimeError, match="cleanup failed"):
+                    async with SessionManager(session_name="test", cleanup_task=task):
+                        pass
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("task,operation_name,verb", CLEANUP_TASKS)
+    async def test_failure_warning_carries_the_remediation_command(
+        self, task, operation_name, verb, caplog
+    ):
+        with caplog.at_level(logging.WARNING):
+            with patch("boto3.client", return_value=_client()):
+                with patch(
+                    OPERATION.format(operation_name),
+                    new_callable=AsyncMock,
+                    side_effect=RuntimeError("cleanup failed"),
+                ):
+                    with pytest.raises(RuntimeError):
+                        async with SessionManager(
+                            session_name="test", cleanup_task=task
+                        ):
+                            pass
+
+        assert any(
+            f"aws neptune-graph {verb}" in r.getMessage() for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_interrupt_in_cleanup_beats_the_body_exception(self):
+        """Ctrl-C is control flow, not a cleanup failure: it must still win."""
+        with patch("boto3.client", return_value=_client()):
+            sm = SessionManager(session_name="test", cleanup_task=CleanupTask.STOP)
+        with patch.object(sm, "list_graphs", side_effect=KeyboardInterrupt()):
+            with pytest.raises(KeyboardInterrupt):
+                async with sm:
+                    raise ValueError("body error")
+
+    @pytest.mark.asyncio
+    async def test_cancelled_cleanup_still_lets_the_body_exception_win(self):
+        with patch("boto3.client", return_value=_client()):
+            sm = SessionManager(session_name="test", cleanup_task=CleanupTask.STOP)
+        with patch.object(sm, "list_graphs", side_effect=asyncio.CancelledError()):
+            with pytest.raises(ValueError, match="body error"):
+                async with sm:
+                    raise ValueError("body error")
