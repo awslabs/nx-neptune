@@ -10,6 +10,8 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
+import logging
+
 import pytest
 
 from nx_neptune.clients.iam_client import (
@@ -147,6 +149,45 @@ class TestIamClientWrapper:
         )
         assert iam_client.role_arn == "arn:aws:iam::123456789012:role/test-role"
         assert iam_client.client == mock_client
+
+    def test_default_resolves_caller_identity(self):
+        """default() builds a wrapper from the factory's STS identity + IAM client."""
+        from unittest.mock import patch, MagicMock
+
+        mock_iam = MagicMock()
+        with patch("nx_neptune.clients.iam_client.ClientFactory") as mock_factory_cls:
+            factory = mock_factory_cls.return_value
+            factory.sts.return_value.get_caller_identity.return_value = {
+                "Arn": "arn:aws:iam::123456789012:role/caller-role"
+            }
+            factory.iam.return_value = mock_iam
+
+            wrapper = IamClientWrapper.default()
+
+        assert isinstance(wrapper, IamClientWrapper)
+        assert wrapper.role_arn == "arn:aws:iam::123456789012:role/caller-role"
+        assert wrapper.client is mock_iam
+
+    def test_default_uses_injected_clients(self):
+        """default() uses provided STS/IAM clients and logger instead of the factory."""
+        from unittest.mock import patch, MagicMock
+
+        sts = MagicMock()
+        sts.get_caller_identity.return_value = {
+            "Arn": "arn:aws:iam::123456789012:role/injected-role"
+        }
+        iam = MagicMock()
+        logger = logging.getLogger("injected")
+        with patch("nx_neptune.clients.iam_client.ClientFactory") as mock_factory_cls:
+            wrapper = IamClientWrapper.default(
+                sts_client=sts, iam_client=iam, logger=logger
+            )
+
+        assert wrapper.role_arn == "arn:aws:iam::123456789012:role/injected-role"
+        assert wrapper.client is iam
+        assert wrapper.logger is logger
+        mock_factory_cls.return_value.sts.assert_not_called()
+        mock_factory_cls.return_value.iam.assert_not_called()
 
     def test_check_assume_role_success(self, mock_iam_client):
         """Test check_assume_role with valid service."""

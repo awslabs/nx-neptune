@@ -82,12 +82,18 @@ class NeptuneGraph:
 
     @classmethod
     def from_config(
-        cls, config: Optional[NeptuneConfig] = None, graph=None, logger=None
+        cls,
+        config: Optional[NeptuneConfig] = None,
+        graph=None,
+        logger=None,
+        graph_id: Optional[str] = None,
     ):
         if config is None:
             config = get_config()
+        if graph_id is None:
+            graph_id = config.graph_id
 
-        assert config.graph_id is not None
+        assert graph_id is not None
 
         if graph is None:
             graph = Graph()
@@ -98,7 +104,7 @@ class NeptuneGraph:
             s3_iam_role = ClientFactory().sts().get_caller_identity()["Arn"]
 
         na_client = NeptuneAnalyticsClient(
-            config.graph_id,
+            graph_id,
             logger=logger,
         )
         iam_client = IamClientWrapper(s3_iam_role, ClientFactory().iam(), logger)
@@ -108,6 +114,25 @@ class NeptuneGraph:
             na_client=na_client,
             iam_client=iam_client,
         )
+
+    @classmethod
+    def from_graph_id(
+        cls, graph_id: str, logger: Optional[logging.Logger] = None
+    ) -> "NeptuneGraph":
+        """
+        Build a NeptuneGraph for an existing graph id.
+
+        Construction calls STS to resolve the caller identity when
+        s3_iam_role is not configured.
+
+        Args:
+            graph_id (str): The id of the existing Neptune Analytics graph.
+            logger (Optional[logging.Logger]): Custom logger.
+
+        Returns:
+            NeptuneGraph: Graph bound to the given id.
+        """
+        return cls.from_config(logger=logger, graph_id=graph_id)
 
     def graph_object(self) -> Graph | DiGraph:
         return self.graph

@@ -21,6 +21,7 @@ from nx_neptune.clients import (
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
 )
 from nx_neptune.na_graph import NeptuneGraph
+from nx_plugin import NeptuneConfig
 from nx_neptune.clients import (
     NeptuneAnalyticsClient,
     insert_node,
@@ -35,6 +36,9 @@ from nx_neptune.clients import (
     update_edge,
     delete_edge,
 )
+
+CONFIGURED_ROLE = "arn:aws:iam::123456789012:role/ConfiguredRole"
+CALLER_ROLE = "arn:aws:iam::123456789012:role/CallerRole"
 
 
 class TestNeptuneGraph:
@@ -262,3 +266,48 @@ class TestNeptuneGraph:
         expected_query = match_all_edges()
         mock_client.execute_generic_query.assert_called_once_with(expected_query)
         assert result == ["relationship1", "relationship1"]
+
+    @patch("nx_neptune.na_graph.ClientFactory")
+    @patch("nx_neptune.na_graph.NeptuneAnalyticsClient")
+    @patch("nx_neptune.na_graph.get_config")
+    def test_from_graph_id_uses_configured_role(
+        self, mock_get_config, mock_na_cls, mock_factory
+    ):
+        """from_graph_id binds the configured s3_iam_role without calling STS."""
+        mock_get_config.return_value = NeptuneConfig(s3_iam_role=CONFIGURED_ROLE)
+
+        result = NeptuneGraph.from_graph_id("g-abc123")
+
+        assert mock_na_cls.call_args.args[0] == "g-abc123"
+        assert result.iam_client.role_arn == CONFIGURED_ROLE
+        mock_factory.return_value.sts.assert_not_called()
+        assert isinstance(result.graph, nx.Graph)
+        assert result.graph.number_of_nodes() == 0
+
+    @patch("nx_neptune.na_graph.ClientFactory")
+    @patch("nx_neptune.na_graph.NeptuneAnalyticsClient")
+    @patch("nx_neptune.na_graph.get_config")
+    def test_from_graph_id_falls_back_to_caller_identity(
+        self, mock_get_config, mock_na_cls, mock_factory
+    ):
+        """from_graph_id uses the caller identity when s3_iam_role is unset."""
+        mock_get_config.return_value = NeptuneConfig(s3_iam_role=None)
+        mock_factory.return_value.sts.return_value.get_caller_identity.return_value = {
+            "Arn": CALLER_ROLE
+        }
+
+        result = NeptuneGraph.from_graph_id("g-abc123")
+
+        assert mock_na_cls.call_args.args[0] == "g-abc123"
+        assert result.iam_client.role_arn == CALLER_ROLE
+
+    @patch("nx_neptune.na_graph.ClientFactory")
+    @patch("nx_neptune.na_graph.NeptuneAnalyticsClient")
+    def test_from_config_graph_id_overrides_config(self, mock_na_cls, mock_factory):
+        """An explicit graph_id wins over config.graph_id."""
+        config = NeptuneConfig(graph_id="g-from-config", s3_iam_role=CONFIGURED_ROLE)
+
+        NeptuneGraph.from_config(config, graph_id="g-override")
+
+        assert mock_na_cls.call_args.args[0] == "g-override"
+        assert config.graph_id == "g-from-config"

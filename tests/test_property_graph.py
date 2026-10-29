@@ -34,6 +34,7 @@ def _clear_metadata_cache():
     yield
     AthenaTableMetadata._cache.clear()
 
+
 # Catalog column names are lower-case, as Glue stores them.
 PAYSIM_TABLES = {
     "accounts": [("name", "varchar(64)"), ("region", "string")],

@@ -56,6 +56,37 @@ class IamClientWrapper:
         self.client = client
         self.logger = logger or logging.getLogger(__name__)
 
+    @classmethod
+    def default(
+        cls,
+        sts_client: Optional[BaseClient] = None,
+        iam_client: Optional[BaseClient] = None,
+        logger: Optional[logging.Logger] = None,
+    ) -> "IamClientWrapper":
+        """
+        Build an IamClientWrapper for the current caller. The role ARN is
+        resolved from the STS caller identity (an STS network call). Clients
+        not provided are created from the default ClientFactory.
+
+        Args:
+            sts_client (Optional[BaseClient]): STS boto3 client.
+            iam_client (Optional[BaseClient]): IAM boto3 client.
+            logger (Optional[logging.Logger]): Custom logger.
+
+        Returns:
+            IamClientWrapper: Wrapper bound to the caller's role ARN.
+        """
+        factory = ClientFactory()
+        if sts_client is None:
+            sts_client = factory.sts()
+        if iam_client is None:
+            iam_client = factory.iam()
+        return cls(
+            role_arn=sts_client.get_caller_identity()["Arn"],
+            client=iam_client,
+            logger=logger,
+        )
+
     def check_assume_role(self, service_name: str) -> bool:
         """
         Check if a specific AWS service has permission to assume the configured IAM role

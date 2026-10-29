@@ -1735,9 +1735,7 @@ def empty_s3_bucket(
 
 
 def validate_permissions():
-    factory = ClientFactory()
-    user_arn = factory.sts().get_caller_identity()["Arn"]
-    iam_client_wrapper = IamClientWrapper(role_arn=user_arn, client=factory.iam())
+    iam_client_wrapper = IamClientWrapper.default()
 
     s3_import = os.getenv("NETWORKX_S3_IMPORT_BUCKET_PATH")
     s3_export = os.getenv("NETWORKX_S3_EXPORT_BUCKET_PATH")
@@ -1912,11 +1910,7 @@ def _create_iam_wrapper(
     Returns:
         IamClientWrapper: Wrapper with the caller's role ARN
     """
-    factory = ClientFactory()
-    sts_client = sts_client or factory.sts()
-    user_arn = sts_client.get_caller_identity()["Arn"]
-    iam_client = iam_client or factory.iam()
-    return IamClientWrapper(role_arn=user_arn, client=iam_client)
+    return IamClientWrapper.default(sts_client=sts_client, iam_client=iam_client)
 
 
 def execute_athena_query(
