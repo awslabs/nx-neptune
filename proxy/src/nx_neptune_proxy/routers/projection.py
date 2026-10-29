@@ -128,6 +128,10 @@ def validate_projection(projection_id: str):
         athena_catalog=p.catalog,
         athena_database=p.database,
     )
+    if not p.graph_name:
+        checks.append(
+            {"check": "Graph name", "passed": False, "message": "No graph name set."}
+        )
     return {"valid": all(c["passed"] for c in checks), "checks": checks}
 
 
@@ -227,6 +231,8 @@ def execute_projection(projection_id: str, background_tasks: BackgroundTasks):
     p = _get_projection_or_404(projection_id)
     if p.status == "executing":
         raise HTTPException(status_code=409, detail="Pipeline already running")
+    if not p.graph_name:
+        raise HTTPException(status_code=400, detail="No graph name set.")
     background_tasks.add_task(run_pipeline, p)
     return {"id": p.id, "status": "accepted"}
 
