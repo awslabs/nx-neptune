@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
-import { Play, CheckCircle, Eye, Wand2, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { Play, CheckCircle, Eye, Wand2, ChevronRight, Plus, Trash2, AlertTriangle } from "lucide-react";
 
 export function Import() {
   const [searchParams] = useSearchParams();
@@ -426,6 +426,12 @@ export function Import() {
                   <option key={size} value={size}>{size} GB</option>
                 ))}
               </Select>
+              {graphMemoryGb > 1024 && (
+                <p className="flex items-center gap-1 text-xs text-amber-700">
+                  <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                  This m-NCU size may not be available unless requested.
+                </p>
+              )}
             </label>
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">Graph Name</span>
