@@ -89,7 +89,13 @@ class NeptuneConfig(Config):
         If True, destroys the instance. Defaults to False.
 
     reset_graph: bool
-        If True, resets the graph. Defaults to False.
+        If True, resets the graph. Requires export_s3_bucket when used with mutate algorithm variants.
+        Defaults to False.
+
+    stop_instance: bool
+        If True, stops the instance, keeping graph_id. Defaults to False.
+
+    Only one completion action (destroy_instance, stop_instance, reset_graph) may be True.
 
     Notes
     -----
@@ -133,6 +139,7 @@ class NeptuneConfig(Config):
     save_snapshot: bool = False
     destroy_instance: bool = False
     reset_graph: bool = False
+    stop_instance: bool = False
 
     ############################################
     # Configuration for batch inserts:
@@ -186,19 +193,27 @@ class NeptuneConfig(Config):
                 "export_s3_bucket is defined, s3_iam_role must be defined in the configuration."
             )
 
-        if self.destroy_instance is True and self.reset_graph is True:
+        completion_actions = [
+            name
+            for name in ("destroy_instance", "stop_instance", "reset_graph")
+            if getattr(self, name) is True
+        ]
+        if len(completion_actions) > 1:
             raise ValueError(
-                "Configuration error: destroy_instance and reset_graph are both True.  Only one of these options may "
-                "be True in the configuration."
+                f"Configuration error: {', '.join(completion_actions)} are all True.  "
+                "Choose only one completion action (destroy_instance, stop_instance, "
+                "reset_graph) in the configuration."
             )
 
     def validate_mutate_execution_config(self):
         """Validate the Neptune configuration to make sure mutated graph's state stay after the execution."""
-        if self.destroy_instance is True and self.export_s3_bucket is None:
+        if (
+            self.destroy_instance is True or self.reset_graph is True
+        ) and self.export_s3_bucket is None:
             raise ValueError(
                 "Configuration error: The mutate variant of the algorithm does not support persisting changes."
                 "To maintain the mutated graph's state, "
-                "either disable the destroy_instance option or enable the export_s3_bucket option."
+                "either disable the destroy_instance and reset_graph options or enable the export_s3_bucket option."
             )
 
 

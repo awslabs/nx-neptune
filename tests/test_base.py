@@ -52,6 +52,7 @@ def test_config_init():
         "s3_iam_role": None,
         "save_snapshot": False,
         "skip_graph_reset": False,
+        "stop_instance": False,
         "verbose": 0,
         "batch_update_node_size": 20000,
         "batch_update_edge_size": 10000,

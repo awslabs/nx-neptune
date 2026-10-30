@@ -13,7 +13,7 @@
 import os
 import asyncio
 from asyncio import Future
-from unittest.mock import MagicMock, patch, call, ANY
+from unittest.mock import AsyncMock, MagicMock, patch, call, ANY
 
 import pytest
 import networkx as nx
@@ -28,6 +28,25 @@ from nx_neptune.utils.decorators import (
 from nx_neptune.na_graph import NeptuneGraph
 from nx_neptune.clients import Edge, Node
 from nx_plugin import NeptuneConfig
+
+
+def _teardown_config(
+    graph_id="test-graph-id",
+    export_s3_bucket=None,
+    save_snapshot=False,
+    destroy_instance=False,
+    stop_instance=False,
+    reset_graph=False,
+):
+    """Mock NeptuneConfig with every teardown flag set explicitly."""
+    cfg = MagicMock(spec=NeptuneConfig)
+    cfg.graph_id = graph_id
+    cfg.export_s3_bucket = export_s3_bucket
+    cfg.save_snapshot = save_snapshot
+    cfg.destroy_instance = destroy_instance
+    cfg.stop_instance = stop_instance
+    cfg.reset_graph = reset_graph
+    return cfg
 
 
 class TestConfigureIfNxActive:
@@ -62,8 +81,16 @@ class TestConfigureIfNxActive:
     @patch("nx_neptune.utils.decorators.NeptuneGraph")
     @patch("nx_neptune.utils.decorators.asyncio.run")
     @patch("nx_neptune.utils.decorators.asyncio.get_running_loop")
-    @patch("nx_neptune.utils.decorators._execute_teardown_routines_on_graph")
-    @patch("nx_neptune.utils.decorators._execute_setup_routines_on_graph")
+    # MagicMock (not the auto AsyncMock): asyncio.run is mocked, so the coroutine
+    # would otherwise never be awaited.
+    @patch(
+        "nx_neptune.utils.decorators._execute_teardown_routines_on_graph",
+        new_callable=MagicMock,
+    )
+    @patch(
+        "nx_neptune.utils.decorators._execute_setup_routines_on_graph",
+        new_callable=MagicMock,
+    )
     @patch("nx_neptune.utils.decorators._sync_data_to_neptune")
     def test_with_existing_graph_id(
         self,
@@ -132,8 +159,14 @@ class TestConfigureIfNxActive:
     @patch("nx_neptune.utils.decorators.NeptuneGraph")
     @patch("nx_neptune.utils.decorators.asyncio.run")
     @patch("nx_neptune.utils.decorators.asyncio.get_running_loop")
-    @patch("nx_neptune.utils.decorators._execute_teardown_routines_on_graph")
-    @patch("nx_neptune.utils.decorators._execute_setup_new_graph")
+    @patch(
+        "nx_neptune.utils.decorators._execute_teardown_routines_on_graph",
+        new_callable=MagicMock,
+    )
+    @patch(
+        "nx_neptune.utils.decorators._execute_setup_new_graph",
+        new_callable=MagicMock,
+    )
     @patch("nx_neptune.utils.decorators._sync_data_to_neptune")
     def test_with_create_new_instance(
         self,
@@ -208,12 +241,20 @@ class TestConfigureIfNxActive:
     @patch("nx_neptune.utils.decorators.NeptuneGraph")
     @patch("nx_neptune.utils.decorators.asyncio.get_running_loop")
     @patch("nx_neptune.utils.decorators.concurrent.futures.ThreadPoolExecutor")
-    @patch("nx_neptune.utils.decorators._execute_setup_routines_on_graph")
+    @patch(
+        "nx_neptune.utils.decorators._execute_teardown_routines_on_graph",
+        new_callable=MagicMock,
+    )
+    @patch(
+        "nx_neptune.utils.decorators._execute_setup_routines_on_graph",
+        new_callable=MagicMock,
+    )
     @patch("nx_neptune.utils.decorators._sync_data_to_neptune")
     def test_with_running_event_loop(
         self,
         mock_sync_data,
         mock_execute_setup_routines_on_graph,
+        mock_execute_teardown_routines_on_graph,
         mock_thread_pool,
         mock_get_running_loop,
         mock_neptune_graph,
@@ -549,6 +590,7 @@ class TestExecuteTeardownRoutinesOnGraph:
         mock_config.save_snapshot = False
         mock_config.reset_graph = False
         mock_config.destroy_instance = False
+        mock_config.stop_instance = False
 
         # Setup mock NeptuneGraph
         mock_na_graph = MagicMock(spec=NeptuneGraph)
@@ -580,6 +622,7 @@ class TestExecuteTeardownRoutinesOnGraph:
         mock_config.save_snapshot = True
         mock_config.reset_graph = False
         mock_config.destroy_instance = False
+        mock_config.stop_instance = False
 
         # Setup mock NeptuneGraph
         mock_na_graph = MagicMock(spec=NeptuneGraph)
@@ -592,23 +635,199 @@ class TestExecuteTeardownRoutinesOnGraph:
 
     @pytest.mark.asyncio
     async def test_with_reset_graph(self):
-        """Test with reset_graph set"""
-        # Setup mock config
-        mock_config = MagicMock(spec=NeptuneConfig)
-        mock_config.graph_id = "test-graph-id"
-        mock_config.export_s3_bucket = None
-        mock_config.save_snapshot = False
-        mock_config.reset_graph = True
-        mock_config.destroy_instance = False
-
-        # Setup mock NeptuneGraph
+        """Reset resets the graph once, keeps graph_id and does not raise NotImplemented"""
+        mock_config = _teardown_config(reset_graph=True)
         mock_na_graph = MagicMock(spec=NeptuneGraph)
 
-        # Call the function and expect exception
-        with pytest.raises(
-            Exception, match="Not implemented yet \\(workflow: reset_graph\\)"
+        with (
+            patch(
+                "nx_neptune.utils.decorators.reset_graph",
+                new_callable=AsyncMock,
+                create=True,
+            ) as mock_reset,
+            patch(
+                "nx_neptune.utils.decorators.stop_na_instance",
+                new_callable=AsyncMock,
+                create=True,
+            ) as mock_stop,
+            patch(
+                "nx_neptune.utils.decorators.delete_na_instance", new_callable=AsyncMock
+            ) as mock_delete,
+            patch("nx_neptune.utils.decorators.set_config_graph_id") as mock_set_config,
+        ):
+            result = await _execute_teardown_routines_on_graph(
+                mock_na_graph, mock_config
+            )
+
+        mock_reset.assert_awaited_once()
+        assert mock_reset.await_args.args[0] == "test-graph-id"
+        mock_stop.assert_not_called()
+        mock_delete.assert_not_called()
+        mock_set_config.assert_not_called()
+        assert result == mock_config
+        assert result.graph_id == "test-graph-id"
+
+    @pytest.mark.asyncio
+    async def test_with_stop_instance(self):
+        """Stop stops the instance once with graph_id and keeps graph_id"""
+        mock_config = _teardown_config(stop_instance=True)
+        mock_na_graph = MagicMock(spec=NeptuneGraph)
+
+        with (
+            patch(
+                "nx_neptune.utils.decorators.stop_na_instance",
+                new_callable=AsyncMock,
+                create=True,
+            ) as mock_stop,
+            patch(
+                "nx_neptune.utils.decorators.reset_graph",
+                new_callable=AsyncMock,
+                create=True,
+            ) as mock_reset,
+            patch(
+                "nx_neptune.utils.decorators.delete_na_instance", new_callable=AsyncMock
+            ) as mock_delete,
+            patch("nx_neptune.utils.decorators.set_config_graph_id") as mock_set_config,
+        ):
+            result = await _execute_teardown_routines_on_graph(
+                mock_na_graph, mock_config
+            )
+
+        mock_stop.assert_awaited_once()
+        assert mock_stop.await_args.args[0] == "test-graph-id"
+        mock_reset.assert_not_called()
+        mock_delete.assert_not_called()
+        mock_set_config.assert_not_called()
+        assert result == mock_config
+        assert result.graph_id == "test-graph-id"
+
+    @pytest.mark.asyncio
+    async def test_destroy_does_not_stop_or_reset(self):
+        """Destroy (legacy) only deletes, and clears the graph_id"""
+        mock_config = _teardown_config(destroy_instance=True)
+        mock_na_graph = MagicMock(spec=NeptuneGraph)
+
+        with (
+            patch(
+                "nx_neptune.utils.decorators.stop_na_instance",
+                new_callable=AsyncMock,
+                create=True,
+            ) as mock_stop,
+            patch(
+                "nx_neptune.utils.decorators.reset_graph",
+                new_callable=AsyncMock,
+                create=True,
+            ) as mock_reset,
+            patch(
+                "nx_neptune.utils.decorators.delete_na_instance", new_callable=AsyncMock
+            ) as mock_delete,
+            patch("nx_neptune.utils.decorators.set_config_graph_id") as mock_set_config,
         ):
             await _execute_teardown_routines_on_graph(mock_na_graph, mock_config)
+
+        mock_delete.assert_awaited_once_with("test-graph-id")
+        mock_set_config.assert_called_once_with(None)
+        mock_stop.assert_not_called()
+        mock_reset.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_default_makes_no_lifecycle_call(self):
+        """With no completion action nothing is stopped, reset or deleted and graph_id is unchanged"""
+        mock_config = _teardown_config()
+        mock_na_graph = MagicMock(spec=NeptuneGraph)
+
+        with (
+            patch(
+                "nx_neptune.utils.decorators.stop_na_instance",
+                new_callable=AsyncMock,
+                create=True,
+            ) as mock_stop,
+            patch(
+                "nx_neptune.utils.decorators.reset_graph",
+                new_callable=AsyncMock,
+                create=True,
+            ) as mock_reset,
+            patch(
+                "nx_neptune.utils.decorators.delete_na_instance", new_callable=AsyncMock
+            ) as mock_delete,
+            patch("nx_neptune.utils.decorators.set_config_graph_id") as mock_set_config,
+        ):
+            result = await _execute_teardown_routines_on_graph(
+                mock_na_graph, mock_config
+            )
+
+        mock_stop.assert_not_called()
+        mock_reset.assert_not_called()
+        mock_delete.assert_not_called()
+        mock_set_config.assert_not_called()
+        assert result.graph_id == "test-graph-id"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "action", ["destroy_instance", "stop_instance", "reset_graph"]
+    )
+    async def test_export_finishes_before_completion_action(self, action):
+        """The S3 export has completed before destroy, stop or reset is invoked"""
+        mock_config = _teardown_config(export_s3_bucket="test-bucket", **{action: True})
+        mock_na_graph = MagicMock(spec=NeptuneGraph)
+        events = []
+
+        async def fake_export(*a, **k):
+            events.append("export_start")
+            await asyncio.sleep(0)
+            events.append("export_end")
+
+        def action_recorder(name):
+            async def _record(*a, **k):
+                events.append(name)
+
+            return _record
+
+        with (
+            patch(
+                "nx_neptune.utils.decorators.export_csv_to_s3", side_effect=fake_export
+            ),
+            patch(
+                "nx_neptune.utils.decorators.stop_na_instance",
+                side_effect=action_recorder("stop_instance"),
+                create=True,
+            ),
+            patch(
+                "nx_neptune.utils.decorators.reset_graph",
+                side_effect=action_recorder("reset_graph"),
+                create=True,
+            ),
+            patch(
+                "nx_neptune.utils.decorators.delete_na_instance",
+                side_effect=action_recorder("destroy_instance"),
+            ),
+            patch("nx_neptune.utils.decorators.set_config_graph_id"),
+        ):
+            await _execute_teardown_routines_on_graph(mock_na_graph, mock_config)
+
+        assert events == ["export_start", "export_end", action]
+
+    @pytest.mark.asyncio
+    async def test_stop_failure_propagates_without_deleting(self):
+        """If stop fails its error propagates and the instance is not deleted"""
+        mock_config = _teardown_config(stop_instance=True)
+        mock_na_graph = MagicMock(spec=NeptuneGraph)
+
+        with (
+            patch(
+                "nx_neptune.utils.decorators.stop_na_instance",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("stop failed"),
+                create=True,
+            ),
+            patch(
+                "nx_neptune.utils.decorators.delete_na_instance", new_callable=AsyncMock
+            ) as mock_delete,
+        ):
+            with pytest.raises(RuntimeError, match="stop failed"):
+                await _execute_teardown_routines_on_graph(mock_na_graph, mock_config)
+
+        mock_delete.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_with_destroy_instance(self):
@@ -620,6 +839,7 @@ class TestExecuteTeardownRoutinesOnGraph:
         mock_config.save_snapshot = False
         mock_config.reset_graph = False
         mock_config.destroy_instance = True
+        mock_config.stop_instance = False
 
         # Setup mock NeptuneGraph
         mock_na_graph = MagicMock(spec=NeptuneGraph)
@@ -680,6 +900,7 @@ class TestExecuteTeardownRoutinesOnGraph:
         mock_config.save_snapshot = False
         mock_config.reset_graph = False
         mock_config.destroy_instance = False
+        mock_config.stop_instance = False
 
         # Setup mock NeptuneGraph
         mock_na_graph = MagicMock(spec=NeptuneGraph)
@@ -689,3 +910,202 @@ class TestExecuteTeardownRoutinesOnGraph:
 
         # Verify the result is the config
         assert result == mock_config
+
+
+class TestCompletionActionRunsOnAlgorithmOutcome:
+    """The completion action runs in a finally: on success and on algorithm failure.
+
+    These drive the real decorator and the real teardown coroutine; only the
+    AWS-facing calls are mocked.
+    """
+
+    def _run(self, config, func, *, stop=None, reset=None, delete=None, export=None):
+        """Invoke a decorated `func` with the given config and lifecycle fakes."""
+        stop = stop or AsyncMock()
+        reset = reset or AsyncMock()
+        delete = delete or AsyncMock()
+        export = export or AsyncMock()
+        setup = AsyncMock(return_value=config)
+        with (
+            patch("nx_neptune.utils.decorators.get_config", return_value=config),
+            patch("nx_neptune.utils.decorators.NeptuneGraph"),
+            patch(
+                "nx_neptune.utils.decorators._execute_setup_routines_on_graph", setup
+            ),
+            patch("nx_neptune.utils.decorators._sync_data_to_neptune"),
+            patch("nx_neptune.utils.decorators.stop_na_instance", stop, create=True),
+            patch("nx_neptune.utils.decorators.reset_graph", reset, create=True),
+            patch("nx_neptune.utils.decorators.delete_na_instance", delete),
+            patch("nx_neptune.utils.decorators.export_csv_to_s3", export),
+            patch("nx_neptune.utils.decorators.set_config_graph_id"),
+        ):
+            decorated = configure_if_nx_active()(func)
+            return decorated(nx.Graph())
+
+    @pytest.fixture(autouse=True)
+    def _no_test_env(self, monkeypatch):
+        monkeypatch.delenv("NX_ALGORITHM_TEST", raising=False)
+
+    @staticmethod
+    def _config(**flags):
+        cfg = _teardown_config(**flags)
+        cfg.create_new_instance = False
+        cfg.validate_config.return_value = None
+        return cfg
+
+    @pytest.mark.parametrize(
+        "action", ["destroy_instance", "stop_instance", "reset_graph"]
+    )
+    def test_action_runs_when_algorithm_raises_and_original_exception_propagates(
+        self, action
+    ):
+        original = ValueError("algorithm blew up")
+        mocks = {
+            "destroy_instance": AsyncMock(),
+            "stop_instance": AsyncMock(),
+            "reset_graph": AsyncMock(),
+        }
+
+        def failing(graph):
+            raise original
+
+        with pytest.raises(ValueError) as excinfo:
+            self._run(
+                self._config(**{action: True}),
+                failing,
+                delete=mocks["destroy_instance"],
+                stop=mocks["stop_instance"],
+                reset=mocks["reset_graph"],
+            )
+
+        assert excinfo.value is original
+        mocks[action].assert_awaited_once()
+
+    def test_action_runs_on_success_and_result_is_returned(self):
+        stop = AsyncMock()
+        result = self._run(self._config(stop_instance=True), lambda g: "ok", stop=stop)
+        assert result == "ok"
+        stop.assert_awaited_once()
+
+    def test_no_action_selected_makes_no_lifecycle_call_even_on_failure(self):
+        stop, reset, delete = AsyncMock(), AsyncMock(), AsyncMock()
+
+        def failing(graph):
+            raise ValueError("boom")
+
+        with pytest.raises(ValueError, match="boom"):
+            self._run(self._config(), failing, stop=stop, reset=reset, delete=delete)
+
+        stop.assert_not_called()
+        reset.assert_not_called()
+        delete.assert_not_called()
+
+    def test_algorithm_and_teardown_fail_algorithm_error_wins_and_teardown_is_logged(
+        self, caplog
+    ):
+        original = ValueError("algorithm blew up")
+        stop = AsyncMock(side_effect=RuntimeError("stop exploded"))
+
+        def failing(graph):
+            raise original
+
+        with caplog.at_level("WARNING", logger="nx_neptune.utils.decorators"):
+            with pytest.raises(ValueError) as excinfo:
+                self._run(self._config(stop_instance=True), failing, stop=stop)
+
+        assert excinfo.value is original
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert any(
+            "stop exploded" in r.getMessage() and "test-graph-id" in r.getMessage()
+            for r in warnings
+        ), [r.getMessage() for r in warnings]
+
+    def test_algorithm_succeeds_and_teardown_fails_teardown_error_propagates(self):
+        stop = AsyncMock(side_effect=RuntimeError("stop exploded"))
+        with pytest.raises(RuntimeError, match="stop exploded"):
+            self._run(self._config(stop_instance=True), lambda g: "ok", stop=stop)
+
+    def test_export_runs_before_completion_action_on_algorithm_failure(self):
+        events = []
+
+        async def export(*a, **k):
+            events.append("export")
+
+        async def stop(*a, **k):
+            events.append("stop")
+
+        def failing(graph):
+            raise ValueError("boom")
+
+        with pytest.raises(ValueError, match="boom"):
+            self._run(
+                self._config(stop_instance=True, export_s3_bucket="test-bucket"),
+                failing,
+                stop=stop,
+                export=export,
+            )
+
+        assert events == ["export", "stop"]
+
+    @pytest.mark.parametrize("exc_type", [KeyboardInterrupt, SystemExit])
+    def test_action_runs_when_algorithm_raises_base_exception(self, exc_type):
+        """KeyboardInterrupt / SystemExit from the algorithm still trigger the
+        completion action and propagate unchanged."""
+        original = exc_type()
+        stop = AsyncMock()
+
+        def interrupted(graph):
+            raise original
+
+        with pytest.raises(exc_type) as excinfo:
+            self._run(self._config(stop_instance=True), interrupted, stop=stop)
+
+        assert excinfo.value is original
+        stop.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("teardown_fails", [False, True])
+    async def test_running_loop_teardown_via_thread_pool_and_original_exception_wins(
+        self, teardown_fails, caplog
+    ):
+        """With an event loop already running, teardown is submitted through a
+        ThreadPoolExecutor after an algorithm failure; the algorithm's exception
+        wins even if the teardown fails too (the failure is logged)."""
+        import concurrent.futures
+
+        original = ValueError("algorithm blew up")
+        stop = AsyncMock(
+            side_effect=RuntimeError("stop exploded") if teardown_fails else None
+        )
+        submitted = []
+        real_pool_cls = concurrent.futures.ThreadPoolExecutor
+
+        def spying_pool(*a, **k):
+            pool = real_pool_cls(*a, **k)
+            real_submit = pool.submit
+
+            def submit(fn, *args, **kwargs):
+                submitted.append(args)
+                return real_submit(fn, *args, **kwargs)
+
+            pool.submit = submit
+            return pool
+
+        def failing(graph):
+            raise original
+
+        with patch(
+            "nx_neptune.utils.decorators.concurrent.futures.ThreadPoolExecutor",
+            side_effect=spying_pool,
+        ), caplog.at_level("WARNING", logger="nx_neptune.utils.decorators"):
+            with pytest.raises(ValueError) as excinfo:
+                self._run(self._config(stop_instance=True), failing, stop=stop)
+
+        assert excinfo.value is original
+        stop.assert_awaited_once()
+        # setup and teardown both went through the pool (2 submissions)
+        assert len(submitted) == 2
+        if teardown_fails:
+            assert any(
+                "stop exploded" in r.getMessage() for r in caplog.records
+            ), [r.getMessage() for r in caplog.records]
