@@ -213,7 +213,8 @@
                 "neptune-graph:UpdateGraph",
                 "neptune-graph:StartGraph",
                 "neptune-graph:StopGraph",
-                "neptune-graph:TagResource"
+                "neptune-graph:TagResource",
+                "neptune-graph:ListTagsForResource"
               ],
               "Resource": {
                 "Fn::Sub": "arn:${AWS::Partition}:neptune-graph:${AWS::Region}:${AWS::AccountId}:graph/*"

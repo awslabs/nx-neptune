@@ -453,7 +453,10 @@ class IamClientWrapper:
             None: The function doesn't return a value but raises an exception if permissions are insufficient
 
         """
-        na_permissions = ["neptune-graph:DeleteGraph"]
+        na_permissions = [
+            "neptune-graph:DeleteGraph",
+            "neptune-graph:ListTagsForResource",
+        ]
         operation_name = "Delete Neptune Instance"
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)

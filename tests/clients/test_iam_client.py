@@ -280,12 +280,18 @@ class TestIamClientWrapper:
                 {
                     "EvalActionName": "neptune-graph:DeleteGraph",
                     "EvalDecision": "allowed",
-                }
+                },
+                {
+                    "EvalActionName": "neptune-graph:ListTagsForResource",
+                    "EvalDecision": "allowed",
+                },
             ]
         }
 
         # Should not raise exception
         iam_client.has_delete_na_permissions()
+        actions = mock_client.simulate_principal_policy.call_args.kwargs["ActionNames"]
+        assert "neptune-graph:ListTagsForResource" in actions
 
     def test_has_start_na_permissions_success(self, mock_iam_client):
         """Test has_start_na_permissions with valid permissions."""
