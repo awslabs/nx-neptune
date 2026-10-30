@@ -1108,6 +1108,41 @@ async def test_create_graph_config_unrecognized_env_keeps_secure(monkeypatch):
     assert result["deletionProtection"] is True
 
 
+@pytest.mark.parametrize(
+    "tags, expected",
+    [
+        ({"agent": "nx-neptune"}, True),
+        ({"agent": "other"}, False),
+        ({}, False),
+    ],
+)
+def test_has_agent_tag(tags, expected):
+    """Only graphs tagged agent=nx-neptune are treated as managed."""
+    from nx_neptune.instance_management import _has_agent_tag
+
+    client = MagicMock()
+    client.get_graph.return_value = {"arn": "arn:graph/g-1"}
+    client.list_tags_for_resource.return_value = {"tags": tags}
+
+    assert _has_agent_tag(client, "g-1") is expected
+    client.get_graph.assert_called_once_with(graphIdentifier="g-1")
+    client.list_tags_for_resource.assert_called_once_with(resourceArn="arn:graph/g-1")
+
+
+def test_has_agent_tag_unreadable_is_false():
+    """If the tags cannot be read, the graph is not treated as managed."""
+    from botocore.exceptions import ClientError
+
+    from nx_neptune.instance_management import _has_agent_tag
+
+    client = MagicMock()
+    client.get_graph.side_effect = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "denied"}}, "GetGraph"
+    )
+
+    assert _has_agent_tag(client, "g-1") is False
+
+
 @pytest.mark.asyncio
 async def test_create_random_graph_name_default():
     """Test _create_random_graph_name with default prefix."""
