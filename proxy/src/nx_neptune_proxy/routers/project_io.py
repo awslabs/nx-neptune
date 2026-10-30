@@ -200,7 +200,11 @@ def import_project_from_s3(request_body: dict):
     if not key:
         raise HTTPException(status_code=400, detail="Missing 'key' in request body")
 
-    bucket, _ = _get_export_bucket_tuple()
+    bucket, prefix = _get_export_bucket_tuple()
+    if prefix and not key.startswith(f"{prefix}/"):
+        raise HTTPException(
+            status_code=400, detail="Key must be under the export prefix."
+        )
     s3 = ClientFactory().s3()
 
     try:
