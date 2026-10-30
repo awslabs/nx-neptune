@@ -14,6 +14,7 @@ the pipeline could adopt and reset an unrelated graph. The fix:
    a first run always creates a brand-new graph rather than adopting one by name.
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -57,6 +58,20 @@ class TestGraphNameSchemaValidation:
         assert resp.status_code == 201
         assert resp.json()["graph_name"] == ok_name
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "name, status", [("abc", 201), ("ab", 400), ("-abc", 400), ("bad!char", 400)]
+    )
+    async def test_import_validates_graph_name(self, client, name, status):
+        """Imported project files get the same graph_name rules."""
+        payload = {
+            "version": "1.0",
+            "project": {"name": "P"},
+            "projections": [{"database": "mydb", "graph_name": name}],
+        }
+        resp = await client.post("/api/v0/project/import", content=json.dumps(payload))
+        assert resp.status_code == status
+
 
 # --- Pipeline adoption logic ---
 
@@ -85,14 +100,16 @@ async def test_first_run_never_adopts_existing_graph(mock_sm_cls, mock_cf, clear
 
     sm = mock_sm_cls.return_value
     created = MagicMock(graph_id="g-new", name="nxp-my-graph")
-    sm.get_or_create_graph = AsyncMock(return_value=created)
+    sm.create_graph = AsyncMock(return_value=created)
+    sm.get_or_create_graph = AsyncMock()
     sm.reset_graph = AsyncMock()
     sm.import_from_table = AsyncMock(return_value="task-1")
 
     await run_pipeline(projection)
 
     # Brand-new graph created; no reset of any pre-existing graph.
-    sm.get_or_create_graph.assert_awaited_once()
+    sm.create_graph.assert_awaited_once()
+    sm.get_or_create_graph.assert_not_called()
     sm.reset_graph.assert_not_called()
     # The neptune client is only consulted when a graph_id is recorded.
     mock_cf.return_value.neptune.assert_not_called()
@@ -120,6 +137,7 @@ async def test_retry_resets_only_the_recorded_graph_by_id(
     )
     sm.get_graph.return_value = recorded
     sm.get_or_create_graph = AsyncMock()
+    sm.create_graph = AsyncMock()
     sm.reset_graph = AsyncMock()
     sm.import_from_table = AsyncMock(return_value="task-1")
 
@@ -130,6 +148,7 @@ async def test_retry_resets_only_the_recorded_graph_by_id(
     sm.get_graph.assert_called_once_with("g-mine")
     sm.reset_graph.assert_awaited_once_with("nxp-my-graph")
     sm.get_or_create_graph.assert_not_called()
+    sm.create_graph.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -151,9 +170,11 @@ async def test_recorded_graph_not_managed_fails_without_reset(
     sm = mock_sm_cls.return_value
     sm.reset_graph = AsyncMock()
     sm.get_or_create_graph = AsyncMock()
+    sm.create_graph = AsyncMock()
 
     await run_pipeline(projection)
 
     sm.reset_graph.assert_not_called()
     sm.get_or_create_graph.assert_not_called()
+    sm.create_graph.assert_not_called()
     assert store.get(projection.id).status == "failed"

@@ -84,7 +84,7 @@ async def run_pipeline(projection: Projection) -> None:
             await sm.reset_graph(graph.name)
         else:
             # Brand new graph — no reset needed
-            graph = await sm.get_or_create_graph(
+            graph = await sm.create_graph(
                 config={"provisionedMemory": projection.graph_memory_gb}
             )
             projection_service.update(

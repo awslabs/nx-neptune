@@ -174,6 +174,9 @@ class ProjectionExport(BaseModel):
     )
     graph_name: Optional[str] = Field(
         None,
+        min_length=GRAPH_NAME_MIN_LENGTH,
+        max_length=GRAPH_NAME_MAX_LENGTH,
+        pattern=GRAPH_NAME_PATTERN,
         description="Neptune Analytics graph name suffix (prefix is added automatically)",
     )
     graph_memory_gb: int = Field(16, description="Graph memory allocation in GB")
