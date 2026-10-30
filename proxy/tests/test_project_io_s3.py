@@ -309,6 +309,27 @@ class TestImportFromS3:
         assert resp.status_code == 400
 
     @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "key", ["other/test.json", "exports-other/test.json", "exports", "test.json"]
+    )
+    @patch("nx_neptune_proxy.routers.project_io.Settings.from_env")
+    @patch("nx_neptune_proxy.routers.project_io.ClientFactory")
+    async def test_import_from_s3_rejects_key_outside_prefix(
+        self, mock_factory, mock_settings, client, key
+    ):
+        """Returns 400 without reading S3 when key is outside the export prefix."""
+        mock_settings.return_value = MagicMock(
+            config_bucket="my-bucket/exports", region="us-west-2"
+        )
+
+        resp = await client.post(
+            "/api/v0/project/import/s3", content=json.dumps({"key": key})
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "Key must be under the export prefix."
+        mock_factory.return_value.s3.return_value.get_object.assert_not_called()
+
+    @pytest.mark.anyio
     async def test_import_from_s3_missing_key_param(self, client):
         """Returns 400 when key is missing from request body."""
         with patch(
