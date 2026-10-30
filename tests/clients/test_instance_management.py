@@ -1128,6 +1128,47 @@ async def test_create_random_graph_name_custom_prefix():
     assert len(result) > len("custom-prefix-")
 
 
+def test_generated_graph_name_matches_its_session():
+    """A generated name is recognised by _is_session_graph for its own prefix."""
+    from nx_neptune.instance_management import (
+        _create_random_graph_name,
+        _is_session_graph,
+    )
+
+    assert _is_session_graph(_create_random_graph_name("demo"), "demo")
+
+
+@pytest.mark.parametrize(
+    "graph_name, expected",
+    [
+        ("demo-1b4e28ba-2fa1-41d2-883f-0016d3cca427", True),
+        ("demo2-1b4e28ba-2fa1-41d2-883f-0016d3cca427", False),
+        ("demo-prod-1b4e28ba-2fa1-41d2-883f-0016d3cca427", False),
+        ("demo-backup", False),
+        ("demo-", False),
+        ("demo", False),
+        ("demo-1B4E28BA-2FA1-41D2-883F-0016D3CCA427", False),
+        ("demo-1b4e28ba2fa141d2883f0016d3cca427", False),
+        ("demo-1b4e28ba-2fa1-41d2-883f-0016d3cca427-x", False),
+        ("x-demo-1b4e28ba-2fa1-41d2-883f-0016d3cca427", False),
+    ],
+)
+def test_is_session_graph(graph_name, expected):
+    """Only '{session}-{uuid}' in canonical form matches."""
+    from nx_neptune.instance_management import _is_session_graph
+
+    assert _is_session_graph(graph_name, "demo") is expected
+
+
+def test_is_session_graph_escapes_session_name():
+    """Regex characters in the session name are matched literally."""
+    from nx_neptune.instance_management import _is_session_graph
+
+    uid = "1b4e28ba-2fa1-41d2-883f-0016d3cca427"
+    assert _is_session_graph(f"a.b-{uid}", "a.b")
+    assert not _is_session_graph(f"axb-{uid}", "a.b")
+
+
 @pytest.mark.asyncio
 @patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
 @patch("boto3.client")
