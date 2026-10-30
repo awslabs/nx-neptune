@@ -174,7 +174,21 @@ class SessionManager:
         graph = self._get_existing_graph(filter_status=["AVAILABLE"])
         if graph:
             return graph
-        # create a new graph and return
+        return await self.create_graph(config)
+
+    async def create_graph(
+        self, config: Optional[dict] = None
+    ) -> NeptuneAnalyticsClient:
+        """Create a new graph named with the session prefix.
+
+        Unlike get_or_create_graph, this never reuses an existing graph.
+
+        Args:
+            config (Optional[dict]): Graph creation settings, e.g. provisionedMemory.
+
+        Returns:
+            NeptuneAnalyticsClient: graph object for the new instance
+        """
         logger.info(f"Creating new graph named with prefix: {self.session_name}")
         graph_id = await instance_management.create_na_instance(
             config=config,

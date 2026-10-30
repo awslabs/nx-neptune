@@ -343,6 +343,49 @@ class TestSessionManager:
 
     @pytest.mark.asyncio
     @patch("boto3.client")
+    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
+    async def test_create_graph_ignores_existing(self, mock_create, mock_boto3_client):
+        """create_graph always creates, even when a prefix-matching graph exists."""
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        mock_client.list_graphs.return_value = {
+            "graphs": [
+                {"name": "test-old", "id": "g-old", "status": "AVAILABLE"},
+                {"name": "test-new", "id": "g-new", "status": "AVAILABLE"},
+            ]
+        }
+        mock_create.return_value = "g-new"
+
+        sm = SessionManager(session_name="test")
+        result = await sm.create_graph(config={"provisionedMemory": 32})
+
+        mock_create.assert_called_once()
+        assert mock_create.call_args.kwargs["config"] == {"provisionedMemory": 32}
+        assert mock_create.call_args.kwargs["graph_name_prefix"] == "test"
+        assert result.graph_id == "g-new"
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
+    async def test_create_graph_failure_does_not_reuse_existing(
+        self, mock_create, mock_boto3_client
+    ):
+        """create_graph raises on failure instead of falling back to a matching graph."""
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        mock_client.list_graphs.return_value = {
+            "graphs": [{"name": "test-old", "id": "g-old", "status": "AVAILABLE"}]
+        }
+        mock_create.side_effect = Exception("create failed")
+
+        sm = SessionManager(session_name="test")
+        with pytest.raises(Exception, match="create failed"):
+            await sm.create_graph()
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
     async def test_get_or_create_graph_returns_existing(self, mock_boto3_client):
         """Test get_or_create_graph when graph already exists."""
         mock_client = MagicMock()
