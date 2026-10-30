@@ -33,6 +33,7 @@ export function Import() {
   const [pgqOpen, setPgqOpen] = useState(true);
   const [nodeEdgeOpen, setNodeEdgeOpen] = useState(false);
   const [translateValidated, setTranslateValidated] = useState(false);
+  const [translateError, setTranslateError] = useState<string | null>(null);
   const [bucket, setBucket] = useState("");
   const [graphName, setGraphName] = useState("");
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
@@ -49,6 +50,7 @@ export function Import() {
 
   // --- Validation/Preview ---
   const [checks, setChecks] = useState<{ check: string; passed: boolean; message?: string }[]>([]);
+  const [checksSource, setChecksSource] = useState<"resources" | "queries" | null>(null);
   const [preview, setPreview] = useState<{ columns: string[]; rows: string[][] }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
@@ -92,6 +94,7 @@ export function Import() {
     setStatus(null);
     setPolling(false);
     setChecks([]);
+    setTranslateError(null);
     setPreview(null);
     setError(null);
     setCatalog("AwsDataCatalog");
@@ -184,6 +187,7 @@ export function Import() {
     if (p.graph_name) setGraphName(p.graph_name);
     if (p.graph_memory_gb) setGraphMemoryGb(p.graph_memory_gb);
     setChecks([]);
+    setTranslateError(null);
     setPreview(null);
     setError(null);
 
@@ -274,6 +278,7 @@ export function Import() {
     setChecks([]);
     setPreview(null);
     setError(null);
+    setChecksSource("resources");
     const missing = missingFields();
     if (missing.length > 0) {
       setChecks(missing);
@@ -291,6 +296,7 @@ export function Import() {
     setChecks([]);
     setPreview(null);
     setError(null);
+    setChecksSource("queries");
     setLoading("validate-query");
     try {
       const id = await ensureProjection();
@@ -305,11 +311,12 @@ export function Import() {
     setChecks([]);
     setPreview(null);
     setError(null);
+    setTranslateError(null);
     setLoading("translate");
     try {
       const id = await ensureProjection();
       const res = await projection.translate(id, propertyGraph);
-      if (res.error) { setError(res.error); return; }
+      if (res.error) { setTranslateError(res.error); return; }
       const nodes = (res.node_queries ?? []).map((sql) => ({ sql }));
       const edges = (res.edge_queries ?? []).map((sql) => ({ sql }));
       const nq = nodes.length ? nodes : [{ sql: "" }];
@@ -321,15 +328,16 @@ export function Import() {
       setLoading("translate-validate");
       try {
         const check = await projection.validateQuery(id);
+        setChecksSource("queries");
         setChecks(check.checks);
         markFailures(check.checks);
         if (check.checks.some((c) => !c.passed)) setNodeEdgeOpen(true);
         else setTranslateValidated(true);
       } catch (e: any) {
-        setError(e.message);
+        setTranslateError(e.message);
         setNodeEdgeOpen(true);
       }
-    } catch (e: any) { setError(e.message); } finally { setLoading(null); }
+    } catch (e: any) { setTranslateError(e.message); } finally { setLoading(null); }
   }
 
   async function handlePreview() {
@@ -349,6 +357,7 @@ export function Import() {
     setError(null);
     const missing = missingFields();
     if (missing.length > 0) {
+      setChecksSource("resources");
       setChecks(missing);
       return;
     }
@@ -375,6 +384,23 @@ export function Import() {
       }
     }, 5000);
   }, []);
+
+  const hasQueries = nodeQueries.some((q) => q.sql.trim()) || edgeQueries.some((q) => q.sql.trim());
+
+  function renderChecks(source: "resources" | "queries") {
+    if (checksSource !== source || checks.length === 0) return null;
+    return (
+      <ul className="mt-2 space-y-1">
+        {checks.map((c, i) => (
+          <li key={i} className="flex items-center gap-2 text-sm">
+            <span className={c.passed ? "text-green-600" : "text-red-600"}>{c.passed ? "✓" : "✗"}</span>
+            <span className="font-medium">{c.check}</span>
+            {c.message && <span className="text-gray-500">— {c.message}</span>}
+          </li>
+        ))}
+      </ul>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -489,6 +515,7 @@ export function Import() {
           </div>
           <div>
             <Button variant="secondary" onClick={handleValidate} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate" ? "Validating..." : "Validate Resources"}</Button>
+            {renderChecks("resources")}
           </div>
         </div>
       </Card>
@@ -525,6 +552,9 @@ export function Import() {
                   <span className="ml-2 inline-flex items-center gap-1 text-sm text-green-700">
                     <CheckCircle className="h-4 w-4" /> Validated
                   </span>
+                )}
+                {translateError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{translateError}</div>
                 )}
               </div>
             )}
@@ -612,6 +642,7 @@ export function Import() {
                 <Button variant="secondary" onClick={handleValidateQuery} disabled={!!loading}>
                   <CheckCircle className="h-4 w-4" /> {loading === "validate-query" ? "Validating..." : "Validate SQL Queries"}
                 </Button>
+                {renderChecks("queries")}
               </div>
             )}
           </div>
@@ -619,26 +650,10 @@ export function Import() {
       </Card>
 
       {/* Actions */}
-      <div className="flex gap-2">
-        <Button variant="secondary" onClick={handlePreview} disabled={!!loading}><Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview"}</Button>
-        <Button onClick={handleExecute} disabled={polling || !!loading}><Play className="h-4 w-4" /> Execute</Button>
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={handlePreview} disabled={!!loading || !hasQueries}><Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview"}</Button>
+        <Button onClick={handleExecute} disabled={polling || !!loading || !hasQueries}><Play className="h-4 w-4" /> Execute</Button>
       </div>
-
-      {/* Validation checks */}
-      {checks.length > 0 && (
-        <Card>
-          <h2 className="mb-2 text-sm font-medium">Validation</h2>
-          <ul className="space-y-1">
-            {checks.map((c, i) => (
-              <li key={i} className="flex items-center gap-2 text-sm">
-                <span className={c.passed ? "text-green-600" : "text-red-600"}>{c.passed ? "✓" : "✗"}</span>
-                <span className="font-medium">{c.check}</span>
-                {c.message && <span className="text-gray-500">— {c.message}</span>}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
 
       {/* Preview */}
       {preview && (
