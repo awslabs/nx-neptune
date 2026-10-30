@@ -152,6 +152,44 @@ async def test_retry_resets_only_the_recorded_graph_by_id(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "get_graph",
+    [
+        {"side_effect": Exception("ResourceNotFoundException")},
+        {"return_value": {"status": "STOPPED", "name": "nxp-my-graph"}},
+    ],
+    ids=["not_found", "not_available"],
+)
+@patch("nx_neptune.clients.client_factory.ClientFactory")
+@patch("nx_neptune.session_manager.SessionManager")
+async def test_stale_recorded_graph_creates_new(
+    mock_sm_cls, mock_cf, clear_store, get_graph
+):
+    """If the recorded graph is gone or not AVAILABLE, the pipeline creates a
+    new graph and does not reset or adopt any existing one."""
+    projection = _make_projection()
+    store.update(projection.id, graph_id="g-stale")
+    projection = store.get(projection.id)
+
+    neptune = mock_cf.return_value.neptune.return_value
+    neptune.get_graph.configure_mock(**get_graph)
+
+    sm = mock_sm_cls.return_value
+    sm.create_graph = AsyncMock(return_value=MagicMock(graph_id="g-new"))
+    sm.get_or_create_graph = AsyncMock()
+    sm.reset_graph = AsyncMock()
+    sm.import_from_table = AsyncMock(return_value="task-1")
+
+    await run_pipeline(projection)
+
+    neptune.get_graph.assert_called_once_with(graphIdentifier="g-stale")
+    sm.create_graph.assert_awaited_once()
+    sm.get_or_create_graph.assert_not_called()
+    sm.reset_graph.assert_not_called()
+    assert store.get(projection.id).graph_id == "g-new"
+
+
+@pytest.mark.asyncio
 @patch("nx_neptune.clients.client_factory.ClientFactory")
 @patch("nx_neptune.session_manager.SessionManager")
 async def test_recorded_graph_not_managed_fails_without_reset(
