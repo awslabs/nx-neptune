@@ -4,6 +4,15 @@ import { metadata, projection, projectApi, type Projection, type ProjectionStatu
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
 import { Play, CheckCircle, Eye, Wand2, ChevronRight, Plus, Trash2, AlertTriangle } from "lucide-react";
 
+type UiNodeQuery = NodeQueryInput & { failed?: boolean };
+type UiEdgeQuery = EdgeQueryInput & { failed?: boolean };
+
+const stripUi = <T extends { failed?: boolean }>(qs: T[]) => qs.map(({ failed, ...q }) => q);
+
+function persistQueries(id: string, nq: UiNodeQuery[], eq: UiEdgeQuery[]) {
+  return projection.saveQueries(id, { node_queries: stripUi(nq), edge_queries: stripUi(eq) });
+}
+
 export function Import() {
   const [searchParams] = useSearchParams();
 
@@ -21,14 +30,17 @@ export function Import() {
   const [catalog, setCatalog] = useState("AwsDataCatalog");
   const [database, setDatabase] = useState("");
   const [propertyGraph, setPropertyGraph] = useState("");
-  const [pgqOpen, setPgqOpen] = useState(false);
+  const [pgqOpen, setPgqOpen] = useState(true);
+  const [nodeEdgeOpen, setNodeEdgeOpen] = useState(false);
+  const [translateValidated, setTranslateValidated] = useState(false);
+  const [translateError, setTranslateError] = useState<string | null>(null);
   const [bucket, setBucket] = useState("");
   const [graphName, setGraphName] = useState("");
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
 
   // --- Multi-query state ---
-  const [nodeQueries, setNodeQueries] = useState<NodeQueryInput[]>([{ sql: "" }]);
-  const [edgeQueries, setEdgeQueries] = useState<EdgeQueryInput[]>([{ sql: "" }]);
+  const [nodeQueries, setNodeQueries] = useState<UiNodeQuery[]>([{ sql: "" }]);
+  const [edgeQueries, setEdgeQueries] = useState<UiEdgeQuery[]>([{ sql: "" }]);
 
   // --- Projection state ---
   const [projectionsList, setProjectionsList] = useState<Projection[]>([]);
@@ -38,6 +50,7 @@ export function Import() {
 
   // --- Validation/Preview ---
   const [checks, setChecks] = useState<{ check: string; passed: boolean; message?: string }[]>([]);
+  const [checksSource, setChecksSource] = useState<"resources" | "queries" | null>(null);
   const [preview, setPreview] = useState<{ columns: string[]; rows: string[][] }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
@@ -81,6 +94,7 @@ export function Import() {
     setStatus(null);
     setPolling(false);
     setChecks([]);
+    setTranslateError(null);
     setPreview(null);
     setError(null);
     setCatalog("AwsDataCatalog");
@@ -152,12 +166,12 @@ export function Import() {
     };
     if (currentId) {
       await projection.update(currentId, data);
-      await projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: edgeQueries });
+      await persistQueries(currentId, nodeQueries, edgeQueries);
       return currentId;
     }
     const p = await projection.create(data);
     setCurrentId(p.id);
-    await projection.saveQueries(p.id, { node_queries: nodeQueries, edge_queries: edgeQueries });
+    await persistQueries(p.id, nodeQueries, edgeQueries);
     await loadProjections();
     window.dispatchEvent(new Event("projects-changed"));
     return p.id;
@@ -173,6 +187,7 @@ export function Import() {
     if (p.graph_name) setGraphName(p.graph_name);
     if (p.graph_memory_gb) setGraphMemoryGb(p.graph_memory_gb);
     setChecks([]);
+    setTranslateError(null);
     setPreview(null);
     setError(null);
 
@@ -199,20 +214,21 @@ export function Import() {
 
   function saveCurrentQueries() {
     if (!currentId) return;
-    projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: edgeQueries });
+    persistQueries(currentId, nodeQueries, edgeQueries);
   }
 
-  function scheduleSave(nq: NodeQueryInput[], eq: EdgeQueryInput[], id?: string) {
+  function scheduleSave(nq: UiNodeQuery[], eq: UiEdgeQuery[], id?: string) {
     const targetId = id ?? currentId;
     if (!targetId) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      projection.saveQueries(targetId, { node_queries: nq, edge_queries: eq });
+      persistQueries(targetId, nq, eq);
     }, 1000);
   }
 
   function updateNodeQuery(index: number, sql: string) {
-    const updated = nodeQueries.map((q, i) => (i === index ? { ...q, sql } : q));
+    setTranslateValidated(false);
+    const updated = nodeQueries.map((q, i) => (i === index ? { ...q, sql, failed: undefined } : q));
     setNodeQueries(updated);
     scheduleSave(updated, edgeQueries);
   }
@@ -220,13 +236,15 @@ export function Import() {
     setNodeQueries((prev) => [...prev, { sql: "" }]);
   }
   function removeNodeQuery(index: number) {
+    setTranslateValidated(false);
     const updated = nodeQueries.filter((_, i) => i !== index);
     setNodeQueries(updated);
-    if (currentId) projection.saveQueries(currentId, { node_queries: updated, edge_queries: edgeQueries });
+    if (currentId) persistQueries(currentId, updated, edgeQueries);
   }
 
   function updateEdgeQuery(index: number, updates: Partial<EdgeQueryInput>) {
-    const updated = edgeQueries.map((q, i) => (i === index ? { ...q, ...updates } : q));
+    setTranslateValidated(false);
+    const updated = edgeQueries.map((q, i) => (i === index ? { ...q, ...updates, failed: undefined } : q));
     setEdgeQueries(updated);
     scheduleSave(nodeQueries, updated);
   }
@@ -234,12 +252,19 @@ export function Import() {
     setEdgeQueries((prev) => [...prev, { sql: "" }]);
   }
   function removeEdgeQuery(index: number) {
+    setTranslateValidated(false);
     const updated = edgeQueries.filter((_, i) => i !== index);
     setEdgeQueries(updated);
-    if (currentId) projection.saveQueries(currentId, { node_queries: nodeQueries, edge_queries: updated });
+    if (currentId) persistQueries(currentId, nodeQueries, updated);
   }
 
   // --- Actions ---
+  function markFailures(results: { check: string; passed: boolean }[]) {
+    const failed = new Set(results.filter((c) => !c.passed).map((c) => c.check));
+    setNodeQueries((prev) => prev.map((q, i) => ({ ...q, failed: failed.has(`node_query_${i + 1}`) || undefined })));
+    setEdgeQueries((prev) => prev.map((q, i) => ({ ...q, failed: failed.has(`edge_query_${i + 1}`) || undefined })));
+  }
+
   function missingFields() {
     const missing: { check: string; passed: boolean; message?: string }[] = [];
     if (!bucket) missing.push({ check: "S3 staging bucket", passed: false, message: "No S3 staging bucket selected." });
@@ -253,6 +278,7 @@ export function Import() {
     setChecks([]);
     setPreview(null);
     setError(null);
+    setChecksSource("resources");
     const missing = missingFields();
     if (missing.length > 0) {
       setChecks(missing);
@@ -270,33 +296,48 @@ export function Import() {
     setChecks([]);
     setPreview(null);
     setError(null);
+    setChecksSource("queries");
     setLoading("validate-query");
     try {
       const id = await ensureProjection();
       const res = await projection.validateQuery(id);
       setChecks(res.checks);
+      markFailures(res.checks);
     } catch (e: any) { setError(e.message); } finally { setLoading(null); }
   }
 
   async function handleTranslate() {
+    setTranslateValidated(false);
     setChecks([]);
     setPreview(null);
     setError(null);
+    setTranslateError(null);
     setLoading("translate");
     try {
       const id = await ensureProjection();
       const res = await projection.translate(id, propertyGraph);
-      if (res.error) { setError(res.error); return; }
+      if (res.error) { setTranslateError(res.error); return; }
       const nodes = (res.node_queries ?? []).map((sql) => ({ sql }));
       const edges = (res.edge_queries ?? []).map((sql) => ({ sql }));
-      if (nodes.length) setNodeQueries(nodes);
-      if (edges.length) setEdgeQueries(edges);
-      // Persist the generated queries through the normal save path (the
-      // programmatic setState above fires no onChange/onBlur). Pass the id
-      // returned by ensureProjection(): on a first-time create, currentId is
-      // still null in this closure, so scheduleSave would otherwise no-op.
-      scheduleSave(nodes.length ? nodes : nodeQueries, edges.length ? edges : edgeQueries, id);
-    } catch (e: any) { setError(e.message); } finally { setLoading(null); }
+      const nq = nodes.length ? nodes : [{ sql: "" }];
+      const eq = edges.length ? edges : [{ sql: "" }];
+      setNodeQueries(nq);
+      setEdgeQueries(eq);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      await persistQueries(id, nq, eq);
+      setLoading("translate-validate");
+      try {
+        const check = await projection.validateQuery(id);
+        setChecksSource("queries");
+        setChecks(check.checks);
+        markFailures(check.checks);
+        if (check.checks.some((c) => !c.passed)) setNodeEdgeOpen(true);
+        else setTranslateValidated(true);
+      } catch (e: any) {
+        setTranslateError(e.message);
+        setNodeEdgeOpen(true);
+      }
+    } catch (e: any) { setTranslateError(e.message); } finally { setLoading(null); }
   }
 
   async function handlePreview() {
@@ -316,6 +357,7 @@ export function Import() {
     setError(null);
     const missing = missingFields();
     if (missing.length > 0) {
+      setChecksSource("resources");
       setChecks(missing);
       return;
     }
@@ -342,6 +384,23 @@ export function Import() {
       }
     }, 5000);
   }, []);
+
+  const hasQueries = nodeQueries.some((q) => q.sql.trim()) || edgeQueries.some((q) => q.sql.trim());
+
+  function renderChecks(source: "resources" | "queries") {
+    if (checksSource !== source || checks.length === 0) return null;
+    return (
+      <ul className="mt-2 space-y-1">
+        {checks.map((c, i) => (
+          <li key={i} className="flex items-center gap-2 text-sm">
+            <span className={c.passed ? "text-green-600" : "text-red-600"}>{c.passed ? "✓" : "✗"}</span>
+            <span className="font-medium">{c.check}</span>
+            {c.message && <span className="text-gray-500">— {c.message}</span>}
+          </li>
+        ))}
+      </ul>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -454,12 +513,17 @@ export function Import() {
               />
             </label>
           </div>
+          <div>
+            <Button variant="secondary" onClick={handleValidate} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate" ? "Validating..." : "Validate Resources"}</Button>
+            {renderChecks("resources")}
+          </div>
         </div>
       </Card>
 
       {/* Queries — PGQ generator + node/edge query editors */}
       <Card>
         <div className="space-y-5">
+          <p className="text-sm text-gray-600">Start a graph projection from a data lake using Athena. Define the projection with PGQ, which translates to Athena SQL, OR write Athena SQL directly. Validate the SQL queries against the selected catalog and database before executing running the projection.</p>
           {/* PGQ generator (optional, collapsible) */}
           <div className="rounded-md border border-gray-200">
             <button
@@ -468,115 +532,128 @@ export function Import() {
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               <ChevronRight className={`h-4 w-4 transition-transform ${pgqOpen ? "rotate-90" : ""}`} />
-              Generate from Property Graph Schema (PGQ)
+              Property Graph Schema (PGQ)
               <span className="font-normal text-gray-400">optional</span>
             </button>
             {pgqOpen && (
               <div className="space-y-2 border-t border-gray-200 p-3">
-                <p className="text-xs text-gray-500">Declare a <code>CREATE PROPERTY GRAPH</code> statement and click Translate to fill the Node and Edge queries below. Column types are resolved from the selected catalog/database; you can edit the generated queries afterward.</p>
+                <p className="text-xs text-gray-500">Define the graph with a <em>PGQ (property graph query)</em> statement beginning with <code>CREATE PROPERTY GRAPH</code>. <em>Translate and Validate SQL Queries</em> translates it into node and edge SQL queries and validates the SQL against the selected catalog and database.</p>
                 <textarea
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                   rows={10}
                   placeholder={"CREATE PROPERTY GRAPH g\n  VERTEX TABLES (\n    accounts AS account KEY (id) LABEL account PROPERTIES (name)\n  )\n  EDGE TABLES (\n    transfers SOURCE (src) REFERENCES account\n              DESTINATION (dst) REFERENCES account\n              LABEL transfer PROPERTIES (amount)\n  )"}
                   value={propertyGraph}
-                  onChange={(e) => setPropertyGraph(e.target.value)}
+                  onChange={(e) => { setPropertyGraph(e.target.value); setTranslateValidated(false); }}
                 />
                 <Button variant="secondary" onClick={handleTranslate} disabled={!!loading || !propertyGraph.trim()}>
-                  <Wand2 className="h-4 w-4" /> {loading === "translate" ? "Translating..." : "Translate → Node/Edge queries"}
+                  <Wand2 className="h-4 w-4" /> {loading === "translate" ? "Translating..." : loading === "translate-validate" ? "Validating..." : "Translate and Validate SQL Queries"}
                 </Button>
+                {translateValidated && (
+                  <span className="ml-2 inline-flex items-center gap-1 text-sm text-green-700">
+                    <CheckCircle className="h-4 w-4" /> Validated
+                  </span>
+                )}
+                {translateError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{translateError}</div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Node Queries */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Node Queries</h2>
-              <button onClick={addNodeQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
-                <Plus className="h-3 w-3" /> Add
-              </button>
-            </div>
-            <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
-              {nodeQueries.map((nq, i) => (
-                <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
-                  <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
-                    <span className="text-xs font-medium text-gray-700">Node {i + 1}</span>
-                    {nodeQueries.length > 1 && (
-                      <button onClick={() => removeNodeQuery(i)} className="text-gray-400 hover:text-red-600">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    )}
+          <div className="rounded-md border border-gray-200">
+            <button
+              type="button"
+              onClick={() => setNodeEdgeOpen((o) => !o)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <ChevronRight className={`h-4 w-4 transition-transform ${nodeEdgeOpen ? "rotate-90" : ""}`} />
+              Athena SQL (node &amp; edge queries)
+            </button>
+            {nodeEdgeOpen && (
+              <div className="space-y-5 border-t border-gray-200 p-3">
+                <p className="text-xs text-gray-500">These queries are imported as written. Validate after making changes.</p>
+                {/* Node Queries */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold">Node Queries</h2>
+                    <button onClick={addNodeQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+                      <Plus className="h-3 w-3" /> Add
+                    </button>
                   </div>
-                  <textarea
-                    className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
-                    rows={3}
-                    placeholder="SELECT id AS &quot;~id&quot;, 'Label' AS &quot;~label&quot;, col1 FROM table"
-                    value={nq.sql}
-                    onChange={(e) => updateNodeQuery(i, e.target.value)}
-                    onBlur={() => saveCurrentQueries()}
-                  />
+                  <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+                    {nodeQueries.map((nq, i) => (
+                      <div key={i} className={`rounded-md border overflow-hidden ${nq.failed ? "border-red-400" : "border-gray-200"}`}>
+                        <div className={`flex items-center justify-between px-3 py-1.5 border-b ${nq.failed ? "bg-red-50 border-red-200" : "bg-gray-50 border-gray-200"}`}>
+                          <span className={`text-xs font-medium ${nq.failed ? "text-red-700" : "text-gray-700"}`}>
+                            Node {i + 1}{nq.failed && " — failed validation"}
+                          </span>
+                          {nodeQueries.length > 1 && (
+                            <button onClick={() => removeNodeQuery(i)} className="text-gray-400 hover:text-red-600">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                        <textarea
+                          className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
+                          rows={3}
+                          placeholder="SELECT id AS &quot;~id&quot;, 'Label' AS &quot;~label&quot;, col1 FROM table"
+                          value={nq.sql}
+                          onChange={(e) => updateNodeQuery(i, e.target.value)}
+                          onBlur={() => saveCurrentQueries()}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
 
-          {/* Edge Queries */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Edge Queries</h2>
-              <button onClick={addEdgeQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
-                <Plus className="h-3 w-3" /> Add
-              </button>
-            </div>
-            <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
-              {edgeQueries.map((eq, i) => (
-                <div key={i} className="rounded-md border border-gray-200 overflow-hidden">
-                  <div className="flex items-center justify-between bg-gray-50 px-3 py-1.5 border-b border-gray-200">
-                    <span className="text-xs font-medium text-gray-700">Edge {i + 1}</span>
-                    {edgeQueries.length > 1 && (
-                      <button onClick={() => removeEdgeQuery(i)} className="text-gray-400 hover:text-red-600">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    )}
+                {/* Edge Queries */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold">Edge Queries</h2>
+                    <button onClick={addEdgeQuery} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+                      <Plus className="h-3 w-3" /> Add
+                    </button>
                   </div>
-                  <textarea
-                    className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
-                    rows={3}
-                    placeholder="SELECT id AS &quot;~id&quot;, src AS &quot;~from&quot;, dst AS &quot;~to&quot;, 'Label' AS &quot;~label&quot; FROM table"
-                    value={eq.sql}
-                    onChange={(e) => updateEdgeQuery(i, { sql: e.target.value })}
-                    onBlur={() => saveCurrentQueries()}
-                  />
+                  <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+                    {edgeQueries.map((eq, i) => (
+                      <div key={i} className={`rounded-md border overflow-hidden ${eq.failed ? "border-red-400" : "border-gray-200"}`}>
+                        <div className={`flex items-center justify-between px-3 py-1.5 border-b ${eq.failed ? "bg-red-50 border-red-200" : "bg-gray-50 border-gray-200"}`}>
+                          <span className={`text-xs font-medium ${eq.failed ? "text-red-700" : "text-gray-700"}`}>
+                            Edge {i + 1}{eq.failed && " — failed validation"}
+                          </span>
+                          {edgeQueries.length > 1 && (
+                            <button onClick={() => removeEdgeQuery(i)} className="text-gray-400 hover:text-red-600">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                        <textarea
+                          className="w-full px-3 py-2 text-sm font-mono border-0 focus:ring-0 resize-y"
+                          rows={3}
+                          placeholder="SELECT id AS &quot;~id&quot;, src AS &quot;~from&quot;, dst AS &quot;~to&quot;, 'Label' AS &quot;~label&quot; FROM table"
+                          value={eq.sql}
+                          onChange={(e) => updateEdgeQuery(i, { sql: e.target.value })}
+                          onBlur={() => saveCurrentQueries()}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
+                <Button variant="secondary" onClick={handleValidateQuery} disabled={!!loading}>
+                  <CheckCircle className="h-4 w-4" /> {loading === "validate-query" ? "Validating..." : "Validate SQL Queries"}
+                </Button>
+                {renderChecks("queries")}
+              </div>
+            )}
           </div>
-        </div>
         </div>
       </Card>
 
       {/* Actions */}
-      <div className="flex gap-2">
-        <Button variant="secondary" onClick={handleValidate} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate" ? "Validating..." : "Validate Resources"}</Button>
-        <Button variant="secondary" onClick={handleValidateQuery} disabled={!!loading}><CheckCircle className="h-4 w-4" /> {loading === "validate-query" ? "Validating..." : "Validate Query"}</Button>
-        <Button variant="secondary" onClick={handlePreview} disabled={!!loading}><Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview"}</Button>
-        <Button onClick={handleExecute} disabled={polling || !!loading}><Play className="h-4 w-4" /> Execute</Button>
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={handlePreview} disabled={!!loading || !hasQueries}><Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview"}</Button>
+        <Button onClick={handleExecute} disabled={polling || !!loading || !hasQueries}><Play className="h-4 w-4" /> Execute</Button>
       </div>
-
-      {/* Validation checks */}
-      {checks.length > 0 && (
-        <Card>
-          <h2 className="mb-2 text-sm font-medium">Validation</h2>
-          <ul className="space-y-1">
-            {checks.map((c, i) => (
-              <li key={i} className="flex items-center gap-2 text-sm">
-                <span className={c.passed ? "text-green-600" : "text-red-600"}>{c.passed ? "✓" : "✗"}</span>
-                <span className="font-medium">{c.check}</span>
-                {c.message && <span className="text-gray-500">— {c.message}</span>}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
 
       {/* Preview */}
       {preview && (
