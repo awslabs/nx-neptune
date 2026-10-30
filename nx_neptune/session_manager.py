@@ -95,7 +95,8 @@ class SessionManager:
     def list_graphs(self) -> list[NeptuneAnalyticsClient]:
         """List available Neptune Analytics graphs.
 
-        If session_name is set, filters graphs to those starting with the session_name prefix.
+        If session_name is set, filters graphs to those created by this session,
+        named '{session_name}-{uuid}'.
 
         Returns:
             list: List of NeptuneAnalyticsClient objects containing graph metadata.
@@ -107,7 +108,9 @@ class SessionManager:
             graphs = [
                 NeptuneAnalyticsClient.from_response(g, self._neptune_client)
                 for g in graphs
-                if g.get("name", "").startswith(self.session_name)
+                if instance_management._is_session_graph(
+                    g.get("name", ""), self.session_name
+                )
             ]
         else:
             graphs = [
