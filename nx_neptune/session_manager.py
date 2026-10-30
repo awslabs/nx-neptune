@@ -738,6 +738,7 @@ class SessionManager:
             operation=instance_management.delete_na_instance,
             status_to_check="AVAILABLE",
             graph_names=graph_name,
+            require_managed_tag=True,
         )
 
     def _stop_graphs(self, graph_name: Union[str, list[str]]):
@@ -765,10 +766,15 @@ class SessionManager:
             operation=instance_management.reset_graph,
             status_to_check="AVAILABLE",
             graph_names=graph_name,
+            require_managed_tag=True,
         )
 
     def _graph_bulk_operation(
-        self, operation: Callable, status_to_check: str, graph_names: list[str]
+        self,
+        operation: Callable,
+        status_to_check: str,
+        graph_names: list[str],
+        require_managed_tag: bool = False,
     ):
         # Guard: an empty graph_names means "all graphs in this session", which
         # relies on session_name to scope list_graphs(). With no session_name,
@@ -802,6 +808,29 @@ class SessionManager:
                 logger.warning(
                     f"Skipping graph {graph.graph_id} - status is {graph.status}, expected {status_to_check}"
                 )
+
+        if require_managed_tag:
+            managed_ids = []
+            unmanaged_ids = []
+            for graph_id in graph_ids:
+                if instance_management._is_managed_graph(
+                    self._neptune_client, graph_id
+                ):
+                    managed_ids.append(graph_id)
+                else:
+                    unmanaged_ids.append(graph_id)
+            if unmanaged_ids and graph_names:
+                raise ValueError(
+                    f"Refusing to operate on graphs not created by nx-neptune "
+                    f"(missing tag {instance_management._MANAGED_TAG_KEY}): "
+                    f"{unmanaged_ids}"
+                )
+            for graph_id in unmanaged_ids:
+                logger.warning(
+                    f"Skipping graph {graph_id} - missing tag "
+                    f"{instance_management._MANAGED_TAG_KEY}"
+                )
+            graph_ids = managed_ids
 
         future_list = []
         for graph_id in graph_ids:

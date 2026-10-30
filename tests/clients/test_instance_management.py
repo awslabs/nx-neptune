@@ -1022,7 +1022,7 @@ async def test_create_graph_config_base(monkeypatch):
         "replicaCount": 0,
         "deletionProtection": True,
         "provisionedMemory": 16,
-        "tags": {"agent": "nx-neptune"},
+        "tags": {"agent": "nx-neptune", "nx-neptune:managed": "true"},
     }
     assert expected == result
 
@@ -1045,7 +1045,7 @@ async def test_create_graph_config_custom_parameters(monkeypatch):
         "replicaCount": 0,
         "deletionProtection": True,
         "provisionedMemory": 16,
-        "tags": {"agent": "nx-neptune"},
+        "tags": {"agent": "nx-neptune", "nx-neptune:managed": "true"},
         "custom_parameter": 123,
         "kmsKeyIdentifier": "test_kms",
         "vectorSearchConfiguration": 1024,
@@ -1070,7 +1070,11 @@ async def test_create_graph_config_override_default_options():
         "replicaCount": 3,
         "deletionProtection": True,
         "provisionedMemory": 32,
-        "tags": {"agent": "nx-neptune", "additional_tag": "test_value"},
+        "tags": {
+            "agent": "nx-neptune",
+            "nx-neptune:managed": "true",
+            "additional_tag": "test_value",
+        },
     }
     assert expected == result
 
@@ -1106,6 +1110,75 @@ async def test_create_graph_config_unrecognized_env_keeps_secure(monkeypatch):
     result = _get_create_instance_config("test")
     assert result["publicConnectivity"] is False
     assert result["deletionProtection"] is True
+
+
+@pytest.mark.parametrize(
+    "builder, args",
+    [
+        ("_get_create_instance_config", ("test",)),
+        (
+            "_get_create_instance_with_import_config",
+            ("test", "s3://bucket/data", "arn:aws:iam::123456789012:role/r"),
+        ),
+    ],
+)
+def test_create_config_keeps_user_tags_and_forces_library_tags(builder, args):
+    """Caller tags are kept; agent and nx-neptune:managed always use library values."""
+    from nx_neptune import instance_management
+
+    config = {
+        "tags": {
+            "team": "fraud",
+            "env": "dev",
+            "agent": "other",
+            "nx-neptune:managed": "false",
+        }
+    }
+    result = getattr(instance_management, builder)(*args, config)
+
+    assert result["tags"] == {
+        "team": "fraud",
+        "env": "dev",
+        "agent": "nx-neptune",
+        "nx-neptune:managed": "true",
+    }
+
+
+@pytest.mark.parametrize(
+    "tags, expected",
+    [
+        ({"agent": "nx-neptune", "nx-neptune:managed": "true"}, True),
+        ({"nx-neptune:managed": "true"}, True),
+        ({"agent": "nx-neptune"}, False),
+        ({"nx-neptune:managed": "false"}, False),
+        ({}, False),
+    ],
+)
+def test_is_managed_graph(tags, expected):
+    """Only graphs tagged nx-neptune:managed=true are treated as managed."""
+    from nx_neptune.instance_management import _is_managed_graph
+
+    client = MagicMock()
+    client.get_graph.return_value = {"arn": "arn:graph/g-1"}
+    client.list_tags_for_resource.return_value = {"tags": tags}
+
+    assert _is_managed_graph(client, "g-1") is expected
+    client.get_graph.assert_called_once_with(graphIdentifier="g-1")
+    client.list_tags_for_resource.assert_called_once_with(resourceArn="arn:graph/g-1")
+
+
+def test_is_managed_graph_unreadable_is_false():
+    """If the tags cannot be read, the graph is not treated as managed."""
+    from botocore.exceptions import ClientError
+
+    from nx_neptune.instance_management import _is_managed_graph
+
+    client = MagicMock()
+    client.get_graph.side_effect = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "denied"}}, "GetGraph"
+    )
+
+    assert _is_managed_graph(client, "g-1") is False
 
 
 @pytest.mark.asyncio
@@ -1360,6 +1433,7 @@ def test_get_create_instance_with_import_config(monkeypatch):
     assert result["publicConnectivity"] is False
     assert result["deletionProtection"] is True
     assert result["tags"]["agent"] == "nx-neptune"
+    assert result["tags"]["nx-neptune:managed"] == "true"
 
 
 def test_get_create_instance_with_import_config_custom():
