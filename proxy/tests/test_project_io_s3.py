@@ -319,7 +319,6 @@ class TestImportFromS3:
             ("exports", False),
             ("test.json", False),
             ("exports.json", False),
-            ("exports", False),
         ],
     )
     @patch("nx_neptune_proxy.routers.project_io.Settings.from_env")
