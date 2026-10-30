@@ -381,13 +381,17 @@ def _bulk_client(mock_boto3_client, status="AVAILABLE"):
         "arn": f"arn:aws:neptune-graph:us-west-2:123456789012:graph/{graphIdentifier}"
     }
     mock_client.list_tags_for_resource.side_effect = lambda resourceArn: {
-        "tags": {"agent": "nx-neptune"} if resourceArn.endswith("/g-1") else {}
+        "tags": (
+            {"agent": "nx-neptune", "nx-neptune:managed": "true"}
+            if resourceArn.endswith("/g-1")
+            else {"agent": "nx-neptune"}
+        )
     }
     return mock_client
 
 
 class TestBulkOperationAgentTag:
-    """Destructive bulk operations only act on graphs tagged agent=nx-neptune."""
+    """Destructive bulk operations only act on graphs tagged nx-neptune:managed."""
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -412,17 +416,27 @@ class TestBulkOperationAgentTag:
         mock_op.assert_awaited_once_with("g-1")
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "method, operation",
+        [
+            ("destroy_graph", "delete_na_instance"),
+            ("reset_graph", "reset_graph"),
+        ],
+    )
     @patch("boto3.client")
-    async def test_destroy_named_untagged_graph_is_skipped(self, mock_boto3_client):
+    async def test_named_unmanaged_graph_raises(
+        self, mock_boto3_client, method, operation
+    ):
         _bulk_client(mock_boto3_client)
         with patch(
-            "nx_neptune.session_manager.instance_management.delete_na_instance",
+            f"nx_neptune.session_manager.instance_management.{operation}",
             new_callable=AsyncMock,
-        ) as mock_delete:
+        ) as mock_op:
             sm = SessionManager(session_name="test")
-            await sm.destroy_graph(UNTAGGED_NAME)
+            with pytest.raises(ValueError, match="g-2"):
+                getattr(sm, method)(UNTAGGED_NAME)
 
-        mock_delete.assert_not_called()
+        mock_op.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("boto3.client")

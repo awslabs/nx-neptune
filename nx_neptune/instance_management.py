@@ -64,6 +64,8 @@ from .utils.utils import (
 logger = logging.getLogger(__name__)
 
 _PROJECT_IDENTIFIER = "nx-neptune"
+_MANAGED_TAG_KEY = "nx-neptune:managed"
+_MANAGED_TAG_VALUE = "true"
 
 
 async def create_na_instance(
@@ -765,7 +767,7 @@ def _get_create_instance_config(graph_name, config=None):
 
     # Make sure agent tag shows regardless
     config["graphName"] = graph_name
-    config.setdefault("tags", {}).setdefault("agent", _PROJECT_IDENTIFIER)
+    _apply_library_tags(config)
 
     _log_connectivity_hint(config)
     return config
@@ -822,7 +824,7 @@ def _get_create_instance_with_import_config(
     config["graphName"] = graph_name
     config["source"] = s3_location
     config["roleArn"] = role_arn
-    config.setdefault("tags", {}).setdefault("agent", _PROJECT_IDENTIFIER)
+    _apply_library_tags(config)
 
     _log_connectivity_hint(config)
     return config
@@ -884,16 +886,31 @@ def _create_na_instance_from_snapshot_task(
     return response
 
 
-def _has_agent_tag(client, graph_id: str) -> bool:
-    """Check whether a graph carries the agent tag set when nx-neptune creates it.
+def _apply_library_tags(config: dict) -> None:
+    """Add the library's tags to config["tags"], keeping any caller-supplied tags.
+
+    agent identifies graphs created by this library. nx-neptune:managed marks
+    graphs that SessionManager may destroy or reset. Both always take the
+    library's value, even if the caller passed the same key.
+
+    Args:
+        config (dict): Graph creation config, updated in place.
+    """
+    tags = config.setdefault("tags", {})
+    tags["agent"] = _PROJECT_IDENTIFIER
+    tags[_MANAGED_TAG_KEY] = _MANAGED_TAG_VALUE
+
+
+def _is_managed_graph(client, graph_id: str) -> bool:
+    """Check whether a graph carries the managed tag set when nx-neptune creates it.
 
     Args:
         client (boto3.client): The Neptune Analytics boto3 client
         graph_id (str): The graph ID to check
 
     Returns:
-        bool: True if the graph is tagged agent=nx-neptune. False if it is not,
-            or if the tags cannot be read.
+        bool: True if the graph is tagged nx-neptune:managed=true. False if it
+            is not, or if the tags cannot be read.
     """
     try:
         arn = client.get_graph(graphIdentifier=graph_id)["arn"]
@@ -901,7 +918,7 @@ def _has_agent_tag(client, graph_id: str) -> bool:
     except ClientError as e:
         logger.warning("Could not read tags for graph %s: %s", graph_id, e)
         return False
-    return tags.get("agent") == _PROJECT_IDENTIFIER
+    return tags.get(_MANAGED_TAG_KEY) == _MANAGED_TAG_VALUE
 
 
 def _delete_na_instance_task(client, graph_id: str):
