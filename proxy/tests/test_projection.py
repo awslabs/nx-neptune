@@ -163,6 +163,25 @@ async def test_validate_projection_fails(mock_validate, client):
     assert resp.json()["valid"] is False
 
 
+@pytest.mark.asyncio
+@patch("nx_neptune_proxy.routers.projection.validate_resources")
+async def test_validate_projection_missing_graph_name(mock_validate, client):
+    mock_validate.return_value = [{"check": "bucket_region", "passed": True}]
+    body = SAMPLE_BODY()
+    del body["graph_name"]
+    pid = (await client.post("/api/v0/projection", json=body)).json()["id"]
+
+    resp = await client.post(f"/api/v0/projection/{pid}/validate")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["valid"] is False
+    assert {
+        "check": "Graph name",
+        "passed": False,
+        "message": "No graph name set.",
+    } in data["checks"]
+
+
 # --- Validate query ---
 
 
@@ -249,6 +268,29 @@ async def test_execute_conflict_if_already_running(client):
 
     resp = await client.post(f"/api/v0/projection/{pid}/execute")
     assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field, value, label",
+    [
+        ("graph_name", None, "graph name"),
+        ("s3_staging_bucket", None, "S3 staging bucket"),
+        ("database", None, "Athena database"),
+    ],
+)
+async def test_execute_rejects_missing_required_field(client, field, value, label):
+    body = SAMPLE_BODY()
+    body.pop(field, None)
+    if value is not None:
+        body[field] = value
+    pid = (await client.post("/api/v0/projection", json=body)).json()["id"]
+
+    with patch("nx_neptune_proxy.routers.projection.run_pipeline") as mock_run:
+        resp = await client.post(f"/api/v0/projection/{pid}/execute")
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == f"Missing required fields: {label}."
+    mock_run.assert_not_called()
 
 
 # --- List projections ---

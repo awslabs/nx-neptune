@@ -240,14 +240,20 @@ export function Import() {
   }
 
   // --- Actions ---
-  async function handleValidate() {
-    setChecks([]);
-    setPreview(null);
-    setError(null);
+  function missingFields() {
     const missing: { check: string; passed: boolean; message?: string }[] = [];
     if (!bucket) missing.push({ check: "S3 staging bucket", passed: false, message: "No S3 staging bucket selected." });
     if (!catalog) missing.push({ check: "Athena catalog", passed: false, message: "No Athena catalog selected." });
     if (!database) missing.push({ check: "Athena database", passed: false, message: "No Athena database selected." });
+    if (!graphName.trim()) missing.push({ check: "Graph name", passed: false, message: "No graph name set." });
+    return missing;
+  }
+
+  async function handleValidate() {
+    setChecks([]);
+    setPreview(null);
+    setError(null);
+    const missing = missingFields();
     if (missing.length > 0) {
       setChecks(missing);
       return;
@@ -308,6 +314,11 @@ export function Import() {
 
   async function handleExecute() {
     setError(null);
+    const missing = missingFields();
+    if (missing.length > 0) {
+      setChecks(missing);
+      return;
+    }
     setLoading("execute");
     try {
       const id = await ensureProjection();

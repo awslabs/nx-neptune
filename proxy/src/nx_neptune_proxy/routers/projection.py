@@ -128,6 +128,10 @@ def validate_projection(projection_id: str):
         athena_catalog=p.catalog,
         athena_database=p.database,
     )
+    if not p.graph_name:
+        checks.append(
+            {"check": "Graph name", "passed": False, "message": "No graph name set."}
+        )
     return {"valid": all(c["passed"] for c in checks), "checks": checks}
 
 
@@ -227,6 +231,16 @@ def execute_projection(projection_id: str, background_tasks: BackgroundTasks):
     p = _get_projection_or_404(projection_id)
     if p.status == "executing":
         raise HTTPException(status_code=409, detail="Pipeline already running")
+    required = {
+        "graph name": p.graph_name,
+        "S3 staging bucket": p.s3_staging_bucket,
+        "Athena database": p.database,
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        raise HTTPException(
+            status_code=400, detail=f"Missing required fields: {', '.join(missing)}."
+        )
     background_tasks.add_task(run_pipeline, p)
     return {"id": p.id, "status": "accepted"}
 
