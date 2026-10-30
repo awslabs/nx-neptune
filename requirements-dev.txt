@@ -109,7 +109,7 @@ pytest-cov==7.1.0
     # via nx-neptune (pyproject.toml)
 pytest-order==1.5.0
     # via nx-neptune (pyproject.toml)
-python-dateutil==2.9.0.post0
+python-dateutil==3.0.0
     # via
     #   botocore
     #   pandas
