@@ -537,7 +537,7 @@ export function Import() {
             </button>
             {pgqOpen && (
               <div className="space-y-2 border-t border-gray-200 p-3">
-                <p className="text-xs text-gray-500">Define the graph with a <em>PGQ (property graph query)<em> statement beginning with <code>CREATE PROPERTY GRAPH</code>. <em>Translate and Validate SQL Queries<em> translates it into node and edge SQL queries and validates the SQL against the selected catalog and database.</p>
+                <p className="text-xs text-gray-500">Define the graph with a <em>PGQ (property graph query)</em> statement beginning with <code>CREATE PROPERTY GRAPH</code>. <em>Translate and Validate SQL Queries</em> translates it into node and edge SQL queries and validates the SQL against the selected catalog and database.</p>
                 <textarea
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                   rows={10}
