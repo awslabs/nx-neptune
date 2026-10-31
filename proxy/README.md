@@ -28,6 +28,24 @@ The UI is available at `http://localhost:8080`.
 
 The `docker-compose.yml` runs both the proxy and Graph Explorer locally.
 
+### State persistence
+
+The proxy stores projects and projections in a SQLite database at `~/.nx-neptune/proxy.db`
+(`/home/appuser/.nx-neptune/proxy.db` inside the container). The compose file mounts a
+named volume (`proxy-state`) on that directory, so the state survives `make up`, container
+restarts and image rebuilds — including the `--force-recreate` that `make up` uses to pick
+up refreshed short-lived AWS credentials.
+
+To start from a clean slate, remove the volume along with the containers:
+
+```bash
+docker compose down -v
+```
+
+The image creates the state directory owned by `appuser`, so the volume is writable by the
+unprivileged container user. If you point `NX_NEPTUNE_DB_PATH` somewhere else, mount that
+path yourself — the `proxy-state` volume only covers the default location.
+
 ### ⚠️ Security: AWS Credentials
 
 AWS credentials are passed via environment variables for **local development only**. Never use long-lived credentials (IAM user access keys). Always use short-lived session tokens from:

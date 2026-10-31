@@ -5,6 +5,11 @@ COPY nx_plugin/ ./nx_neptune_src/nx_plugin/
 COPY pyproject.toml ./nx_neptune_src/
 COPY proxy/ ./proxy/
 RUN pip install --no-cache-dir ./nx_neptune_src ./proxy && useradd --create-home appuser
+# The proxy keeps its SQLite state under the home directory (~/.nx-neptune).
+# Creating that directory here, owned by appuser, means a named volume mounted
+# on the same path inherits the ownership instead of being root-owned, so the
+# unprivileged user can still write to it.
+RUN mkdir -p /home/appuser/.nx-neptune && chown appuser:appuser /home/appuser/.nx-neptune
 USER appuser
 EXPOSE 8080
 # The container must bind 0.0.0.0 so Docker's published-port forwarding can
