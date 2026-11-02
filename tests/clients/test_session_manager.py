@@ -369,7 +369,27 @@ class TestSessionManager:
         mock_create.assert_called_once()
         assert mock_create.call_args.kwargs["config"] == {"provisionedMemory": 32}
         assert mock_create.call_args.kwargs["graph_name_prefix"] == "test"
+        assert mock_create.call_args.kwargs["on_created"] is None
         assert result.graph_id == "g-new"
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
+    async def test_create_graph_passes_on_created(self, mock_create, mock_boto3_client):
+        """create_graph forwards on_created to create_na_instance."""
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        mock_client.list_graphs.return_value = {
+            "graphs": [{"name": "test-new", "id": "g-new", "status": "AVAILABLE"}]
+        }
+        mock_create.return_value = "g-new"
+        on_created = MagicMock()
+
+        sm = SessionManager(session_name="test")
+        await sm.create_graph(on_created=on_created)
+
+        assert mock_create.call_args.kwargs["on_created"] is on_created
 
     @pytest.mark.asyncio
     @patch("boto3.client")

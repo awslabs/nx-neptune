@@ -16,7 +16,7 @@ import os
 import re
 import uuid
 from enum import Enum
-from typing import Any, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 import boto3
 import jmespath
@@ -75,6 +75,7 @@ async def create_na_instance(
     graph_name_prefix: Optional[str] = None,
     polling_interval=None,
     max_attempts=None,
+    on_created: Optional[Callable[[str], None]] = None,
 ) -> str:
     """
     Creates a new graph instance for Neptune Analytics.
@@ -93,6 +94,8 @@ async def create_na_instance(
         graph_name_prefix (Optional[str]): Optional prefix for the generated graph name
         polling_interval (int): Time interval in seconds for job status query
         max_attempts: Maximum attempts for status checks
+        on_created (Optional[Callable[[str], None]]): Called with the graph ID as soon as
+            creation is accepted, before waiting for the graph to become available.
 
     Returns:
         str: The graph ID of the created Neptune Analytics instance
@@ -108,6 +111,8 @@ async def create_na_instance(
     status_code = _get_status_code(response)
 
     if status_code == 201:
+        if on_created:
+            on_created(prospective_graph_id)
         await _get_status_check_future(
             na_client,
             TaskType.CREATE,

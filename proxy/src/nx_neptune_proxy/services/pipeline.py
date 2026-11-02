@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+from functools import partial
 
 from nx_neptune_proxy.config import get_settings
 from nx_neptune_proxy.services.projection_service import projection_service
@@ -70,11 +71,7 @@ async def run_pipeline(projection: Projection) -> None:
         if existing:
             # Reuse existing graph (retry scenario) — reset data
             graph = existing
-            projection_service.update(
-                projection.id,
-                graph_id=graph.graph_id,
-                graph_endpoint=f"https://{graph.graph_id}.neptune-graph.amazonaws.com",
-            )
+            _record_graph(projection.id, graph.graph_id)
             _update(
                 projection.id,
                 step="graph_reset",
@@ -85,12 +82,8 @@ async def run_pipeline(projection: Projection) -> None:
         else:
             # Brand new graph — no reset needed
             graph = await sm.create_graph(
-                config={"provisionedMemory": projection.graph_memory_gb}
-            )
-            projection_service.update(
-                projection.id,
-                graph_id=graph.graph_id,
-                graph_endpoint=f"https://{graph.graph_id}.neptune-graph.amazonaws.com",
+                config={"provisionedMemory": projection.graph_memory_gb},
+                on_created=partial(_record_graph, projection.id),
             )
 
         # Step 2: Athena query + CSV import
@@ -129,6 +122,15 @@ async def run_pipeline(projection: Projection) -> None:
         projection_service.update(
             projection.id, status="failed", error=sanitize_error_message(error_msg)
         )
+
+
+def _record_graph(projection_id: str, graph_id: str) -> None:
+    """Save the graph id and endpoint on the projection."""
+    projection_service.update(
+        projection_id,
+        graph_id=graph_id,
+        graph_endpoint=f"https://{graph_id}.neptune-graph.amazonaws.com",
+    )
 
 
 def _update(projection_id: str, step: str, label: str, progress: float) -> None:

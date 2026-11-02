@@ -89,6 +89,18 @@ def _make_projection(**overrides):
     return store.create(**defaults)
 
 
+def _created_graph(graph_id, name=None):
+    """Mock create_graph that reports the id through on_created, like the real one."""
+    graph = MagicMock(graph_id=graph_id)
+    graph.name = name
+
+    async def create(config=None, on_created=None):
+        on_created(graph_id)
+        return graph
+
+    return AsyncMock(side_effect=create)
+
+
 @pytest.mark.asyncio
 @patch("nx_neptune.clients.client_factory.ClientFactory")
 @patch("nx_neptune.session_manager.SessionManager")
@@ -99,8 +111,7 @@ async def test_first_run_never_adopts_existing_graph(mock_sm_cls, mock_cf, clear
     assert projection.graph_id is None
 
     sm = mock_sm_cls.return_value
-    created = MagicMock(graph_id="g-new", name="nxp-my-graph")
-    sm.create_graph = AsyncMock(return_value=created)
+    sm.create_graph = _created_graph("g-new", "nxp-my-graph")
     sm.get_or_create_graph = AsyncMock()
     sm.reset_graph = AsyncMock()
     sm.import_from_table = AsyncMock(return_value="task-1")
@@ -113,6 +124,39 @@ async def test_first_run_never_adopts_existing_graph(mock_sm_cls, mock_cf, clear
     sm.reset_graph.assert_not_called()
     # The neptune client is only consulted when a graph_id is recorded.
     mock_cf.return_value.neptune.assert_not_called()
+    assert store.get(projection.id).graph_id == "g-new"
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.clients.client_factory.ClientFactory")
+@patch("nx_neptune.session_manager.SessionManager")
+async def test_first_run_records_graph_id_when_wait_fails(
+    mock_sm_cls, mock_cf, clear_store
+):
+    """If creation is accepted but the wait for AVAILABLE fails, the graph id is
+    still recorded, so a retry or project deletion can find the graph."""
+    from botocore.exceptions import ClientError
+
+    projection = _make_projection()
+
+    async def create_then_fail(config=None, on_created=None):
+        on_created("g-new")
+        raise ClientError(
+            {"Error": {"Code": "MaxAttemptsReached", "Message": "timeout"}},
+            "wait_until_complete",
+        )
+
+    sm = mock_sm_cls.return_value
+    sm.create_graph = AsyncMock(side_effect=create_then_fail)
+    sm.import_from_table = AsyncMock()
+
+    await run_pipeline(projection)
+
+    result = store.get(projection.id)
+    assert result.status == "failed"
+    assert result.graph_id == "g-new"
+    assert result.graph_endpoint == "https://g-new.neptune-graph.amazonaws.com"
+    sm.import_from_table.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -213,7 +257,7 @@ async def test_stale_recorded_graph_creates_new(
     neptune.get_graph.configure_mock(**get_graph)
 
     sm = mock_sm_cls.return_value
-    sm.create_graph = AsyncMock(return_value=MagicMock(graph_id="g-new"))
+    sm.create_graph = _created_graph("g-new")
     sm.get_or_create_graph = AsyncMock()
     sm.reset_graph = AsyncMock()
     sm.import_from_table = AsyncMock(return_value="task-1")

@@ -182,7 +182,9 @@ class SessionManager:
         return await self.create_graph(config)
 
     async def create_graph(
-        self, config: Optional[dict] = None
+        self,
+        config: Optional[dict] = None,
+        on_created: Optional[Callable[[str], None]] = None,
     ) -> NeptuneAnalyticsClient:
         """Create a new graph named with the session prefix.
 
@@ -190,6 +192,9 @@ class SessionManager:
 
         Args:
             config (Optional[dict]): Graph creation settings, e.g. provisionedMemory.
+            on_created (Optional[Callable[[str], None]]): Called with the graph ID as
+                soon as creation is accepted, before waiting for the graph to become
+                available.
 
         Returns:
             NeptuneAnalyticsClient: graph object for the new instance
@@ -201,6 +206,7 @@ class SessionManager:
             sts_client=self._sts_client,
             iam_client=self._iam_client,
             graph_name_prefix=self.session_name,
+            on_created=on_created,
         )
         return self.get_graph(graph_id)
 
