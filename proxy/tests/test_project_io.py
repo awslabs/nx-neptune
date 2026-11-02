@@ -36,6 +36,16 @@ class TestProjectExport:
         assert data["projections"][0]["graph_memory_gb"] == 32
 
     @pytest.mark.anyio
+    async def test_export_legacy_graph_name(self, client):
+        """Projections stored before the graph_name rules still export."""
+        p = project_store.create(name="Legacy")
+        projection_store.create(database="db", graph_name="ab", project_id=p.id)
+
+        resp = await client.get(f"/api/v0/project/{p.id}/export")
+        assert resp.status_code == 200
+        assert resp.json()["projections"][0]["graph_name"] == "ab"
+
+    @pytest.mark.anyio
     async def test_export_excludes_runtime_state(self, client):
         p = project_store.create(name="Test Project")
         pr = projection_store.create(
