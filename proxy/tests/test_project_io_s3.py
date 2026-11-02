@@ -309,6 +309,46 @@ class TestImportFromS3:
         assert resp.status_code == 400
 
     @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "key, allowed",
+        [
+            ("exports/test.json", True),
+            ("exports/nested/test.json", True),
+            ("other/test.json", False),
+            ("exports-other/test.json", False),
+            ("exports", False),
+            ("test.json", False),
+            ("exports.json", False),
+        ],
+    )
+    @patch("nx_neptune_proxy.routers.project_io.Settings.from_env")
+    @patch("nx_neptune_proxy.routers.project_io.ClientFactory")
+    async def test_import_from_s3_key_prefix(
+        self, mock_factory, mock_settings, client, key, allowed
+    ):
+        """Only keys under the export prefix are read from S3."""
+        mock_settings.return_value = MagicMock(
+            config_bucket="my-bucket/exports", region="us-west-2"
+        )
+        mock_s3 = mock_factory.return_value.s3.return_value
+        mock_body = MagicMock()
+        mock_body.read.return_value = json.dumps(
+            {"version": "1.0", "project": {"name": "P"}, "projections": []}
+        ).encode()
+        mock_s3.get_object.return_value = {"Body": mock_body}
+
+        resp = await client.post(
+            "/api/v0/project/import/s3", content=json.dumps({"key": key})
+        )
+        if allowed:
+            assert resp.status_code == 201
+            mock_s3.get_object.assert_called_once_with(Bucket="my-bucket", Key=key)
+        else:
+            assert resp.status_code == 400
+            assert resp.json()["detail"] == "Key must be under the export prefix."
+            mock_s3.get_object.assert_not_called()
+
+    @pytest.mark.anyio
     async def test_import_from_s3_missing_key_param(self, client):
         """Returns 400 when key is missing from request body."""
         with patch(
