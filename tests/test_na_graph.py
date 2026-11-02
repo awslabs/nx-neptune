@@ -20,6 +20,7 @@ from nx_neptune.clients import (
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
 )
+from nx_neptune import na_graph
 from nx_neptune.na_graph import NeptuneGraph
 from nx_neptune.clients import (
     NeptuneAnalyticsClient,
@@ -262,3 +263,70 @@ class TestNeptuneGraph:
         expected_query = match_all_edges()
         mock_client.execute_generic_query.assert_called_once_with(expected_query)
         assert result == ["relationship1", "relationship1"]
+
+
+class TestGetConfigS3IamRole:
+    """get_config() applies the NETWORKX_S3_IAM_ROLE_ARN override (awslabs/nx-neptune#555)."""
+
+    ROLE_ARN = "arn:aws:iam::123456789012:role/test-role"
+    EXISTING_ROLE_ARN = "arn:aws:iam::123456789012:role/existing"
+    GRAPH_ID = "g-testgraph01"
+
+    @pytest.fixture
+    def neptune_config(self):
+        """The global NetworkX Neptune config, with every field get_config() may
+        write (s3_iam_role and graph_id) restored after the test."""
+        config = nx.config.backends.neptune
+        original_role = config.s3_iam_role
+        original_graph_id = config.graph_id
+        yield config
+        config.s3_iam_role = original_role
+        config.graph_id = original_graph_id
+
+    def test_role_override_set_applies_to_s3_iam_role(self, neptune_config):
+        with patch.object(na_graph, "NETWORKX_S3_IAM_ROLE_ARN", self.ROLE_ARN):
+            config = na_graph.get_config()
+
+        assert config.s3_iam_role == self.ROLE_ARN
+
+    def test_role_override_unset_keeps_role_while_graph_id_override_applies(
+        self, neptune_config
+    ):
+        """With only the graph id override set, graph_id is applied and the
+        configured role is neither cleared nor replaced."""
+        neptune_config.s3_iam_role = self.EXISTING_ROLE_ARN
+
+        with (
+            patch.object(na_graph, "NETWORKX_S3_IAM_ROLE_ARN", None),
+            patch.object(na_graph, "NETWORKX_GRAPH_ID", self.GRAPH_ID),
+        ):
+            config = na_graph.get_config()
+
+        assert config.graph_id == self.GRAPH_ID
+        assert config.s3_iam_role == self.EXISTING_ROLE_ARN
+
+    def test_role_override_reaches_iam_client_via_from_config(self, neptune_config):
+        """env var -> get_config() -> from_config() -> IamClientWrapper.role_arn,
+        which instance_management uses as roleArn for S3 import/export."""
+        with (
+            patch.object(na_graph, "NETWORKX_S3_IAM_ROLE_ARN", self.ROLE_ARN),
+            patch.object(na_graph, "NETWORKX_GRAPH_ID", self.GRAPH_ID),
+            patch.object(na_graph, "ClientFactory") as factory,
+            patch.object(na_graph, "NeptuneAnalyticsClient"),
+        ):
+            graph = NeptuneGraph.from_config()
+
+        assert graph.iam_client.role_arn == self.ROLE_ARN
+        factory.return_value.sts.assert_not_called()
+
+    def test_from_config_passes_config_role_to_iam_client(self):
+        config = MagicMock(graph_id=self.GRAPH_ID, s3_iam_role=self.ROLE_ARN)
+
+        with (
+            patch.object(na_graph, "ClientFactory") as factory,
+            patch.object(na_graph, "NeptuneAnalyticsClient"),
+        ):
+            graph = NeptuneGraph.from_config(config)
+
+        assert graph.iam_client.role_arn == self.ROLE_ARN
+        factory.return_value.sts.assert_not_called()
