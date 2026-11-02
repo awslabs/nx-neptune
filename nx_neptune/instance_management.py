@@ -450,7 +450,8 @@ async def delete_na_instance(
 
     Raises:
         Exception: If the deletion fails with an invalid status code
-        ValueError: If the role lacks required permissions
+        ValueError: If the role lacks required permissions, or the graph was not
+            created by nx-neptune
     """
     # Permission check
     _create_iam_wrapper(sts_client, iam_client).has_delete_na_permissions()
@@ -907,11 +908,43 @@ def _apply_library_tags(config: dict) -> None:
     tags[_MANAGED_TAG_KEY] = _MANAGED_TAG_VALUE
 
 
-def _is_managed_graph(client, graph_id: str) -> bool:
-    """Check whether a graph carries the tags set when nx-neptune creates it.
+def _get_graph_tags(client, graph_id: str) -> dict:
+    """Read the tags of a graph.
+
+    Args:
+        client (boto3.client): The Neptune Analytics boto3 client
+        graph_id (str): The graph ID to read
+
+    Returns:
+        dict: The graph's tags
+
+    Raises:
+        ClientError: If the graph or its tags cannot be read
+    """
+    arn = client.get_graph(graphIdentifier=graph_id)["arn"]
+    return client.list_tags_for_resource(resourceArn=arn).get("tags", {})
+
+
+def _has_library_tags(tags: dict) -> bool:
+    """Check whether tags include the ones set when nx-neptune creates a graph.
 
     Graphs created by earlier versions only carry agent=nx-neptune, so that tag
     is also accepted for now. Support for it will be dropped in a later release.
+
+    Args:
+        tags (dict): The graph's tags
+
+    Returns:
+        bool: True if tagged nx-neptune:managed=true or agent=nx-neptune
+    """
+    return (
+        tags.get(_MANAGED_TAG_KEY) == _MANAGED_TAG_VALUE
+        or tags.get("agent") == _PROJECT_IDENTIFIER
+    )
+
+
+def _is_managed_graph(client, graph_id: str) -> bool:
+    """Check whether a graph carries the tags set when nx-neptune creates it.
 
     Args:
         client (boto3.client): The Neptune Analytics boto3 client
@@ -926,16 +959,12 @@ def _is_managed_graph(client, graph_id: str) -> bool:
             missing permissions or throttling.
     """
     try:
-        arn = client.get_graph(graphIdentifier=graph_id)["arn"]
-        tags = client.list_tags_for_resource(resourceArn=arn).get("tags", {})
+        tags = _get_graph_tags(client, graph_id)
     except ClientError as e:
         if e.response["Error"]["Code"] == "ResourceNotFoundException":
             return False
         raise
-    return (
-        tags.get(_MANAGED_TAG_KEY) == _MANAGED_TAG_VALUE
-        or tags.get("agent") == _PROJECT_IDENTIFIER
-    )
+    return _has_library_tags(tags)
 
 
 def _delete_na_instance_task(client, graph_id: str):
@@ -949,8 +978,15 @@ def _delete_na_instance_task(client, graph_id: str):
         dict: The API response containing information about the deleted graph
 
     Raises:
+        ValueError: If the graph was not created by nx-neptune
         ClientError: If there's an issue with the AWS API call
     """
+    if not _has_library_tags(_get_graph_tags(client, graph_id)):
+        raise ValueError(
+            f"Refusing to delete graph {graph_id}: it was not created by nx-neptune. "
+            f"Add the tag {_MANAGED_TAG_KEY}={_MANAGED_TAG_VALUE} to allow it, "
+            "or delete it with the AWS CLI or console."
+        )
     # Graphs are created with deletion protection enabled by default (secure
     # default). delete_graph fails with ConflictException on a protected graph,
     # so clear protection first. This is best-effort: if the graph is already

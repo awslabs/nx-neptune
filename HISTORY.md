@@ -15,5 +15,8 @@ Behavior changes:
   `aws neptune-graph tag-resource --resource-arn <arn> --tags nx-neptune:managed=true`.
 - The `agent` and `nx-neptune:managed` tags are always set to the library's values.
   A caller-supplied `agent` tag is overwritten. Other caller tags are kept.
+- `delete_na_instance`, and NetworkX teardown with `destroy_instance=True`, only
+  delete graphs created by nx-neptune, and raise `ValueError` for other graphs.
+  Deletion protection is only cleared on graphs created by nx-neptune.
 - Destroy and reset need `neptune-graph:ListTagsForResource`. The CloudFormation
   template grants it.
