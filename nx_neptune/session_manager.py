@@ -43,7 +43,8 @@ class SessionManager:
         """Initialize a SessionManager instance.
 
         Args:
-            session_name (str, optional): Name prefix for filtering graphs.
+            session_name (str, optional): Session name. The session uses graphs named
+                session_name or '{session_name}-{uuid}'.
             cleanup_task (CleanupTask, optional): Cleanup task to perform on exit. Defaults to None.
               When set to DESTROY, will destroy all instances in the session on exit.
               When set to RESET, will reset all instances in the session on exit.
@@ -64,7 +65,8 @@ class SessionManager:
         """Create a new SessionManager instance.
 
         Args:
-            session_name (str, optional): Name prefix for filtering graphs.
+            session_name (str, optional): Session name. The session uses graphs named
+                session_name or '{session_name}-{uuid}'.
             cleanup_task (CleanupTask, optional): Cleanup task to perform on exit. Defaults to None.
 
         Returns:
@@ -95,8 +97,8 @@ class SessionManager:
     def list_graphs(self) -> list[NeptuneAnalyticsClient]:
         """List available Neptune Analytics graphs.
 
-        If session_name is set, filters graphs to those created by this session,
-        named '{session_name}-{uuid}'.
+        If session_name is set, filters graphs to those named session_name or
+        '{session_name}-{uuid}'.
 
         Returns:
             list: List of NeptuneAnalyticsClient objects containing graph metadata.

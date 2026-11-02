@@ -1146,7 +1146,7 @@ def test_generated_graph_name_matches_its_session():
         ("demo-prod-1b4e28ba-2fa1-41d2-883f-0016d3cca427", False),
         ("demo-backup", False),
         ("demo-", False),
-        ("demo", False),
+        ("demo", True),
         ("demo-1B4E28BA-2FA1-41D2-883F-0016D3CCA427", False),
         ("demo-1b4e28ba2fa141d2883f0016d3cca427", False),
         ("demo-1b4e28ba-2fa1-41d2-883f-0016d3cca427-x", False),
@@ -1154,7 +1154,7 @@ def test_generated_graph_name_matches_its_session():
     ],
 )
 def test_is_session_graph(graph_name, expected):
-    """Only '{session}-{uuid}' in canonical form matches."""
+    """Only the session name itself or '{session}-{uuid}' in canonical form matches."""
     from nx_neptune.instance_management import _is_session_graph
 
     assert _is_session_graph(graph_name, "demo") is expected

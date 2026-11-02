@@ -1121,25 +1121,32 @@ def _create_random_graph_name(graph_name_prefix: Optional[str] = None) -> str:
     return f"{prefix}-{uuid_suffix}"
 
 
-_UUID_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
 def _is_session_graph(graph_name: str, session_name: str) -> bool:
-    """Check whether a graph name was generated for the given session.
+    """Check whether a graph name belongs to the given session.
 
     Matches the '{session_name}-{uuid}' format produced by
-    _create_random_graph_name, so a session never matches graphs of another
-    session whose name merely starts with the same text.
+    _create_random_graph_name, or a graph named exactly session_name (for
+    example, a graph created by the CloudFormation template). A session never
+    matches graphs of another session whose name merely starts with the same
+    text.
 
     Args:
         graph_name (str): The Neptune Analytics graph name.
         session_name (str): The session name used as the graph name prefix.
 
     Returns:
-        bool: True if graph_name is exactly '{session_name}-{uuid}'.
+        bool: True if graph_name is session_name or '{session_name}-{uuid}'.
     """
-    pattern = rf"{re.escape(session_name)}-{_UUID_PATTERN}"
-    return re.fullmatch(pattern, graph_name) is not None
+    if graph_name == session_name:
+        return True
+    prefix = f"{session_name}-"
+    return (
+        graph_name.startswith(prefix)
+        and _UUID_RE.fullmatch(graph_name[len(prefix) :]) is not None
+    )
 
 
 # TODO: provide an alternative to sql_queries - instead take a JSON import to map types
