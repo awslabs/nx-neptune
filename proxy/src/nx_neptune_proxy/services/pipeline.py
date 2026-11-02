@@ -67,6 +67,11 @@ async def run_pipeline(projection: Projection) -> None:
                 # Guard: confirm the recorded graph is one this tool manages before reset.
                 _assert_managed(resp.get("name"))
                 existing = sm.get_graph(projection.graph_id)
+            elif resp is not None and resp.get("status") != "DELETING":
+                raise RuntimeError(
+                    f"Graph {projection.graph_id} is {resp.get('status')}. "
+                    "Retry when it is available, or delete it."
+                )
 
         if existing:
             # Reuse existing graph (retry scenario) — reset data

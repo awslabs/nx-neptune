@@ -238,16 +238,16 @@ async def test_retry_resets_only_the_recorded_graph_by_id(
     "get_graph",
     [
         {"side_effect": Exception("ResourceNotFoundException")},
-        {"return_value": {"status": "STOPPED", "name": "nxp-my-graph"}},
+        {"return_value": {"status": "DELETING", "name": "nxp-my-graph"}},
     ],
-    ids=["not_found", "not_available"],
+    ids=["not_found", "deleting"],
 )
 @patch("nx_neptune.clients.client_factory.ClientFactory")
 @patch("nx_neptune.session_manager.SessionManager")
 async def test_stale_recorded_graph_creates_new(
     mock_sm_cls, mock_cf, clear_store, get_graph
 ):
-    """If the recorded graph is gone or not AVAILABLE, the pipeline creates a
+    """If the recorded graph is gone or being deleted, the pipeline creates a
     new graph and does not reset or adopt any existing one."""
     projection = _make_projection()
     store.update(projection.id, graph_id="g-stale")
@@ -269,6 +269,38 @@ async def test_stale_recorded_graph_creates_new(
     sm.get_or_create_graph.assert_not_called()
     sm.reset_graph.assert_not_called()
     assert store.get(projection.id).graph_id == "g-new"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["CREATING", "STOPPED", "FAILED", "RESETTING"])
+@patch("nx_neptune.clients.client_factory.ClientFactory")
+@patch("nx_neptune.session_manager.SessionManager")
+async def test_recorded_graph_not_available_fails_and_keeps_id(
+    mock_sm_cls, mock_cf, clear_store, status
+):
+    """If the recorded graph still exists but is not AVAILABLE, the run fails
+    and keeps the recorded id instead of creating a second graph."""
+    projection = _make_projection()
+    store.update(projection.id, graph_id="g-mine")
+    projection = store.get(projection.id)
+
+    neptune = mock_cf.return_value.neptune.return_value
+    neptune.get_graph.return_value = {"status": status, "name": "nxp-my-graph"}
+
+    sm = mock_sm_cls.return_value
+    sm.create_graph = AsyncMock()
+    sm.reset_graph = AsyncMock()
+    sm.import_from_table = AsyncMock()
+
+    await run_pipeline(projection)
+
+    sm.create_graph.assert_not_called()
+    sm.reset_graph.assert_not_called()
+    sm.import_from_table.assert_not_called()
+    result = store.get(projection.id)
+    assert result.status == "failed"
+    assert result.graph_id == "g-mine"
+    assert status in result.error
 
 
 @pytest.mark.asyncio
