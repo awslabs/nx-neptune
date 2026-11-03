@@ -11,17 +11,34 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import nx_neptune.instance_management as InstanceUtil
-from botocore.exceptions import EndpointConnectionError
+from botocore.exceptions import ClientError, EndpointConnectionError
+
+
+def _managed_client(tags=None):
+    client = MagicMock()
+    client.get_graph.return_value = {"arn": "arn:graph/test-graph-id"}
+    client.list_tags_for_resource.return_value = {
+        "tags": (
+            {"agent": "nx-neptune", "nx-neptune:managed": "true"}
+            if tags is None
+            else tags
+        )
+    }
+    client.reset_graph.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 200},
+        "status": "RESETTING",
+    }
+    return client
 
 
 @pytest.mark.asyncio
 async def test_reset_graph_success():
     """Test that reset_graph returns True when the operation is successful"""
-    # Create a mock client
-    mock_client = MagicMock()
+    # Create a mock client for a graph created by nx-neptune
+    mock_client = _managed_client()
 
     # Mock the reset_graph response
     mock_client.reset_graph.return_value = {
@@ -54,7 +71,9 @@ async def test_reset_graph_success():
     }
 
     # Call the method with test parameters
-    result = await InstanceUtil.reset_graph("test-graph-id", mock_client)
+    result = await InstanceUtil.reset_graph(
+        "test-graph-id", mock_client, check_permissions=False
+    )
 
     # Verify the result is True
     assert result is "test-graph-id"
@@ -63,8 +82,8 @@ async def test_reset_graph_success():
 @pytest.mark.asyncio
 async def test_reset_graph_endpoint_connection_error():
     """Test that reset_graph returns False when an EndpointConnectionError occurs"""
-    # Create a mock client
-    mock_client = MagicMock()
+    # Create a mock client for a graph created by nx-neptune
+    mock_client = _managed_client()
 
     # Mock the reset_graph method to raise an EndpointConnectionError
     mock_client.reset_graph.side_effect = EndpointConnectionError(
@@ -72,4 +91,87 @@ async def test_reset_graph_endpoint_connection_error():
     )
 
     with pytest.raises(EndpointConnectionError, match="Could not connect"):
-        await InstanceUtil.reset_graph("test-graph-id", mock_client)
+        await InstanceUtil.reset_graph(
+            "test-graph-id", mock_client, check_permissions=False
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tags", [{}, {"agent": "other"}, {"Name": "my-graph"}])
+async def test_reset_refuses_graph_not_created_by_library(tags):
+    """A graph without the nx-neptune tags is not reset."""
+    client = _managed_client(tags)
+
+    with pytest.raises(ValueError, match="not created by nx-neptune"):
+        await InstanceUtil.reset_graph("test-graph-id", client, check_permissions=False)
+
+    client.reset_graph.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_reset_allow_unmanaged_skips_tag_check():
+    """allow_unmanaged=True resets a graph without reading its tags."""
+    client = _managed_client({})
+    client.get_graph.side_effect = [{"status": "AVAILABLE"}]
+
+    with patch(
+        "nx_neptune.instance_management.TaskFuture.wait_until_complete",
+        new_callable=AsyncMock,
+    ):
+        result = await InstanceUtil.reset_graph(
+            "test-graph-id", client, check_permissions=False, allow_unmanaged=True
+        )
+
+    assert result == "test-graph-id"
+    client.list_tags_for_resource.assert_not_called()
+    client.reset_graph.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_reset_tag_read_error_raises_without_reset():
+    """If the tags cannot be read, the AWS error is raised and nothing is reset."""
+    client = _managed_client()
+    client.list_tags_for_resource.side_effect = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "denied"}},
+        "ListTagsForResource",
+    )
+
+    with pytest.raises(ClientError, match="AccessDeniedException"):
+        await InstanceUtil.reset_graph("test-graph-id", client, check_permissions=False)
+
+    client.reset_graph.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("check_permissions", [True, False])
+async def test_reset_permission_check_knob(check_permissions):
+    """check_permissions controls the IAM check."""
+    client = _managed_client()
+    with (
+        patch("nx_neptune.instance_management._create_iam_wrapper") as mock_wrapper,
+        patch(
+            "nx_neptune.instance_management.TaskFuture.wait_until_complete",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await InstanceUtil.reset_graph(
+            "test-graph-id", client, check_permissions=check_permissions
+        )
+
+    check = mock_wrapper.return_value.has_reset_na_permissions
+    assert check.called is check_permissions
+
+
+@pytest.mark.asyncio
+async def test_reset_permission_denied_raises_before_reset():
+    """A failed permission check raises and nothing is reset."""
+    client = _managed_client()
+    with patch("nx_neptune.instance_management._create_iam_wrapper") as mock_wrapper:
+        mock_wrapper.return_value.has_reset_na_permissions.side_effect = ValueError(
+            "Insufficient permission, neptune-graph:ResetGraph"
+        )
+        with pytest.raises(ValueError, match="Insufficient permission"):
+            await InstanceUtil.reset_graph("test-graph-id", client)
+
+    client.list_tags_for_resource.assert_not_called()
+    client.reset_graph.assert_not_called()

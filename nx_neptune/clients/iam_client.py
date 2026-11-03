@@ -461,6 +461,25 @@ class IamClientWrapper:
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)
 
+    def has_reset_na_permissions(self):
+        """Check if the configured IAM role has permissions to reset a Neptune Analytics instance.
+
+        Raises:
+            ValueError: If the role lacks required permissions
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        """
+        na_permissions = [
+            "neptune-graph:ResetGraph",
+            "neptune-graph:GetGraph",
+            "neptune-graph:ListTagsForResource",
+        ]
+        operation_name = "Reset Neptune Instance"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
     def has_update_na_permissions(self):
         """Check if the configured IAM role has permissions to update a Neptune Analytics instance.
 

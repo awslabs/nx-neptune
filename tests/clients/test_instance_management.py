@@ -729,8 +729,13 @@ async def test_import_csv_from_s3_success(
     mock_na_graph.iam_client.has_import_from_s3_permissions.assert_called_once_with(
         "s3://test-bucket/test-folder/", None
     )
+    mock_na_graph.iam_client.has_reset_na_permissions.assert_called_once_with()
     mock_reset_graph.assert_called_once_with(
-        "test-graph-id", mock_na_graph.na_client.client, True
+        "test-graph-id",
+        mock_na_graph.na_client.client,
+        True,
+        check_permissions=False,
+        allow_unmanaged=False,
     )
     mock_start_import_task.assert_called_once_with(
         mock_na_graph.na_client.client,

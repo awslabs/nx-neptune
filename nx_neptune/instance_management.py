@@ -537,6 +537,7 @@ async def import_csv_from_s3(
     skip_snapshot=True,
     polling_interval=None,
     max_attempts=None,
+    allow_unmanaged=False,
 ) -> str:
     """Import CSV data from S3 into a Neptune Analytics graph.
 
@@ -553,12 +554,15 @@ async def import_csv_from_s3(
         skip_snapshot (bool, optional): Whether to skip creating a snapshot when resetting. Defaults to True.
         polling_interval (int): Time interval in seconds for job status query
         max_attempts: Maximum attempts for status checks
+        allow_unmanaged (bool, optional): Whether to reset a graph that was not created
+            by nx-neptune. Defaults to False.
 
     Returns:
         str: The task ID of the completed import
 
     Raises:
-        ValueError: If the role lacks required permissions
+        ValueError: If the role lacks required permissions, or the graph would be
+            reset but was not created by nx-neptune and allow_unmanaged is False
     """
     graph_id = na_graph.na_client.graph_id
     na_client = na_graph.na_client.client
@@ -570,10 +574,18 @@ async def import_csv_from_s3(
 
     # Run permission check
     iam_client.has_import_from_s3_permissions(s3_arn, key_arn)
+    if reset_graph_ahead:
+        iam_client.has_reset_na_permissions()
 
     # Run reset
     if reset_graph_ahead:
-        await reset_graph(graph_id, na_client, skip_snapshot)
+        await reset_graph(
+            graph_id,
+            na_client,
+            skip_snapshot,
+            check_permissions=False,
+            allow_unmanaged=allow_unmanaged,
+        )
 
     # Run Import
     task_id = _start_import_task(na_client, graph_id, s3_arn, role_arn)
@@ -640,6 +652,8 @@ async def reset_graph(
     skip_snapshot: bool = True,
     polling_interval=None,
     max_attempts=None,
+    check_permissions: bool = True,
+    allow_unmanaged: bool = False,
 ) -> str:
     """Reset the Neptune Analytics graph by clearing all data while preserving the graph configuration.
 
@@ -649,15 +663,25 @@ async def reset_graph(
         skip_snapshot (bool, optional): Whether to skip creating a snapshot before resetting. Defaults to True.
         polling_interval (int): Time interval in seconds for job status query
         max_attempts: Maximum attempts for status checks
+        check_permissions (bool, optional): Whether to check the caller's IAM permissions
+            before resetting. Defaults to True.
+        allow_unmanaged (bool, optional): Whether to reset a graph that was not created
+            by nx-neptune. Defaults to False.
 
     Returns:
         str: The graph ID of the reset instance
 
     Raises:
+        ValueError: If the role lacks required permissions, or the graph was not
+            created by nx-neptune and allow_unmanaged is False
         ClientError: If there's an issue with the AWS API call
         Exception: If an invalid status code is returned
     """
+    if check_permissions:
+        _create_iam_wrapper().has_reset_na_permissions()
     na_client = na_client or ClientFactory().neptune()
+    if not allow_unmanaged:
+        _assert_library_graph(na_client, graph_id, "reset")
 
     logger.info(
         f"Perform reset_graph action on graph: [{graph_id}] with skip_snapshot: [{skip_snapshot}]"
@@ -943,6 +967,25 @@ def _has_library_tags(tags: dict) -> bool:
     )
 
 
+def _assert_library_graph(client, graph_id: str, action: str) -> None:
+    """Raise unless the graph carries the tags set when nx-neptune creates it.
+
+    Args:
+        client (boto3.client): The Neptune Analytics boto3 client
+        graph_id (str): The graph ID to check
+        action (str): The operation being guarded, used in the error message
+
+    Raises:
+        ValueError: If the graph was not created by nx-neptune
+        ClientError: If the graph or its tags cannot be read
+    """
+    if not _has_library_tags(_get_graph_tags(client, graph_id)):
+        raise ValueError(
+            f"Refusing to {action} graph {graph_id}: it was not created by nx-neptune. "
+            f"Add the tag {_MANAGED_TAG_KEY}={_MANAGED_TAG_VALUE} to allow it."
+        )
+
+
 def _is_managed_graph(client, graph_id: str) -> bool:
     """Check whether a graph carries the tags set when nx-neptune creates it.
 
@@ -981,12 +1024,7 @@ def _delete_na_instance_task(client, graph_id: str):
         ValueError: If the graph was not created by nx-neptune
         ClientError: If there's an issue with the AWS API call
     """
-    if not _has_library_tags(_get_graph_tags(client, graph_id)):
-        raise ValueError(
-            f"Refusing to delete graph {graph_id}: it was not created by nx-neptune. "
-            f"Add the tag {_MANAGED_TAG_KEY}={_MANAGED_TAG_VALUE} to allow it, "
-            "or delete it with the AWS CLI or console."
-        )
+    _assert_library_graph(client, graph_id, "delete")
     # Graphs are created with deletion protection enabled by default (secure
     # default). delete_graph fails with ConflictException on a protected graph,
     # so clear protection first. This is best-effort: if the graph is already

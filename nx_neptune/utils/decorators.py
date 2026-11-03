@@ -128,6 +128,7 @@ async def _execute_setup_routines_on_graph(
             na_graph,
             neptune_config.import_s3_bucket,
             neptune_config.skip_graph_reset,
+            allow_unmanaged=True,
         )
 
     # Restore graph data from a snapshot
