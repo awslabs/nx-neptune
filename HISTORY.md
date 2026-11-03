@@ -6,9 +6,10 @@ Changelog
 
 Behavior changes:
 
-- Graphs created by nx-neptune are tagged `nx-neptune:managed=true`. `SessionManager`
-  destroy and reset only act on graphs with this tag. Bulk calls skip other graphs
-  with a warning, and calls that name a graph raise `ValueError`.
+- Graphs created by nx-neptune are tagged `nx-neptune:managed=true`. Destroy and
+  reset only act on graphs with this tag, whichever API is used. In `SessionManager`,
+  bulk calls skip other graphs with a warning, and calls that name a graph raise
+  `ValueError`.
 - Graphs created by earlier versions only carry `agent=nx-neptune`. They are still
   treated as managed for now. Support for this fallback will be removed in a later
   release. To keep managing such a graph, add the new tag:
@@ -27,5 +28,5 @@ Behavior changes:
   `create_new_instance`. Setting it together with `graph_id` (or
   `NETWORKX_GRAPH_ID`) is a configuration error, so a graph provided by the
   caller is never destroyed.
-- Destroy and reset need `neptune-graph:ListTagsForResource`. The CloudFormation
-  template grants it.
+- Destroy and reset need `neptune-graph:GetGraph` and
+  `neptune-graph:ListTagsForResource`. The CloudFormation template grants both.

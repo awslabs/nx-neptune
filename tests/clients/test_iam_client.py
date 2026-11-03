@@ -282,6 +282,10 @@ class TestIamClientWrapper:
                     "EvalDecision": "allowed",
                 },
                 {
+                    "EvalActionName": "neptune-graph:GetGraph",
+                    "EvalDecision": "allowed",
+                },
+                {
                     "EvalActionName": "neptune-graph:ListTagsForResource",
                     "EvalDecision": "allowed",
                 },
@@ -291,7 +295,11 @@ class TestIamClientWrapper:
         # Should not raise exception
         iam_client.has_delete_na_permissions()
         actions = mock_client.simulate_principal_policy.call_args.kwargs["ActionNames"]
-        assert "neptune-graph:ListTagsForResource" in actions
+        assert actions == [
+            "neptune-graph:DeleteGraph",
+            "neptune-graph:GetGraph",
+            "neptune-graph:ListTagsForResource",
+        ]
 
     def test_has_reset_na_permissions(self, mock_iam_client):
         """has_reset_na_permissions checks reset plus the tag-reading permissions."""
