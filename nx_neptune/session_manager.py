@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from typing import Callable, Optional, Sequence, Union
@@ -28,6 +29,11 @@ __all__ = [
 ]
 
 
+# The uuid4 suffix instance_management._create_random_graph_name appends to a
+# session prefix: `str(uuid.uuid4())`, i.e. lowercase hex in 8-4-4-4-12 groups.
+_UUID4_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
+
 def _has_running_loop() -> bool:
     """Whether the calling thread is inside a running event loop."""
     try:
@@ -35,6 +41,25 @@ def _has_running_loop() -> bool:
     except RuntimeError:
         return False
     return True
+
+
+def _caller_is_being_cancelled() -> bool:
+    """Whether the running task itself has been asked to cancel.
+
+    This separates the two `CancelledError`s that can reach an ``__aexit__``.
+    One is a cancellation *of the caller* - ``asyncio.timeout``, a
+    ``TaskGroup`` unwinding, a plain ``task.cancel()`` - which must propagate,
+    because ``timeout`` and ``TaskGroup`` rely on seeing it to convert it into
+    ``TimeoutError`` or to finish unwinding. The other is the `CancelledError`
+    that ``gather(return_exceptions=True)`` hands back *as a value* for a
+    cancelled child graph operation; that one is a cleanup failure and is
+    reported as such, and it must not be mistaken for the caller going away.
+
+    ``Task.cancelling()`` counts outstanding cancellation requests against the
+    current task, which is non-zero only in the first case.
+    """
+    task = asyncio.current_task()
+    return task is not None and task.cancelling() > 0
 
 
 def _run_sync(coro):
@@ -56,12 +81,25 @@ def _run_sync(coro):
 def _belongs_to_session(graph_name, session_name: str) -> bool:
     """Whether ``graph_name`` is a graph of the session called ``session_name``.
 
-    Generated names are ``'{prefix}-{uuid}'`` (see
-    ``instance_management._create_random_graph_name``), so the separator is part
-    of the match: session ``'test'`` owns ``'test-<uuid>'`` but must not claim
-    ``'testing-<uuid>'``, which belongs to session ``'testing'``.
+    Generated names are exactly ``'{prefix}-{uuid4}'`` (see
+    ``instance_management._create_random_graph_name``), so the whole name is
+    matched rather than just the prefix. A prefix test is not enough: session
+    names in this repo are routinely hyphenated (``reset-demo``,
+    ``snapshot-demo``), so ``startswith('demo-')`` would let session ``'demo'``
+    claim ``'demo-reset-<uuid>'``, which belongs to session ``'demo-reset'``.
+    Cleanup decides whose data gets reset or deleted, so the match has to be
+    exact.
+
+    A consequence worth knowing: a graph this session did not create through
+    ``instance_management`` - say one hand-named ``'demo-scratch'`` - no longer
+    belongs to any session, so cleanup leaves it alone.
     """
-    return str(graph_name or "").startswith(f"{session_name}-")
+    return (
+        re.fullmatch(
+            rf"{re.escape(session_name)}-{_UUID4_PATTERN}", str(graph_name or "")
+        )
+        is not None
+    )
 
 
 class CleanupTask(Enum):
@@ -206,10 +244,17 @@ class SessionManager:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Exit the context manager from async code and clean up graphs.
 
-        Same cleanup as :meth:`__exit__`, awaited directly on the caller's loop:
-        no worker thread, so other tasks keep running and a Ctrl-C during a
-        minutes-long cleanup is delivered when it arrives rather than when the
-        cleanup ends.
+        Same cleanup as :meth:`__exit__`, awaited directly on the caller's loop
+        rather than bridged to a worker thread, so a Ctrl-C during a
+        minutes-long cleanup is delivered when it arrives instead of when the
+        cleanup ends, and a cancellation of the calling task reaches the caller.
+
+        This removes the thread bridge, not every stall: the underlying
+        ``boto3`` calls are synchronous, so ``list_graphs``, the per-graph
+        status checks, the IAM permission checks and each stop/reset/delete
+        still occupy the loop for as long as the AWS call takes. Other tasks
+        make progress between those calls, not during them. Moving them to
+        ``asyncio.to_thread`` is a separate change.
         """
 
         if self.cleanup_task not in _CLEANUP_OPERATIONS:
@@ -217,6 +262,8 @@ class SessionManager:
         try:
             await self._cleanup_coro()
         except BaseException as e:  # noqa: BLE001 - see _handle_cleanup_failure
+            if isinstance(e, asyncio.CancelledError) and _caller_is_being_cancelled():
+                raise
             self._handle_cleanup_failure(e, exc_type)
 
     def _cleanup_coro(self):
@@ -239,7 +286,7 @@ class SessionManager:
         """
         _, verb, _ = _CLEANUP_OPERATIONS[self.cleanup_task]
         logger.warning(
-            f"Session cleanup ({self.cleanup_task.value}) failed: {error}. Affected "
+            f"Session cleanup ({self.cleanup_task.value}) failed: {error!r}. Affected "
             f"graphs may still be running and billed; list them with "
             f"`aws neptune-graph list-graphs` and retry each with "
             f"`aws neptune-graph {verb} --graph-identifier <id>`"
@@ -268,7 +315,9 @@ class SessionManager:
             if isinstance(result, BaseException)
         ]
         for graph_id, error in failures:
-            logger.warning(f"Session cleanup failed for graph {graph_id}: {error}")
+            # repr, not str: str(CancelledError()) is empty, which rendered as
+            # "failed for graph g-1: " and named no cause at all.
+            logger.warning(f"Session cleanup failed for graph {graph_id}: {error!r}")
         if failures:
             raise failures[0][1]
 

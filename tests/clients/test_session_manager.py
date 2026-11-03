@@ -12,6 +12,7 @@
 # language governing permissions and limitations under the License.
 import asyncio
 import logging
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -25,6 +26,19 @@ from nx_neptune.session_manager import (
 
 UUID_1 = "1b4e28ba-2fa1-41d2-883f-0016d3cca427"
 UUID_2 = "6fa459ea-ee8a-4ca4-894e-db77e160355e"
+
+
+def graph_name(session_name, key="1"):
+    """A graph name in the shape the library really generates.
+
+    ``instance_management._create_random_graph_name`` returns
+    ``f"{prefix}-{uuid.uuid4()}"``, and ``_belongs_to_session`` matches that
+    whole shape rather than just the prefix - so a readable stub like
+    ``"test-1"`` is not a session graph and cleanup correctly ignores it.
+    The uuid is derived from ``key`` so it is stable across a run and a test
+    can name the same graph twice.
+    """
+    return f"{session_name}-{uuid.uuid5(uuid.NAMESPACE_DNS, f'{session_name}/{key}')}"
 
 
 class TestNeptuneAnalyticsClient:
@@ -123,7 +137,9 @@ class TestSessionManager:
 
         sm = SessionManager(session_name="test-graph")
         graphs = sm.list_graphs()
-        assert [g.graph_id for g in graphs] == ["g-1", "g-3", "g-7"]
+        # g-7 is named exactly the session; the exact-match rule does not
+        # claim it, so cleanup leaves it alone.
+        assert [g.graph_id for g in graphs] == ["g-1", "g-3"]
 
     @patch("boto3.client")
     def test_get_existing_graph_no_filter(self, mock_boto3_client):
@@ -241,7 +257,7 @@ class TestSessionManager:
             {
                 "graphs": [
                     {
-                        "name": f"test-session-{UUID_1}",
+                        "name": graph_name("test-session"),
                         "id": "test-session-graph-id",
                         "status": "AVAILABLE",
                     }
@@ -422,8 +438,9 @@ class TestSessionManager:
         mock_client = MagicMock()
         mock_boto3_client.return_value = mock_client
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        existing = graph_name("test")
         mock_client.list_graphs.return_value = {
-            "graphs": [{"name": f"test-{UUID_1}", "id": "g-123", "status": "AVAILABLE"}]
+            "graphs": [{"name": existing, "id": "g-123", "status": "AVAILABLE"}]
         }
 
         sm = SessionManager(session_name="test")
@@ -433,7 +450,7 @@ class TestSessionManager:
         assert isinstance(result, NeptuneAnalyticsClient)
         assert result.graph_id == "g-123"
         assert result.status == "AVAILABLE"
-        assert result.name == f"test-{UUID_1}"
+        assert result.name == existing
 
     @pytest.mark.asyncio
     @patch("boto3.client")
@@ -474,7 +491,9 @@ class TestSessionManagerExitCleanup:
         mock_boto3_client.return_value = mock_client
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
         mock_client.list_graphs.return_value = {
-            "graphs": [{"name": "test-graph", "id": "g-123", "status": "AVAILABLE"}]
+            "graphs": [
+                {"name": graph_name("test"), "id": "g-123", "status": "AVAILABLE"}
+            ]
         }
 
         with SessionManager(session_name="test", cleanup_task=CleanupTask.STOP):
@@ -489,7 +508,7 @@ class TestSessionManagerExitCleanup:
         mock_boto3_client.return_value = mock_client
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
         mock_client.list_graphs.return_value = {
-            "graphs": [{"name": "test-1", "id": "g-1", "status": "AVAILABLE"}]
+            "graphs": [{"name": graph_name("test"), "id": "g-1", "status": "AVAILABLE"}]
         }
 
         with patch(
@@ -516,8 +535,8 @@ class TestSessionManagerExitCleanup:
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
         mock_client.list_graphs.return_value = {
             "graphs": [
-                {"name": "test-1", "id": "g-1", "status": "AVAILABLE"},
-                {"name": "test-2", "id": "g-2", "status": "STOPPED"},
+                {"name": graph_name("test", "a"), "id": "g-1", "status": "AVAILABLE"},
+                {"name": graph_name("test", "b"), "id": "g-2", "status": "STOPPED"},
             ]
         }
 
@@ -537,7 +556,7 @@ class TestSessionManagerExitCleanup:
         mock_boto3_client.return_value = mock_client
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
         mock_client.list_graphs.return_value = {
-            "graphs": [{"name": "test-1", "id": "g-1", "status": "AVAILABLE"}]
+            "graphs": [{"name": graph_name("test"), "id": "g-1", "status": "AVAILABLE"}]
         }
 
         with pytest.raises(ValueError, match="boom"):
@@ -551,7 +570,8 @@ class TestSessionManagerExitRobustness:
     """Exit-time cleanup must survive the contexts the library is actually used in."""
 
     @staticmethod
-    def _client(name="test-1", status="AVAILABLE"):
+    def _client(name=None, status="AVAILABLE"):
+        name = name or graph_name("test")
         client = MagicMock()
         client.get_caller_identity.return_value = {"Arn": "test-arn"}
         client.get_graph.return_value = {"id": "g-1", "name": name, "status": status}
@@ -617,18 +637,43 @@ class TestSessionMembership:
     """
 
     @pytest.mark.parametrize(
-        "graph_name,expected",
+        "name,expected",
         [
-            ("test-abc123", True),  # the generated '{prefix}-{uuid}' shape
-            ("testing-abc123", False),  # belongs to session 'testing'
+            (graph_name("test"), True),  # the generated '{prefix}-{uuid4}' shape
+            (graph_name("testing"), False),  # belongs to session 'testing'
             ("testgraph", False),  # no separator: not this session's
             ("test", False),  # the bare prefix is not a session graph
-            ("other-test-1", False),  # prefix must anchor at the start
+            (graph_name("other-test"), False),  # prefix must anchor at the start
+            ("test-abc123", False),  # right prefix, but not a generated name
+            # a uuid is lowercase hex, so the shape alone is not enough
+            ("test-ABCDEF01-1234-5678-9ABC-DEF012345678", False),
             (None, False),  # list_graphs can omit the name
         ],
     )
-    def test_membership_rule(self, graph_name, expected):
-        assert _belongs_to_session(graph_name, "test") is expected
+    def test_membership_rule(self, name, expected):
+        assert _belongs_to_session(name, "test") is expected
+
+    @pytest.mark.parametrize(
+        "session,sibling",
+        [
+            ("demo", "demo-reset"),
+            ("reset", "reset-demo"),
+            ("snapshot", "snapshot-demo"),
+        ],
+    )
+    def test_a_hyphenated_sibling_session_is_not_claimed(self, session, sibling):
+        """The case a prefix test gets wrong, and the reason the match is exact.
+
+        Session names here are routinely hyphenated, so ``demo`` and
+        ``demo-reset`` coexist in one account. Under ``startswith('demo-')``,
+        session ``demo`` claims every ``demo-reset-<uuid>`` graph - and this PR
+        is what makes RESET actually run on exit, which wipes data with
+        ``skip_snapshot=True``, while DESTROY deletes without a snapshot.
+        """
+        sibling_graph = graph_name(sibling)
+
+        assert _belongs_to_session(sibling_graph, sibling) is True
+        assert _belongs_to_session(sibling_graph, session) is False
 
     @staticmethod
     def _client(name):
@@ -639,10 +684,19 @@ class TestSessionMembership:
         }
         return client
 
-    @pytest.mark.parametrize("graph_name", ["testgraph", "testing-1"])
-    def test_exit_skips_a_sibling_prefix(self, graph_name):
-        """Cleanup may not claim a graph whose name only shares the prefix."""
-        client = self._client(graph_name)
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "testgraph",
+            "testing-1",
+            graph_name("testing"),
+            graph_name("test-sibling"),
+            "test-abc123",
+        ],
+    )
+    def test_exit_skips_a_non_session_graph(self, name):
+        """Cleanup may not claim a graph that is not this session's own."""
+        client = self._client(name)
 
         with patch("boto3.client", return_value=client):
             with patch(
@@ -655,8 +709,8 @@ class TestSessionMembership:
         mock_stop.assert_not_awaited()
 
     def test_exit_stops_a_session_graph(self):
-        """Cleanup acts on a graph named '{session_name}-{uuid}'."""
-        client = self._client("test-abc123")
+        """Cleanup acts on a graph named '{session_name}-{uuid4}'."""
+        client = self._client(graph_name("test"))
 
         with patch("boto3.client", return_value=client):
             with patch(
@@ -676,8 +730,13 @@ class TestSessionMembership:
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
         mock_client.list_graphs.return_value = {
             "graphs": [
-                {"name": "test-1", "id": "g-1", "status": "AVAILABLE"},
-                {"name": "testing-1", "id": "g-2", "status": "AVAILABLE"},
+                {"name": graph_name("test"), "id": "g-1", "status": "AVAILABLE"},
+                {"name": graph_name("testing"), "id": "g-2", "status": "AVAILABLE"},
+                {
+                    "name": graph_name("test-sibling"),
+                    "id": "g-3",
+                    "status": "AVAILABLE",
+                },
             ]
         }
 
@@ -736,7 +795,8 @@ def _client(graph_ids=("g-1",), status="AVAILABLE", name="test"):
     client.get_caller_identity.return_value = {"Arn": "test-arn"}
     client.list_graphs.return_value = {
         "graphs": [
-            {"name": f"{name}-{gid}", "id": gid, "status": status} for gid in graph_ids
+            {"name": graph_name(name, gid), "id": gid, "status": status}
+            for gid in graph_ids
         ]
     }
     return client
@@ -823,7 +883,7 @@ def _mixed_client(statuses):
     client.get_caller_identity.return_value = {"Arn": "test-arn"}
     client.list_graphs.return_value = {
         "graphs": [
-            {"name": f"test-{gid}", "id": gid, "status": status}
+            {"name": graph_name("test", gid), "id": gid, "status": status}
             for gid, status in statuses.items()
         ]
     }
@@ -913,7 +973,9 @@ class TestExitCleanupDestroyStatusPolicy:
 
         with patch("boto3.client", return_value=_mixed_client({"g-1": "STOPPED"})):
             with patch(OPERATION.format("delete_na_instance"), side_effect=operation):
-                await SessionManager(session_name="test").destroy_graph("test-g-1")
+                await SessionManager(session_name="test").destroy_graph(
+                    graph_name("test", "g-1")
+                )
 
         assert attempted == []
 
@@ -1506,3 +1568,111 @@ class TestAsyncExitFailureHandling:
             with pytest.raises(ValueError, match="body error"):
                 async with sm:
                     raise ValueError("body error")
+
+
+class TestAsyncExitCancellationReachesTheCaller:
+    """A cancellation *of the caller* must not be reported as a cleanup failure.
+
+    ``asyncio.timeout`` and ``TaskGroup`` are built on cancelling the task and
+    observing the ``CancelledError`` come back out. If ``__aexit__`` logs it and
+    lets a pending body exception win instead, ``timeout`` never converts it to
+    ``TimeoutError`` and a ``TaskGroup`` cannot finish unwinding. That is
+    distinct from the ``CancelledError`` that ``gather(return_exceptions=True)``
+    hands back for a cancelled child operation, which really is a failure.
+    """
+
+    @staticmethod
+    def _slow_stop(seconds=5):
+        async def stop(graph_id, *args, **kwargs):
+            await asyncio.sleep(seconds)
+
+        return stop
+
+    @pytest.mark.asyncio
+    async def test_timeout_during_cleanup_beats_the_body_exception(self):
+        """The reviewer's case: TimeoutError must surface, not the body's error."""
+        with patch("boto3.client", return_value=_client()):
+            with patch(
+                OPERATION.format("stop_na_instance"), side_effect=self._slow_stop()
+            ):
+                with pytest.raises(TimeoutError):
+                    async with asyncio.timeout(0.05):
+                        async with SessionManager(
+                            session_name="test", cleanup_task=CleanupTask.STOP
+                        ):
+                            raise ValueError("body error")
+
+    @pytest.mark.asyncio
+    async def test_timeout_during_cleanup_when_the_body_succeeded(self):
+        with patch("boto3.client", return_value=_client()):
+            with patch(
+                OPERATION.format("stop_na_instance"), side_effect=self._slow_stop()
+            ):
+                with pytest.raises(TimeoutError):
+                    async with asyncio.timeout(0.05):
+                        async with SessionManager(
+                            session_name="test", cleanup_task=CleanupTask.STOP
+                        ):
+                            pass
+
+    @pytest.mark.asyncio
+    async def test_an_explicit_task_cancel_during_cleanup_propagates(self):
+        """A plain task.cancel() is a cancellation too, not a cleanup failure."""
+
+        async def body():
+            with patch("boto3.client", return_value=_client()):
+                with patch(
+                    OPERATION.format("stop_na_instance"), side_effect=self._slow_stop()
+                ):
+                    async with SessionManager(
+                        session_name="test", cleanup_task=CleanupTask.STOP
+                    ):
+                        raise ValueError("body error")
+
+        task = asyncio.create_task(body())
+        await asyncio.sleep(0.05)
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    @pytest.mark.asyncio
+    async def test_a_child_cancellation_is_still_a_cleanup_failure(self):
+        """The other CancelledError: gather returns it as a value for one graph.
+
+        Nothing cancelled the caller here, so this stays a cleanup failure and
+        must not displace the body's exception.
+        """
+
+        async def cancelled_stop(graph_id, *args, **kwargs):
+            raise asyncio.CancelledError()
+
+        with patch("boto3.client", return_value=_client()):
+            with patch(
+                OPERATION.format("stop_na_instance"), side_effect=cancelled_stop
+            ):
+                with pytest.raises(ValueError, match="body error"):
+                    async with SessionManager(
+                        session_name="test", cleanup_task=CleanupTask.STOP
+                    ):
+                        raise ValueError("body error")
+
+    @pytest.mark.asyncio
+    async def test_failure_warning_names_the_exception_type(self, caplog):
+        """repr, not str: str(CancelledError()) is empty and named no cause."""
+
+        async def cancelled_stop(graph_id, *args, **kwargs):
+            raise asyncio.CancelledError()
+
+        with caplog.at_level(logging.WARNING):
+            with patch("boto3.client", return_value=_client()):
+                with patch(
+                    OPERATION.format("stop_na_instance"), side_effect=cancelled_stop
+                ):
+                    with pytest.raises(asyncio.CancelledError):
+                        async with SessionManager(
+                            session_name="test", cleanup_task=CleanupTask.STOP
+                        ):
+                            pass
+
+        assert any("CancelledError" in r.getMessage() for r in caplog.records)
