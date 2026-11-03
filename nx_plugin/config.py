@@ -86,7 +86,9 @@ class NeptuneConfig(Config):
         If True, saves the Neptune Analytics instance as a snapshot. Defaults to False.
 
     destroy_instance: bool
-        If True, destroys the instance. Defaults to False.
+        If True, destroys the instance created by create_new_instance after the call.
+        Not supported with graph_id: a graph provided through graph_id is never
+        destroyed. Defaults to False.
 
     reset_graph: bool
         If True, resets the graph. Defaults to False.
@@ -190,6 +192,12 @@ class NeptuneConfig(Config):
             raise ValueError(
                 "Configuration error: destroy_instance and reset_graph are both True.  Only one of these options may "
                 "be True in the configuration."
+            )
+
+        if self.destroy_instance is True and self.graph_id is not None:
+            raise ValueError(
+                "Configuration error: destroy_instance is only supported with create_new_instance.  A graph "
+                "provided through graph_id is never destroyed."
             )
 
     def validate_mutate_execution_config(self):

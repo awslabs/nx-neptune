@@ -18,5 +18,9 @@ Behavior changes:
 - `delete_na_instance`, and NetworkX teardown with `destroy_instance=True`, only
   delete graphs created by nx-neptune, and raise `ValueError` for other graphs.
   Deletion protection is only cleared on graphs created by nx-neptune.
+- NetworkX backend: `destroy_instance=True` is only supported with
+  `create_new_instance`. Setting it together with `graph_id` (or
+  `NETWORKX_GRAPH_ID`) is a configuration error, so a graph provided by the
+  caller is never destroyed.
 - Destroy and reset need `neptune-graph:ListTagsForResource`. The CloudFormation
   template grants it.
