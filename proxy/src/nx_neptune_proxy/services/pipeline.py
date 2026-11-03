@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+import uuid
 
 from nx_neptune_proxy.config import get_settings
 from nx_neptune_proxy.services.projection_service import projection_service
@@ -9,6 +10,51 @@ from nx_neptune_proxy.services.projection_store import Projection, store
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
+
+
+def _build_staging_prefix(bucket: str | None, projection_id: str, run_id: str) -> str:
+    """Build a unique per-run staging prefix: <bucket>/<projection-id>/<run-id>/.
+
+    Every pipeline invocation writes to its own prefix so CSVs left behind by a
+    failed run are never picked up by a retry (StartImportTask imports every
+    object under the prefix, and duplicate edge files are not deduplicated).
+    """
+    if not bucket or not bucket.strip():
+        raise ValueError("s3_staging_bucket is required to stage projection data")
+    if not projection_id or not projection_id.strip("/"):
+        raise ValueError("projection id is required to stage projection data")
+    if not run_id or not run_id.strip("/"):
+        raise ValueError("run id is required to stage projection data")
+    return f"{bucket.rstrip('/')}/{projection_id.strip('/')}/{run_id.strip('/')}/"
+
+
+def _has_non_empty_key(s3_location: str) -> bool:
+    """Return True if s3_location addresses a key path inside a bucket."""
+    if not s3_location or not s3_location.startswith("s3://"):
+        return False
+    bucket, sep, key = s3_location[len("s3://") :].partition("/")
+    return bool(bucket) and bool(sep) and bool(key.strip("/"))
+
+
+def _cleanup_staging_prefix(s3_location: str) -> None:
+    """Best-effort removal of a single run's staging prefix.
+
+    Never raises: cleanup runs in a ``finally`` and must not mask the pipeline's
+    original outcome. The key-path guard is essential because
+    ``empty_s3_bucket`` treats an empty path as the whole bucket.
+    """
+    from nx_neptune import instance_management
+
+    if not _has_non_empty_key(s3_location):
+        logger.warning(
+            "Refusing to empty S3 location without a key path: %r", s3_location
+        )
+        return
+
+    try:
+        instance_management.empty_s3_bucket(s3_location)
+    except Exception:
+        logger.exception("Failed to clean up staging prefix %s", s3_location)
 
 
 def _assert_managed(graph_name: str | None) -> None:
@@ -32,7 +78,9 @@ async def run_pipeline(projection: Projection) -> None:
     from nx_neptune.session_manager import SessionManager
 
     graph_name = f"{get_settings().graph_prefix}{projection.graph_name}"
-    s3_location = projection.s3_staging_bucket.rstrip("/") + f"/{projection.id}/"  # type: ignore[union-attr]  # noqa: E501
+    s3_location = _build_staging_prefix(
+        projection.s3_staging_bucket, projection.id, uuid.uuid4().hex
+    )
 
     try:
         projection_service.update(projection.id, status="importing")
@@ -129,6 +177,10 @@ async def run_pipeline(projection: Projection) -> None:
         projection_service.update(
             projection.id, status="failed", error=sanitize_error_message(error_msg)
         )
+    finally:
+        # Remove only this run's staging prefix. Leftover CSVs from a failed
+        # run would otherwise be re-imported by the next run (duplicate edges).
+        _cleanup_staging_prefix(s3_location)
 
 
 def _update(projection_id: str, step: str, label: str, progress: float) -> None:
