@@ -87,15 +87,30 @@ class NeptuneConfig(Config):
 
     destroy_instance: bool
         If True, destroys the instance. Defaults to False.
+        Destroy fails while a private graph endpoint is attached (the service
+        raises ConflictException: "Graph cannot be deleted because it has private
+        graph endpoints attached"), so it is inoperable for a VPC-only graph,
+        which is what the secure default creates.
 
     reset_graph: bool
         If True, resets the graph. Requires export_s3_bucket when used with mutate algorithm variants.
         Defaults to False.
+        The reset is performed with skip_snapshot=True, so it wipes the graph with
+        no snapshot to return to. Take care when pointing it at a long-lived graph.
 
     stop_instance: bool
         If True, stops the instance, keeping graph_id. Defaults to False.
+        Setup never restarts a STOPPED graph, so this is terminal for the session:
+        restart the graph (e.g. via SessionManager) before reusing the config.
 
     Only one completion action (destroy_instance, stop_instance, reset_graph) may be True.
+
+    When the algorithm succeeds, export_s3_bucket (if set) runs first, then the
+    chosen action. When the algorithm raises an Exception, the export is skipped,
+    reset_graph never runs, stop_instance still runs, and destroy_instance runs only
+    for an instance created by that call; a teardown error is logged and the
+    algorithm's exception propagates. KeyboardInterrupt and SystemExit trigger no
+    teardown.
 
     Notes
     -----

@@ -60,6 +60,12 @@ def configure_if_nx_active():
             neptune_config = get_config()
             neptune_config.validate_config()
 
+            # True only when this call provisions the instance (the create branch
+            # below). Config cannot answer this: setup sets graph_id and leaves
+            # create_new_instance truthy, and the global config can carry both
+            # over from an earlier call.
+            created_here = False
+
             # Execute setup instructions
             if neptune_config.graph_id is not None:
                 na_graph = NeptuneGraph.from_config(
@@ -79,6 +85,7 @@ def configure_if_nx_active():
             elif neptune_config.create_new_instance is True or isinstance(
                 neptune_config.create_new_instance, dict
             ):
+                created_here = True
                 if loop and loop.is_running():
                     pool = concurrent.futures.ThreadPoolExecutor()
                     neptune_config = pool.submit(
@@ -97,16 +104,26 @@ def configure_if_nx_active():
 
             converted_args = (na_graph,) + args[1:]
 
-            # Call algorithm; teardown always runs, and the algorithm's exception wins
+            # Call algorithm. On success the configured action runs and its
+            # errors propagate. On failure the export and reset are skipped, destroy
+            # is limited to an instance this call created, and the algorithm's
+            # exception wins. Interrupts abort without any teardown.
             try:
                 rv = func(*converted_args, **kwargs)
-            except BaseException:
+            except Exception:
                 try:
-                    _run_teardown(loop, na_graph, neptune_config)
-                except Exception as teardown_error:
-                    logger.warning(
-                        f"Teardown failed for graph {neptune_config.graph_id} after "
-                        f"algorithm error: {teardown_error}"
+                    _run_teardown(
+                        loop,
+                        na_graph,
+                        neptune_config,
+                        algorithm_failed=True,
+                        created_here=created_here,
+                    )
+                except BaseException:
+                    logger.error(
+                        "Teardown failed for graph %s after algorithm error",
+                        neptune_config.graph_id,
+                        exc_info=True,
                     )
                 raise
             _run_teardown(loop, na_graph, neptune_config)
@@ -117,18 +134,28 @@ def configure_if_nx_active():
     return decorator
 
 
-def _run_teardown(loop, na_graph: NeptuneGraph, neptune_config: NeptuneConfig):
+def _run_teardown(
+    loop,
+    na_graph: NeptuneGraph,
+    neptune_config: NeptuneConfig,
+    algorithm_failed: bool = False,
+    created_here: bool = False,
+):
     """Execute teardown instructions, if a graph is configured."""
     if neptune_config.graph_id is None:
         return
+    # Outcome flags are only passed on the failure path; success is the default.
+    outcome = (
+        {"algorithm_failed": True, "created_here": created_here}
+        if algorithm_failed
+        else {}
+    )
+    teardown = _execute_teardown_routines_on_graph(na_graph, neptune_config, **outcome)
     if loop and loop.is_running():
         pool = concurrent.futures.ThreadPoolExecutor()
-        pool.submit(
-            asyncio.run,
-            _execute_teardown_routines_on_graph(na_graph, neptune_config),
-        ).result()
+        pool.submit(asyncio.run, teardown).result()
     else:
-        asyncio.run(_execute_teardown_routines_on_graph(na_graph, neptune_config))
+        asyncio.run(teardown)
 
 
 async def _execute_setup_routines_on_graph(
@@ -247,10 +274,15 @@ def _sync_data_to_neptune(
 
 
 async def _execute_teardown_routines_on_graph(
-    na_graph: NeptuneGraph, neptune_config: NeptuneConfig, *args, **kwargs
+    na_graph: NeptuneGraph,
+    neptune_config: NeptuneConfig,
+    *args,
+    algorithm_failed: bool = False,
+    created_here: bool = False,
+    **kwargs,
 ) -> NeptuneConfig:
     if neptune_config.graph_id is not None:
-        if neptune_config.export_s3_bucket is not None:
+        if neptune_config.export_s3_bucket is not None and not algorithm_failed:
             logger.debug("Export graph data to S3: " + neptune_config.export_s3_bucket)
             await export_csv_to_s3(na_graph, neptune_config.export_s3_bucket)
 
@@ -258,7 +290,7 @@ async def _execute_teardown_routines_on_graph(
             logger.debug("Export graph to snapshot")
             raise Exception("Not implemented yet (workflow: save_snapshot)")
 
-        if neptune_config.reset_graph:
+        if neptune_config.reset_graph and not algorithm_failed:
             logger.debug(f"Reset graph {neptune_config.graph_id}")
             await reset_graph(neptune_config.graph_id)
 
@@ -266,7 +298,7 @@ async def _execute_teardown_routines_on_graph(
             logger.debug(f"Stop instance {neptune_config.graph_id}")
             await stop_na_instance(neptune_config.graph_id)
 
-        if neptune_config.destroy_instance:
+        if neptune_config.destroy_instance and (created_here or not algorithm_failed):
             logger.debug(f"Destroy instance {neptune_config.graph_id}")
             await delete_na_instance(neptune_config.graph_id)
             # clear the graph id

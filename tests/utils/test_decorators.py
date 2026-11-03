@@ -919,19 +919,36 @@ class TestCompletionActionRunsOnAlgorithmOutcome:
     AWS-facing calls are mocked.
     """
 
-    def _run(self, config, func, *, stop=None, reset=None, delete=None, export=None):
-        """Invoke a decorated `func` with the given config and lifecycle fakes."""
+    def _run(
+        self,
+        config,
+        func,
+        *,
+        stop=None,
+        reset=None,
+        delete=None,
+        export=None,
+        created_config=None,
+    ):
+        """Invoke a decorated `func` with the given config and lifecycle fakes.
+
+        `created_config`: for a config with graph_id=None and create_new_instance
+        set, the config returned by the (mocked) create-instance setup, i.e. the
+        same config once the new graph id has been assigned.
+        """
         stop = stop or AsyncMock()
         reset = reset or AsyncMock()
         delete = delete or AsyncMock()
         export = export or AsyncMock()
         setup = AsyncMock(return_value=config)
+        setup_new = AsyncMock(return_value=created_config)
         with (
             patch("nx_neptune.utils.decorators.get_config", return_value=config),
             patch("nx_neptune.utils.decorators.NeptuneGraph"),
             patch(
                 "nx_neptune.utils.decorators._execute_setup_routines_on_graph", setup
             ),
+            patch("nx_neptune.utils.decorators._execute_setup_new_graph", setup_new),
             patch("nx_neptune.utils.decorators._sync_data_to_neptune"),
             patch("nx_neptune.utils.decorators.stop_na_instance", stop, create=True),
             patch("nx_neptune.utils.decorators.reset_graph", reset, create=True),
@@ -947,39 +964,209 @@ class TestCompletionActionRunsOnAlgorithmOutcome:
         monkeypatch.delenv("NX_ALGORITHM_TEST", raising=False)
 
     @staticmethod
-    def _config(**flags):
+    def _config(create_new_instance=False, **flags):
         cfg = _teardown_config(**flags)
-        cfg.create_new_instance = False
+        cfg.create_new_instance = create_new_instance
         cfg.validate_config.return_value = None
         return cfg
 
-    @pytest.mark.parametrize(
-        "action", ["destroy_instance", "stop_instance", "reset_graph"]
-    )
-    def test_action_runs_when_algorithm_raises_and_original_exception_propagates(
-        self, action
-    ):
-        original = ValueError("algorithm blew up")
-        mocks = {
-            "destroy_instance": AsyncMock(),
-            "stop_instance": AsyncMock(),
-            "reset_graph": AsyncMock(),
+    @staticmethod
+    def _fakes():
+        return {
+            "stop": AsyncMock(),
+            "reset": AsyncMock(),
+            "delete": AsyncMock(),
+            "export": AsyncMock(),
         }
 
+    @staticmethod
+    def _failing(exc):
         def failing(graph):
-            raise original
+            raise exc
+
+        return failing
+
+    @staticmethod
+    def _assert_no_lifecycle_calls(fakes):
+        for name, fake in fakes.items():
+            assert not fake.called, f"{name} must not be called"
+
+    # --- failure path (algorithm raises an Exception) -----------------------
+
+    def test_failure_stop_runs_and_original_exception_propagates(self):
+        original = ValueError("algorithm blew up")
+        fakes = self._fakes()
 
         with pytest.raises(ValueError) as excinfo:
             self._run(
-                self._config(**{action: True}),
-                failing,
-                delete=mocks["destroy_instance"],
-                stop=mocks["stop_instance"],
-                reset=mocks["reset_graph"],
+                self._config(stop_instance=True), self._failing(original), **fakes
             )
 
         assert excinfo.value is original
-        mocks[action].assert_awaited_once()
+        fakes["stop"].assert_awaited_once()
+        assert not fakes["reset"].called
+        assert not fakes["delete"].called
+
+    def test_failure_skips_s3_export_but_stop_still_runs(self):
+        fakes = self._fakes()
+
+        with pytest.raises(ValueError, match="boom"):
+            self._run(
+                self._config(stop_instance=True, export_s3_bucket="test-bucket"),
+                self._failing(ValueError("boom")),
+                **fakes,
+            )
+
+        assert not fakes["export"].called
+        fakes["stop"].assert_awaited_once()
+
+    @pytest.mark.parametrize("create_new_instance", [False, True])
+    def test_failure_never_resets_graph_and_skips_export(self, create_new_instance):
+        fakes = self._fakes()
+
+        with pytest.raises(ValueError, match="boom"):
+            self._run(
+                self._config(
+                    create_new_instance=create_new_instance,
+                    reset_graph=True,
+                    export_s3_bucket="test-bucket",
+                ),
+                self._failing(ValueError("boom")),
+                **fakes,
+            )
+
+        self._assert_no_lifecycle_calls(fakes)
+
+    @pytest.mark.parametrize("export_s3_bucket", [None, "test-bucket"])
+    def test_failure_does_not_destroy_user_supplied_graph(self, export_s3_bucket):
+        fakes = self._fakes()
+        original = ValueError("boom")
+
+        with pytest.raises(ValueError) as excinfo:
+            self._run(
+                self._config(
+                    create_new_instance=False,
+                    destroy_instance=True,
+                    export_s3_bucket=export_s3_bucket,
+                ),
+                self._failing(original),
+                **fakes,
+            )
+
+        assert excinfo.value is original
+        self._assert_no_lifecycle_calls(fakes)
+
+    @pytest.mark.parametrize("create_new_instance", [True, {"provisionedMemory": 32}])
+    def test_failure_destroys_instance_created_by_this_call_without_export(
+        self, create_new_instance
+    ):
+        fakes = self._fakes()
+        original = ValueError("boom")
+        flags = dict(
+            create_new_instance=create_new_instance,
+            destroy_instance=True,
+            export_s3_bucket="test-bucket",
+        )
+        # What the wrapper really sees: no graph_id yet, so it takes the create
+        # branch; setup then returns the config with the new graph id assigned
+        # (create_new_instance stays truthy, as in production).
+        initial = self._config(graph_id=None, **flags)
+        after_create = self._config(graph_id="test-graph-id", **flags)
+
+        with pytest.raises(ValueError) as excinfo:
+            self._run(
+                initial,
+                self._failing(original),
+                created_config=after_create,
+                **fakes,
+            )
+
+        assert excinfo.value is original
+        fakes["delete"].assert_awaited_once()
+        assert fakes["delete"].await_args.args[0] == "test-graph-id"
+        assert not fakes["export"].called
+        assert not fakes["stop"].called
+        assert not fakes["reset"].called
+
+    @pytest.mark.parametrize("create_new_instance", [True, {"provisionedMemory": 32}])
+    def test_failure_does_not_destroy_graph_that_already_existed_on_entry(
+        self, create_new_instance
+    ):
+        """Reused config: an earlier call created the instance, so graph_id is
+        already set while create_new_instance is still truthy. This call did not
+        create it, so a failure must not destroy it. Validation is mocked here
+        on purpose; the point is that the wrapper's own signal (which setup
+        branch it took) decides, not a flag that validation happens to guard."""
+        fakes = self._fakes()
+        original = ValueError("boom")
+        config = self._config(
+            graph_id="test-graph-id",
+            create_new_instance=create_new_instance,
+            destroy_instance=True,
+        )
+
+        with pytest.raises(ValueError) as excinfo:
+            self._run(config, self._failing(original), **fakes)
+
+        assert excinfo.value is original
+        self._assert_no_lifecycle_calls(fakes)
+
+    def test_mutate_validation_error_with_user_graph_destroy_makes_no_lifecycle_call(
+        self,
+    ):
+        """Must-1 regression: a config mistake raised inside the algorithm must
+        not delete or wipe the user's graph."""
+        config = NeptuneConfig(graph_id="g-user", destroy_instance=True)
+        fakes = self._fakes()
+
+        def mutate_variant(graph):
+            # what algorithm_utils.execute_mutation_query does first
+            config.validate_mutate_execution_config()
+
+        with pytest.raises(ValueError):
+            self._run(config, mutate_variant, **fakes)
+
+        self._assert_no_lifecycle_calls(fakes)
+
+    # --- success path is unchanged ------------------------------------------
+
+    @pytest.mark.parametrize(
+        "action, fake",
+        [
+            ("destroy_instance", "delete"),
+            ("stop_instance", "stop"),
+            ("reset_graph", "reset"),
+        ],
+    )
+    def test_success_runs_action_even_for_user_supplied_graph(self, action, fake):
+        fakes = self._fakes()
+
+        result = self._run(
+            self._config(create_new_instance=False, **{action: True}),
+            lambda g: "ok",
+            **fakes,
+        )
+
+        assert result == "ok"
+        fakes[fake].assert_awaited_once()
+
+    def test_success_exports_before_completion_action(self):
+        events = []
+
+        async def export(*a, **k):
+            events.append("export")
+
+        async def reset(*a, **k):
+            events.append("reset")
+
+        self._run(
+            self._config(reset_graph=True, export_s3_bucket="test-bucket"),
+            lambda g: "ok",
+            export=export,
+            reset=reset,
+        )
+
+        assert events == ["export", "reset"]
 
     def test_action_runs_on_success_and_result_is_returned(self):
         stop = AsyncMock()
@@ -1009,56 +1196,66 @@ class TestCompletionActionRunsOnAlgorithmOutcome:
         def failing(graph):
             raise original
 
-        with caplog.at_level("WARNING", logger="nx_neptune.utils.decorators"):
+        with caplog.at_level("ERROR", logger="nx_neptune.utils.decorators"):
             with pytest.raises(ValueError) as excinfo:
                 self._run(self._config(stop_instance=True), failing, stop=stop)
 
         assert excinfo.value is original
-        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        errors = [r for r in caplog.records if r.levelname == "ERROR"]
         assert any(
-            "stop exploded" in r.getMessage() and "test-graph-id" in r.getMessage()
-            for r in warnings
-        ), [r.getMessage() for r in warnings]
+            "test-graph-id" in r.getMessage()
+            and r.exc_info is not None
+            and isinstance(r.exc_info[1], RuntimeError)
+            and "stop exploded" in str(r.exc_info[1])
+            for r in errors
+        ), [(r.getMessage(), r.exc_info) for r in errors]
 
     def test_algorithm_succeeds_and_teardown_fails_teardown_error_propagates(self):
         stop = AsyncMock(side_effect=RuntimeError("stop exploded"))
         with pytest.raises(RuntimeError, match="stop exploded"):
             self._run(self._config(stop_instance=True), lambda g: "ok", stop=stop)
 
-    def test_export_runs_before_completion_action_on_algorithm_failure(self):
-        events = []
-
-        async def export(*a, **k):
-            events.append("export")
-
-        async def stop(*a, **k):
-            events.append("stop")
-
-        def failing(graph):
-            raise ValueError("boom")
-
-        with pytest.raises(ValueError, match="boom"):
-            self._run(
-                self._config(stop_instance=True, export_s3_bucket="test-bucket"),
-                failing,
-                stop=stop,
-                export=export,
-            )
-
-        assert events == ["export", "stop"]
+    # --- interrupts ---------------------------------------------------------
 
     @pytest.mark.parametrize("exc_type", [KeyboardInterrupt, SystemExit])
-    def test_action_runs_when_algorithm_raises_base_exception(self, exc_type):
-        """KeyboardInterrupt / SystemExit from the algorithm still trigger the
-        completion action and propagate unchanged."""
+    @pytest.mark.parametrize(
+        "action", ["destroy_instance", "stop_instance", "reset_graph"]
+    )
+    def test_interrupt_in_algorithm_runs_no_teardown_and_propagates_unchanged(
+        self, exc_type, action
+    ):
+        """Replaces the old 'action runs on KeyboardInterrupt/SystemExit' tests:
+        the user asked to abort, so no lifecycle call (nor export) is made."""
         original = exc_type()
-        stop = AsyncMock()
-
-        def interrupted(graph):
-            raise original
+        fakes = self._fakes()
 
         with pytest.raises(exc_type) as excinfo:
-            self._run(self._config(stop_instance=True), interrupted, stop=stop)
+            self._run(
+                self._config(
+                    create_new_instance=True,
+                    export_s3_bucket="test-bucket",
+                    **{action: True},
+                ),
+                self._failing(original),
+                **fakes,
+            )
+
+        assert excinfo.value is original
+        self._assert_no_lifecycle_calls(fakes)
+
+    @pytest.mark.parametrize("teardown_exc_type", [KeyboardInterrupt, SystemExit])
+    def test_interrupt_during_failure_teardown_does_not_replace_original(
+        self, teardown_exc_type
+    ):
+        original = ValueError("algorithm blew up")
+        stop = AsyncMock(side_effect=teardown_exc_type())
+
+        # BaseException so a leaking interrupt is a clean assertion failure
+        # below instead of aborting the whole pytest session.
+        with pytest.raises(BaseException) as excinfo:
+            self._run(
+                self._config(stop_instance=True), self._failing(original), stop=stop
+            )
 
         assert excinfo.value is original
         stop.assert_awaited_once()
@@ -1094,10 +1291,13 @@ class TestCompletionActionRunsOnAlgorithmOutcome:
         def failing(graph):
             raise original
 
-        with patch(
-            "nx_neptune.utils.decorators.concurrent.futures.ThreadPoolExecutor",
-            side_effect=spying_pool,
-        ), caplog.at_level("WARNING", logger="nx_neptune.utils.decorators"):
+        with (
+            patch(
+                "nx_neptune.utils.decorators.concurrent.futures.ThreadPoolExecutor",
+                side_effect=spying_pool,
+            ),
+            caplog.at_level("ERROR", logger="nx_neptune.utils.decorators"),
+        ):
             with pytest.raises(ValueError) as excinfo:
                 self._run(self._config(stop_instance=True), failing, stop=stop)
 
@@ -1106,6 +1306,10 @@ class TestCompletionActionRunsOnAlgorithmOutcome:
         # setup and teardown both went through the pool (2 submissions)
         assert len(submitted) == 2
         if teardown_fails:
+            errors = [r for r in caplog.records if r.levelname == "ERROR"]
             assert any(
-                "stop exploded" in r.getMessage() for r in caplog.records
-            ), [r.getMessage() for r in caplog.records]
+                r.exc_info is not None
+                and isinstance(r.exc_info[1], RuntimeError)
+                and "stop exploded" in str(r.exc_info[1])
+                for r in errors
+            ), [(r.getMessage(), r.exc_info) for r in errors]
