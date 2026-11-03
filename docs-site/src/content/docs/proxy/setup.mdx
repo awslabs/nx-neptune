@@ -1,0 +1,83 @@
+---
+title: Proxy UI Setup
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+The **nx-neptune proxy** is a local web UI and REST API for the Graph Over Data Lake workflow. It lets you browse your Athena tables, define a graph with SQL or a `CREATE PROPERTY GRAPH` statement, import it into Neptune Analytics, and manage the graph, without writing code. It runs the same Athena → S3 → Neptune Analytics pipeline as [`SessionManager`](/nx-neptune/data-lake/session-manager/).
+
+The proxy runs on your machine and only listens on `127.0.0.1`. [Graph Explorer](https://github.com/aws/graph-explorer) can be started next to it as a container to visualize the graphs you create.
+
+<Aside type="caution">
+  The proxy is a local development tool. Do not deploy it to shared or production environments.
+</Aside>
+
+## Prerequisites
+
+- Python 3.11 or later
+- Node.js and npm, to build the UI
+- [finch](https://github.com/runfinch/finch) or Docker, only to run Graph Explorer
+- AWS credentials and a region exported in your shell. Use short-lived credentials (for example from `aws sso login` or `aws sts assume-role`), not long-lived access keys
+- The IAM permissions listed in [Prerequisites](/nx-neptune/getting-started/prerequisites/) for Athena, S3 and Neptune Analytics. The UI also lists Athena catalogs, databases and tables, S3 buckets, and Neptune Analytics graphs
+
+## Start the proxy
+
+<Steps>
+
+1. Clone the repository and install the nx-neptune library from source:
+
+   ```bash
+   git clone https://github.com/awslabs/nx-neptune.git
+   cd nx-neptune
+   pip install -e .
+   ```
+
+2. Install the proxy and build the UI:
+
+   ```bash
+   cd proxy
+   make install
+   make ui
+   ```
+
+3. Export your AWS credentials and region, then start the proxy:
+
+   ```bash
+   export AWS_DEFAULT_REGION=us-west-2
+   make dev
+   ```
+
+4. Open the launch URL printed on startup:
+
+   ```
+   Open the proxy UI (token valid for this run only):
+     http://127.0.0.1:8080/?token=<token>
+   ```
+
+</Steps>
+
+The token is generated each time the proxy starts and is required for every API call. Opening `http://localhost:8080` without it loads the page, but the API calls fail. The UI keeps the token in memory only, so after a page refresh or a restart (including an auto-reload by `make dev`), open the new launch URL from the proxy output.
+
+<Aside type="note">
+  `make dev` creates graphs with a public endpoint and without deletion protection (`NETWORKX_PUBLIC_CONNECTIVITY=true`, `NETWORKX_DELETION_PROTECTION=false`), so you can reach them from your machine and delete them when you're done. If you start the proxy another way, you get the secure defaults instead. See [Graph creation defaults](https://github.com/awslabs/nx-neptune#graph-creation-defaults).
+</Aside>
+
+## Start Graph Explorer
+
+Graph Explorer is optional. Start it only when you want to visualize a graph. In a second shell with the same AWS credentials and region exported, run from `proxy/`:
+
+```bash
+make up-ge
+```
+
+This starts only the Graph Explorer container, on `https://localhost`. Graph Explorer signs its requests to Neptune Analytics with the credentials from your shell. If they expire, export new ones and run `make up-ge` again.
+
+The Makefile uses finch by default. To use Docker, run `make up-ge RUNTIME=docker`. To stop Graph Explorer, run `make down`.
+
+<Aside type="tip">
+  To run the proxy in a container as well, use `make up`, which starts the proxy and Graph Explorer together.
+</Aside>
+
+For every Makefile target and configuration variable, see the [proxy README](https://github.com/awslabs/nx-neptune/blob/main/proxy/README.md).
+
+Next: [End-to-end walkthrough](/nx-neptune/proxy/walkthrough/).

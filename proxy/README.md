@@ -2,6 +2,8 @@
 
 A local FastAPI server with React UI for managing Neptune Analytics graph projections from data lake sources.
 
+For a setup guide and an end-to-end walkthrough, see the [Proxy UI docs](https://awslabs.github.io/nx-neptune/proxy/setup/).
+
 ## Quick Start
 
 Prerequisites: Python 3.11 or later, Node.js and npm (to build the UI), and AWS
