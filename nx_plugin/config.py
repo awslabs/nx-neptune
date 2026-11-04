@@ -42,6 +42,7 @@ class NeptuneConfig(Config):
 
     graph_id: Optional[str]
         use graph by graph_id; overridden by the environment variable NETWORKX_GRAPH_ID.  Otherwise, defaults to None.
+        The graph must be created by nx-neptune or carry the tag nx-neptune:managed=true.
 
     s3_iam_role: Optional[str]
         IAM role for Neptune Analytics to use to import/export from S3. Overridden by NETWORKX_S3_IAM_ROLE_ARN.
@@ -86,9 +87,7 @@ class NeptuneConfig(Config):
         If True, saves the Neptune Analytics instance as a snapshot. Defaults to False.
 
     destroy_instance: bool
-        If True, destroys the instance after the call. A graph provided through
-        graph_id is only destroyed if it was created by nx-neptune; this is checked
-        before the algorithm runs. Defaults to False.
+        If True, destroys the instance after the call. Defaults to False.
 
     reset_graph: bool
         If True, resets the graph. Defaults to False.
