@@ -22,6 +22,10 @@ The proxy runs on your machine and listens on `127.0.0.1` only. [Graph Explorer]
 
 ## Start the proxy
 
+<Aside type="caution">
+  `make dev` and `make up` create graphs with a **public endpoint** and **without deletion protection** (`NETWORKX_PUBLIC_CONNECTIVITY=true`, `NETWORKX_DELETION_PROTECTION=false`), so you can reach them from your machine and delete them when you're done. Use them only with test data in a development account. If you start the proxy another way, you get the secure defaults: a private graph, reachable only from its VPC, with deletion protection on. See [Graph creation defaults](https://github.com/awslabs/nx-neptune#graph-creation-defaults).
+</Aside>
+
 <Steps>
 
 1. Clone the repository and install the nx-neptune library from source:
@@ -59,10 +63,6 @@ The proxy runs on your machine and listens on `127.0.0.1` only. [Graph Explorer]
 </Steps>
 
 The token is generated each time the proxy starts and is required for every API call. Opening `http://localhost:8080` without it loads the page, but the API calls fail. The UI keeps the token in memory only, so after a page refresh or a restart (including an auto-reload by `make dev`), open the new launch URL from the proxy output.
-
-<Aside type="note">
-  `make dev` creates graphs with a public endpoint and without deletion protection (`NETWORKX_PUBLIC_CONNECTIVITY=true`, `NETWORKX_DELETION_PROTECTION=false`), so you can reach them from your machine and delete them when you're done. If you start the proxy another way, you get the secure defaults instead. See [Graph creation defaults](https://github.com/awslabs/nx-neptune#graph-creation-defaults).
-</Aside>
 
 ## Start Graph Explorer
 
@@ -106,7 +106,7 @@ The container publishes its ports on `127.0.0.1`. With finch on macOS, the finch
 The proxy UI links to Graph Explorer at `https://localhost/explorer`. If you set `GE_PORT`, or Graph Explorer runs at a different URL, set the link when you build the UI, for example `VITE_GRAPH_EXPLORER_URL=https://localhost:8443/explorer make ui`. `make up` sets it from `GE_PORT` for you.
 
 <Aside type="tip">
-  To run the proxy in a container as well, run `make up` instead of `make dev` and `make up-ge`, with the same credentials and region exported. It builds the image (including the UI), starts the proxy and Graph Explorer, and keeps your projects in a volume across runs. The launch URL is in `make logs`. When your credentials expire, export new ones and run `make up` again; this restarts both containers, and the proxy prints a new launch URL.
+  To run the proxy in a container as well, run `make up` instead of `make dev` and `make up-ge`, with the same credentials and region exported. It builds the image (including the UI), starts the proxy and Graph Explorer, and keeps your projects in a volume across runs. Like `make dev`, it creates public graphs without deletion protection. The launch URL is in `make logs`. When your credentials expire, export new ones and run `make up` again; this restarts both containers, and the proxy prints a new launch URL.
 </Aside>
 
 For every Makefile target and configuration variable, see the [proxy README](https://github.com/awslabs/nx-neptune/blob/main/proxy/README.md).

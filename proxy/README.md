@@ -7,7 +7,17 @@ For a setup guide and an end-to-end walkthrough, see the [Proxy UI docs](https:/
 ## Quick Start
 
 Prerequisites: Python 3.11 or later, Node.js and npm (to build the UI), and AWS
-credentials with a region configured (see the security note under Docker Compose).
+credentials with a region configured (see the security note under Docker Compose). The
+credentials need the IAM permissions listed in
+[Prerequisites](https://awslabs.github.io/nx-neptune/getting-started/prerequisites/)
+for Athena, S3 and Neptune Analytics.
+
+> **Warning:** `make dev` and `make up` set `NETWORKX_PUBLIC_CONNECTIVITY=true` and
+> `NETWORKX_DELETION_PROTECTION=false`, so the graphs they create have a **public
+> endpoint** and **no deletion protection**. This lets you reach them from your machine
+> and delete them when you're done. Use them only with test data in a development
+> account. If you start the server another way, you get the secure defaults (see
+> [Graph creation defaults](../README.md#graph-creation-defaults)).
 
 ```bash
 # From the repository root: install the nx-neptune library from source
@@ -38,11 +48,7 @@ memory only. After a page refresh or a server restart (including an auto-reload 
 `make dev`), open the new launch URL from the server output. When running in a
 container, the URL is in the container output (`make logs`).
 
-`make dev` binds to `127.0.0.1:8080`
-and sets `NETWORKX_PUBLIC_CONNECTIVITY=true` and `NETWORKX_DELETION_PROTECTION=false`,
-so the graphs it creates are reachable from your machine and can be deleted. If you
-start the server another way, set these variables yourself (see
-[Graph creation defaults](../README.md#graph-creation-defaults)).
+`make dev` binds to `127.0.0.1:8080`.
 
 To start Graph Explorer next to `make dev`, run `make up-ge` (the Makefile uses finch by
 default; pass `RUNTIME=docker` to every target to use Docker). See the
