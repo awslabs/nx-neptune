@@ -89,8 +89,7 @@ class NeptuneConfig(Config):
         If True, destroys the instance. Defaults to False.
         Destroy fails while a private graph endpoint is attached (the service
         raises ConflictException: "Graph cannot be deleted because it has private
-        graph endpoints attached"), so it is inoperable for a VPC-only graph,
-        which is what the secure default creates.
+        graph endpoints attached"). Remove the endpoint before using this option.
 
     reset_graph: bool
         If True, resets the graph. Requires export_s3_bucket when used with mutate algorithm variants.
