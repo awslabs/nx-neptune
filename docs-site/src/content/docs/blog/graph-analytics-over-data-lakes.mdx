@@ -223,7 +223,7 @@ graph = await session.get_or_create_graph()
 
 This single call either retrieves an existing graph or provisions a new one. Provisioning takes a few minutes, after which you have a fully managed graph engine ready to process your data.
 
-The `SessionManager` tracks every graph created within a session (using the session name as a prefix), making it easy to manage multiple workloads. When `cleanup_task` is defined, it releases those resources when you're done. Any S3 Tables that hold your source data, or S3 buckets used for logs, are left for you to remove.
+The `SessionManager` tracks every graph created within a session (named after the session, as `{session_name}-{uuid}`), making it easy to manage multiple workloads. When `cleanup_task` is defined, it releases those resources when you're done. Any S3 Tables that hold your source data, or S3 buckets used for logs, are left for you to remove.
 
 ### Load the graph
 

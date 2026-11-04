@@ -18,6 +18,9 @@ from nx_neptune.session_manager import (
     SessionManager,
 )
 
+UUID_1 = "1b4e28ba-2fa1-41d2-883f-0016d3cca427"
+UUID_2 = "6fa459ea-ee8a-4ca4-894e-db77e160355e"
+
 
 class TestNeptuneAnalyticsClient:
     """Tests for NeptuneAnalyticsClient class."""
@@ -103,16 +106,19 @@ class TestSessionManager:
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
         mock_client.list_graphs.return_value = {
             "graphs": [
-                {"name": "test-graph-1", "id": "g-1", "status": "AVAILABLE"},
+                {"name": f"test-graph-{UUID_1}", "id": "g-1", "status": "AVAILABLE"},
                 {"name": "other-graph", "id": "g-2", "status": "AVAILABLE"},
-                {"name": "test-graph-2", "id": "g-3", "status": "CREATING"},
+                {"name": f"test-graph-{UUID_2}", "id": "g-3", "status": "CREATING"},
+                {"name": f"test-graph2-{UUID_1}", "id": "g-4", "status": "AVAILABLE"},
+                {"name": f"test-graph-b-{UUID_1}", "id": "g-5", "status": "AVAILABLE"},
+                {"name": "test-graph-backup", "id": "g-6", "status": "AVAILABLE"},
+                {"name": "test-graph", "id": "g-7", "status": "AVAILABLE"},
             ]
         }
 
         sm = SessionManager(session_name="test-graph")
         graphs = sm.list_graphs()
-        assert len(graphs) == 2
-        assert all(g.name.startswith("test-graph") for g in graphs)
+        assert [g.graph_id for g in graphs] == ["g-1", "g-3", "g-7"]
 
     @patch("boto3.client")
     def test_get_existing_graph_no_filter(self, mock_boto3_client):
@@ -230,7 +236,7 @@ class TestSessionManager:
             {
                 "graphs": [
                     {
-                        "name": "test-session-graph",
+                        "name": f"test-session-{UUID_1}",
                         "id": "test-session-graph-id",
                         "status": "AVAILABLE",
                     }
@@ -349,7 +355,7 @@ class TestSessionManager:
         mock_boto3_client.return_value = mock_client
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
         mock_client.list_graphs.return_value = {
-            "graphs": [{"name": "test-graph", "id": "g-123", "status": "AVAILABLE"}]
+            "graphs": [{"name": f"test-{UUID_1}", "id": "g-123", "status": "AVAILABLE"}]
         }
 
         sm = SessionManager(session_name="test")
@@ -359,4 +365,26 @@ class TestSessionManager:
         assert isinstance(result, NeptuneAnalyticsClient)
         assert result.graph_id == "g-123"
         assert result.status == "AVAILABLE"
-        assert result.name == "test-graph"
+        assert result.name == f"test-{UUID_1}"
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    @patch("nx_neptune.session_manager.instance_management.create_na_instance")
+    async def test_get_or_create_graph_uses_graph_named_as_session(
+        self, mock_create, mock_boto3_client
+    ):
+        """A graph named exactly as the session, such as the CloudFormation graph, is reused."""
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        mock_client.list_graphs.return_value = {
+            "graphs": [
+                {"name": "nx-neptune-graph", "id": "g-cfn", "status": "AVAILABLE"}
+            ]
+        }
+
+        sm = SessionManager(session_name="nx-neptune-graph")
+        result = await sm.get_or_create_graph()
+
+        assert result.graph_id == "g-cfn"
+        mock_create.assert_not_called()

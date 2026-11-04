@@ -99,6 +99,44 @@ async def test_first_run_never_adopts_existing_graph(mock_sm_cls, mock_cf, clear
 
 
 @pytest.mark.asyncio
+@patch("nx_neptune.session_manager.SessionManager.import_from_table")
+@patch("nx_neptune.session_manager.instance_management.create_na_instance")
+@patch("boto3.client")
+async def test_first_run_does_not_reuse_sibling_projection_graph(
+    mock_boto3_client, mock_create, mock_import, clear_store
+):
+    """A projection named 'sales' must not reuse the graph of a projection
+    named 'sales2', even though 'nxp-sales2-...' starts with 'nxp-sales'."""
+    sibling = {
+        "name": "nxp-sales2-1b4e28ba-2fa1-41d2-883f-0016d3cca427",
+        "id": "g-sales2",
+        "status": "AVAILABLE",
+    }
+    own = {
+        "name": "nxp-sales-6fa459ea-ee8a-4ca4-894e-db77e160355e",
+        "id": "g-sales",
+        "status": "AVAILABLE",
+    }
+    mock_client = MagicMock()
+    mock_boto3_client.return_value = mock_client
+    mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+    mock_client.list_graphs.side_effect = [
+        {"graphs": [sibling]},
+        {"graphs": [sibling, own]},
+    ]
+    mock_create.return_value = "g-sales"
+    mock_import.return_value = "task-1"
+
+    projection = _make_projection(graph_name="sales")
+    await run_pipeline(projection)
+
+    mock_create.assert_awaited_once()
+    result = store.get(projection.id)
+    assert result.status == "complete"
+    assert result.graph_id == "g-sales"
+
+
+@pytest.mark.asyncio
 @patch("nx_neptune.clients.client_factory.ClientFactory")
 @patch("nx_neptune.session_manager.SessionManager")
 async def test_retry_resets_only_the_recorded_graph_by_id(
