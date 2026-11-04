@@ -174,6 +174,9 @@ class ProjectionExport(BaseModel):
     )
     graph_name: Optional[str] = Field(
         None,
+        min_length=GRAPH_NAME_MIN_LENGTH,
+        max_length=GRAPH_NAME_MAX_LENGTH,
+        pattern=GRAPH_NAME_PATTERN,
         description="Neptune Analytics graph name suffix (prefix is added automatically)",
     )
     graph_memory_gb: int = Field(16, description="Graph memory allocation in GB")
@@ -197,8 +200,12 @@ class ProjectionExport(BaseModel):
         node_queries: Optional[list[str]] = None,
         edge_queries: Optional[list[str]] = None,
     ) -> "ProjectionExport":
-        """Create from a Projection dataclass instance."""
-        return cls(  # type: ignore[call-arg]
+        """Create from a Projection dataclass instance.
+
+        Stored values are exported as is, without validation, so projections
+        saved before the current graph_name rules still export.
+        """
+        return cls.model_construct(
             catalog=pr.catalog,
             database=pr.database,
             graph_name=pr.graph_name,

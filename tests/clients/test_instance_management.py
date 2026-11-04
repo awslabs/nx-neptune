@@ -575,6 +575,42 @@ async def test_create_na_instance_graph_absent_status_check_failure(mock_boto3_c
 
 
 @pytest.mark.asyncio
+@patch("nx_neptune.utils.task_future.asyncio.sleep", new_callable=AsyncMock)
+@patch("boto3.client")
+async def test_create_na_instance_on_created_before_wait(mock_boto3_client, mock_sleep):
+    """on_created gets the graph id even when the wait for AVAILABLE fails."""
+    mock_nx_client = MagicMock()
+    mock_boto3_client.return_value = mock_nx_client
+    mock_nx_client.create_graph.return_value = json.loads(NX_CREATE_SUCCESS_FIXTURE)
+    test_status_creating = json.loads(NX_STATUS_CHECK_SUCCESS_FIXTURE)
+    test_status_creating["status"] = "CREATING"
+    mock_nx_client.get_graph.return_value = test_status_creating
+    on_created = MagicMock()
+
+    with pytest.raises(ClientError, match="MaxAttemptsReached"):
+        await create_na_instance(max_attempts=1, on_created=on_created)
+
+    on_created.assert_called_once_with("test_graph_id")
+
+
+@pytest.mark.asyncio
+@patch("boto3.client")
+async def test_create_na_instance_on_created_not_called_on_rejection(
+    mock_boto3_client,
+):
+    """on_created is not called when creation is not accepted."""
+    mock_nx_client = MagicMock()
+    mock_boto3_client.return_value = mock_nx_client
+    mock_nx_client.create_graph.return_value = json.loads(NX_IMPORT_FAIL_FIXTURE)
+    on_created = MagicMock()
+
+    with pytest.raises(Exception, match="Neptune instance creation failure"):
+        await create_na_instance(on_created=on_created)
+
+    on_created.assert_not_called()
+
+
+@pytest.mark.asyncio
 @patch("boto3.client")
 async def test_create_na_instance_insufficient_permissions(mock_boto3_client):
 

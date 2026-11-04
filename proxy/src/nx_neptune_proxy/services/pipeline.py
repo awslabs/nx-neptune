@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+from functools import partial
+
+from botocore.exceptions import ClientError
 
 from nx_neptune_proxy.config import get_settings
 from nx_neptune_proxy.services.projection_service import projection_service
@@ -54,9 +57,11 @@ async def run_pipeline(projection: Projection) -> None:
             neptune = ClientFactory().neptune()
             try:
                 resp = neptune.get_graph(graphIdentifier=projection.graph_id)
-            except Exception:
-                # Recorded graph no longer exists (or is unreachable): treat as a
-                # fresh run and create a new graph below rather than adopting one.
+            except ClientError as e:
+                # Only a missing graph means a fresh run. Any other error (throttling,
+                # access denied) is raised, so the recorded graph is not orphaned.
+                if e.response["Error"]["Code"] != "ResourceNotFoundException":
+                    raise
                 logger.warning(
                     "Recorded graph_id %s not retrievable; creating a new graph",
                     projection.graph_id,
@@ -66,15 +71,16 @@ async def run_pipeline(projection: Projection) -> None:
                 # Guard: confirm the recorded graph is one this tool manages before reset.
                 _assert_managed(resp.get("name"))
                 existing = sm.get_graph(projection.graph_id)
+            elif resp is not None and resp.get("status") != "DELETING":
+                raise RuntimeError(
+                    f"Graph {projection.graph_id} is {resp.get('status')}. "
+                    "Retry when it is available, or delete it."
+                )
 
         if existing:
             # Reuse existing graph (retry scenario) — reset data
             graph = existing
-            projection_service.update(
-                projection.id,
-                graph_id=graph.graph_id,
-                graph_endpoint=f"https://{graph.graph_id}.neptune-graph.amazonaws.com",
-            )
+            _record_graph(projection.id, graph.graph_id)
             _update(
                 projection.id,
                 step="graph_reset",
@@ -84,13 +90,9 @@ async def run_pipeline(projection: Projection) -> None:
             await sm.reset_graph(graph.name)
         else:
             # Brand new graph — no reset needed
-            graph = await sm.get_or_create_graph(
-                config={"provisionedMemory": projection.graph_memory_gb}
-            )
-            projection_service.update(
-                projection.id,
-                graph_id=graph.graph_id,
-                graph_endpoint=f"https://{graph.graph_id}.neptune-graph.amazonaws.com",
+            graph = await sm.create_graph(
+                config={"provisionedMemory": projection.graph_memory_gb},
+                on_created=partial(_record_graph, projection.id),
             )
 
         # Step 2: Athena query + CSV import
@@ -129,6 +131,15 @@ async def run_pipeline(projection: Projection) -> None:
         projection_service.update(
             projection.id, status="failed", error=sanitize_error_message(error_msg)
         )
+
+
+def _record_graph(projection_id: str, graph_id: str) -> None:
+    """Save the graph id and endpoint on the projection."""
+    projection_service.update(
+        projection_id,
+        graph_id=graph_id,
+        graph_endpoint=f"https://{graph_id}.neptune-graph.amazonaws.com",
+    )
 
 
 def _update(projection_id: str, step: str, label: str, progress: float) -> None:
