@@ -13,7 +13,7 @@
 import os
 import asyncio
 from asyncio import Future
-from unittest.mock import MagicMock, patch, call, ANY
+from unittest.mock import AsyncMock, MagicMock, patch, call, ANY
 
 import pytest
 import networkx as nx
@@ -80,6 +80,7 @@ class TestConfigureIfNxActive:
         mock_config = MagicMock(spec=NeptuneConfig)
         mock_config.graph_id = "test-graph-id"
         mock_config.create_new_instance = False
+        mock_config.destroy_instance = False
         mock_get_config.return_value = mock_config
         mock_config.validate_config.return_value = None
 
@@ -125,7 +126,7 @@ class TestConfigureIfNxActive:
         # Verify sync data was called
         mock_sync_data.assert_called_once_with(g, mock_na_graph, mock_config)
         mock_execute_teardown_routines_on_graph.assert_called_once_with(
-            mock_na_graph, mock_config
+            mock_na_graph, mock_config, failed=False
         )
 
     @patch("nx_neptune.utils.decorators.get_config")
@@ -201,7 +202,7 @@ class TestConfigureIfNxActive:
             graph, mock_na_graph, mock_updated_config
         )
         mock_execute_teardown_routines_on_graph.assert_called_once_with(
-            mock_na_graph, mock_updated_config
+            mock_na_graph, mock_updated_config, failed=False
         )
 
     @patch("nx_neptune.utils.decorators.get_config")
@@ -224,6 +225,7 @@ class TestConfigureIfNxActive:
         mock_config = MagicMock(spec=NeptuneConfig)
         mock_config.graph_id = "test-graph-id"
         mock_config.create_new_instance = False
+        mock_config.destroy_instance = False
         mock_get_config.return_value = mock_config
         mock_config.validate_config.return_value = None
 
@@ -260,6 +262,103 @@ class TestConfigureIfNxActive:
         # Verify ThreadPoolExecutor was used
         mock_thread_pool.assert_called()
         mock_pool.submit.assert_called()
+
+
+class TestDestroyInstanceGuard:
+    """destroy_instance only destroys graphs created by nx-neptune, and still
+    applies when the algorithm fails."""
+
+    def _run(self, config, func, mocks):
+        mocks["get_config"].return_value = config
+        mocks["setup"].return_value = config
+        mocks["neptune_graph"].from_config.return_value = MagicMock(spec=NeptuneGraph)
+
+        def algorithm(graph):
+            return func(graph)
+
+        return configure_if_nx_active()(algorithm)(nx.Graph())
+
+    @pytest.fixture
+    def mocks(self):
+        with (
+            patch("nx_neptune.utils.decorators.get_config") as get_config,
+            patch("nx_neptune.utils.decorators.NeptuneGraph") as neptune_graph,
+            patch(
+                "nx_neptune.utils.decorators.asyncio.get_running_loop",
+                side_effect=RuntimeError,
+            ),
+            patch(
+                "nx_neptune.utils.decorators.asyncio.run",
+                side_effect=lambda result: result,
+            ),
+            patch(
+                "nx_neptune.utils.decorators._execute_setup_routines_on_graph",
+                new_callable=MagicMock,
+            ) as setup,
+            patch(
+                "nx_neptune.utils.decorators._execute_teardown_routines_on_graph",
+                new_callable=MagicMock,
+            ) as teardown,
+            patch("nx_neptune.utils.decorators._sync_data_to_neptune"),
+            patch(
+                "nx_neptune.utils.decorators._assert_library_graph"
+            ) as assert_library,
+            patch("nx_neptune.utils.decorators.ClientFactory") as client_factory,
+        ):
+            yield {
+                "get_config": get_config,
+                "neptune_graph": neptune_graph,
+                "setup": setup,
+                "teardown": teardown,
+                "assert_library": assert_library,
+                "client_factory": client_factory,
+            }
+
+    @staticmethod
+    def _config(graph_id="g-1", destroy_instance=True):
+        config = MagicMock(spec=NeptuneConfig)
+        config.graph_id = graph_id
+        config.create_new_instance = False
+        config.destroy_instance = destroy_instance
+        return config
+
+    def test_unmanaged_graph_raises_before_algorithm(self, mocks):
+        mocks["assert_library"].side_effect = ValueError(
+            "Refusing to destroy graph g-1"
+        )
+        func = MagicMock()
+
+        with pytest.raises(ValueError, match="Refusing to destroy graph g-1"):
+            self._run(self._config(), func, mocks)
+
+        mocks["assert_library"].assert_called_once_with(
+            mocks["client_factory"].return_value.neptune.return_value, "g-1", "destroy"
+        )
+        mocks["setup"].assert_not_called()
+        func.assert_not_called()
+        mocks["teardown"].assert_not_called()
+
+    def test_managed_graph_runs_and_tears_down(self, mocks):
+        func = MagicMock(return_value="result")
+
+        assert self._run(self._config(), func, mocks) == "result"
+
+        mocks["assert_library"].assert_called_once()
+        assert mocks["teardown"].call_args.kwargs == {"failed": False}
+
+    def test_no_tag_check_without_destroy_instance(self, mocks):
+        self._run(self._config(destroy_instance=False), MagicMock(), mocks)
+
+        mocks["assert_library"].assert_not_called()
+
+    def test_failed_algorithm_still_tears_down(self, mocks):
+        func = MagicMock(side_effect=RuntimeError("algorithm failed"))
+
+        with pytest.raises(RuntimeError, match="algorithm failed"):
+            self._run(self._config(), func, mocks)
+
+        mocks["teardown"].assert_called_once()
+        assert mocks["teardown"].call_args.kwargs == {"failed": True}
 
 
 class TestExecuteSetupRoutinesOnGraph:
@@ -652,6 +751,33 @@ class TestExecuteTeardownRoutinesOnGraph:
 
                 # Verify the result is the updated config
                 assert result == mock_updated_config
+
+    @pytest.mark.asyncio
+    async def test_failed_skips_export_and_destroys(self):
+        """After a failed algorithm, the export is skipped and the graph is destroyed."""
+        mock_config = MagicMock(spec=NeptuneConfig)
+        mock_config.graph_id = "test-graph-id"
+        mock_config.export_s3_bucket = "test-bucket"
+        mock_config.save_snapshot = False
+        mock_config.reset_graph = False
+        mock_config.destroy_instance = True
+
+        with (
+            patch(
+                "nx_neptune.utils.decorators.export_csv_to_s3", new_callable=AsyncMock
+            ) as mock_export,
+            patch(
+                "nx_neptune.utils.decorators.delete_na_instance", new_callable=AsyncMock
+            ) as mock_delete,
+            patch("nx_neptune.utils.decorators.set_config_graph_id") as mock_set_config,
+        ):
+            await _execute_teardown_routines_on_graph(
+                MagicMock(spec=NeptuneGraph), mock_config, failed=True
+            )
+
+        mock_export.assert_not_called()
+        mock_delete.assert_awaited_once_with("test-graph-id")
+        mock_set_config.assert_called_once_with(None)
 
     @pytest.mark.asyncio
     async def test_with_no_graph_id(self):

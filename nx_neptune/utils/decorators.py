@@ -23,7 +23,9 @@ __all__ = ["configure_if_nx_active"]
 from nx_plugin import NeptuneConfig
 
 from ..clients import Edge, Node
+from ..clients.client_factory import ClientFactory
 from ..instance_management import (
+    _assert_library_graph,
     create_na_instance,
     delete_na_instance,
     export_csv_to_s3,
@@ -58,6 +60,11 @@ def configure_if_nx_active():
             neptune_config = get_config()
             neptune_config.validate_config()
 
+            if neptune_config.graph_id is not None and neptune_config.destroy_instance:
+                _assert_library_graph(
+                    ClientFactory().neptune(), neptune_config.graph_id, "destroy"
+                )
+
             # Execute setup instructions
             if neptune_config.graph_id is not None:
                 na_graph = NeptuneGraph.from_config(
@@ -91,25 +98,26 @@ def configure_if_nx_active():
                     config=neptune_config, graph=graph, logger=logger
                 )
 
-            _sync_data_to_neptune(graph, na_graph, neptune_config)
+            succeeded = False
+            try:
+                _sync_data_to_neptune(graph, na_graph, neptune_config)
 
-            converted_args = (na_graph,) + args[1:]
+                converted_args = (na_graph,) + args[1:]
 
-            # Call algorithm
-            rv = func(*converted_args, **kwargs)
-
-            # Execute teardown instructions
-            if neptune_config.graph_id is not None:
-                if loop and loop.is_running():
-                    pool = concurrent.futures.ThreadPoolExecutor()
-                    pool.submit(
-                        asyncio.run,
-                        _execute_teardown_routines_on_graph(na_graph, neptune_config),
-                    ).result()
-                else:
-                    asyncio.run(
-                        _execute_teardown_routines_on_graph(na_graph, neptune_config)
+                # Call algorithm
+                rv = func(*converted_args, **kwargs)
+                succeeded = True
+            finally:
+                # Execute teardown instructions
+                if neptune_config.graph_id is not None:
+                    teardown = _execute_teardown_routines_on_graph(
+                        na_graph, neptune_config, failed=not succeeded
                     )
+                    if loop and loop.is_running():
+                        pool = concurrent.futures.ThreadPoolExecutor()
+                        pool.submit(asyncio.run, teardown).result()
+                    else:
+                        asyncio.run(teardown)
 
             return rv
 
@@ -235,20 +243,32 @@ def _sync_data_to_neptune(
 
 
 async def _execute_teardown_routines_on_graph(
-    na_graph: NeptuneGraph, neptune_config: NeptuneConfig, *args, **kwargs
+    na_graph: NeptuneGraph,
+    neptune_config: NeptuneConfig,
+    *args,
+    failed: bool = False,
+    **kwargs,
 ) -> NeptuneConfig:
+    """Run the teardown routines after the algorithm.
+
+    When the algorithm failed, only destroy_instance is applied, so a graph to
+    be destroyed is not left running; export, snapshot and reset are skipped.
+    """
     if neptune_config.graph_id is not None:
-        if neptune_config.export_s3_bucket is not None:
-            logger.debug("Export graph data to S3: " + neptune_config.export_s3_bucket)
-            await export_csv_to_s3(na_graph, neptune_config.export_s3_bucket)
+        if not failed:
+            if neptune_config.export_s3_bucket is not None:
+                logger.debug(
+                    "Export graph data to S3: " + neptune_config.export_s3_bucket
+                )
+                await export_csv_to_s3(na_graph, neptune_config.export_s3_bucket)
 
-        if neptune_config.save_snapshot:
-            logger.debug("Export graph to snapshot")
-            raise Exception("Not implemented yet (workflow: save_snapshot)")
+            if neptune_config.save_snapshot:
+                logger.debug("Export graph to snapshot")
+                raise Exception("Not implemented yet (workflow: save_snapshot)")
 
-        if neptune_config.reset_graph:
-            logger.debug("Reset graph")
-            raise Exception("Not implemented yet (workflow: reset_graph)")
+            if neptune_config.reset_graph:
+                logger.debug("Reset graph")
+                raise Exception("Not implemented yet (workflow: reset_graph)")
 
         if neptune_config.destroy_instance:
             logger.debug(f"Destroy instance {neptune_config.graph_id}")
