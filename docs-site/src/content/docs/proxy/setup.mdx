@@ -89,12 +89,16 @@ make up-ge
 This starts only the Graph Explorer container, on `https://localhost`. It needs host ports 443 and 80 to be free. If your credentials expire, export new ones and run `make up-ge` again. To stop Graph Explorer, run `make down`.
 
 <Aside type="caution">
-  `make up-ge` can report success even when the container didn't start, for example if a port is in use, the finch VM isn't running, or the image pull failed. Check with `finch ps` or `docker ps` that the `graph-explorer` container is running.
+  If `make up-ge` fails, check that ports 443 and 80 are free, that the finch VM is running (`finch vm start`), and that the image pull succeeded. `finch ps` or `docker ps` shows whether the `graph-explorer` container is running.
 </Aside>
 
 The container publishes its ports on `127.0.0.1`. With finch on macOS, the finch VM can still listen on all network interfaces.
 
 The proxy UI links to Graph Explorer at `https://localhost/explorer`. If Graph Explorer runs at a different URL, set it when you build the UI: `VITE_GRAPH_EXPLORER_URL=<url> make ui`.
+
+<Aside type="tip">
+  To run the proxy in a container as well, run `make up` instead of `make dev` and `make up-ge`, with the same credentials and region exported. It builds the image (including the UI), starts the proxy and Graph Explorer, and keeps your projects in a volume across runs. The launch URL is in `make logs`. When your credentials expire, export new ones and run `make up` again; this restarts both containers, and the proxy prints a new launch URL.
+</Aside>
 
 For every Makefile target and configuration variable, see the [proxy README](https://github.com/awslabs/nx-neptune/blob/main/proxy/README.md).
 

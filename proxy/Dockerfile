@@ -1,11 +1,20 @@
+FROM node:22-slim AS ui
+WORKDIR /src/proxy/ui-src
+COPY proxy/ui-src/package.json proxy/ui-src/package-lock.json ./
+RUN npm ci
+COPY proxy/ui-src/ ./
+RUN npm run build
+
 FROM python:3.11-slim
 WORKDIR /app
 COPY nx_neptune/ ./nx_neptune_src/nx_neptune/
 COPY nx_plugin/ ./nx_neptune_src/nx_plugin/
 COPY pyproject.toml ./nx_neptune_src/
 COPY proxy/ ./proxy/
+COPY --from=ui /src/proxy/ui/ ./proxy/ui/
 RUN pip install --no-cache-dir ./nx_neptune_src ./proxy && useradd --create-home appuser
 USER appuser
+RUN mkdir -p /home/appuser/.nx-neptune
 EXPOSE 8080
 # The container must bind 0.0.0.0 so Docker's published-port forwarding can
 # reach it (container-internal 127.0.0.1 is unreachable from the host). Real
@@ -16,5 +25,5 @@ EXPOSE 8080
 # (printed once at startup) reaches the container log driver / `finch logs`.
 ENV HOST=0.0.0.0 ALLOW_NON_LOOPBACK_BIND=1 PYTHONUNBUFFERED=1
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
-    CMD wget -qO /dev/null http://localhost:8080/health
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
 CMD ["python", "-m", "nx_neptune_proxy"]

@@ -19,14 +19,16 @@ services:
       # defaults (private graph + deletion protection). `make up` sets both.
       - NETWORKX_PUBLIC_CONNECTIVITY
       - NETWORKX_DELETION_PROTECTION
+    volumes:
+      - proxy-data:/home/appuser/.nx-neptune
     healthcheck:
-      test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:8080/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
       interval: 10s
       timeout: 3s
       retries: 3
 
   graph-explorer:
-    image: ${GRAPH_EXPLORER_IMAGE:-public.ecr.aws/neptune/graph-explorer:latest}
+    image: ${GRAPH_EXPLORER_IMAGE:-public.ecr.aws/neptune/graph-explorer:3.3.0}
     ports:
       - "127.0.0.1:443:443"
       - "127.0.0.1:80:80"
@@ -40,3 +42,6 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+
+volumes:
+  proxy-data:

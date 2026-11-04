@@ -48,9 +48,18 @@ To start Graph Explorer next to `make dev`, run `make up-ge` (the Makefile uses 
 default; pass `RUNTIME=docker` to every target to use Docker). See the
 [setup guide](https://awslabs.github.io/nx-neptune/proxy/setup/#start-graph-explorer).
 
-Running the proxy itself in a container (`make up`, `make run`) isn't supported yet:
-the image only includes the UI if you run `make ui` first, and `make up` resets the
-project database on every run.
+To run the proxy and Graph Explorer together in containers instead, export your AWS
+credentials (see [Docker Compose](#docker-compose)) and run:
+
+```bash
+make up                  # proxy + Graph Explorer with compose
+make up RUNTIME=docker   # the Makefile uses finch by default
+```
+
+The image builds the UI itself, so `make ui` isn't needed. Projects are kept in the
+`proxy-data` volume across runs (`make down` keeps it). The launch URL with the token
+is in `make logs`. When your credentials expire, export new ones and run `make up`
+again: this restarts both containers, and the proxy prints a new launch URL.
 
 | Target | Description |
 |---|---|
