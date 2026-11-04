@@ -44,12 +44,13 @@ so the graphs it creates are reachable from your machine and can be deleted. If 
 start the server another way, set these variables yourself (see
 [Graph creation defaults](../README.md#graph-creation-defaults)).
 
-To run in a container instead:
+To start Graph Explorer next to `make dev`, run `make up-ge` (the Makefile uses finch by
+default; pass `RUNTIME=docker` to every target to use Docker). See the
+[setup guide](https://awslabs.github.io/nx-neptune/proxy/setup/#start-graph-explorer).
 
-```bash
-make up                  # proxy + Graph Explorer with compose
-make up RUNTIME=docker   # the Makefile uses finch by default
-```
+Running the proxy itself in a container (`make up`, `make run`) isn't supported yet:
+the image only includes the UI if you run `make ui` first, and `make up` resets the
+project database on every run.
 
 | Target | Description |
 |---|---|
@@ -79,6 +80,14 @@ AWS credentials are passed via environment variables for **local development onl
 - `aws sso login`
 - `aws sts assume-role`
 - Instance profile (when running on EC2/ECS)
+
+The containers only receive `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
+`AWS_SESSION_TOKEN`, so with `aws sso login` or a profile, export them first:
+
+```bash
+aws sso login --profile <profile>
+eval "$(aws configure export-credentials --profile <profile> --format env)"
+```
 
 Do not deploy this docker-compose configuration to shared or production environments.
 

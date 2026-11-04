@@ -21,7 +21,7 @@ The examples use `paysim_csv`, a table of synthetic financial transactions from 
 
    Under your project in the sidebar, choose **+ Add Graph**. This opens the **Import** page for a new projection.
 
-   ![The Projects page with a new project name entered.](./walkthrough/02-1-project-page.png)
+   ![The project page with the + Add Graph link under the project in the sidebar.](./walkthrough/02-1-project-page.png)
 
    Choose the Athena **Catalog** and **Database** that contain your table, an **S3 Staging Bucket** for the exported data, the graph **Memory (m-NCU)**, and a **Graph Name**. Choose **Validate Resources** to check that the proxy can reach them with your credentials.
 
@@ -73,9 +73,9 @@ The examples use `paysim_csv`, a table of synthetic financial transactions from 
 
 7. **Open the graph in Graph Explorer**
 
-   Start Graph Explorer if it isn't running: in a second shell with the same AWS credentials and region exported, run `make up-ge` from `proxy/`.
+   Start Graph Explorer if it isn't running, as described in [Start Graph Explorer](/nx-neptune/proxy/setup/#start-graph-explorer).
 
-   Back in the proxy UI, choose **Open in Graph Explorer** on the graph. It's available once the graph status is `AVAILABLE`. Graph Explorer opens on `https://localhost` with a connection to the graph filled in, using openCypher with IAM authentication.
+   Back in the proxy UI, choose **Open in Graph Explorer** on the graph. It's available once the graph status is `AVAILABLE`. Graph Explorer opens on `https://localhost` (the default link, with Graph Explorer on port 443) with a connection to the graph filled in, using openCypher with IAM authentication. If the link shows a connection error, check with `finch ps` or `docker ps` that the `graph-explorer` container is running.
 
    <Aside type="note">
      Graph Explorer uses a self-signed certificate on `https://localhost`, so your browser shows a warning the first time. Accept it to continue.
