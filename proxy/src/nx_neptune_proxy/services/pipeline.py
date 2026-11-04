@@ -4,6 +4,8 @@
 import logging
 from functools import partial
 
+from botocore.exceptions import ClientError
+
 from nx_neptune_proxy.config import get_settings
 from nx_neptune_proxy.services.projection_service import projection_service
 from nx_neptune_proxy.services.projection_store import Projection, store
@@ -55,9 +57,11 @@ async def run_pipeline(projection: Projection) -> None:
             neptune = ClientFactory().neptune()
             try:
                 resp = neptune.get_graph(graphIdentifier=projection.graph_id)
-            except Exception:
-                # Recorded graph no longer exists (or is unreachable): treat as a
-                # fresh run and create a new graph below rather than adopting one.
+            except ClientError as e:
+                # Only a missing graph means a fresh run. Any other error (throttling,
+                # access denied) is raised, so the recorded graph is not orphaned.
+                if e.response["Error"]["Code"] != "ResourceNotFoundException":
+                    raise
                 logger.warning(
                     "Recorded graph_id %s not retrievable; creating a new graph",
                     projection.graph_id,

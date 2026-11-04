@@ -18,6 +18,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from nx_neptune_proxy.services.pipeline import run_pipeline
 from nx_neptune_proxy.services.project_store import store as project_store
@@ -181,11 +182,13 @@ async def test_first_run_does_not_reuse_sibling_projection_graph(
     mock_client = MagicMock()
     mock_boto3_client.return_value = mock_client
     mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-    mock_client.list_graphs.side_effect = [
-        {"graphs": [sibling]},
-        {"graphs": [sibling, own]},
-    ]
-    mock_create.return_value = "g-sales"
+    mock_client.list_graphs.return_value = {"graphs": [sibling, own]}
+
+    def create(**kwargs):
+        kwargs["on_created"]("g-sales")
+        return "g-sales"
+
+    mock_create.side_effect = create
     mock_import.return_value = "task-1"
 
     projection = _make_projection(graph_name="sales")
@@ -233,11 +236,15 @@ async def test_retry_resets_only_the_recorded_graph_by_id(
     sm.create_graph.assert_not_called()
 
 
+def _client_error(code):
+    return ClientError({"Error": {"Code": code, "Message": code}}, "GetGraph")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "get_graph",
     [
-        {"side_effect": Exception("ResourceNotFoundException")},
+        {"side_effect": _client_error("ResourceNotFoundException")},
         {"return_value": {"status": "DELETING", "name": "nxp-my-graph"}},
     ],
     ids=["not_found", "deleting"],
@@ -269,6 +276,37 @@ async def test_stale_recorded_graph_creates_new(
     sm.get_or_create_graph.assert_not_called()
     sm.reset_graph.assert_not_called()
     assert store.get(projection.id).graph_id == "g-new"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", ["ThrottlingException", "AccessDeniedException"])
+@patch("nx_neptune.clients.client_factory.ClientFactory")
+@patch("nx_neptune.session_manager.SessionManager")
+async def test_recorded_graph_lookup_error_fails_and_keeps_id(
+    mock_sm_cls, mock_cf, clear_store, code
+):
+    """If looking up the recorded graph fails for any reason other than not
+    found, the run fails and keeps the recorded id instead of creating a new graph."""
+    projection = _make_projection()
+    store.update(projection.id, graph_id="g-mine")
+    projection = store.get(projection.id)
+
+    neptune = mock_cf.return_value.neptune.return_value
+    neptune.get_graph.side_effect = _client_error(code)
+
+    sm = mock_sm_cls.return_value
+    sm.create_graph = AsyncMock()
+    sm.reset_graph = AsyncMock()
+    sm.import_from_table = AsyncMock()
+
+    await run_pipeline(projection)
+
+    sm.create_graph.assert_not_called()
+    sm.reset_graph.assert_not_called()
+    sm.import_from_table.assert_not_called()
+    result = store.get(projection.id)
+    assert result.status == "failed"
+    assert result.graph_id == "g-mine"
 
 
 @pytest.mark.asyncio

@@ -357,8 +357,8 @@ class TestSessionManager:
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
         mock_client.list_graphs.return_value = {
             "graphs": [
-                {"name": "test-old", "id": "g-old", "status": "AVAILABLE"},
-                {"name": "test-new", "id": "g-new", "status": "AVAILABLE"},
+                {"name": f"test-{UUID_1}", "id": "g-old", "status": "AVAILABLE"},
+                {"name": f"test-{UUID_2}", "id": "g-new", "status": "AVAILABLE"},
             ]
         }
         mock_create.return_value = "g-new"
@@ -381,7 +381,7 @@ class TestSessionManager:
         mock_boto3_client.return_value = mock_client
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
         mock_client.list_graphs.return_value = {
-            "graphs": [{"name": "test-new", "id": "g-new", "status": "AVAILABLE"}]
+            "graphs": [{"name": f"test-{UUID_2}", "id": "g-new", "status": "AVAILABLE"}]
         }
         mock_create.return_value = "g-new"
         on_created = MagicMock()
@@ -402,7 +402,7 @@ class TestSessionManager:
         mock_boto3_client.return_value = mock_client
         mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
         mock_client.list_graphs.return_value = {
-            "graphs": [{"name": "test-old", "id": "g-old", "status": "AVAILABLE"}]
+            "graphs": [{"name": f"test-{UUID_1}", "id": "g-old", "status": "AVAILABLE"}]
         }
         mock_create.side_effect = Exception("create failed")
 
