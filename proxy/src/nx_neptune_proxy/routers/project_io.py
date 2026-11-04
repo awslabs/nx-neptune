@@ -9,30 +9,21 @@ and re-importing it to recreate the project in another environment.
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
 from typing import Optional
 
-from botocore.exceptions import ClientError
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from nx_neptune.clients.client_factory import ClientFactory
-from nx_neptune.clients.iam_client import split_s3_arn_to_bucket_and_path
 from pydantic import BaseModel, Field
 
-from nx_neptune_proxy.config import Settings
 from nx_neptune_proxy.routers.schemas import ProjectExportPayload, ProjectionExport
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_service import projection_service
 from nx_neptune_proxy.utils.aws_helper import (
     check_body_size,
     check_content_length,
-    check_key_not_exists,
-    friendly_s3_error,
-    list_s3_json_objects,
     require_name,
 )
-from nx_neptune_proxy.utils.sanitize import sanitize_filename, sanitize_s3_key_name
+from nx_neptune_proxy.utils.sanitize import sanitize_filename
 
 router = APIRouter(prefix="/api/v0/project", tags=["project-io"])
 
@@ -41,24 +32,6 @@ MAX_PROJECT_NAME_LENGTH = 100
 
 
 # --- Helpers ---
-
-
-def _get_export_bucket_tuple() -> tuple:
-    """Return (bucket, prefix) or raise 404 if not configured."""
-    settings = Settings.from_env()
-    if not settings.config_bucket:
-        raise HTTPException(status_code=404, detail="S3 export bucket not configured")
-    bucket, prefix = split_s3_arn_to_bucket_and_path(settings.config_bucket)
-    return bucket, prefix.rstrip("/")
-
-
-def _s3_object_to_entry(obj: dict) -> dict:
-    """Convert an S3 object dict to an API response entry."""
-    return {
-        "key": obj["Key"],
-        "filename": obj["Key"].rsplit("/", 1)[-1],
-        "last_modified": obj["LastModified"].isoformat(),
-    }
 
 
 def _build_export_payload(project_id: str) -> tuple[dict, str]:
@@ -72,16 +45,6 @@ def _build_export_payload(project_id: str) -> tuple[dict, str]:
     )
     payload = ProjectExportPayload.from_project(p, projections, queries_by_projection)
     return payload.model_dump(), p.name
-
-
-def _build_s3_key(name: str, prefix: str) -> tuple[str, str]:
-    """Build S3 key from project name and prefix. Returns (key, filename)."""
-    sanitized = sanitize_s3_key_name(name) or "project"
-    now = datetime.now(timezone.utc)
-    timestamp = now.strftime("%Y%m%d_%H%M%S") + f"{now.microsecond // 1000:03d}"
-    filename = f"{sanitized}_{timestamp}.json"
-    key = f"{prefix}/{filename}" if prefix else filename
-    return key, filename
 
 
 def _parse_payload(contents: bytes) -> ProjectExportPayload:
@@ -135,31 +98,6 @@ def export_project(project_id: str):
     )
 
 
-@router.post("/{project_id}/export/s3", summary="Export a project to S3")
-def export_project_to_s3(project_id: str):
-    """Export a project and its projections to the configured S3 bucket."""
-    bucket, prefix = _get_export_bucket_tuple()
-    payload, name = _build_export_payload(project_id)
-    key, filename = _build_s3_key(name, prefix)
-
-    s3 = ClientFactory().s3()
-    try:
-        check_key_not_exists(s3, bucket, key)
-        s3.put_object(
-            Bucket=bucket,
-            Key=key,
-            Body=json.dumps(payload, indent=2),
-            ContentType="application/json",
-            Tagging="graph_studio=true",
-        )
-    except HTTPException:
-        raise
-    except ClientError as e:
-        raise HTTPException(status_code=502, detail=friendly_s3_error(e))
-
-    return {"filename": filename, "key": key}
-
-
 # --- Import endpoints ---
 
 
@@ -170,50 +108,6 @@ async def import_project(request: Request):
     contents = await request.body()
     check_body_size(contents, MAX_IMPORT_SIZE)
 
-    payload = _parse_payload(contents)
-    result = _import_from_payload(payload)
-    return {"imported": result}
-
-
-@router.get("/import/s3/list", summary="List available exports from S3")
-def list_s3_exports():
-    """List the last 10 export files from S3 (filtered by prefix)."""
-    bucket, prefix = _get_export_bucket_tuple()
-    s3 = ClientFactory().s3()
-
-    try:
-        json_objects = list_s3_json_objects(s3, bucket, prefix)
-
-        # Sort by last modified descending, take last 10
-        json_objects.sort(key=lambda o: o["LastModified"], reverse=True)
-        recent = json_objects[:10]
-
-        return {"files": [_s3_object_to_entry(obj) for obj in recent]}
-    except ClientError as e:
-        raise HTTPException(status_code=502, detail=friendly_s3_error(e))
-
-
-@router.post("/import/s3", summary="Import a project from S3", status_code=201)
-def import_project_from_s3(request_body: dict):
-    """Import a project from a specific S3 file."""
-    key = request_body.get("key")
-    if not key:
-        raise HTTPException(status_code=400, detail="Missing 'key' in request body")
-
-    bucket, prefix = _get_export_bucket_tuple()
-    if prefix and not key.startswith(f"{prefix}/"):
-        raise HTTPException(
-            status_code=400, detail="Key must be under the export prefix."
-        )
-    s3 = ClientFactory().s3()
-
-    try:
-        resp = s3.get_object(Bucket=bucket, Key=key)
-        contents = resp["Body"].read()
-    except ClientError as e:
-        raise HTTPException(status_code=502, detail=friendly_s3_error(e))
-
-    check_body_size(contents, MAX_IMPORT_SIZE)
     payload = _parse_payload(contents)
     result = _import_from_payload(payload)
     return {"imported": result}

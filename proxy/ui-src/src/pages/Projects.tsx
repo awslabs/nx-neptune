@@ -1,20 +1,15 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { projectApi, metadata } from "../api";
+import { projectApi } from "../api";
 import { Card, Button } from "../components/ui";
 
 export function Projects() {
   const [name, setName] = useState("");
   const [importStatus, setImportStatus] = useState<string | null>(null);
-  const [exportBucket, setExportBucket] = useState<string | null>(null);
   const [importDropdownOpen, setImportDropdownOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importDropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    metadata.config().then(c => setExportBucket(c.config_bucket));
-  }, []);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -84,17 +79,6 @@ export function Projects() {
                 >
                   Upload file
                 </button>
-                {exportBucket && (
-                  <button
-                    className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100"
-                    onClick={() => {
-                      setImportDropdownOpen(false);
-                      window.dispatchEvent(new Event("open-s3-import-dialog"));
-                    }}
-                  >
-                    Load from S3
-                  </button>
-                )}
               </div>
             )}
           </div>
