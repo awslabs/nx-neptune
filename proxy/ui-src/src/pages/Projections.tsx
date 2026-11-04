@@ -18,7 +18,6 @@ export function Projections() {
   const [alerts, setAlerts] = useState<{ graphId: string; graphName: string; message: string }[]>([]);
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
-  const [exportStatus, setExportStatus] = useState<string | null>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const filterProjectId = searchParams.get("project");
@@ -207,11 +206,6 @@ export function Projections() {
                     >
                       Download
                     </button>
-                  </div>
-                )}
-                {exportStatus && (
-                  <div className="absolute right-0 mt-1 whitespace-nowrap rounded bg-gray-900 px-3 py-1.5 text-xs text-white shadow-lg">
-                    {exportStatus}
                   </div>
                 )}
               </div>
