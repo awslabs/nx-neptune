@@ -12,11 +12,12 @@ credentials need the IAM permissions listed in
 [Prerequisites](https://awslabs.github.io/nx-neptune/getting-started/prerequisites/)
 for Athena, S3 and Neptune Analytics.
 
-> **Warning:** `make dev` and `make up` set `NETWORKX_PUBLIC_CONNECTIVITY=true` and
-> `NETWORKX_DELETION_PROTECTION=false`, so the graphs they create have a **public
-> endpoint** and **no deletion protection**. This lets you reach them from your machine
-> and delete them when you're done. Use them only with test data in a development
-> account. If you start the server another way, you get the secure defaults (see
+> **Warning:** `make dev`, `make run`, `make up` and `docker-compose.yml` set
+> `NETWORKX_PUBLIC_CONNECTIVITY=true` and `NETWORKX_DELETION_PROTECTION=false`, so the
+> graphs they create have a **public endpoint** and **no deletion protection**. This
+> lets you reach them from your machine and delete them when you're done. Use them only
+> with test data in a development account. If you run `python -m nx_neptune_proxy`
+> yourself, you get the secure defaults (see
 > [Graph creation defaults](../README.md#graph-creation-defaults)).
 
 ```bash

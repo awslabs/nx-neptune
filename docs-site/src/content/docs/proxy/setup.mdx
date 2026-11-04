@@ -23,7 +23,7 @@ The proxy runs on your machine and listens on `127.0.0.1` only. [Graph Explorer]
 ## Start the proxy
 
 <Aside type="caution">
-  `make dev` and `make up` create graphs with a **public endpoint** and **without deletion protection** (`NETWORKX_PUBLIC_CONNECTIVITY=true`, `NETWORKX_DELETION_PROTECTION=false`), so you can reach them from your machine and delete them when you're done. Use them only with test data in a development account. If you start the proxy another way, you get the secure defaults: a private graph, reachable only from its VPC, with deletion protection on. See [Graph creation defaults](https://github.com/awslabs/nx-neptune#graph-creation-defaults).
+  `make dev`, `make run`, `make up` and the compose file create graphs with a **public endpoint** and **without deletion protection** (`NETWORKX_PUBLIC_CONNECTIVITY=true`, `NETWORKX_DELETION_PROTECTION=false`), so you can reach them from your machine and delete them when you're done. Use them only with test data in a development account. If you run `python -m nx_neptune_proxy` yourself, you get the secure defaults: a private graph, reachable only from its VPC, with deletion protection on. See [Graph creation defaults](https://github.com/awslabs/nx-neptune#graph-creation-defaults).
 </Aside>
 
 <Steps>
@@ -73,7 +73,7 @@ Graph Explorer is optional. Start it only when you want to visualize a graph. It
 | finch (default) | `finch` | `finch vm init`, then `finch vm start` after each restart |
 | Docker | `docker` | Docker Engine or Docker Desktop with Compose v2 (`docker compose`) |
 
-Pass the same `RUNTIME=` value to every target, for example `make up-ge RUNTIME=docker` and `make down RUNTIME=docker`. Podman isn't tested. Rootless podman can't bind port 443, so set `GE_PORT` to a port above 1024 (see below).
+Pass the same `RUNTIME=` value to every target, for example `make up-ge RUNTIME=docker` and `make down RUNTIME=docker`. Podman (`RUNTIME=podman`, with podman-compose) works with `GE_PORT` set to a port above 1024 (see below), because rootless podman can't bind port 443.
 
 Graph Explorer signs its requests to Neptune Analytics with the AWS credentials exported in your shell. It can't read a profile or the `aws sso login` cache, so export the credentials as environment variables. In a second shell, run from `proxy/`:
 
@@ -98,7 +98,7 @@ make up-ge
 This starts only the Graph Explorer container, on `https://localhost`. It uses host port 443; to use another port, set `GE_PORT` (for example `GE_PORT=8443`). If your credentials expire, export new ones and run `make up-ge` again. To stop Graph Explorer, run `make down`.
 
 <Aside type="caution">
-  If `make up-ge` fails, check that port 443 (or `GE_PORT`) is free, that the finch VM is running (`finch vm start`), and that the image pull succeeded. `finch ps` or `docker ps` shows whether the `graph-explorer` container is running.
+  If `make up-ge` fails, check that port 443 (or `GE_PORT`) is free, that the finch VM is running (`finch vm start`), and that the image pull succeeded. To check that Graph Explorer is reachable, run `curl -k https://localhost:<GE_PORT>/explorer/` or open the URL in a browser. With finch, `make up-ge` can exit 0 and `finch ps` can show the container running even when the host port is taken, so check reachability rather than the container status.
 </Aside>
 
 The container publishes its ports on `127.0.0.1`. With finch on macOS, the finch VM can still listen on all network interfaces.
