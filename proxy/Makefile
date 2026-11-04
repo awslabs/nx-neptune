@@ -46,8 +46,7 @@ clean:            ## Remove container and image.
 	@$(RUNTIME) rmi nx-neptune-proxy 2>/dev/null || true
 
 up:               ## Start proxy + Graph Explorer with compose.
-	set -o pipefail; NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
-	$(RUNTIME) compose up --build --force-recreate -d 2>&1 | { grep -v "nerdctl run" || true; }
+	set -o pipefail; $(RUNTIME) compose up --build --force-recreate -d 2>&1 | { grep -v "nerdctl run" || true; }
 
 up-ge:            ## Start only Graph Explorer.
 	set -o pipefail; $(RUNTIME) compose up graph-explorer -d 2>&1 | { grep -v "nerdctl run" || true; }

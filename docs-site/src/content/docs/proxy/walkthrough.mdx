@@ -75,7 +75,7 @@ The examples use `paysim_csv`, a table of synthetic financial transactions from 
 
    Start Graph Explorer if it isn't running, as described in [Start Graph Explorer](/nx-neptune/proxy/setup/#start-graph-explorer).
 
-   Back in the proxy UI, choose **Open in Graph Explorer** on the graph. It's available once the graph status is `AVAILABLE`. Graph Explorer opens on `https://localhost` (the default link, with Graph Explorer on port 443) with a connection to the graph filled in, using openCypher with IAM authentication. If the link shows a connection error, check with `finch ps` or `docker ps` that the `graph-explorer` container is running.
+   Back in the proxy UI, choose **Open in Graph Explorer** on the graph. It's available once the graph status is `AVAILABLE`. Graph Explorer opens on `https://localhost` (or on the port you set with `GE_PORT`) with a connection to the graph filled in, using openCypher with IAM authentication. If the link shows a connection error, check with `finch ps` or `docker ps` that the `graph-explorer` container is running.
 
    <Aside type="note">
      Graph Explorer uses a self-signed certificate on `https://localhost`, so your browser shows a warning the first time. Accept it to continue.

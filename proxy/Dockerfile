@@ -3,6 +3,7 @@ WORKDIR /src/proxy/ui-src
 COPY proxy/ui-src/package.json proxy/ui-src/package-lock.json ./
 RUN npm ci
 COPY proxy/ui-src/ ./
+ARG VITE_GRAPH_EXPLORER_URL
 RUN npm run build
 
 FROM python:3.11-slim

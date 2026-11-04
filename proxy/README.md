@@ -90,6 +90,10 @@ AWS credentials are passed via environment variables for **local development onl
 - `aws sts assume-role`
 - Instance profile (when running on EC2/ECS)
 
+With finch, compose runs inside the finch VM and only sees the AWS credential variables
+from your shell. Set `AWS_DEFAULT_REGION` and `GE_PORT` in `proxy/.env` (gitignored)
+instead of exporting them.
+
 The containers only receive `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
 `AWS_SESSION_TOKEN`, so with `aws sso login` or a profile, export them first:
 
@@ -122,4 +126,5 @@ cd ui-src && npm run dev
 | `PORT` | `8080` | Server port for `python -m nx_neptune_proxy` (`make dev` always uses `8080`) |
 | `CORS_ALLOWED_ORIGINS` | *(none)* | Comma-separated list of allowed browser origins (full `scheme://host[:port]`, e.g. `https://app.example.com`). This is the single source of truth for origins: it drives the CORS response headers, the server-side Origin check, and the hostnames trusted in the `Host` header. Loopback origins are always allowed, so no configuration is needed for local/Docker use. |
 | `LOG_LEVEL` | `info` | Logging level |
+| `GE_PORT` | `443` | Host port for Graph Explorer (`make up`, `make up-ge`), published on `127.0.0.1`. `make up` builds the UI with the matching link; with `make dev`, build it with `VITE_GRAPH_EXPLORER_URL=https://localhost:<port>/explorer make ui` |
 | `NX_NEPTUNE_DB_PATH` | `~/.nx-neptune/proxy.db` | SQLite database path |

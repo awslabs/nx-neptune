@@ -73,7 +73,7 @@ Graph Explorer is optional. Start it only when you want to visualize a graph. It
 | finch (default) | `finch` | `finch vm init`, then `finch vm start` after each restart |
 | Docker | `docker` | Docker Engine or Docker Desktop with Compose v2 (`docker compose`) |
 
-Pass the same `RUNTIME=` value to every target, for example `make up-ge RUNTIME=docker` and `make down RUNTIME=docker`. Podman isn't supported: rootless podman can't bind ports 80 and 443.
+Pass the same `RUNTIME=` value to every target, for example `make up-ge RUNTIME=docker` and `make down RUNTIME=docker`. Podman isn't tested. Rootless podman can't bind port 443, so set `GE_PORT` to a port above 1024 (see below).
 
 Graph Explorer signs its requests to Neptune Analytics with the AWS credentials exported in your shell. It can't read a profile or the `aws sso login` cache, so export the credentials as environment variables. In a second shell, run from `proxy/`:
 
@@ -86,15 +86,24 @@ make up-ge
 
 `AWS_DEFAULT_REGION` must be the region of your graphs. If it isn't set, Graph Explorer uses `us-west-2`.
 
-This starts only the Graph Explorer container, on `https://localhost`. It needs host ports 443 and 80 to be free. If your credentials expire, export new ones and run `make up-ge` again. To stop Graph Explorer, run `make down`.
+<Aside type="caution">
+  With finch, compose runs inside the finch VM and only sees the AWS credential variables from your shell. Set `AWS_DEFAULT_REGION`, and `GE_PORT` if you use it, in `proxy/.env` instead (the file is gitignored):
+
+  ```bash
+  AWS_DEFAULT_REGION=<region-of-your-graphs>
+  GE_PORT=8443
+  ```
+</Aside>
+
+This starts only the Graph Explorer container, on `https://localhost`. It uses host port 443; to use another port, set `GE_PORT` (for example `GE_PORT=8443`). If your credentials expire, export new ones and run `make up-ge` again. To stop Graph Explorer, run `make down`.
 
 <Aside type="caution">
-  If `make up-ge` fails, check that ports 443 and 80 are free, that the finch VM is running (`finch vm start`), and that the image pull succeeded. `finch ps` or `docker ps` shows whether the `graph-explorer` container is running.
+  If `make up-ge` fails, check that port 443 (or `GE_PORT`) is free, that the finch VM is running (`finch vm start`), and that the image pull succeeded. `finch ps` or `docker ps` shows whether the `graph-explorer` container is running.
 </Aside>
 
 The container publishes its ports on `127.0.0.1`. With finch on macOS, the finch VM can still listen on all network interfaces.
 
-The proxy UI links to Graph Explorer at `https://localhost/explorer`. If Graph Explorer runs at a different URL, set it when you build the UI: `VITE_GRAPH_EXPLORER_URL=<url> make ui`.
+The proxy UI links to Graph Explorer at `https://localhost/explorer`. If you set `GE_PORT`, or Graph Explorer runs at a different URL, set the link when you build the UI, for example `VITE_GRAPH_EXPLORER_URL=https://localhost:8443/explorer make ui`. `make up` sets it from `GE_PORT` for you.
 
 <Aside type="tip">
   To run the proxy in a container as well, run `make up` instead of `make dev` and `make up-ge`, with the same credentials and region exported. It builds the image (including the UI), starts the proxy and Graph Explorer, and keeps your projects in a volume across runs. The launch URL is in `make logs`. When your credentials expire, export new ones and run `make up` again; this restarts both containers, and the proxy prints a new launch URL.
