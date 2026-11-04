@@ -87,7 +87,7 @@ class NeptuneConfig(Config):
         If True, saves the Neptune Analytics instance as a snapshot. Defaults to False.
 
     destroy_instance: bool
-        If True, destroys the instance after the call. Defaults to False.
+        If True, destroys the instance. Defaults to False.
 
     reset_graph: bool
         If True, resets the graph. Defaults to False.

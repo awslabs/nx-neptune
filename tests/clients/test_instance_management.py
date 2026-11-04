@@ -735,7 +735,6 @@ async def test_import_csv_from_s3_success(
         mock_na_graph.na_client.client,
         True,
         check_permissions=False,
-        allow_unmanaged=False,
     )
     mock_start_import_task.assert_called_once_with(
         mock_na_graph.na_client.client,

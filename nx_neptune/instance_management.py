@@ -537,7 +537,6 @@ async def import_csv_from_s3(
     skip_snapshot=True,
     polling_interval=None,
     max_attempts=None,
-    allow_unmanaged=False,
 ) -> str:
     """Import CSV data from S3 into a Neptune Analytics graph.
 
@@ -554,15 +553,13 @@ async def import_csv_from_s3(
         skip_snapshot (bool, optional): Whether to skip creating a snapshot when resetting. Defaults to True.
         polling_interval (int): Time interval in seconds for job status query
         max_attempts: Maximum attempts for status checks
-        allow_unmanaged (bool, optional): Whether to reset a graph that was not created
-            by nx-neptune. Defaults to False.
 
     Returns:
         str: The task ID of the completed import
 
     Raises:
         ValueError: If the role lacks required permissions, or the graph would be
-            reset but was not created by nx-neptune and allow_unmanaged is False
+            reset but was not created by nx-neptune
     """
     graph_id = na_graph.na_client.graph_id
     na_client = na_graph.na_client.client
@@ -584,7 +581,6 @@ async def import_csv_from_s3(
             na_client,
             skip_snapshot,
             check_permissions=False,
-            allow_unmanaged=allow_unmanaged,
         )
 
     # Run Import
@@ -653,7 +649,6 @@ async def reset_graph(
     polling_interval=None,
     max_attempts=None,
     check_permissions: bool = True,
-    allow_unmanaged: bool = False,
 ) -> str:
     """Reset the Neptune Analytics graph by clearing all data while preserving the graph configuration.
 
@@ -665,23 +660,20 @@ async def reset_graph(
         max_attempts: Maximum attempts for status checks
         check_permissions (bool, optional): Whether to check the caller's IAM permissions
             before resetting. Defaults to True.
-        allow_unmanaged (bool, optional): Whether to reset a graph that was not created
-            by nx-neptune. Defaults to False.
 
     Returns:
         str: The graph ID of the reset instance
 
     Raises:
         ValueError: If the role lacks required permissions, or the graph was not
-            created by nx-neptune and allow_unmanaged is False
+            created by nx-neptune
         ClientError: If there's an issue with the AWS API call
         Exception: If an invalid status code is returned
     """
     if check_permissions:
         _create_iam_wrapper().has_reset_na_permissions()
     na_client = na_client or ClientFactory().neptune()
-    if not allow_unmanaged:
-        _assert_library_graph(na_client, graph_id, "reset")
+    _assert_library_graph(na_client, graph_id, "reset")
 
     logger.info(
         f"Perform reset_graph action on graph: [{graph_id}] with skip_snapshot: [{skip_snapshot}]"

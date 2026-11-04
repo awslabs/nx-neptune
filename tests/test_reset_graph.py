@@ -109,25 +109,6 @@ async def test_reset_refuses_graph_not_created_by_library(tags):
 
 
 @pytest.mark.asyncio
-async def test_reset_allow_unmanaged_skips_tag_check():
-    """allow_unmanaged=True resets a graph without reading its tags."""
-    client = _managed_client({})
-    client.get_graph.side_effect = [{"status": "AVAILABLE"}]
-
-    with patch(
-        "nx_neptune.instance_management.TaskFuture.wait_until_complete",
-        new_callable=AsyncMock,
-    ):
-        result = await InstanceUtil.reset_graph(
-            "test-graph-id", client, check_permissions=False, allow_unmanaged=True
-        )
-
-    assert result == "test-graph-id"
-    client.list_tags_for_resource.assert_not_called()
-    client.reset_graph.assert_called_once()
-
-
-@pytest.mark.asyncio
 async def test_reset_tag_read_error_raises_without_reset():
     """If the tags cannot be read, the AWS error is raised and nothing is reset."""
     client = _managed_client()

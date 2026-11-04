@@ -377,9 +377,7 @@ class TestExecuteSetupRoutinesOnGraph:
 
             # Verify import_csv_from_s3 was called
             mock_import.assert_called_once_with(
-                mock_na_graph,
-                "test-bucket",
-                mock_config.skip_graph_reset,
+                mock_na_graph, "test-bucket", mock_config.skip_graph_reset
             )
 
             # Verify the result is the config

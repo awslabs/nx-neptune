@@ -16,13 +16,13 @@ Behavior changes:
   `aws neptune-graph tag-resource --resource-arn <arn> --tags nx-neptune:managed=true`.
 - The `agent` and `nx-neptune:managed` tags are always set to the library's values.
   A caller-supplied `agent` tag is overwritten. Other caller tags are kept.
-- `delete_na_instance`, and NetworkX teardown with `destroy_instance=True`, only
-  delete graphs created by nx-neptune, and raise `ValueError` for other graphs.
-  Deletion protection is only cleared on graphs created by nx-neptune.
+- `delete_na_instance` only deletes graphs created by nx-neptune, and raises
+  `ValueError` for other graphs. Deletion protection is only cleared on graphs
+  created by nx-neptune.
 - `reset_graph`, and `import_csv_from_s3` with `reset_graph_ahead=True`, only reset
-  graphs created by nx-neptune, and raise `ValueError` for other graphs. Pass
-  `allow_unmanaged=True` to reset another graph. `reset_graph` also checks IAM
-  permissions; pass `check_permissions=False` to skip the check.
+  graphs created by nx-neptune, and raise `ValueError` for other graphs.
+  `reset_graph` also checks IAM permissions; pass `check_permissions=False` to skip
+  the check.
 - NetworkX backend: a graph provided through `graph_id` (or `NETWORKX_GRAPH_ID`)
   must be created by nx-neptune. Its tags are checked before each call, and other
   graphs raise `ValueError`. To use your own graph, add the
