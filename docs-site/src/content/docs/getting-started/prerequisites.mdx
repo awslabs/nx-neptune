@@ -296,6 +296,25 @@ This policy combines graph management, S3 import/export, Athena, the import role
 
 `athena:ListDataCatalogs` and `s3:ListAllMyBuckets` don't support resource-level permissions, so they use `"*"`. With the Glue statement limited to your databases, the proxy UI lists only those databases, and validation fails early for tables in others. The import role also needs the trust statement in [Import role](#import-role), and read access to your source tables' buckets isn't included.
 
+### Resources the permission check simulates
+
+Before creating, starting, stopping, or deleting resources, nx-neptune calls `iam:SimulatePrincipalPolicy` to check your permissions. It simulates each action against the resource below, so you can scope your policy to match instead of using `Resource: "*"`. `<partition>` is taken from your role ARN (`aws`, `aws-cn`, or `aws-us-gov`), and `<region>` from the region your boto3 session is configured with (`AWS_DEFAULT_REGION`, or your AWS profile's `region`; or the `region=` keyword). The IAM client's own region is not used, because IAM is a global service. If no region is configured, the check logs a warning and simulates the region as `*`; a policy scoped to a specific region will not be confirmed in that case.
+
+| Actions | Simulated resource ARN |
+|---------|------------------------|
+| `neptune-graph:CreateGraph`, `StartGraph`, `StopGraph`, `DeleteGraph`, `UpdateGraph` | `arn:<partition>:neptune-graph:<region>:<account-id>:graph/*` |
+| `neptune-graph:DeleteGraphSnapshot` | `arn:<partition>:neptune-graph:<region>:<account-id>:graph-snapshot/*` |
+| `neptune-graph:CreateGraphSnapshot`, `RestoreGraphFromSnapshot`, `TagResource` | Either `graph/*` or `graph-snapshot/*` (above, with the matching ARN) |
+| `s3:ListBucket` | `arn:<partition>:s3:::<bucket>`, with `s3:prefix` set to `<prefix>/` when the path has a prefix |
+| `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` | `arn:<partition>:s3:::<bucket>/<prefix>/*`, or `arn:<partition>:s3:::<bucket>/*` when the path has no prefix |
+| `kms:*` actions above | The KMS key ARN you provide |
+
+For actions that list two resource types, nx-neptune simulates both and treats the action as confirmed when your policy allows it on either. The resource types come from the [AWS Service Authorization Reference](https://servicereference.us-east-1.amazonaws.com/v1/neptune-graph/neptune-graph.json).
+
+Neptune Analytics actions are simulated with the context keys `aws:RequestTag/agent` and `aws:ResourceTag/agent` set to `nx-neptune`, and `aws:RequestedRegion` set to the region. A policy that conditions on those keys is therefore matched. Bucket-level and object-level S3 actions are simulated in separate requests, so grant `s3:ListBucket` on the bucket ARN and the object actions on the object ARN.
+
+If an action is not explicitly allowed (an implicit deny), nx-neptune logs a warning and continues, since the real call may still succeed. An explicit deny stops the operation, except when no region is configured: `aws:RequestedRegion` is then omitted, which makes a region-lockdown deny (`StringNotEquals`) fire even for an allowed region, so the check logs a warning and reports the permission as not confirmed instead of stopping. This also applies to an unconditional deny, which cannot be told apart; the real call will still fail.
+
 ## Environment Variables
 
 | Variable | Purpose |
@@ -304,7 +323,7 @@ This policy combines graph management, S3 import/export, Athena, the import role
 | `NETWORKX_ARN_IAM_ROLE` | Import role ARN, read by the `instance_mgmt_lifecycle_demo` and `s3_import_export_demo` notebooks (the library itself uses the [import role](#import-role)) |
 | `NETWORKX_S3_IMPORT_BUCKET_PATH` | S3 path for imports |
 | `NETWORKX_S3_EXPORT_BUCKET_PATH` | S3 path for exports |
-| `AWS_REGION` | AWS region |
+| `AWS_DEFAULT_REGION` | AWS region |
 | `NETWORKX_PUBLIC_CONNECTIVITY` | Give new graphs a public endpoint (default `false`) |
 | `NETWORKX_DELETION_PROTECTION` | Enable deletion protection on new graphs (default `true`) |
 | `NETWORKX_ATHENA_WORKGROUP` | Athena workgroup for queries (default `primary`) |
