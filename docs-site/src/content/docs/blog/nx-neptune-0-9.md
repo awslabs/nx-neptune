@@ -1,5 +1,5 @@
 ---
-title: "nx-neptune 0.9: Declare your graph with CREATE PROPERTY GRAPH"
+title: "nx-neptune 0.9: Declare your graph with PGQL (CREATE PROPERTY GRAPH)"
 date: 2026-11-05
 excerpt: Project data-lake tables into Neptune Analytics by declaring the graph with standard SQL/PGQ, instead of hand-writing projection queries.
 authors: nxNeptuneTeam
