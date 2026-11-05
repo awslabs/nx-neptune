@@ -12,7 +12,7 @@ Your data lake already holds the relationships: who paid whom, which product was
 bought with which. nx-neptune projects those tables into
 [Amazon Neptune Analytics](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/what-is-neptune-analytics.html)
 so you can run graph algorithms on them. Until now, that meant writing the
-projection queries by hand. In 0.9, you declare the graph instead.
+projection queries using SQL. In 0.9, we added the option to declare the graph properties instead using the Property Graph Query Language (PGQL) and map it to SQL for you.  
 
 ## Before: hand-written projection queries
 
