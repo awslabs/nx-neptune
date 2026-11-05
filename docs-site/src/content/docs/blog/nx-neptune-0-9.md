@@ -12,14 +12,17 @@ Your data lake already holds the relationships: who paid whom, which product was
 bought with which. nx-neptune projects those tables into
 [Amazon Neptune Analytics](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/what-is-neptune-analytics.html)
 so you can run graph algorithms on them. Until now, that meant writing the
-projection queries using SQL. In 0.9, we added the option to declare the graph properties instead using the Property Graph Query (PGQ) and map it to SQL for you.  
+projection queries in SQL by hand. In 0.9, you can instead declare the graph
+with a standard SQL/PGQ `CREATE PROPERTY GRAPH` statement, and nx-neptune
+generates the SQL for you.
 
 ## Before: hand-written projection queries in SQL
 
 Neptune Analytics loads vertices and edges from CSV with special columns: `~id`
 and `~label` for vertices, `~from`, `~to` and `~label` for edges, and a type
 suffix on each property. To project a table of accounts and a table of
-transactions, you wrote one Athena query per vertex and edge type:
+transactions correctly, you wrote one Athena query per vertex and edge type,
+and joined each edge's endpoints to the vertex keys so no dangling edges load:
 
 ```sql
 -- customers
@@ -37,8 +40,8 @@ JOIN (SELECT DISTINCT "name" AS "~key" FROM "accounts") "~destination"
   ON "nameDest" = "~destination"."~key";
 ```
 
-That works, but it's easy to get wrong, and the shape of the graph is hidden
-inside the aliases.
+Most hand-written projections skip those joins. That one is correct, but it's
+easy to get wrong, and the shape of the graph is hidden inside the aliases.
 
 ## After: CREATE PROPERTY GRAPH
 
