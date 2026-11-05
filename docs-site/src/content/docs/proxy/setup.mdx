@@ -23,7 +23,7 @@ The proxy runs on your machine and listens on `127.0.0.1` only. [Graph Explorer]
 ## Start the proxy
 
 <Aside type="caution">
-  `make dev`, `make run`, `make up` and the compose file create graphs with a **public endpoint** and **without deletion protection** (`NETWORKX_PUBLIC_CONNECTIVITY=true`, `NETWORKX_DELETION_PROTECTION=false`), so you can reach them from your machine and delete them when you're done. Use them only with test data in a development account. If you run `python -m nx_neptune_proxy` yourself, you get the secure defaults: a private graph, reachable only from its VPC, with deletion protection on. See [Graph creation defaults](https://github.com/awslabs/nx-neptune#graph-creation-defaults).
+  `make dev`, `make run`, `make up` and the compose file create graphs with a **public endpoint** and **without deletion protection** (`NETWORKX_PUBLIC_CONNECTIVITY=true`, `NETWORKX_DELETION_PROTECTION=false`), so you can reach them from your machine and delete them when you're done. Use them only with test data in a development account. If you run `python -m nx_neptune_proxy` yourself without setting `NETWORKX_*`, you get the secure defaults: a private graph, reachable only from its VPC, with deletion protection on. See [Graph creation defaults](https://github.com/awslabs/nx-neptune#graph-creation-defaults).
 </Aside>
 
 <Steps>

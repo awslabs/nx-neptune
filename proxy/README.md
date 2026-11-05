@@ -17,7 +17,7 @@ for Athena, S3 and Neptune Analytics.
 > graphs they create have a **public endpoint** and **no deletion protection**. This
 > lets you reach them from your machine and delete them when you're done. Use them only
 > with test data in a development account. If you run `python -m nx_neptune_proxy`
-> yourself, you get the secure defaults (see
+> yourself without setting `NETWORKX_*`, you get the secure defaults (see
 > [Graph creation defaults](../README.md#graph-creation-defaults)).
 
 ```bash
