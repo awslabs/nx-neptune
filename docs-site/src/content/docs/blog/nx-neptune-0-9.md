@@ -42,7 +42,7 @@ inside the aliases.
 
 ## After: CREATE PROPERTY GRAPH
 
-nx-neptune 0.9 accepts the standard SQL/PGQ (SQL:2023) `CREATE PROPERTY GRAPH`
+nx-neptune 0.9 accepts the standard [SQL/PGQ (SQL:2023)](https://www.iso.org/standard/79473.html) `CREATE PROPERTY GRAPH`
 statement. This is the same graph:
 
 ```sql
@@ -79,7 +79,7 @@ For the full syntax, property types and required permissions, see
 
 ## Use it from Python
 
-Import straight from the DDL:
+Import straight from the DDL with [`SessionManager`](/nx-neptune/data-lake/session-manager/#declaring-the-graph-schema):
 
 ```python
 from nx_neptune import SessionManager
