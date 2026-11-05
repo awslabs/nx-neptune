@@ -14,7 +14,7 @@ bought with which. nx-neptune projects those tables into
 so you can run graph algorithms on them. Until now, that meant writing the
 projection queries using SQL. In 0.9, we added the option to declare the graph properties instead using the Property Graph Query Language (PGQL) and map it to SQL for you.  
 
-## Before: hand-written projection queries
+## Before: hand-written projection queries in SQL
 
 Neptune Analytics loads vertices and edges from CSV with special columns: `~id`
 and `~label` for vertices, `~from`, `~to` and `~label` for edges, and a type
