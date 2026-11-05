@@ -1,0 +1,114 @@
+---
+title: Proxy UI Setup
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+The **nx-neptune proxy** is a local web UI and REST API for the Graph Over Data Lake workflow. It lets you browse your Athena tables, define a graph with SQL or a `CREATE PROPERTY GRAPH` statement, import it into Neptune Analytics, and manage the graph, without writing code. It runs the same Athena → S3 → Neptune Analytics pipeline as [`SessionManager`](/nx-neptune/data-lake/session-manager/).
+
+The proxy runs on your machine and listens on `127.0.0.1` only. [Graph Explorer](https://github.com/aws/graph-explorer) can be started next to it as a container to visualize the graphs you create.
+
+<Aside type="caution">
+  The proxy is a local development tool. Do not deploy it to shared or production environments.
+</Aside>
+
+## Prerequisites
+
+- Python 3.11 or later
+- Node.js and npm, to build the UI
+- [finch](https://github.com/runfinch/finch) or Docker, only to run Graph Explorer (see [Start Graph Explorer](#start-graph-explorer))
+- AWS credentials and a region exported in your shell. Use short-lived credentials (for example from `aws sso login` or `aws sts assume-role`), not long-lived access keys
+- The IAM permissions listed in [Prerequisites](/nx-neptune/getting-started/prerequisites/) for Athena, S3 and Neptune Analytics. The UI also lists Athena catalogs, databases and tables, S3 buckets, and Neptune Analytics graphs
+
+## Start the proxy
+
+<Aside type="caution">
+  `make dev`, `make run`, `make up` and the compose file create graphs with a **public endpoint** and **without deletion protection** (`NETWORKX_PUBLIC_CONNECTIVITY=true`, `NETWORKX_DELETION_PROTECTION=false`), so you can reach them from your machine and delete them when you're done. Use them only with test data in a development account. If you run `python -m nx_neptune_proxy` yourself without setting `NETWORKX_*`, you get the secure defaults: a private graph, reachable only from its VPC, with deletion protection on. See [Graph creation defaults](https://github.com/awslabs/nx-neptune#graph-creation-defaults).
+</Aside>
+
+<Steps>
+
+1. Clone the repository and install the nx-neptune library from source:
+
+   ```bash
+   git clone https://github.com/awslabs/nx-neptune.git
+   cd nx-neptune
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -e .
+   ```
+
+2. Install the proxy and build the UI:
+
+   ```bash
+   cd proxy
+   make install
+   make ui
+   ```
+
+3. Export your AWS credentials and region, then start the proxy:
+
+   ```bash
+   export AWS_DEFAULT_REGION=us-west-2
+   make dev
+   ```
+
+4. Open the launch URL printed on startup:
+
+   ```
+   Open the proxy UI (token valid for this run only):
+     http://127.0.0.1:8080/?token=<token>
+   ```
+
+</Steps>
+
+The token is generated each time the proxy starts and is required for every API call. Opening `http://localhost:8080` without it loads the page, but the API calls fail. The UI keeps the token in memory only, so after a page refresh or a restart (including an auto-reload by `make dev`), open the new launch URL from the proxy output.
+
+## Start Graph Explorer
+
+Graph Explorer is optional. Start it only when you want to visualize a graph. It runs in a container:
+
+| Runtime | `RUNTIME=` | One-time setup |
+|---|---|---|
+| finch (default) | `finch` | `finch vm init`, then `finch vm start` after each restart |
+| Docker | `docker` | Docker Engine or Docker Desktop with Compose v2 (`docker compose`) |
+
+Pass the same `RUNTIME=` value to every target, for example `make up-ge RUNTIME=docker` and `make down RUNTIME=docker`. Podman (`RUNTIME=podman`, with podman-compose) works with `GE_PORT` set to a port above 1024 (see below), because rootless podman can't bind port 443.
+
+Graph Explorer signs its requests to Neptune Analytics with the AWS credentials exported in your shell. It can't read a profile or the `aws sso login` cache, so export the credentials as environment variables. In a second shell, run from `proxy/`:
+
+```bash
+aws sso login --profile <profile>
+eval "$(aws configure export-credentials --profile <profile> --format env)"
+export AWS_DEFAULT_REGION=<region-of-your-graphs>
+make up-ge
+```
+
+`AWS_DEFAULT_REGION` must be the region of your graphs. If it isn't set, Graph Explorer uses `us-west-2`.
+
+<Aside type="caution">
+  With finch, compose runs inside the finch VM and only sees the AWS credential variables from your shell. Set `AWS_DEFAULT_REGION`, and `GE_PORT` if you use it, in `proxy/.env` instead (the file is gitignored):
+
+  ```bash
+  AWS_DEFAULT_REGION=<region-of-your-graphs>
+  GE_PORT=8443
+  ```
+</Aside>
+
+This starts only the Graph Explorer container, on `https://localhost`. It uses host port 443; to use another port, set `GE_PORT` (for example `GE_PORT=8443`). If your credentials expire, export new ones and run `make up-ge` again. To stop Graph Explorer, run `make down`.
+
+<Aside type="caution">
+  If `make up-ge` fails, check that port 443 (or `GE_PORT`) is free, that the finch VM is running (`finch vm start`), and that the image pull succeeded. To check that Graph Explorer is reachable, run `curl -k https://localhost:<GE_PORT>/explorer/` or open the URL in a browser. With finch, `make up-ge` can exit 0 and `finch ps` can show the container running even when the host port is taken, so check reachability rather than the container status.
+</Aside>
+
+The container publishes its ports on `127.0.0.1`. With finch on macOS, the finch VM can still listen on all network interfaces.
+
+The proxy UI links to Graph Explorer at `https://localhost/explorer`. If you set `GE_PORT`, or Graph Explorer runs at a different URL, set the link when you build the UI, for example `VITE_GRAPH_EXPLORER_URL=https://localhost:8443/explorer make ui`. `make up` sets it from `GE_PORT` for you.
+
+<Aside type="tip">
+  To run the proxy in a container as well, run `make up` instead of `make dev` and `make up-ge`, with the same credentials and region exported. It builds the image (including the UI), starts the proxy and Graph Explorer, and keeps your projects in a volume across runs. Like `make dev`, it creates public graphs without deletion protection. The launch URL is in `make logs`. When your credentials expire, export new ones and run `make up` again; this restarts both containers, and the proxy prints a new launch URL.
+</Aside>
+
+For every Makefile target and configuration variable, see the [proxy README](https://github.com/awslabs/nx-neptune/blob/main/proxy/README.md).
+
+Next: [End-to-end walkthrough](/nx-neptune/proxy/walkthrough/).

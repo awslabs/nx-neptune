@@ -62,6 +62,13 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Proxy UI',
+          items: [
+            { label: 'Setup', slug: 'proxy/setup' },
+            { label: 'End-to-End Walkthrough', slug: 'proxy/walkthrough' },
+          ],
+        },
+        {
           label: 'NetworkX Backend',
           items: [
             { label: 'Interface', slug: 'networkx-backend/interface' },
