@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { Network, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronRight, Circle, Plus, Trash2, Upload } from "lucide-react";
 import { clsx } from "clsx";
-import { projectApi, projection, metadata, type Project, type Projection } from "../api";
+import { projectApi, projection, type Project, type Projection } from "../api";
 
 const statusColor: Record<string, string> = {
   complete: "text-green-500",
@@ -15,7 +15,6 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const [projects, setProjects] = useState<Project[]>([]);
   const [projections, setProjections] = useState<Projection[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [exportBucket, setExportBucket] = useState<string | null>(null);
   const [importDropdownOpen, setImportDropdownOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importDropdownRef = useRef<HTMLDivElement>(null);
@@ -44,7 +43,6 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
   useEffect(() => {
     loadProjects();
-    metadata.config().then(c => setExportBucket(c.config_bucket));
     const handler = () => loadProjects();
     window.addEventListener("projects-changed", handler);
     return () => window.removeEventListener("projects-changed", handler);
@@ -146,17 +144,6 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                       >
                         Upload file
                       </button>
-                      {exportBucket && (
-                        <button
-                          className="block w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-100"
-                          onClick={() => {
-                            setImportDropdownOpen(false);
-                            window.dispatchEvent(new Event("open-s3-import-dialog"));
-                          }}
-                        >
-                          Load from S3
-                        </button>
-                      )}
                     </div>
                   )}
                 </div>

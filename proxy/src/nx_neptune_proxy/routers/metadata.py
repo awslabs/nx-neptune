@@ -52,7 +52,6 @@ def get_config():
     return {
         "region": settings.region or "",
         "graph_prefix": settings.graph_prefix,
-        "config_bucket": settings.config_bucket or "",
     }
 
 

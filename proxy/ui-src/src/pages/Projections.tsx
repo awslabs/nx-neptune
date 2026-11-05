@@ -17,9 +17,7 @@ export function Projections() {
   const [actionStates, setActionStates] = useState<Record<string, { actions: string[]; inflight: Inflight | null }>>({});
   const [alerts, setAlerts] = useState<{ graphId: string; graphName: string; message: string }[]>([]);
   const [archivedOpen, setArchivedOpen] = useState(false);
-  const [exportBucket, setExportBucket] = useState<string | null>(null);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
-  const [exportStatus, setExportStatus] = useState<string | null>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const filterProjectId = searchParams.get("project");
@@ -36,7 +34,7 @@ export function Projections() {
 
   useEffect(() => {
     load();
-    metadata.config().then(c => { setRegion(c.region); setExportBucket(c.config_bucket); });
+    metadata.config().then(c => setRegion(c.region));
     projectApi.list().then(list => setProjects(new Map(list.map(p => [p.id, p]))));
   }, []);
 
@@ -185,7 +183,6 @@ export function Projections() {
                   title="Export project"
                 >
                   <Download className="h-3.5 w-3.5" /> Export
-                  {exportBucket && <ChevronDown className="h-3 w-3" />}
                 </button>
                 {exportDropdownOpen && (
                   <div className="absolute right-0 z-10 mt-1 w-40 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
@@ -209,29 +206,6 @@ export function Projections() {
                     >
                       Download
                     </button>
-                    {exportBucket && (
-                      <button
-                        className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                        onClick={async () => {
-                          setExportDropdownOpen(false);
-                          try {
-                            const result = await projectApi.exportToS3(filterProjectId);
-                            setExportStatus(`Saved to ${result.filename}`);
-                            setTimeout(() => setExportStatus(null), 4000);
-                          } catch (e: any) {
-                            setExportStatus(`Export failed: ${e.message}`);
-                            setTimeout(() => setExportStatus(null), 4000);
-                          }
-                        }}
-                      >
-                        Save to S3
-                      </button>
-                    )}
-                  </div>
-                )}
-                {exportStatus && (
-                  <div className="absolute right-0 mt-1 whitespace-nowrap rounded bg-gray-900 px-3 py-1.5 text-xs text-white shadow-lg">
-                    {exportStatus}
                   </div>
                 )}
               </div>

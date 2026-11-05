@@ -1,7 +1,6 @@
 import { useState, useMemo } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router";
 import { Sidebar } from "./components/Sidebar";
-import { S3ImportDialog } from "./components/S3ImportDialog";
 import { Import } from "./pages/Import";
 import { Projections } from "./pages/Projections";
 import { Graphs } from "./pages/Graphs";
@@ -32,7 +31,6 @@ export default function App() {
           <Route path="/projects" element={<Projects />} />
         </Routes>
       </main>
-      <S3ImportDialog />
     </div>
   );
 }
