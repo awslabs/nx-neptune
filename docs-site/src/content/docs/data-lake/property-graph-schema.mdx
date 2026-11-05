@@ -6,7 +6,7 @@ Declare how your source tables map to a graph using the standard SQL/PGQ (SQL:20
 
 ## Overview
 
-The [Session Manager](/data-lake/session-manager/) import path expects Athena `SELECT` statements that alias source columns into Neptune Analytics' Gremlin CSV load format — `~id`/`~label` for vertices and `~from`/`~to`/`~label` for edges, with typed property headers such as `amount:Double`. Writing those by hand is repetitive and easy to get subtly wrong.
+The [Session Manager](/nx-neptune/data-lake/session-manager/) import path expects Athena `SELECT` statements that alias source columns into Neptune Analytics' Gremlin CSV load format — `~id`/`~label` for vertices and `~from`/`~to`/`~label` for edges, with typed property headers such as `amount:Double`. Writing those by hand is repetitive and easy to get subtly wrong.
 
 `import_from_graph_schema` lets you declare the mapping instead. It reads each source table's columns and types from the Athena catalog, resolves the DDL into the same projection queries, and runs them through the unchanged Athena → S3 → Neptune import path — so only the front-end differs from `import_from_table`.
 
@@ -113,7 +113,7 @@ Long in 'cards' (column amount: bigint). Cast to a common type (Double) in the P
 
 ## Permissions
 
-Reading table metadata needs `athena:GetTableMetadata`, plus `glue:GetTable` for Glue-backed catalogs, in addition to the [Athena import permissions](/getting-started/prerequisites/).
+Reading table metadata needs `athena:GetTableMetadata`, plus `glue:GetTable` for Glue-backed catalogs, in addition to the [Athena import permissions](/nx-neptune/getting-started/prerequisites/).
 
 ## Inspecting generated SQL
 
