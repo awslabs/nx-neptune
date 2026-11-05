@@ -144,6 +144,13 @@ These permissions are required to start/stop a Neptune Analytics graph:
   - `neptune-graph:StartGraph`
   - `neptune-graph:StopGraph`
 
+These permissions are required to destroy/reset a Neptune Analytics graph:
+
+  - `neptune-graph:DeleteGraph` (for destroy)
+  - `neptune-graph:ResetGraph` (for reset)
+  - `neptune-graph:GetGraph`
+  - `neptune-graph:ListTagsForResource`
+
 These permissions are required to save/restore a Neptune Analytics snapshot:
 
   - `neptune-graph:CreateGraphSnapshot` (for save)

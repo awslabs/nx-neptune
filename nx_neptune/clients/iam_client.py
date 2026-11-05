@@ -453,8 +453,31 @@ class IamClientWrapper:
             None: The function doesn't return a value but raises an exception if permissions are insufficient
 
         """
-        na_permissions = ["neptune-graph:DeleteGraph"]
+        na_permissions = [
+            "neptune-graph:DeleteGraph",
+            "neptune-graph:GetGraph",
+            "neptune-graph:ListTagsForResource",
+        ]
         operation_name = "Delete Neptune Instance"
+        # Check permission
+        self.check_aws_permission(operation_name, na_permissions)
+
+    def has_reset_na_permissions(self):
+        """Check if the configured IAM role has permissions to reset a Neptune Analytics instance.
+
+        Raises:
+            ValueError: If the role lacks required permissions
+
+        Returns:
+            None: The function doesn't return a value but raises an exception if permissions are insufficient
+
+        """
+        na_permissions = [
+            "neptune-graph:ResetGraph",
+            "neptune-graph:GetGraph",
+            "neptune-graph:ListTagsForResource",
+        ]
+        operation_name = "Reset Neptune Instance"
         # Check permission
         self.check_aws_permission(operation_name, na_permissions)
 
@@ -594,7 +617,8 @@ class IamClientWrapper:
                 }
 
         The method checks the following permissions:
-            - Neptune Graph: CreateGraph, TagResource, DeleteGraph
+            - Neptune Graph: CreateGraph, TagResource, DeleteGraph, GetGraph,
+              ListTagsForResource
             - S3: GetObject (import), PutObject/ListBucket (export)
             - KMS: Decrypt, GenerateDataKey, DescribeKey (for both import/export)
         """
@@ -617,7 +641,15 @@ class IamClientWrapper:
                     ]
                 }
             ],
-            "delete_na_instance": [{"permissions": ["neptune-graph:DeleteGraph"]}],
+            "delete_na_instance": [
+                {
+                    "permissions": [
+                        "neptune-graph:DeleteGraph",
+                        "neptune-graph:GetGraph",
+                        "neptune-graph:ListTagsForResource",
+                    ]
+                }
+            ],
             "start_graph": [{"permissions": ["neptune-graph:StartGraph"]}],
             "stop_graph": [{"permissions": ["neptune-graph:StopGraph"]}],
             "import_from_s3": [

@@ -23,7 +23,9 @@ __all__ = ["configure_if_nx_active"]
 from nx_plugin import NeptuneConfig
 
 from ..clients import Edge, Node
+from ..clients.client_factory import ClientFactory
 from ..instance_management import (
+    _assert_library_graph,
     create_na_instance,
     delete_na_instance,
     export_csv_to_s3,
@@ -57,6 +59,11 @@ def configure_if_nx_active():
 
             neptune_config = get_config()
             neptune_config.validate_config()
+
+            if neptune_config.graph_id is not None:
+                _assert_library_graph(
+                    ClientFactory().neptune(), neptune_config.graph_id, "use"
+                )
 
             # Execute setup instructions
             if neptune_config.graph_id is not None:

@@ -65,8 +65,12 @@ class TestConfigureIfNxActive:
     @patch("nx_neptune.utils.decorators._execute_teardown_routines_on_graph")
     @patch("nx_neptune.utils.decorators._execute_setup_routines_on_graph")
     @patch("nx_neptune.utils.decorators._sync_data_to_neptune")
+    @patch("nx_neptune.utils.decorators.ClientFactory")
+    @patch("nx_neptune.utils.decorators._assert_library_graph")
     def test_with_existing_graph_id(
         self,
+        mock_assert_library,
+        mock_client_factory,
         mock_sync_data,
         mock_execute_setup_routines_on_graph,
         mock_execute_teardown_routines_on_graph,
@@ -210,8 +214,12 @@ class TestConfigureIfNxActive:
     @patch("nx_neptune.utils.decorators.concurrent.futures.ThreadPoolExecutor")
     @patch("nx_neptune.utils.decorators._execute_setup_routines_on_graph")
     @patch("nx_neptune.utils.decorators._sync_data_to_neptune")
+    @patch("nx_neptune.utils.decorators.ClientFactory")
+    @patch("nx_neptune.utils.decorators._assert_library_graph")
     def test_with_running_event_loop(
         self,
+        mock_assert_library,
+        mock_client_factory,
         mock_sync_data,
         mock_execute_setup_routines_on_graph,
         mock_thread_pool,
@@ -260,6 +268,88 @@ class TestConfigureIfNxActive:
         # Verify ThreadPoolExecutor was used
         mock_thread_pool.assert_called()
         mock_pool.submit.assert_called()
+
+
+class TestLibraryGraphGuard:
+    """A graph provided through graph_id must be created by nx-neptune."""
+
+    @pytest.fixture
+    def mocks(self):
+        with (
+            patch("nx_neptune.utils.decorators.get_config") as get_config,
+            patch("nx_neptune.utils.decorators.NeptuneGraph") as neptune_graph,
+            patch(
+                "nx_neptune.utils.decorators.asyncio.get_running_loop",
+                side_effect=RuntimeError,
+            ),
+            patch(
+                "nx_neptune.utils.decorators.asyncio.run",
+                side_effect=lambda result: result,
+            ),
+            patch(
+                "nx_neptune.utils.decorators._execute_setup_routines_on_graph",
+                new_callable=MagicMock,
+            ) as setup,
+            patch(
+                "nx_neptune.utils.decorators._execute_teardown_routines_on_graph",
+                new_callable=MagicMock,
+            ) as teardown,
+            patch("nx_neptune.utils.decorators._sync_data_to_neptune") as sync,
+            patch(
+                "nx_neptune.utils.decorators._assert_library_graph"
+            ) as assert_library,
+            patch("nx_neptune.utils.decorators.ClientFactory") as client_factory,
+        ):
+            yield {
+                "get_config": get_config,
+                "neptune_graph": neptune_graph,
+                "setup": setup,
+                "teardown": teardown,
+                "sync": sync,
+                "assert_library": assert_library,
+                "client_factory": client_factory,
+            }
+
+    @staticmethod
+    def _run(config, func, mocks):
+        mocks["get_config"].return_value = config
+        mocks["setup"].return_value = config
+        mocks["neptune_graph"].from_config.return_value = MagicMock(spec=NeptuneGraph)
+
+        def algorithm(graph):
+            return func(graph)
+
+        return configure_if_nx_active()(algorithm)(nx.Graph())
+
+    @staticmethod
+    def _config(graph_id="g-1"):
+        config = MagicMock(spec=NeptuneConfig)
+        config.graph_id = graph_id
+        config.create_new_instance = False
+        return config
+
+    def test_unmanaged_graph_raises_before_any_work(self, mocks):
+        mocks["assert_library"].side_effect = ValueError("Refusing to use graph g-1")
+        func = MagicMock()
+
+        with pytest.raises(ValueError, match="Refusing to use graph g-1"):
+            self._run(self._config(), func, mocks)
+
+        mocks["assert_library"].assert_called_once_with(
+            mocks["client_factory"].return_value.neptune.return_value, "g-1", "use"
+        )
+        mocks["setup"].assert_not_called()
+        mocks["sync"].assert_not_called()
+        func.assert_not_called()
+        mocks["teardown"].assert_not_called()
+
+    def test_managed_graph_runs(self, mocks):
+        func = MagicMock(return_value="result")
+
+        assert self._run(self._config(), func, mocks) == "result"
+
+        mocks["assert_library"].assert_called_once()
+        mocks["teardown"].assert_called_once()
 
 
 class TestExecuteSetupRoutinesOnGraph:

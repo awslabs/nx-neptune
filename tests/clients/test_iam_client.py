@@ -280,12 +280,45 @@ class TestIamClientWrapper:
                 {
                     "EvalActionName": "neptune-graph:DeleteGraph",
                     "EvalDecision": "allowed",
-                }
+                },
+                {
+                    "EvalActionName": "neptune-graph:GetGraph",
+                    "EvalDecision": "allowed",
+                },
+                {
+                    "EvalActionName": "neptune-graph:ListTagsForResource",
+                    "EvalDecision": "allowed",
+                },
             ]
         }
 
         # Should not raise exception
         iam_client.has_delete_na_permissions()
+        actions = mock_client.simulate_principal_policy.call_args.kwargs["ActionNames"]
+        assert actions == [
+            "neptune-graph:DeleteGraph",
+            "neptune-graph:GetGraph",
+            "neptune-graph:ListTagsForResource",
+        ]
+
+    def test_has_reset_na_permissions(self, mock_iam_client):
+        """has_reset_na_permissions checks reset plus the tag-reading permissions."""
+        iam_client, mock_client = mock_iam_client
+        mock_client.simulate_principal_policy.side_effect = lambda **kw: {
+            "EvaluationResults": [
+                {"EvalActionName": a, "EvalDecision": "allowed"}
+                for a in kw["ActionNames"]
+            ]
+        }
+
+        iam_client.has_reset_na_permissions()
+
+        actions = mock_client.simulate_principal_policy.call_args.kwargs["ActionNames"]
+        assert actions == [
+            "neptune-graph:ResetGraph",
+            "neptune-graph:GetGraph",
+            "neptune-graph:ListTagsForResource",
+        ]
 
     def test_has_start_na_permissions_success(self, mock_iam_client):
         """Test has_start_na_permissions with valid permissions."""

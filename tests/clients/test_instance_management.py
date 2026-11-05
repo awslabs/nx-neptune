@@ -729,8 +729,12 @@ async def test_import_csv_from_s3_success(
     mock_na_graph.iam_client.has_import_from_s3_permissions.assert_called_once_with(
         "s3://test-bucket/test-folder/", None
     )
+    mock_na_graph.iam_client.has_reset_na_permissions.assert_called_once_with()
     mock_reset_graph.assert_called_once_with(
-        "test-graph-id", mock_na_graph.na_client.client, True
+        "test-graph-id",
+        mock_na_graph.na_client.client,
+        True,
+        check_permissions=False,
     )
     mock_start_import_task.assert_called_once_with(
         mock_na_graph.na_client.client,
@@ -929,6 +933,16 @@ async def test_export_csv_to_s3_permission_error(mock_get_bucket_encryption_key_
         await export_csv_to_s3(mock_na_graph, "s3://test-bucket/test-folder/")
 
 
+MANAGED_TAGS = {"tags": {"agent": "nx-neptune", "nx-neptune:managed": "true"}}
+
+
+def _managed_client():
+    client = MagicMock()
+    client.get_graph.return_value = {"arn": "arn:graph/g-123"}
+    client.list_tags_for_resource.return_value = MANAGED_TAGS
+    return client
+
+
 @pytest.mark.asyncio
 @patch("boto3.client")
 async def test_delete_na_instance_success(mock_boto3_client):
@@ -939,11 +953,13 @@ async def test_delete_na_instance_success(mock_boto3_client):
 
     test_status_response = json.loads(NX_DELETE_SUCCESS_FIXTURE)
     mock_nx_client.delete_graph.return_value = test_status_response
+    mock_nx_client.list_tags_for_resource.return_value = MANAGED_TAGS
 
-    # Configure the get_graph method to raise ResourceNotFoundException
-    mock_nx_client.get_graph.side_effect = ClientError(
-        error_response=NX_DELETE_STATUS_DELETED, operation_name="GetGraph"
-    )
+    # First get_graph reads the arn; afterwards the graph is gone
+    mock_nx_client.get_graph.side_effect = [
+        {"arn": "arn:graph/test-123"},
+        ClientError(error_response=NX_DELETE_STATUS_DELETED, operation_name="GetGraph"),
+    ]
 
     result = await delete_na_instance("test-123")
     assert result == "test-123"
@@ -954,7 +970,7 @@ def test_delete_clears_deletion_protection_before_delete():
     delete_graph, otherwise Neptune rejects deleting a protected graph."""
     from nx_neptune.instance_management import _delete_na_instance_task
 
-    client = MagicMock()
+    client = _managed_client()
     manager = MagicMock()
     manager.attach_mock(client.update_graph, "update_graph")
     manager.attach_mock(client.delete_graph, "delete_graph")
@@ -977,7 +993,7 @@ def test_delete_proceeds_when_clearing_protection_fails():
     delete the caller asked for still proceeds."""
     from nx_neptune.instance_management import _delete_na_instance_task
 
-    client = MagicMock()
+    client = _managed_client()
     client.update_graph.side_effect = ClientError(
         error_response={"Error": {"Code": "ValidationException"}},
         operation_name="UpdateGraph",
@@ -988,6 +1004,38 @@ def test_delete_proceeds_when_clearing_protection_fails():
     client.delete_graph.assert_called_once_with(
         graphIdentifier="g-123", skipSnapshot=True
     )
+
+
+@pytest.mark.parametrize("tags", [{}, {"agent": "other"}, {"Name": "my-graph"}])
+def test_delete_refuses_graph_not_created_by_library(tags):
+    """A graph without the nx-neptune tags is neither unprotected nor deleted."""
+    from nx_neptune.instance_management import _delete_na_instance_task
+
+    client = _managed_client()
+    client.list_tags_for_resource.return_value = {"tags": tags}
+
+    with pytest.raises(ValueError, match="not created by nx-neptune"):
+        _delete_na_instance_task(client, "g-123")
+
+    client.update_graph.assert_not_called()
+    client.delete_graph.assert_not_called()
+
+
+@pytest.mark.parametrize("code", ["ResourceNotFoundException", "AccessDeniedException"])
+def test_delete_tag_read_errors_raise_without_changes(code):
+    """If the tags cannot be read, the AWS error is raised and nothing is changed."""
+    from nx_neptune.instance_management import _delete_na_instance_task
+
+    client = _managed_client()
+    client.get_graph.side_effect = ClientError(
+        {"Error": {"Code": code, "Message": "error"}}, "GetGraph"
+    )
+
+    with pytest.raises(ClientError, match=code):
+        _delete_na_instance_task(client, "g-123")
+
+    client.update_graph.assert_not_called()
+    client.delete_graph.assert_not_called()
 
 
 def test_private_graph_logs_connectivity_hint(caplog, monkeypatch):
@@ -1041,6 +1089,8 @@ async def test_delete_na_instance_failure(mock_boto3_client):
 
     test_status_response = json.loads(NX_DELETE_FAILURE_FIXTURE)
     mock_nx_client.delete_graph.return_value = test_status_response
+    mock_nx_client.get_graph.return_value = {"arn": "arn:graph/test-123"}
+    mock_nx_client.list_tags_for_resource.return_value = MANAGED_TAGS
 
     with pytest.raises(Exception, match="Invalid response status code"):
         await delete_na_instance("test-123")
@@ -1058,7 +1108,7 @@ async def test_create_graph_config_base(monkeypatch):
         "replicaCount": 0,
         "deletionProtection": True,
         "provisionedMemory": 16,
-        "tags": {"agent": "nx-neptune"},
+        "tags": {"agent": "nx-neptune", "nx-neptune:managed": "true"},
     }
     assert expected == result
 
@@ -1081,7 +1131,7 @@ async def test_create_graph_config_custom_parameters(monkeypatch):
         "replicaCount": 0,
         "deletionProtection": True,
         "provisionedMemory": 16,
-        "tags": {"agent": "nx-neptune"},
+        "tags": {"agent": "nx-neptune", "nx-neptune:managed": "true"},
         "custom_parameter": 123,
         "kmsKeyIdentifier": "test_kms",
         "vectorSearchConfiguration": 1024,
@@ -1106,7 +1156,11 @@ async def test_create_graph_config_override_default_options():
         "replicaCount": 3,
         "deletionProtection": True,
         "provisionedMemory": 32,
-        "tags": {"agent": "nx-neptune", "additional_tag": "test_value"},
+        "tags": {
+            "agent": "nx-neptune",
+            "nx-neptune:managed": "true",
+            "additional_tag": "test_value",
+        },
     }
     assert expected == result
 
@@ -1142,6 +1196,95 @@ async def test_create_graph_config_unrecognized_env_keeps_secure(monkeypatch):
     result = _get_create_instance_config("test")
     assert result["publicConnectivity"] is False
     assert result["deletionProtection"] is True
+
+
+@pytest.mark.parametrize(
+    "builder, args",
+    [
+        ("_get_create_instance_config", ("test",)),
+        (
+            "_get_create_instance_with_import_config",
+            ("test", "s3://bucket/data", "arn:aws:iam::123456789012:role/r"),
+        ),
+    ],
+)
+def test_create_config_keeps_user_tags_and_forces_library_tags(builder, args):
+    """Caller tags are kept; agent and nx-neptune:managed always use library values."""
+    from nx_neptune import instance_management
+
+    config = {
+        "tags": {
+            "team": "fraud",
+            "env": "dev",
+            "agent": "other",
+            "nx-neptune:managed": "false",
+        }
+    }
+    result = getattr(instance_management, builder)(*args, config)
+
+    assert result["tags"] == {
+        "team": "fraud",
+        "env": "dev",
+        "agent": "nx-neptune",
+        "nx-neptune:managed": "true",
+    }
+
+
+@pytest.mark.parametrize(
+    "tags, expected",
+    [
+        ({"agent": "nx-neptune", "nx-neptune:managed": "true"}, True),
+        ({"nx-neptune:managed": "true"}, True),
+        ({"agent": "nx-neptune"}, True),
+        ({"agent": "other"}, False),
+        ({"nx-neptune:managed": "false"}, False),
+        ({}, False),
+    ],
+)
+def test_is_managed_graph(tags, expected):
+    """Graphs tagged nx-neptune:managed=true, or agent=nx-neptune from earlier
+    versions, are treated as managed."""
+    from nx_neptune.instance_management import _is_managed_graph
+
+    client = MagicMock()
+    client.get_graph.return_value = {"arn": "arn:graph/g-1"}
+    client.list_tags_for_resource.return_value = {"tags": tags}
+
+    assert _is_managed_graph(client, "g-1") is expected
+    client.get_graph.assert_called_once_with(graphIdentifier="g-1")
+    client.list_tags_for_resource.assert_called_once_with(resourceArn="arn:graph/g-1")
+
+
+def test_is_managed_graph_not_found_is_false():
+    """A graph that no longer exists is not treated as managed."""
+    from botocore.exceptions import ClientError
+
+    from nx_neptune.instance_management import _is_managed_graph
+
+    client = MagicMock()
+    client.get_graph.side_effect = ClientError(
+        {"Error": {"Code": "ResourceNotFoundException", "Message": "gone"}},
+        "GetGraph",
+    )
+
+    assert _is_managed_graph(client, "g-1") is False
+
+
+@pytest.mark.parametrize("code", ["AccessDeniedException", "ThrottlingException"])
+def test_is_managed_graph_other_errors_raise(code):
+    """Errors other than not found raise instead of looking like an unmanaged graph."""
+    from botocore.exceptions import ClientError
+
+    from nx_neptune.instance_management import _is_managed_graph
+
+    client = MagicMock()
+    client.get_graph.return_value = {"arn": "arn:graph/g-1"}
+    client.list_tags_for_resource.side_effect = ClientError(
+        {"Error": {"Code": code, "Message": "error"}}, "ListTagsForResource"
+    )
+
+    with pytest.raises(ClientError, match=code):
+        _is_managed_graph(client, "g-1")
 
 
 @pytest.mark.asyncio
@@ -1437,6 +1580,7 @@ def test_get_create_instance_with_import_config(monkeypatch):
     assert result["publicConnectivity"] is False
     assert result["deletionProtection"] is True
     assert result["tags"]["agent"] == "nx-neptune"
+    assert result["tags"]["nx-neptune:managed"] == "true"
 
 
 def test_get_create_instance_with_import_config_custom():
