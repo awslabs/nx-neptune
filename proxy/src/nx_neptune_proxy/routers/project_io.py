@@ -9,13 +9,11 @@ and re-importing it to recreate the project in another environment.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from nx_neptune_proxy.routers.schemas import ProjectExportPayload, ProjectionExport
+from nx_neptune_proxy.routers.schemas import ProjectExportPayload
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_service import projection_service
 from nx_neptune_proxy.utils.aws_helper import (
