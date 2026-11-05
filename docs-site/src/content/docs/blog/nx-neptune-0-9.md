@@ -1,5 +1,5 @@
 ---
-title: "nx-neptune 0.9: Declare your graph with PGQL (CREATE PROPERTY GRAPH)"
+title: "nx-neptune 0.9: Declare your graph with PGQ (CREATE PROPERTY GRAPH)"
 date: 2026-11-05
 excerpt: Project data-lake tables into Neptune Analytics by declaring the graph with standard SQL/PGQ, instead of hand-writing projection queries.
 authors: nxNeptuneTeam
@@ -12,7 +12,7 @@ Your data lake already holds the relationships: who paid whom, which product was
 bought with which. nx-neptune projects those tables into
 [Amazon Neptune Analytics](https://docs.aws.amazon.com/neptune-analytics/latest/userguide/what-is-neptune-analytics.html)
 so you can run graph algorithms on them. Until now, that meant writing the
-projection queries using SQL. In 0.9, we added the option to declare the graph properties instead using the Property Graph Query Language (PGQL) and map it to SQL for you.  
+projection queries using SQL. In 0.9, we added the option to declare the graph properties instead using the Property Graph Query (PGQ) and map it to SQL for you.  
 
 ## Before: hand-written projection queries in SQL
 
