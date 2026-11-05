@@ -68,7 +68,7 @@ from .property_graph import (
 from .session_manager import CleanupTask, SessionManager
 from .utils.decorators import configure_if_nx_active
 
-__version__ = "0.7.0"
+__version__ = "0.9.0"
 
 __all__ = [
     # environment variables
