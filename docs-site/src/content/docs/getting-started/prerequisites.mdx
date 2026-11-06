@@ -8,7 +8,7 @@ title: Prerequisites
 
 ## AWS IAM Permissions
 
-The IAM role or user accessing Neptune Analytics must have the following permissions.
+The IAM role or user running nx-neptune needs the following permissions, depending on the features you use.
 
 ### Graph query operations
 
@@ -18,18 +18,27 @@ Required to read, write, and manage graph data via queries:
 - `neptune-graph:WriteDataViaQuery`
 - `neptune-graph:DeleteDataViaQuery`
 
-### Graph lifecycle
+### Graph management
 
-Required to start/stop a Neptune Analytics graph:
+Required to create, look up, update, reset, start, stop and delete Neptune Analytics graphs:
 
+- `neptune-graph:CreateGraph`
+- `neptune-graph:CreateGraphUsingImportTask`
+- `neptune-graph:GetGraph`
+- `neptune-graph:ListGraphs`
+- `neptune-graph:UpdateGraph`
+- `neptune-graph:ResetGraph`
 - `neptune-graph:StartGraph`
 - `neptune-graph:StopGraph`
+- `neptune-graph:DeleteGraph`
+- `neptune-graph:TagResource`
 
 ### Snapshots
 
 Required to save/restore a Neptune Analytics snapshot:
 
 - `neptune-graph:CreateGraphSnapshot`
+- `neptune-graph:GetGraphSnapshot`
 - `neptune-graph:RestoreGraphFromSnapshot`
 - `neptune-graph:DeleteGraphSnapshot`
 - `neptune-graph:TagResource`
@@ -38,20 +47,59 @@ Required to save/restore a Neptune Analytics snapshot:
 
 Required to import/export between S3 and Neptune Analytics:
 
+- `neptune-graph:StartImportTask`
+- `neptune-graph:GetImportTask`
+- `neptune-graph:StartExportTask`
+- `neptune-graph:GetExportTask`
 - `s3:GetObject`
 - `s3:PutObject`
+- `s3:DeleteObject`
 - `s3:ListBucket`
-- `s3:DeleteBucket`
+- `s3:GetBucketLocation`
+- `s3:GetBucketVersioning`
+- `s3:GetEncryptionConfiguration`
 - `kms:Decrypt`
 - `kms:GenerateDataKey`
 - `kms:DescribeKey`
 
+Neptune Analytics reads and writes S3 with an IAM role that you pass to it. nx-neptune checks that role's permissions before each import or export, which needs:
+
+- `iam:PassRole`
+- `iam:GetRole`
+- `iam:SimulatePrincipalPolicy`
+
 ### Athena (for data lake integration)
 
-Required to read from/write to an S3 Tables data lake:
+Required to read from/write to a data lake through Athena:
 
 - `athena:StartQueryExecution`
 - `athena:GetQueryExecution`
+- `athena:GetQueryResults`
+- `athena:GetTableMetadata` (for `CREATE PROPERTY GRAPH`, which reads source table columns)
+- `glue:GetDatabase`
+- `glue:GetDatabases`
+- `glue:GetTable`
+- `glue:GetTables`
+- `glue:GetPartitions`
+
+To export results to Iceberg tables:
+
+- `glue:CreateTable`
+- `glue:UpdateTable`
+- `glue:DeleteTable`
+
+To query federated catalogs (for example Databricks, Snowflake or S3 Vectors), also allow `lambda:InvokeFunction` on each connector's Lambda function.
+
+### Proxy UI
+
+The [proxy UI](/nx-neptune/proxy/setup/) also lists catalogs, databases, tables, buckets and graph summaries, which needs:
+
+- `athena:ListDataCatalogs`
+- `athena:ListDatabases`
+- `athena:GetDatabase`
+- `athena:ListTableMetadata`
+- `neptune-graph:GetGraphSummary`
+- `s3:ListAllMyBuckets`
 
 ## Environment Variables
 
@@ -62,3 +110,6 @@ Required to read from/write to an S3 Tables data lake:
 | `NETWORKX_S3_IMPORT_BUCKET_PATH` | S3 path for imports |
 | `NETWORKX_S3_EXPORT_BUCKET_PATH` | S3 path for exports |
 | `AWS_REGION` | AWS region |
+| `NETWORKX_PUBLIC_CONNECTIVITY` | Give new graphs a public endpoint (default `false`) |
+| `NETWORKX_DELETION_PROTECTION` | Enable deletion protection on new graphs (default `true`) |
+| `NETWORKX_ATHENA_WORKGROUP` | Athena workgroup for queries (default: the account's default workgroup) |
