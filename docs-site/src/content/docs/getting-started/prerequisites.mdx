@@ -8,7 +8,7 @@ title: Prerequisites
 
 ## AWS IAM Permissions
 
-The IAM role or user running nx-neptune needs the following permissions, depending on the features you use.
+The IAM role or user you run nx-neptune as needs the following permissions, depending on the features you use. Neptune Analytics also needs an [import role](#import-role) to read and write S3. With `SessionManager` and the proxy UI, that is the same role you run as. An [example policy](#example-policy) at the end of this section combines the main permissions.
 
 ### Graph query operations
 
@@ -33,6 +33,8 @@ Required to create, look up, update, reset, start, stop and delete Neptune Analy
 - `neptune-graph:DeleteGraph`
 - `neptune-graph:TagResource`
 
+`ResetGraph` and `DeleteGraph` delete graph data. nx-neptune tags every graph and snapshot it creates with `agent=nx-neptune`, which is why `TagResource` is needed wherever creation is. The example policy uses that tag to limit graph actions to graphs nx-neptune created. If you pass your own `agent` tag when creating a graph, it replaces `nx-neptune`, and a policy conditioned on the tag won't match that graph.
+
 ### Snapshots
 
 Required to save/restore a Neptune Analytics snapshot:
@@ -51,22 +53,50 @@ Required to import/export between S3 and Neptune Analytics:
 - `neptune-graph:GetImportTask`
 - `neptune-graph:StartExportTask`
 - `neptune-graph:GetExportTask`
+
+nx-neptune also stages CSV files in S3, deletes them after an import, and checks the bucket's settings. On the staging and export buckets, this needs:
+
 - `s3:GetObject`
 - `s3:PutObject`
 - `s3:DeleteObject`
 - `s3:ListBucket`
-- `s3:GetBucketLocation`
 - `s3:GetBucketVersioning`
 - `s3:GetEncryptionConfiguration`
-- `kms:Decrypt`
-- `kms:GenerateDataKey`
-- `kms:DescribeKey`
+- `kms:Decrypt`, `kms:GenerateDataKey` and `kms:DescribeKey` on the bucket's KMS key
 
-Neptune Analytics reads and writes S3 with an IAM role that you pass to it. nx-neptune checks that role's permissions before each import or export, which needs:
+The buckets nx-neptune writes to or deletes from (staging, Athena query results and export destinations) must have versioning enabled, and should be in the same region as your graphs. Otherwise imports, exports and Athena projections fail before any query runs. To enable versioning:
 
-- `iam:PassRole`
-- `iam:GetRole`
-- `iam:SimulatePrincipalPolicy`
+```bash
+aws s3api put-bucket-versioning --bucket <bucket> --versioning-configuration Status=Enabled
+```
+
+Because nx-neptune deletes its staged files, a versioned bucket keeps their old versions. A lifecycle rule that expires noncurrent versions avoids paying to store them.
+
+### Import role
+
+Neptune Analytics reads S3 for imports, and writes it for exports, using an IAM role that nx-neptune passes to it in `StartImportTask`, `CreateGraphUsingImportTask` and `StartExportTask`. With `SessionManager` and the proxy UI, that role is the one you are running as. With the NetworkX backend, it is `s3_iam_role` in `NeptuneConfig` if you set it, otherwise again your own role.
+
+The import role must:
+
+- Trust `neptune-graph.amazonaws.com`, with no `aws:SourceAccount` or `aws:SourceArn` condition:
+
+  ```json
+  {
+    "Effect": "Allow",
+    "Principal": { "Service": "neptune-graph.amazonaws.com" },
+    "Action": "sts:AssumeRole"
+  }
+  ```
+
+  With those conditions, `StartImportTask` fails with `The S3 arn ... is inaccessible or your role does not have access to it`, even though the cause is the trust policy.
+- Have `s3:GetObject` and `s3:ListBucket` on the staging location and `kms:Decrypt` on its key for imports, and `s3:PutObject` on the destination for exports.
+
+The role you run as needs these actions on the import role:
+
+- `iam:PassRole`, with the condition `iam:PassedToService` = `neptune-graph.amazonaws.com`
+- `iam:GetRole` and `iam:SimulatePrincipalPolicy`, which nx-neptune uses to check the import role before an import or export
+
+With `SessionManager` and the proxy UI, the role you run as is the import role, so it needs both sets of permissions and the trust statement. IAM Identity Center (SSO) permission-set roles can't have their trust policy edited, so with SSO, assume a separate role that meets these requirements (for example with `aws sts assume-role`) and run nx-neptune with its credentials.
 
 ### Athena (for data lake integration)
 
@@ -82,13 +112,33 @@ Required to read from/write to a data lake through Athena:
 - `glue:GetTables`
 - `glue:GetPartitions`
 
+Queries run in the `primary` workgroup unless you set `NETWORKX_ATHENA_WORKGROUP`. Athena writes query results to S3, so the query results bucket also needs `s3:GetBucketLocation`, `s3:GetObject` and `s3:PutObject`. Reading source tables needs `s3:GetObject` and `s3:ListBucket` on the buckets behind them.
+
 To export results to Iceberg tables:
 
 - `glue:CreateTable`
 - `glue:UpdateTable`
 - `glue:DeleteTable`
 
-To query federated catalogs (for example Databricks, Snowflake or S3 Vectors), also allow `lambda:InvokeFunction` on each connector's Lambda function.
+To query federated catalogs (for example Databricks, Snowflake or S3 Vectors), also allow `lambda:InvokeFunction` on each connector's Lambda function. The permissions to read the source (for example the Databricks secret, or S3 Vectors) belong to the connector Lambda's execution role, not to you.
+
+### S3 Tables
+
+To query Amazon S3 Tables through Athena, also allow:
+
+- `s3tables:GetTableBucket`
+- `s3tables:GetNamespace`
+- `s3tables:GetTable`
+- `s3tables:GetTableData`
+- `s3tables:GetTableMetadataLocation`
+- `lakeformation:GetDataAccess`
+
+### Embedding helpers
+
+The `to_embedding_entries` and `push_to_s3_vector` helpers in `nx_neptune.utils`, used by the vector embedding notebooks, call Amazon Bedrock and Amazon S3 Vectors directly:
+
+- `bedrock:InvokeModel` (for `to_embedding_entries`)
+- `s3vectors:PutVectors` (for `push_to_s3_vector`)
 
 ### Proxy UI
 
@@ -101,15 +151,171 @@ The [proxy UI](/nx-neptune/proxy/setup/) also lists catalogs, databases, tables,
 - `neptune-graph:GetGraphSummary`
 - `s3:ListAllMyBuckets`
 
+### Example policy
+
+This policy combines graph management, S3 import/export, Athena, the import role and the proxy UI, following the [CloudFormation template](https://github.com/awslabs/nx-neptune/blob/main/cloudformation-templates/nx-neptune-sagemaker.json). Add the actions from the other sections for the features you use. Replace the placeholders:
+
+| Placeholder | Value |
+|---|---|
+| `<region>`, `<account-id>` | Region and account of your graphs |
+| `<bucket>` | Staging bucket, also used for Athena query results |
+| `<kms-key-id>` | KMS key that encrypts the bucket |
+| `<import-role-name>` | Import role (with `SessionManager` and the proxy, the role you run as) |
+| `<workgroup>` | Athena workgroup (`primary` unless you set `NETWORKX_ATHENA_WORKGROUP`) |
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "NoResourceLevelSupport",
+      "Effect": "Allow",
+      "Action": [
+        "neptune-graph:ListGraphs",
+        "athena:ListDataCatalogs",
+        "s3:ListAllMyBuckets"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "NeptuneGraphCreate",
+      "Effect": "Allow",
+      "Action": [
+        "neptune-graph:CreateGraph",
+        "neptune-graph:CreateGraphUsingImportTask"
+      ],
+      "Resource": "*",
+      "Condition": { "StringEquals": { "aws:RequestTag/agent": "nx-neptune" } }
+    },
+    {
+      "Sid": "NeptuneGraphOps",
+      "Effect": "Allow",
+      "Action": [
+        "neptune-graph:GetGraph",
+        "neptune-graph:GetGraphSummary",
+        "neptune-graph:UpdateGraph",
+        "neptune-graph:ResetGraph",
+        "neptune-graph:DeleteGraph",
+        "neptune-graph:StartGraph",
+        "neptune-graph:StopGraph",
+        "neptune-graph:TagResource",
+        "neptune-graph:ReadDataViaQuery",
+        "neptune-graph:WriteDataViaQuery",
+        "neptune-graph:DeleteDataViaQuery"
+      ],
+      "Resource": "arn:aws:neptune-graph:<region>:<account-id>:graph/*",
+      "Condition": { "StringEquals": { "aws:ResourceTag/agent": "nx-neptune" } }
+    },
+    {
+      "Sid": "NeptuneImportExportTasks",
+      "Effect": "Allow",
+      "Action": [
+        "neptune-graph:StartImportTask",
+        "neptune-graph:GetImportTask",
+        "neptune-graph:StartExportTask",
+        "neptune-graph:GetExportTask"
+      ],
+      "Resource": [
+        "arn:aws:neptune-graph:<region>:<account-id>:graph/*",
+        "arn:aws:neptune-graph:<region>:<account-id>:import-task/*",
+        "arn:aws:neptune-graph:<region>:<account-id>:export-task/*"
+      ]
+    },
+    {
+      "Sid": "AthenaCatalogMetadata",
+      "Effect": "Allow",
+      "Action": [
+        "athena:ListDatabases",
+        "athena:GetDatabase",
+        "athena:ListTableMetadata",
+        "athena:GetTableMetadata"
+      ],
+      "Resource": "arn:aws:athena:<region>:<account-id>:datacatalog/*"
+    },
+    {
+      "Sid": "AthenaQueries",
+      "Effect": "Allow",
+      "Action": [
+        "athena:StartQueryExecution",
+        "athena:GetQueryExecution",
+        "athena:GetQueryResults"
+      ],
+      "Resource": "arn:aws:athena:<region>:<account-id>:workgroup/<workgroup>"
+    },
+    {
+      "Sid": "GlueReadCatalog",
+      "Effect": "Allow",
+      "Action": [
+        "glue:GetDatabase",
+        "glue:GetDatabases",
+        "glue:GetTable",
+        "glue:GetTables",
+        "glue:GetPartitions"
+      ],
+      "Resource": [
+        "arn:aws:glue:<region>:<account-id>:catalog",
+        "arn:aws:glue:<region>:<account-id>:database/*",
+        "arn:aws:glue:<region>:<account-id>:table/*"
+      ]
+    },
+    {
+      "Sid": "S3Staging",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:GetEncryptionConfiguration"
+      ],
+      "Resource": [
+        "arn:aws:s3:::<bucket>",
+        "arn:aws:s3:::<bucket>/*"
+      ]
+    },
+    {
+      "Sid": "KMSForBucket",
+      "Effect": "Allow",
+      "Action": [
+        "kms:Decrypt",
+        "kms:GenerateDataKey",
+        "kms:DescribeKey"
+      ],
+      "Resource": "arn:aws:kms:<region>:<account-id>:key/<kms-key-id>"
+    },
+    {
+      "Sid": "CheckImportRole",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:SimulatePrincipalPolicy"
+      ],
+      "Resource": "arn:aws:iam::<account-id>:role/<import-role-name>"
+    },
+    {
+      "Sid": "PassImportRole",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::<account-id>:role/<import-role-name>",
+      "Condition": { "StringEquals": { "iam:PassedToService": "neptune-graph.amazonaws.com" } }
+    }
+  ]
+}
+```
+
+`ListGraphs`, `athena:ListDataCatalogs` and `s3:ListAllMyBuckets` don't support resource-level permissions, so they use `"*"`. `CreateGraph` and `CreateGraphUsingImportTask` use `"*"` with the `agent=nx-neptune` request tag condition. The import role also needs the trust statement in [Import role](#import-role), and read access to your source tables' buckets isn't included.
+
 ## Environment Variables
 
 | Variable | Purpose |
 |----------|---------|
 | `NETWORKX_GRAPH_ID` | Neptune Analytics graph identifier |
-| `NETWORKX_ARN_IAM_ROLE` | IAM role ARN for S3 import/export |
+| `NETWORKX_ARN_IAM_ROLE` | Import role ARN, read by the `instance_mgmt_lifecycle_demo` and `s3_import_export_demo` notebooks (the library itself uses the [import role](#import-role)) |
 | `NETWORKX_S3_IMPORT_BUCKET_PATH` | S3 path for imports |
 | `NETWORKX_S3_EXPORT_BUCKET_PATH` | S3 path for exports |
 | `AWS_REGION` | AWS region |
 | `NETWORKX_PUBLIC_CONNECTIVITY` | Give new graphs a public endpoint (default `false`) |
 | `NETWORKX_DELETION_PROTECTION` | Enable deletion protection on new graphs (default `true`) |
-| `NETWORKX_ATHENA_WORKGROUP` | Athena workgroup for queries (default: the account's default workgroup) |
+| `NETWORKX_ATHENA_WORKGROUP` | Athena workgroup for queries (default `primary`) |
