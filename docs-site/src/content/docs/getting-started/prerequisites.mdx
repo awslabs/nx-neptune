@@ -33,7 +33,7 @@ Required to create, look up, update, reset, start, stop and delete Neptune Analy
 - `neptune-graph:DeleteGraph`
 - `neptune-graph:TagResource`
 
-`ResetGraph` and `DeleteGraph` delete graph data. nx-neptune tags every graph and snapshot it creates with `agent=nx-neptune`, which is why `TagResource` is needed wherever creation is. The example policy uses that tag to limit graph actions to graphs nx-neptune created. If you pass your own `agent` tag when creating a graph, it replaces `nx-neptune`, and a policy conditioned on the tag won't match that graph.
+`ResetGraph` and `DeleteGraph` delete graph data. nx-neptune tags every graph and snapshot it creates with `agent=nx-neptune`, which is why `TagResource` is needed wherever creation is.
 
 ### Snapshots
 
@@ -160,8 +160,8 @@ This policy combines graph management, S3 import/export, Athena, the import role
 | `<region>`, `<account-id>` | Region and account of your graphs |
 | `<bucket>` | Staging bucket, also used for Athena query results |
 | `<kms-key-id>` | KMS key that encrypts the bucket |
+| `<database>` | Glue database with your source tables. Repeat the `database/` and `table/` lines for each database |
 | `<import-role-name>` | Import role (with `SessionManager` and the proxy, the role you run as) |
-| `<workgroup>` | Athena workgroup (`primary` unless you set `NETWORKX_ATHENA_WORKGROUP`) |
 
 ```json
 {
@@ -171,55 +171,35 @@ This policy combines graph management, S3 import/export, Athena, the import role
       "Sid": "NoResourceLevelSupport",
       "Effect": "Allow",
       "Action": [
-        "neptune-graph:ListGraphs",
         "athena:ListDataCatalogs",
         "s3:ListAllMyBuckets"
       ],
       "Resource": "*"
     },
     {
-      "Sid": "NeptuneGraphCreate",
+      "Sid": "NeptuneAnalytics",
       "Effect": "Allow",
       "Action": [
+        "neptune-graph:ListGraphs",
         "neptune-graph:CreateGraph",
-        "neptune-graph:CreateGraphUsingImportTask"
-      ],
-      "Resource": "*",
-      "Condition": { "StringEquals": { "aws:RequestTag/agent": "nx-neptune" } }
-    },
-    {
-      "Sid": "NeptuneGraphOps",
-      "Effect": "Allow",
-      "Action": [
+        "neptune-graph:CreateGraphUsingImportTask",
         "neptune-graph:GetGraph",
         "neptune-graph:GetGraphSummary",
         "neptune-graph:UpdateGraph",
         "neptune-graph:ResetGraph",
-        "neptune-graph:DeleteGraph",
         "neptune-graph:StartGraph",
         "neptune-graph:StopGraph",
+        "neptune-graph:DeleteGraph",
         "neptune-graph:TagResource",
+        "neptune-graph:StartImportTask",
+        "neptune-graph:GetImportTask",
+        "neptune-graph:StartExportTask",
+        "neptune-graph:GetExportTask",
         "neptune-graph:ReadDataViaQuery",
         "neptune-graph:WriteDataViaQuery",
         "neptune-graph:DeleteDataViaQuery"
       ],
-      "Resource": "arn:aws:neptune-graph:<region>:<account-id>:graph/*",
-      "Condition": { "StringEquals": { "aws:ResourceTag/agent": "nx-neptune" } }
-    },
-    {
-      "Sid": "NeptuneImportExportTasks",
-      "Effect": "Allow",
-      "Action": [
-        "neptune-graph:StartImportTask",
-        "neptune-graph:GetImportTask",
-        "neptune-graph:StartExportTask",
-        "neptune-graph:GetExportTask"
-      ],
-      "Resource": [
-        "arn:aws:neptune-graph:<region>:<account-id>:graph/*",
-        "arn:aws:neptune-graph:<region>:<account-id>:import-task/*",
-        "arn:aws:neptune-graph:<region>:<account-id>:export-task/*"
-      ]
+      "Resource": "*"
     },
     {
       "Sid": "AthenaCatalogMetadata",
@@ -240,7 +220,7 @@ This policy combines graph management, S3 import/export, Athena, the import role
         "athena:GetQueryExecution",
         "athena:GetQueryResults"
       ],
-      "Resource": "arn:aws:athena:<region>:<account-id>:workgroup/<workgroup>"
+      "Resource": "*"
     },
     {
       "Sid": "GlueReadCatalog",
@@ -254,8 +234,8 @@ This policy combines graph management, S3 import/export, Athena, the import role
       ],
       "Resource": [
         "arn:aws:glue:<region>:<account-id>:catalog",
-        "arn:aws:glue:<region>:<account-id>:database/*",
-        "arn:aws:glue:<region>:<account-id>:table/*"
+        "arn:aws:glue:<region>:<account-id>:database/<database>",
+        "arn:aws:glue:<region>:<account-id>:table/<database>/*"
       ]
     },
     {
@@ -305,7 +285,7 @@ This policy combines graph management, S3 import/export, Athena, the import role
 }
 ```
 
-`ListGraphs`, `athena:ListDataCatalogs` and `s3:ListAllMyBuckets` don't support resource-level permissions, so they use `"*"`. `CreateGraph` and `CreateGraphUsingImportTask` use `"*"` with the `agent=nx-neptune` request tag condition. The import role also needs the trust statement in [Import role](#import-role), and read access to your source tables' buckets isn't included.
+`athena:ListDataCatalogs` and `s3:ListAllMyBuckets` don't support resource-level permissions, so they use `"*"`. With the Glue statement limited to your databases, the proxy UI lists only those databases, and validation fails early for tables in others. The import role also needs the trust statement in [Import role](#import-role), and read access to your source tables' buckets isn't included.
 
 ## Environment Variables
 
