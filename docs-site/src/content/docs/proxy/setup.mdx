@@ -18,7 +18,8 @@ The proxy runs on your machine and listens on `127.0.0.1` only. [Graph Explorer]
 - Node.js and npm, to build the UI
 - [finch](https://github.com/runfinch/finch) or Docker, only to run Graph Explorer (see [Start Graph Explorer](#start-graph-explorer))
 - AWS credentials and a region exported in your shell. Use short-lived credentials (for example from `aws sso login` or `aws sts assume-role`), not long-lived access keys
-- The IAM permissions listed in [Prerequisites](/nx-neptune/getting-started/prerequisites/) for Athena, S3 and Neptune Analytics. The UI also lists Athena catalogs, databases and tables, S3 buckets, and Neptune Analytics graphs
+- The IAM permissions listed in [Prerequisites](/nx-neptune/getting-started/prerequisites/), including the Proxy UI section and the [import role](/nx-neptune/getting-started/prerequisites/#import-role) trust statement
+- An S3 staging bucket with versioning enabled, in the same region as your graphs (see [S3 import/export](/nx-neptune/getting-started/prerequisites/#s3-importexport))
 
 ## Start the proxy
 
