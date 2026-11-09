@@ -55,7 +55,7 @@ Required to import/export between S3 and Neptune Analytics:
 - `neptune-graph:StartExportTask`
 - `neptune-graph:GetExportTask`
 
-nx-neptune also stages CSV files in S3, deletes them after an import, and checks the bucket's settings. On the staging and export buckets, this needs:
+`nx-neptune` stages CSV files in S3, deletes them after an import, and checks the bucket's settings. On the staging and export buckets, this needs:
 
 - `s3:GetObject`
 - `s3:PutObject`
