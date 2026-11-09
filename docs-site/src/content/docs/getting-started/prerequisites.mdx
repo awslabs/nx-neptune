@@ -168,7 +168,7 @@ This policy combines graph management, S3 import/export, Athena, the import role
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "NoResourceLevelSupport",
+      "Sid": "ListResources",
       "Effect": "Allow",
       "Action": [
         "athena:ListDataCatalogs",
@@ -184,7 +184,6 @@ This policy combines graph management, S3 import/export, Athena, the import role
         "neptune-graph:CreateGraph",
         "neptune-graph:CreateGraphUsingImportTask",
         "neptune-graph:GetGraph",
-        "neptune-graph:GetGraphSummary",
         "neptune-graph:UpdateGraph",
         "neptune-graph:ResetGraph",
         "neptune-graph:StartGraph",
@@ -194,12 +193,21 @@ This policy combines graph management, S3 import/export, Athena, the import role
         "neptune-graph:StartImportTask",
         "neptune-graph:GetImportTask",
         "neptune-graph:StartExportTask",
-        "neptune-graph:GetExportTask",
+        "neptune-graph:GetExportTask"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "NeptuneAnalyticsTaggedGraphs",
+      "Effect": "Allow",
+      "Action": [
+        "neptune-graph:GetGraphSummary",
         "neptune-graph:ReadDataViaQuery",
         "neptune-graph:WriteDataViaQuery",
         "neptune-graph:DeleteDataViaQuery"
       ],
-      "Resource": "*"
+      "Resource": "arn:aws:neptune-graph:<region>:<account-id>:graph/*",
+      "Condition": { "StringEquals": { "aws:ResourceTag/agent": "nx-neptune" } }
     },
     {
       "Sid": "AthenaCatalogMetadata",
