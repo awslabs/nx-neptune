@@ -8,15 +8,15 @@ ast-serialize==0.13.1
     # via mypy
 black==26.10.1
     # via nx-neptune (pyproject.toml)
-boto3==1.43.125
+boto3==1.43.126
     # via nx-neptune (pyproject.toml)
-botocore==1.43.125
+botocore==1.43.126
     # via
     #   boto3
     #   s3transfer
 cfgv==3.5.0
     # via pre-commit
-click==8.5.0
+click==8.5.1
     # via black
 coverage==7.17.2
     # via pytest-cov
@@ -113,7 +113,7 @@ python-dateutil==2.9.0.post0
     # via
     #   botocore
     #   pandas
-python-discovery==1.9.4
+python-discovery==1.9.5
     # via virtualenv
 python-dotenv==1.2.4
     # via dotenv
@@ -127,7 +127,7 @@ scipy==1.17.1
     # via nx-neptune (pyproject.toml)
 six==1.17.0
     # via python-dateutil
-sqlglot==30.29.0
+sqlglot==30.30.0
     # via nx-neptune (pyproject.toml)
 typing-extensions==4.16.0
     # via
@@ -135,7 +135,7 @@ typing-extensions==4.16.0
     #   pytest-asyncio
 urllib3==2.8.0
     # via botocore
-virtualenv==21.15.5
+virtualenv==21.15.6
     # via pre-commit
 wcwidth==0.9.4
     # via prettytable
