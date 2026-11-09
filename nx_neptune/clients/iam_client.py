@@ -70,7 +70,8 @@ class IamClientWrapper:
             region (str, optional): Region for the simulated Neptune Analytics resource
                 ARNs. Defaults to the region ``ClientFactory`` resolves.
         """
-        if "sts" in role_arn:
+        arn_parts = role_arn.split(":")
+        if len(arn_parts) > 2 and arn_parts[2] == "sts":
             self.role_arn = _convert_sts_to_iam_arn(role_arn)
         else:
             self.role_arn = role_arn
@@ -977,7 +978,13 @@ def _convert_sts_to_iam_arn(sts_arn):
     arn:aws:iam::ACCOUNT:role/PATH/ROLE
     """
     parts = sts_arn.split(":")
-    if len(parts) < 6 or parts[0] != "arn" or parts[2] != "sts":
+    if (
+        len(parts) < 6
+        or parts[0] != "arn"
+        or parts[2] != "sts"
+        # An empty partition cannot produce a usable IAM ARN.
+        or not parts[1]
+    ):
         raise ValueError("Input is not a valid STS assumed-role ARN")
 
     partition = parts[1]

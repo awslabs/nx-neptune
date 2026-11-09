@@ -91,6 +91,51 @@ def test_split_s3_arn_to_bucket_and_path(s3_arn, expected_bucket, expected_path)
     assert path == expected_path
 
 
+@pytest.mark.parametrize(
+    "role_arn",
+    [
+        "arn:aws:iam::123456789012:role/tests-role",
+        "arn:aws:iam::123456789012:role/analysts",
+        "arn:aws:iam::123456789012:role/my-posts-role",
+        "arn:aws:iam::123456789012:role/analysts/my-role",
+        "arn:aws:iam::123456789012:role/path/to/tests-role",
+        # Non-aws partition, IAM service
+        "arn:aws-us-gov:iam::123456789012:role/tests-role",
+    ],
+)
+def test_wrapper_keeps_iam_role_arn_unchanged_when_it_contains_sts(role_arn):
+    """An IAM role ARN is never converted, whatever characters the name/path has."""
+    from unittest.mock import MagicMock
+
+    wrapper = IamClientWrapper(role_arn=role_arn, client=MagicMock())
+    assert wrapper.role_arn == role_arn
+
+
+@pytest.mark.parametrize(
+    "sts_arn,expected",
+    [
+        (
+            "arn:aws:sts::123456789012:assumed-role/MyRole/session",
+            "arn:aws:iam::123456789012:role/MyRole",
+        ),
+        (
+            "arn:aws:sts::123456789012:assumed-role/path/MyRole/session",
+            "arn:aws:iam::123456789012:role/path/MyRole",
+        ),
+        # Non-aws partition, STS service
+        (
+            "arn:aws-cn:sts::123456789012:assumed-role/MyRole/session",
+            "arn:aws-cn:iam::123456789012:role/MyRole",
+        ),
+    ],
+)
+def test_wrapper_converts_sts_assumed_role_arn(sts_arn, expected):
+    from unittest.mock import MagicMock
+
+    wrapper = IamClientWrapper(role_arn=sts_arn, client=MagicMock())
+    assert wrapper.role_arn == expected
+
+
 class TestIamClientWrapper:
     """Tests for IamClientWrapper class methods."""
 
