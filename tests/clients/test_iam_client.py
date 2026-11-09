@@ -220,6 +220,52 @@ def test_characterisation_convert_yields_empty_role_name(arn, current_output):
     assert _convert_sts_to_iam_arn(arn) == current_output
 
 
+@pytest.mark.parametrize(
+    "arn",
+    [
+        "arn:aws:stsx::123456789012:assumed-role/R/s",  # starts with "sts"
+        "arn:aws:x-sts::123456789012:assumed-role/R/s",  # contains "sts"
+    ],
+)
+def test_wrapper_does_not_convert_service_that_only_resembles_sts(arn):
+    """Service field must equal 'sts'; containing/starting with it is not enough."""
+    from unittest.mock import MagicMock
+
+    wrapper = IamClientWrapper(role_arn=arn, client=MagicMock())
+    assert wrapper.role_arn == arn
+
+
+# CHARACTERISATION ONLY: documents current behaviour, NOT a requirement.
+# AWS writes the service field in lowercase, so uppercase "STS" never occurs
+# in practice; the match is case-sensitive and such input is left unchanged.
+def test_characterisation_wrapper_sts_match_is_case_sensitive():
+    from unittest.mock import MagicMock
+
+    arn = "arn:aws:STS::123456789012:assumed-role/R/s"
+    wrapper = IamClientWrapper(role_arn=arn, client=MagicMock())
+    assert wrapper.role_arn == arn
+
+
+@pytest.mark.parametrize(
+    "sts_arn,expected",
+    [
+        # colon in the session segment is dropped with the session
+        (
+            "arn:aws:sts::123456789012:assumed-role/R/sess:ion",
+            "arn:aws:iam::123456789012:role/R",
+        ),
+        # colon inside the role segment survives intact
+        (
+            "arn:aws:sts::123456789012:assumed-role/a:b/R/s",
+            "arn:aws:iam::123456789012:role/a:b/R",
+        ),
+    ],
+)
+def test_convert_keeps_colons_within_resource_part(sts_arn, expected):
+    """split(':', 5) means colons in the resource never count as ARN fields."""
+    assert _convert_sts_to_iam_arn(sts_arn) == expected
+
+
 class TestIamClientWrapper:
     """Tests for IamClientWrapper class methods."""
 
