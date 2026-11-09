@@ -64,7 +64,7 @@ nx-neptune also stages CSV files in S3, deletes them after an import, and checks
 - `s3:GetEncryptionConfiguration`
 - `kms:Decrypt`, `kms:GenerateDataKey` and `kms:DescribeKey` on the bucket's KMS key
 
-The buckets nx-neptune writes to or deletes from (staging, Athena query results and export destinations) must have versioning enabled, and should be in the same region as your graphs. Otherwise imports, exports and Athena projections fail before any query runs. To enable versioning:
+Note: The S3 buckets `nx-neptune` writes to or deletes from (staging, Athena query results and export destinations) must have versioning enabled, and should be in the same region as your graphs. Otherwise imports, exports and Athena projections fail before any query runs. To enable versioning:
 
 ```bash
 aws s3api put-bucket-versioning --bucket <bucket> --versioning-configuration Status=Enabled
