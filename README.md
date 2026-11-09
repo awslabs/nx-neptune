@@ -131,43 +131,7 @@ make lock
 Before using this backend, ensure the following prerequisites are met:
 
 ### AWS IAM Permissions
-The IAM role or user accessing Neptune Analytics must have the following permissions:
-
-These permissions are required to read, write, and manage graph data via queries on Neptune Analytics:
-
-  - `neptune-graph:ReadDataViaQuery`
-  - `neptune-graph:WriteDataViaQuery`
-  - `neptune-graph:DeleteDataViaQuery`
-
-These permissions are required to start/stop a Neptune Analytics graph:
-
-  - `neptune-graph:StartGraph`
-  - `neptune-graph:StopGraph`
-
-These permissions are required to save/restore a Neptune Analytics snapshot:
-
-  - `neptune-graph:CreateGraphSnapshot` (for save)
-  - `neptune-graph:RestoreGraphFromSnapshot` (for restore)
-  - `neptune-graph:DeleteGraphSnapshot` (for delete)
-  - `neptune-graph:TagResource`
-
-These permissions are required to import/export between S3 and Neptune Analytics:
-
-  - `s3:GetObject` (for import)
-  - `s3:PutObject` (for export)
-  - `s3:ListBucket` (for export)
-  - `s3:DeleteBucket` (for delete)
-  - `kms:Decrypt`
-  - `kms:GenerateDataKey`
-  - `kms:DescribeKey`
-
-In Addition to the S3 import/export permissions, to read from/write to an existing S3 Tables datalake: 
-
-  - `athena:StartQueryExecution`
-  - `athena:GetQueryExecution`
-  - `athena:GetTableMetadata` and `glue:GetTable` (for `import_from_graph_schema`, which reads source table columns)
-
-The ARN with the above permissions must be added to your environment variables
+The IAM permissions nx-neptune needs, the import role's trust policy and an example policy are listed in [Prerequisites](https://awslabs.github.io/nx-neptune/getting-started/prerequisites/) on the documentation site.
 
 ### Python Runtime
 
