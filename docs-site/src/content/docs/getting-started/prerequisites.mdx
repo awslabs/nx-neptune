@@ -33,7 +33,8 @@ Required to create, look up, update, reset, start, stop and delete Neptune Analy
 - `neptune-graph:DeleteGraph`
 - `neptune-graph:TagResource`
 
-`ResetGraph` and `DeleteGraph` delete graph data. nx-neptune tags every graph and snapshot it creates with `agent=nx-neptune`, which is why `TagResource` is needed wherever creation is.
+Note: `ResetGraph` and `DeleteGraph` delete graph data. 
+Note: `nx-neptune` tags every graph and snapshot it creates with `agent=nx-neptune`, which is why `TagResource` is needed wherever creation is.
 
 ### Snapshots
 
