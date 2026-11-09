@@ -74,7 +74,7 @@ Because nx-neptune deletes its staged files, a versioned bucket keeps their old 
 
 ### Import role
 
-Neptune Analytics reads S3 for imports, and writes it for exports, using an IAM role that nx-neptune passes to it in `StartImportTask`, `CreateGraphUsingImportTask` and `StartExportTask`. With `SessionManager` and the proxy UI, that role is the one you are running as. With the NetworkX backend, it is `s3_iam_role` in `NeptuneConfig` if you set it, otherwise again your own role.
+Neptune Analytics reads S3 for imports, and writes S3 for exports, using an IAM role that `nx-neptune` passes to it in `StartImportTask`, `CreateGraphUsingImportTask` and `StartExportTask`. With `SessionManager` and the proxy UI, that role is the one you are running as. With the NetworkX backend, it is `s3_iam_role` in `NeptuneConfig` if you set it, otherwise again your own role.
 
 The import role must:
 
