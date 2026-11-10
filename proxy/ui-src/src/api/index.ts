@@ -21,7 +21,7 @@ const PROXY_TOKEN = (() => {
 })();
 
 export const TOKEN_EXPIRED_MESSAGE =
-  "Proxy access token is missing or expired. Reopen the launch URL printed in the proxy console.";
+  "Reopen the launch URL printed in the proxy console with token included (e.g. http://127.0.0.1:8080/?token=<token>)";
 
 let tokenExpired = false;
 const tokenListeners = new Set<() => void>();
