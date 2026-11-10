@@ -13,6 +13,34 @@ function persistQueries(id: string, nq: UiNodeQuery[], eq: UiEdgeQuery[]) {
   return projection.saveQueries(id, { node_queries: stripUi(nq), edge_queries: stripUi(eq) });
 }
 
+const NA_GRAPH_NAME_MAX_LENGTH = 63;
+const SESSION_SUFFIX_LENGTH = 37;
+const GRAPH_NAME_MIN_LENGTH = 3;
+const GRAPH_NAME_CHARS = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+function graphNameMaxLength(prefix: string | null): number | null {
+  if (prefix === null) return null;
+  return NA_GRAPH_NAME_MAX_LENGTH - prefix.length - SESSION_SUFFIX_LENGTH;
+}
+
+function graphNameError(name: string, prefix: string | null): string | null {
+  const max = graphNameMaxLength(prefix);
+  if (max !== null && max < GRAPH_NAME_MIN_LENGTH) {
+    return `The graph name prefix "${prefix}" is too long to leave room for a name. Shorten GRAPH_PREFIX.`;
+  }
+  if (!name) return null;
+  if (max !== null && name.length > max) {
+    return `The graph name is too long.`;
+  }
+  if (name.length < GRAPH_NAME_MIN_LENGTH) {
+    return `Graph name must be at least ${GRAPH_NAME_MIN_LENGTH} characters.`;
+  }
+  if (!GRAPH_NAME_CHARS.test(name)) {
+    return "Use lowercase letters, digits and single hyphens, without a hyphen at the start or end.";
+  }
+  return null;
+}
+
 export function Import() {
   const [searchParams] = useSearchParams();
 
@@ -36,6 +64,7 @@ export function Import() {
   const [translateError, setTranslateError] = useState<string | null>(null);
   const [bucket, setBucket] = useState("");
   const [graphName, setGraphName] = useState("");
+  const [graphPrefix, setGraphPrefix] = useState<string | null>(null);
   const [graphMemoryGb, setGraphMemoryGb] = useState(16);
 
   // --- Multi-query state ---
@@ -55,10 +84,14 @@ export function Import() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
 
+  const graphNameMax = graphNameMaxLength(graphPrefix);
+  const graphNameErrorText = graphNameError(graphName, graphPrefix);
+
   // --- Load metadata ---
   useEffect(() => {
     metadata.catalogs().then((d) => setCatalogs(d.catalogs));
     metadata.buckets().then((d) => setBuckets(d.buckets));
+    metadata.config().then((c) => setGraphPrefix(c.graph_prefix)).catch(() => {});
     projectApi.list().then(setProjects);
     loadProjections().then(() => {
       const projectionId = searchParams.get("projection");
@@ -270,7 +303,10 @@ export function Import() {
     if (!bucket) missing.push({ check: "S3 staging bucket", passed: false, message: "No S3 staging bucket selected." });
     if (!catalog) missing.push({ check: "Athena catalog", passed: false, message: "No Athena catalog selected." });
     if (!database) missing.push({ check: "Athena database", passed: false, message: "No Athena database selected." });
+    const nameError = graphNameError(graphName, graphPrefix);
     if (!graphName.trim()) missing.push({ check: "Graph name", passed: false, message: "No graph name set." });
+    else if (graphPrefix === null) missing.push({ check: "Graph name", passed: false, message: "Proxy configuration not loaded yet. Try again." });
+    else if (nameError) missing.push({ check: "Graph name", passed: false, message: nameError });
     return missing;
   }
 
@@ -506,11 +542,21 @@ export function Import() {
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">Graph Name</span>
               <input
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                className={`w-full rounded-md border px-3 py-2 text-sm shadow-sm focus:ring-1 ${graphNameErrorText ? "border-red-500 focus:border-red-500 focus:ring-red-500" : "border-gray-300 focus:border-blue-500 focus:ring-blue-500"}`}
                 placeholder="my-graph"
                 value={graphName}
                 onChange={(e) => setGraphName(e.target.value)}
+                aria-invalid={!!graphNameErrorText}
+                aria-describedby="graph-name-help"
               />
+              <span id="graph-name-help" className="flex justify-between gap-2 text-xs">
+                <span className="text-red-600" aria-live="polite">{graphNameErrorText}</span>
+                {graphNameMax !== null && (
+                  <span className={graphName.length > graphNameMax ? "text-red-600" : "text-gray-500"}>
+                    {graphName.length}/{graphNameMax}
+                  </span>
+                )}
+              </span>
             </label>
           </div>
           <div>
