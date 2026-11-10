@@ -6,7 +6,8 @@
 The URL carries the per-run token, so it is not passed on the browser's
 command line, where other local users could read it from the process list.
 Instead a redirect page readable only by the current user is written to a
-temp file and that file is opened, the same approach Jupyter uses.
+temp file and that file is opened, the same approach Jupyter uses. The file
+is deleted shortly after the browser is launched, or at exit if that fails.
 """
 
 import atexit
@@ -24,6 +25,9 @@ logger = logging.getLogger("nx_neptune_proxy")
 
 _WAIT_SECONDS = 15.0
 _POLL_SECONDS = 0.2
+# How long the redirect page (which contains the token) stays on disk after
+# the browser is launched. Long enough for a cold browser start.
+_CLEANUP_SECONDS = 30.0
 
 
 def _wait_until_listening(host: str, port: int, timeout: float) -> bool:
@@ -52,16 +56,37 @@ def _write_redirect_page(url: str) -> Path:
     return path
 
 
+def _remove(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _schedule_removal(path: Path, delay: float) -> None:
+    timer = threading.Timer(delay, _remove, args=(path,))
+    timer.daemon = True
+    timer.start()
+
+
 def _open_when_ready(url: str, host: str, port: int) -> None:
     if not _wait_until_listening(host, port, _WAIT_SECONDS):
         logger.info("Proxy not reachable yet; open the launch URL printed above.")
         return
+    page = None
     try:
         page = _write_redirect_page(url)
-        if not webbrowser.open(page.as_uri()):
-            logger.info("No browser available; open the launch URL printed above.")
+        if webbrowser.open(page.as_uri()):
+            # webbrowser.open returns before the browser reads the file, so
+            # keep it briefly, then remove it so the token isn't left on disk
+            # for the rest of the run. atexit remains as a fallback.
+            _schedule_removal(page, _CLEANUP_SECONDS)
+            return
+        logger.info("No browser available; open the launch URL printed above.")
     except Exception as exc:
         logger.info(f"Could not open a browser ({exc!r}); open the launch URL printed above.")
+    if page is not None:
+        _remove(page)
 
 
 def open_launch_url(url: str, host: str, port: int) -> None:

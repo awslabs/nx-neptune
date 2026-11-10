@@ -1,5 +1,6 @@
 const BASE = "/api/v0";
 
+// Token persisted in localStorage for cross-tab use; see proxy auth.py for the reasoning.
 const TOKEN_KEY = "nxp_token";
 
 const PROXY_TOKEN = (() => {

@@ -3,6 +3,8 @@
 
 import socket
 import stat
+import time
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -77,3 +79,39 @@ class TestOpenWhenReady:
     def test_browser_failure_does_not_raise(self, listening_port):
         with mock.patch.object(browser.webbrowser, "open", side_effect=RuntimeError("x")):
             browser._open_when_ready(URL, "127.0.0.1", listening_port)
+
+
+class TestRedirectPageCleanup:
+    def _opened_path(self, opened):
+        from urllib.parse import unquote, urlparse
+
+        return Path(unquote(urlparse(opened.call_args.args[0]).path))
+
+    def test_page_removed_after_delay(self, listening_port, monkeypatch):
+        monkeypatch.setattr(browser, "_CLEANUP_SECONDS", 0.2)
+        with mock.patch.object(browser.webbrowser, "open", return_value=True) as opened:
+            browser._open_when_ready(URL, "127.0.0.1", listening_port)
+        page = self._opened_path(opened)
+        assert page.exists()
+        deadline = time.monotonic() + 3
+        while page.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not page.exists()
+
+    def test_page_removed_immediately_when_no_browser(self, listening_port):
+        with mock.patch.object(browser.webbrowser, "open", return_value=False) as opened:
+            browser._open_when_ready(URL, "127.0.0.1", listening_port)
+        assert not self._opened_path(opened).exists()
+
+    def test_page_removed_immediately_when_browser_raises(self, listening_port):
+        written = []
+        real_write = browser._write_redirect_page
+
+        def spy(url):
+            written.append(real_write(url))
+            return written[-1]
+
+        with mock.patch.object(browser, "_write_redirect_page", side_effect=spy), \
+                mock.patch.object(browser.webbrowser, "open", side_effect=RuntimeError("x")):
+            browser._open_when_ready(URL, "127.0.0.1", listening_port)
+        assert written and not written[0].exists()
