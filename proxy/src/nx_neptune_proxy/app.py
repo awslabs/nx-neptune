@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from nx_neptune_proxy.auth import get_token, log_token_notice, require_token
+from nx_neptune_proxy.browser import open_launch_url
 from nx_neptune_proxy.config import _LOOPBACK_HOSTS, get_settings, normalize_origin
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
@@ -88,9 +89,10 @@ logger = logging.getLogger("nx_neptune_proxy")
 # can't be scraped by reaching the port. In a container stdout hits the log
 # driver, so this URL is log-visible — an accepted tradeoff for a
 # localhost dev tool; the real boundary is the 127.0.0.1 bind + middlewares.
+_LAUNCH_URL = f"http://127.0.0.1:{settings.port}/?token={get_token()}"
 print(
     f"\nOpen the proxy UI (token valid for this run only):\n"
-    f"  http://127.0.0.1:{settings.port}/?token={get_token()}\n"
+    f"  {_LAUNCH_URL}\n"
 )
 log_token_notice()
 
@@ -294,6 +296,12 @@ async def resume_pending_deletions():
         if p.status == "deleting":
             logger.info(f"Resuming deletion of project {p.id} ({p.name})")
             asyncio.create_task(delete_project(p.id))
+
+
+@app.on_event("startup")
+async def open_browser():
+    if settings.open_browser:
+        open_launch_url(_LAUNCH_URL, "127.0.0.1", settings.port)
 
 
 # --- Static UI (must be last — catch-all) ---

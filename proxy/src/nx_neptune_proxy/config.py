@@ -56,6 +56,7 @@ class Settings:
     extra_trusted_hosts: frozenset[str] = field(default_factory=frozenset)
     region: str = ""
     graph_prefix: str = "nxp-"
+    open_browser: bool = False
 
     def __post_init__(self) -> None:
         if self.allowed_origins is None:
@@ -106,6 +107,8 @@ class Settings:
                 "AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "")
             ),
             graph_prefix=os.environ.get("GRAPH_PREFIX", "nxp-"),
+            open_browser=os.environ.get("OPEN_BROWSER", "").strip().lower()
+            in ("1", "true", "yes"),
         )
 
     def validate(self) -> None:

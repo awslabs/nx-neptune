@@ -42,7 +42,8 @@ Open the proxy UI (token valid for this run only):
   http://127.0.0.1:8080/?token=<token>
 ```
 
-Open that URL to use the UI. The token is generated each time the server starts and
+Open that URL to use the UI. `make dev` opens it in your browser on startup
+(`OPEN_BROWSER=true`); other launch paths only print it. The token is generated each time the server starts and
 is required for every API call, so `http://127.0.0.1:8080` without it loads the page
 but the API calls fail. Pages opened on `localhost` redirect to `127.0.0.1`. The UI removes the token from the address bar and stores it in
 the browser's local storage for `http://127.0.0.1:8080`, so page refreshes and new tabs
@@ -132,6 +133,7 @@ cd ui-src && npm run dev
 | `HOST` | `127.0.0.1` | Bind address for `python -m nx_neptune_proxy`. Non-loopback addresses are refused unless `ALLOW_NON_LOOPBACK_BIND=1` |
 | `ALLOW_NON_LOOPBACK_BIND` | *(unset)* | Set to `1` to allow a non-loopback `HOST`. The container image sets it, and publishes the port on `127.0.0.1` only |
 | `PORT` | `8080` | Server port for `python -m nx_neptune_proxy` (`make dev` always uses `8080`) |
+| `OPEN_BROWSER` | *(unset)* | Set to `true` to open the launch URL in your browser on startup. `make dev` sets it. Has no effect in a container |
 | `CORS_ALLOWED_ORIGINS` | *(none)* | Comma-separated list of allowed browser origins (full `scheme://host[:port]`, e.g. `https://app.example.com`). This is the single source of truth for origins: it drives the CORS response headers, the server-side Origin check, and the hostnames trusted in the `Host` header. Loopback origins are always allowed, so no configuration is needed for local/Docker use. |
 | `LOG_LEVEL` | `info` | Logging level |
 | `GE_PORT` | `443` | Host port for Graph Explorer (`make up`, `make up-ge`), published on `127.0.0.1`. `make up` builds the UI with the matching link; with `make dev`, build it with `VITE_GRAPH_EXPLORER_URL=https://localhost:<port>/explorer make ui` |
