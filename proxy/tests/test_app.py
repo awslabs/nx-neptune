@@ -78,10 +78,27 @@ class TestDocsDisabledWithUiBuilt:
     @pytest.mark.asyncio
     async def test_root_still_served_by_spa_fallback(self, client):
         """Sanity check: the fix doesn't collateral-damage real SPA routes."""
-        resp = await client.get("/")
+        resp = await client.get("http://127.0.0.1/")
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
     async def test_client_side_route_still_served_by_spa_fallback(self, client):
-        resp = await client.get("/projects/abc")
+        resp = await client.get("http://127.0.0.1/projects/abc")
         assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_localhost_page_redirects_to_loopback_ip(self, client):
+        resp = await client.get("http://localhost:9090/projects/abc?token=t1")
+        assert resp.status_code == 307
+        assert resp.headers["location"] == "http://127.0.0.1:9090/projects/abc?token=t1"
+
+    @pytest.mark.asyncio
+    async def test_localhost_root_redirects_to_loopback_ip(self, client):
+        resp = await client.get("http://localhost:8080/")
+        assert resp.status_code == 307
+        assert resp.headers["location"] == "http://127.0.0.1:8080/"
+
+    @pytest.mark.asyncio
+    async def test_localhost_api_is_not_redirected(self, client):
+        resp = await client.get("http://localhost:8080/api/v0/metadata/config")
+        assert resp.status_code == 401

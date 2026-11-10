@@ -43,10 +43,11 @@ Open the proxy UI (token valid for this run only):
 ```
 
 Open that URL to use the UI. The token is generated each time the server starts and
-is required for every API call, so `http://localhost:8080` without it loads the page
-but the API calls fail. The UI removes the token from the address bar and keeps it in
-memory only. After a page refresh or a server restart (including an auto-reload by
-`make dev`), open the new launch URL from the server output. When running in a
+is required for every API call, so `http://127.0.0.1:8080` without it loads the page
+but the API calls fail. Pages opened on `localhost` redirect to `127.0.0.1`. The UI removes the token from the address bar and stores it in
+the browser's local storage for `http://127.0.0.1:8080`, so page refreshes and new tabs
+keep working. After a server restart (including an auto-reload by `make dev`), open the
+new launch URL from the server output. When running in a
 container, the URL is in the container output (`make logs`).
 
 `make dev` binds to `127.0.0.1:8080`.

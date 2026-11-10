@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from botocore.exceptions import ClientError
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -305,7 +305,7 @@ if UI_DIR.exists():
     app.mount("/assets", StaticFiles(directory=UI_DIR / "assets"), name="assets")
 
     @app.get("/{path:path}")
-    async def spa_fallback(path: str):
+    async def spa_fallback(path: str, request: Request):
         if path.startswith("api/"):
             raise HTTPException(status_code=404)
 
@@ -331,6 +331,11 @@ if UI_DIR.exists():
             file_path.relative_to(ui_root)
         except ValueError:
             raise HTTPException(status_code=403)
+
+        if request.url.hostname == "localhost":
+            return RedirectResponse(
+                str(request.url.replace(hostname="127.0.0.1")), status_code=307
+            )
 
         # Serve a real file if present, else fall back to index.html (SPA
         # routing). index.html is served as-is — the token is delivered via
