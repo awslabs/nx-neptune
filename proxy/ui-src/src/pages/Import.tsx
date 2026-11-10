@@ -30,7 +30,7 @@ function graphNameError(name: string, prefix: string | null): string | null {
   }
   if (!name) return null;
   if (max !== null && name.length > max) {
-    return `Graph name is too long (max ${max} characters).`;
+    return `The graph name is too long.`;
   }
   if (name.length < GRAPH_NAME_MIN_LENGTH) {
     return `Graph name must be at least ${GRAPH_NAME_MIN_LENGTH} characters.`;
