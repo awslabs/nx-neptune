@@ -34,7 +34,7 @@ class TestPathTraversal:
             "path": path,
             "root_path": "",
             "query_string": b"",
-            "headers": [(b"host", b"localhost")],
+            "headers": [(b"host", b"127.0.0.1")],
             # A real request always has a client peer; the client_ip_guard
             # rejects requests without a loopback client. Set loopback here so
             # this scope represents a legitimate local request.

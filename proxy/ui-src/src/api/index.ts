@@ -1,18 +1,13 @@
 const BASE = "/api/v0";
 
-// The proxy delivers this run's token via the launch URL's query string
-// (e.g. http://127.0.0.1:8080/?token=...). We read it once at module load,
-// strip it from the address bar (so it doesn't linger in history/referer),
-// and keep it in memory only — no cookie, no localStorage/sessionStorage.
-//
-// Consequences (intentional): in-app navigation keeps the token (the JS
-// runtime and this module variable persist); a full page reload clears it,
-// after which the operator must reopen the launch URL.
+// Token persisted in localStorage for cross-tab use; see proxy auth.py for the reasoning.
+const TOKEN_KEY = "nxp_token";
+
 const PROXY_TOKEN = (() => {
   const params = new URLSearchParams(window.location.search);
-  const token = params.get("token");
-  if (token) {
-    // Remove ?token=... from the URL without reloading the page.
+  const fromUrl = params.get("token");
+  if (fromUrl) {
+    localStorage.setItem(TOKEN_KEY, fromUrl);
     params.delete("token");
     const query = params.toString();
     const newUrl =
@@ -20,9 +15,32 @@ const PROXY_TOKEN = (() => {
       (query ? `?${query}` : "") +
       window.location.hash;
     window.history.replaceState(window.history.state, "", newUrl);
+    return fromUrl;
   }
-  return token;
+  return localStorage.getItem(TOKEN_KEY);
 })();
+
+export const TOKEN_EXPIRED_MESSAGE =
+  "Reopen the launch URL printed in the proxy console with token included (e.g. http://127.0.0.1:8080/?token=<token>)";
+
+let tokenExpired = false;
+const tokenListeners = new Set<() => void>();
+
+export const tokenStatus = {
+  subscribe: (listener: () => void) => {
+    tokenListeners.add(listener);
+    return () => {
+      tokenListeners.delete(listener);
+    };
+  },
+  isExpired: () => tokenExpired,
+};
+
+function markTokenExpired() {
+  if (tokenExpired) return;
+  tokenExpired = true;
+  tokenListeners.forEach((listener) => listener());
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -31,6 +49,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set("Authorization", `Bearer ${PROXY_TOKEN}`);
   }
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
+  if (res.status === 401) {
+    if (localStorage.getItem(TOKEN_KEY) === PROXY_TOKEN) {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+    markTokenExpired();
+    throw new Error(TOKEN_EXPIRED_MESSAGE);
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.message || `Request failed: ${res.status}`);

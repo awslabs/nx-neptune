@@ -4,8 +4,21 @@
 """Per-run bearer token for the proxy's own HTTP API.
 
 Gates who may call this proxy's /api/* routes. A fresh, random token is
-generated once per process start and kept in memory only — it is never
-written to disk or logged in full.
+generated once per process start and is never logged in full. The server
+Gates who may call this proxy's /api/* routes. A fresh, random token is
+generated once per process start. The server keeps it in localStorage 
+only, but it leaves the process in these places:
+
+- the launch URL printed to stdout;
+- with OPEN_BROWSER=true, a user-only (0600) temp redirect page that is
+  deleted shortly after the browser is launched (see browser.py);
+- the bundled UI's localStorage for the proxy origin, so refreshes and new
+  tabs keep working (as opposed to sessionStorage that is per-tab). This replaces an earlier
+  memory-only design. A stale value is useless after a restart and is
+  removed on the first 401, and a leaked token can't be used off-machine
+  because the API is loopback-only with Host and Origin checks. Tradeoff:
+  script injected into the UI (XSS) can read the token, so the UI must not
+  use HTML-injecting sinks such as innerHTML.
 """
 
 import logging

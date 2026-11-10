@@ -151,7 +151,7 @@ class TestHostCheckCoversCatchAllRoute:
     )
     @pytest.mark.asyncio
     async def test_catch_all_root_allowed_with_trusted_host(self, client):
-        resp = await client.get("/", headers={"Host": "localhost"})
+        resp = await client.get("/", headers={"Host": "127.0.0.1"})
         assert resp.status_code == 200
 
     @pytest.mark.asyncio

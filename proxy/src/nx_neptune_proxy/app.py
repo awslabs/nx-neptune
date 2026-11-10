@@ -12,11 +12,12 @@ from urllib.parse import urlparse
 from botocore.exceptions import ClientError
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from nx_neptune_proxy.auth import get_token, log_token_notice, require_token
+from nx_neptune_proxy.browser import open_launch_url
 from nx_neptune_proxy.config import _LOOPBACK_HOSTS, get_settings, normalize_origin
 from nx_neptune_proxy.routers.graph import router as graph_router
 from nx_neptune_proxy.routers.metadata import router as metadata_router
@@ -88,9 +89,10 @@ logger = logging.getLogger("nx_neptune_proxy")
 # can't be scraped by reaching the port. In a container stdout hits the log
 # driver, so this URL is log-visible — an accepted tradeoff for a
 # localhost dev tool; the real boundary is the 127.0.0.1 bind + middlewares.
+_LAUNCH_URL = f"http://127.0.0.1:{settings.port}/?token={get_token()}"
 print(
     f"\nOpen the proxy UI (token valid for this run only):\n"
-    f"  http://127.0.0.1:{settings.port}/?token={get_token()}\n"
+    f"  {_LAUNCH_URL}\n"
 )
 log_token_notice()
 
@@ -296,6 +298,12 @@ async def resume_pending_deletions():
             asyncio.create_task(delete_project(p.id))
 
 
+@app.on_event("startup")
+async def open_browser():
+    if settings.open_browser:
+        open_launch_url(_LAUNCH_URL, "127.0.0.1", settings.port)
+
+
 # --- Static UI (must be last — catch-all) ---
 
 UI_DIR = Path(__file__).parent.parent.parent / "ui"
@@ -305,7 +313,7 @@ if UI_DIR.exists():
     app.mount("/assets", StaticFiles(directory=UI_DIR / "assets"), name="assets")
 
     @app.get("/{path:path}")
-    async def spa_fallback(path: str):
+    async def spa_fallback(path: str, request: Request):
         if path.startswith("api/"):
             raise HTTPException(status_code=404)
 
@@ -331,6 +339,11 @@ if UI_DIR.exists():
             file_path.relative_to(ui_root)
         except ValueError:
             raise HTTPException(status_code=403)
+
+        if request.url.hostname == "localhost":
+            return RedirectResponse(
+                str(request.url.replace(hostname="127.0.0.1")), status_code=307
+            )
 
         # Serve a real file if present, else fall back to index.html (SPA
         # routing). index.html is served as-is — the token is delivered via
