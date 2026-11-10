@@ -5,7 +5,9 @@
 
 Gates who may call this proxy's /api/* routes. A fresh, random token is
 generated once per process start and is never logged in full. The server
-keeps it in memory only, but it leaves the process in these places:
+Gates who may call this proxy's /api/* routes. A fresh, random token is
+generated once per process start. The server keeps it in localStorage 
+only, but it leaves the process in these places:
 
 - the launch URL printed to stdout;
 - with OPEN_BROWSER=true, a user-only (0600) temp redirect page that is
