@@ -19,8 +19,27 @@ const PROXY_TOKEN = (() => {
   return localStorage.getItem(TOKEN_KEY);
 })();
 
-const TOKEN_EXPIRED_MESSAGE =
+export const TOKEN_EXPIRED_MESSAGE =
   "Proxy access token is missing or expired. Reopen the launch URL printed in the proxy console.";
+
+let tokenExpired = false;
+const tokenListeners = new Set<() => void>();
+
+export const tokenStatus = {
+  subscribe: (listener: () => void) => {
+    tokenListeners.add(listener);
+    return () => {
+      tokenListeners.delete(listener);
+    };
+  },
+  isExpired: () => tokenExpired,
+};
+
+function markTokenExpired() {
+  if (tokenExpired) return;
+  tokenExpired = true;
+  tokenListeners.forEach((listener) => listener());
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -33,6 +52,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (localStorage.getItem(TOKEN_KEY) === PROXY_TOKEN) {
       localStorage.removeItem(TOKEN_KEY);
     }
+    markTokenExpired();
     throw new Error(TOKEN_EXPIRED_MESSAGE);
   }
   if (!res.ok) {
