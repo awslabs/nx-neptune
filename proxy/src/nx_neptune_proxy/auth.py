@@ -11,7 +11,7 @@ keeps it in memory only, but it leaves the process in these places:
 - with OPEN_BROWSER=true, a user-only (0600) temp redirect page that is
   deleted shortly after the browser is launched (see browser.py);
 - the bundled UI's localStorage for the proxy origin, so refreshes and new
-  tabs keep working (sessionStorage is per-tab). This replaces an earlier
+  tabs keep working (as opposed to sessionStorage that is per-tab). This replaces an earlier
   memory-only design. A stale value is useless after a restart and is
   removed on the first 401, and a leaked token can't be used off-machine
   because the API is loopback-only with Host and Origin checks. Tradeoff:
