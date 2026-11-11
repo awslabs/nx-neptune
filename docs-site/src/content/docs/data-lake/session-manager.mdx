@@ -52,19 +52,23 @@ For data already in S3-compatible formats (CSV, Parquet), Neptune Analytics also
 
 The `SessionManager` class is in [`nx_neptune/session_manager.py`](https://github.com/awslabs/nx-neptune/blob/main/nx_neptune/session_manager.py).
 
+`SessionManager(session_name=None, cleanup_task=None)` takes only a session name and an optional cleanup task. It uses the AWS credentials and default region from your environment, and the caller identity of those credentials as the S3 import/export role. S3 locations are passed to the methods that use them.
+
 ```python
-from nx_neptune.session_manager import SessionManager
+from nx_neptune.session_manager import CleanupTask, SessionManager
 
-session = SessionManager(
-    graph_id="my-graph",
-    region="us-west-2",
-    iam_role_arn="arn:aws:iam::123456789012:role/NeptuneRole",
-    s3_import_path="s3://my-bucket/import/",
-    s3_export_path="s3://my-bucket/export/",
-)
+async def main():
+    with SessionManager("my-session", cleanup_task=CleanupTask.DESTROY) as session:
+        # Reuse an available graph in this session, or create one
+        graph = await session.get_or_create_graph()
 
-# Create graph, import data, run algorithms, export, destroy
+        await session.import_from_csv(graph, "s3://my-bucket/import/")
+        # ... run algorithms ...
+        await session.export_to_csv(graph, "s3://my-bucket/export/")
+    # CleanupTask.DESTROY destroys the session's graphs on exit
 ```
+
+Run it with `asyncio.run(main())`, or `await` the calls directly in a notebook.
 
 ## Declaring the graph schema
 

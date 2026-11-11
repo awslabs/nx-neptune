@@ -301,7 +301,8 @@ This policy combines graph management, S3 import/export, Athena, the import role
 | Variable | Purpose |
 |----------|---------|
 | `NETWORKX_GRAPH_ID` | Neptune Analytics graph identifier |
-| `NETWORKX_ARN_IAM_ROLE` | Import role ARN, read by the `instance_mgmt_lifecycle_demo` and `s3_import_export_demo` notebooks (the library itself uses the [import role](#import-role)) |
+| `NETWORKX_S3_IAM_ROLE_ARN` | [Import role](#import-role) ARN read by the library (`nx_plugin/config.py`). Do not set it until [#555](https://github.com/awslabs/nx-neptune/issues/555) is fixed: setting it makes the backend raise `AttributeError` while building its configuration, so every call fails. Set `nx.config.backends.neptune.s3_iam_role` in code instead |
+| `NETWORKX_ARN_IAM_ROLE` | Import role ARN, read only by the `instance_mgmt_lifecycle_demo` and `s3_import_export_demo` notebooks; the library does not read it |
 | `NETWORKX_S3_IMPORT_BUCKET_PATH` | S3 path for imports |
 | `NETWORKX_S3_EXPORT_BUCKET_PATH` | S3 path for exports |
 | `AWS_REGION` | AWS region |

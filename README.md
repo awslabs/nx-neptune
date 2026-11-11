@@ -316,6 +316,15 @@ To run the Jupyter notebooks:
    export NETWORKX_S3_EXPORT_BUCKET_PATH=s3://S3_BUCKET_PATH
    ```
 
+   `NETWORKX_ARN_IAM_ROLE` is read only by the `instance_mgmt_lifecycle_demo` and `s3_import_export_demo` notebooks. The library itself does not read it; for the role Neptune Analytics uses to import from and export to S3 it reads a different variable, `NETWORKX_S3_IAM_ROLE_ARN`.
+
+   Do not set `NETWORKX_S3_IAM_ROLE_ARN` until [#555](https://github.com/awslabs/nx-neptune/issues/555) is fixed: setting it makes the backend raise `AttributeError` when it builds its configuration, so every call fails rather than falling back. Set the role in code instead:
+
+   ```python
+   import networkx as nx
+   nx.config.backends.neptune.s3_iam_role = "arn:aws:iam::AWS_ACCOUNT:role/IAM_ROLE_NAME"
+   ```
+
 3. Launch Jupyter Notebook:
    ```bash
    jupyter notebook notebooks/
