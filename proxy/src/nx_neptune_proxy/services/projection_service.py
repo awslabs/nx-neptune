@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from .projection_store import Projection, store as projection_store
+from .projection_store import IN_FLIGHT_STATUSES, Projection, store as projection_store
 from .query_store import EdgeQuery, NodeQuery, query_store
 from .db import connection
 from nx_neptune.clients.client_factory import ClientFactory
@@ -63,16 +63,29 @@ class ProjectionService:
     def update(self, projection_id: str, **data) -> Optional[Projection]:
         return projection_store.update(projection_id, **data)
 
-    def delete(self, projection_id: str) -> bool:
-        """Delete a projection and its associated node/edge queries atomically.
+    def try_transition(
+        self,
+        projection_id: str,
+        to_status: str,
+        refuse_when: frozenset = IN_FLIGHT_STATUSES,
+        **data,
+    ) -> bool:
+        """Atomic claim: see ``ProjectionStore.try_transition``."""
+        return projection_store.try_transition(
+            projection_id, to_status, refuse_when, **data
+        )
 
-        All deletes run in a single transaction so a crash mid-sequence cannot
-        leave a partial state. Child queries are removed explicitly (rather than
-        relying solely on the ON DELETE CASCADE) as defense-in-depth.
+    def purge(self, projection_id: str, force: bool = False) -> bool:
+        """Atomically delete a projection and its queries if safe to purge.
+
+        Returns False (and removes nothing) when the row is missing, has a
+        graph attached, or is in flight without ``force``.
         """
         with connection() as conn:
+            if not projection_store.purge_on(conn, projection_id, force):
+                return False
             query_store.delete_node_and_edge_queries_on(conn, projection_id)
-            return projection_store.delete_on(conn, projection_id)
+            return True
 
     # --- Queries (child of a projection) ---
 
