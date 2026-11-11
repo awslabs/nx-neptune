@@ -122,6 +122,7 @@ aws cloudformation deploy \
 | GraphId | Neptune Analytics graph ID |
 | NotebookURL | SageMaker notebook URL |
 | StagingBucketName | S3 bucket for import/export, datasets, Athena results, and general use |
+| ImportRoleArn | Role Neptune Analytics assumes for S3 import and export. Its trust is unconditioned because the service does not satisfy `aws:SourceAccount` or `aws:SourceArn` |
 
 ```bash
 aws cloudformation describe-stacks --stack-name nx-neptune-demo --query 'Stacks[0].Outputs'
@@ -160,3 +161,82 @@ aws cloudformation wait stack-delete-complete --stack-name nx-neptune-demo
 - The Neptune Analytics graph takes ~5–10 minutes to create
 - Environment variables are set via `jupyter_notebook_config.py` and require a notebook stop/start to update
 - On every notebook stop/start, `OnStart` re-installs `nx_neptune` (from the `.whl` if provided, otherwise PyPI)
+
+### Neptune Analytics import role trust policy
+
+Neptune Analytics assumes an IAM role to read S3 for imports and write it for exports. This
+template provides a dedicated role for that, `ImportRole`, exported as the `ImportRoleArn`
+output and set in the notebook as `NETWORKX_S3_IAM_ROLE_ARN`. It exists because of the
+measurement below.
+
+#### What was measured
+
+On 2026-11-11, in `us-east-1`, against a 16 m-NCU graph, via `StartImportTask`, one throwaway
+role per form, one run each:
+
+| Trust condition on the `neptune-graph.amazonaws.com` principal | Result |
+| --- | --- |
+| `StringEquals aws:SourceAccount` | rejected |
+| `ArnLike aws:SourceArn …:neptune-graph:<region>:<acct>:graph/*` | rejected |
+| `ArnLike aws:SourceArn …:neptune-graph:<region>:<acct>:*` | rejected |
+| both of the above together | rejected |
+| no condition | accepted, import succeeded |
+
+Every rejection returned the same message, which names S3 and not trust:
+
+```
+ValidationException: The S3 arn s3://<bucket>/<prefix>/ is inaccessible or your role
+does not have access to it.
+```
+
+The accepted run used the same bucket, the same S3 read policy and the same IAM propagation
+delay as the rejected ones, so the trust condition was the only variable that changed.
+
+**What this does and does not establish.** It establishes that these four conditioned forms
+were rejected and that an unconditioned one was accepted, under those conditions. It does not
+establish *why*: the natural reading is that the service does not supply those context keys, but
+this was one run per form, in one region, through one API, and the conditioned roles produced no
+`AssumeRole` events in CloudTrail at all — which fits a rejection before any assume attempt just
+as well as a condition that failed to match. Other operators and ARN shapes were not tried. If
+you need certainty for your own threat model, re-run it (below) rather than relying on this.
+
+#### Why `ImportRole` has no trust condition, and why that is contained
+
+An `aws:SourceAccount` or `aws:SourceArn` condition is the usual confused-deputy protection for
+a service principal, and `ImportRole` does not have one, because with one it cannot do its job.
+The protection is replaced by making the role not worth confusing: its only permissions are
+`s3:GetObject`, `s3:ListBucket` and `s3:PutObject` on this stack's staging bucket, and
+`kms:Decrypt`/`GenerateDataKey`/`DescribeKey` on that bucket's key. No Neptune actions, no Glue,
+no logs, no SageMaker. Anything that managed to have the service assume it could read and write
+one bucket.
+
+`NotebookRole` is deliberately **not** changed. It keeps its conditioned `neptune-graph`
+statement, which means it still cannot be used for import — but it also holds Neptune
+administration, Glue table writes and broader S3 access, and an unconditioned service trust on
+a role that powerful is a much larger grant than the same trust on `ImportRole`.
+
+Note the key-policy asymmetry: the staging bucket's KMS key names `NotebookRole` explicitly but
+not `ImportRole`. `ImportRole` reaches the key through the key policy's `AllowRootAccount`
+statement, which delegates to IAM. Naming it explicitly is not possible — the key policy would
+depend on `ImportRole` while `ImportRole`'s policy already depends on the key, and CloudFormation
+rejects that as circular. `NotebookRole` can be named only because its permissions live in the
+separate `NeptuneAccessPolicy` rather than inline.
+
+See also the import-role requirements in the Getting Started prerequisites, which document the
+same unconditioned-trust requirement for roles you build yourself.
+
+#### To re-measure
+
+The test is skipped unless `NETWORKX_GRAPH_ID` and `NETWORKX_S3_EXPORT_BUCKET_PATH` are set. It
+creates and deletes throwaway IAM roles prefixed `nxn-trusttest-`, starts real imports, and adds
+data to the graph without resetting it, so point it at a disposable graph:
+
+```bash
+NETWORKX_GRAPH_ID=g-xxxxx NETWORKX_S3_EXPORT_BUCKET_PATH=s3://<bucket>/<prefix>/ \
+  pytest integ_test/session_manager/test_import_role_trust.py -v -rA
+```
+
+It records a verdict per form and asserts nothing about which one passes, so a green run is not
+a result — read the per-form summary it prints. The IAM propagation wait is
+`NX_TRUST_TEST_IAM_WAIT_SECONDS` (default 20 seconds); raise it if a form is rejected
+unexpectedly, since too short a wait looks the same as a refused trust.
