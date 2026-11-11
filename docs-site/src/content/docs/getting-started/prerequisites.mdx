@@ -301,7 +301,7 @@ This policy combines graph management, S3 import/export, Athena, the import role
 | Variable | Purpose |
 |----------|---------|
 | `NETWORKX_GRAPH_ID` | Neptune Analytics graph identifier |
-| `NETWORKX_ARN_IAM_ROLE` | Import role ARN, read by the `instance_mgmt_lifecycle_demo` and `s3_import_export_demo` notebooks (the library itself uses the [import role](#import-role)) |
+| `NETWORKX_S3_IAM_ROLE_ARN` | Optional [import role](#import-role) ARN for the NetworkX backend; defaults to the caller identity. Read at `nx_neptune` import time, so set it before starting Jupyter. Does not apply to `SessionManager`, which builds its role from the caller identity |
 | `NETWORKX_S3_IMPORT_BUCKET_PATH` | S3 path for imports |
 | `NETWORKX_S3_EXPORT_BUCKET_PATH` | S3 path for exports |
 | `AWS_REGION` | AWS region |
