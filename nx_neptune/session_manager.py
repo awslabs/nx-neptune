@@ -7,9 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from typing import Callable, Optional, Sequence, Union
 
-import boto3
 import networkx as nx
-from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from . import NeptuneGraph, instance_management
@@ -168,6 +166,9 @@ class SessionManager:
         self._iam_client = self._clients.iam()
         self._s3_client = self._clients.s3()
         self._athena_client = self._clients.athena()
+        # (graph_id, error) for the last cleanup run; read by
+        # _describe_cleanup_failure so the one failure warning can name them all.
+        self._cleanup_failures: list[tuple[str, BaseException]] = []
 
     @classmethod
     def session(cls, session_name=None, cleanup_task=None):
@@ -286,13 +287,28 @@ class SessionManager:
         """
         _, verb, _ = _CLEANUP_OPERATIONS[self.cleanup_task]
         logger.warning(
-            f"Session cleanup ({self.cleanup_task.value}) failed: {error!r}. Affected "
+            f"Session cleanup ({self.cleanup_task.value}) failed: "
+            f"{self._describe_cleanup_failure(error)}. Affected "
             f"graphs may still be running and billed; list them with "
             f"`aws neptune-graph list-graphs` and retry each with "
             f"`aws neptune-graph {verb} --graph-identifier <id>`"
         )
         if exc_type is None or isinstance(error, (KeyboardInterrupt, SystemExit)):
             raise error
+
+    def _describe_cleanup_failure(self, error: BaseException) -> str:
+        """Name every graph that failed, not just the error that is re-raised.
+
+        ``_await_cleanup_all_graphs`` attempts every graph and raises only the
+        first failure, so the error alone hides the others and names none of
+        the graph ids the operator has to retry. It records the full list here
+        and this is the single place it is reported: the per-graph warnings it
+        used to emit duplicated this line for every failure.
+        """
+        failures = self._cleanup_failures
+        if not failures:
+            return repr(error)
+        return ", ".join(f"{graph_id}: {err!r}" for graph_id, err in failures)
 
     async def _await_cleanup_all_graphs(
         self, operation_name: str, statuses: Sequence[str]
@@ -301,8 +317,8 @@ class SessionManager:
 
         The gather is built *and* awaited inside the running loop. Every graph
         is attempted even if another fails (``return_exceptions=True``, kept on
-        this private path so the public bulk methods still raise); failures are
-        then logged per graph and the first one is raised.
+        this private path so the public bulk methods still raise); the failures
+        are recorded for the exit hook to report and the first one is raised.
         """
         operation = getattr(instance_management, operation_name)
         graph_ids = self._select_graph_ids(statuses, [])
@@ -314,10 +330,10 @@ class SessionManager:
             for graph_id, result in zip(graph_ids, results)
             if isinstance(result, BaseException)
         ]
-        for graph_id, error in failures:
-            # repr, not str: str(CancelledError()) is empty, which rendered as
-            # "failed for graph g-1: " and named no cause at all.
-            logger.warning(f"Session cleanup failed for graph {graph_id}: {error!r}")
+        # Reported once, by _handle_cleanup_failure via
+        # _describe_cleanup_failure. repr, not str: str(CancelledError()) is
+        # empty, which rendered as "failed for graph g-1: " and named no cause.
+        self._cleanup_failures = failures
         if failures:
             raise failures[0][1]
 

@@ -1084,6 +1084,34 @@ class TestExitCleanupFailureReporting:
         expected = f"aws neptune-graph {verb} --graph-identifier"
         assert any(expected in message for message in warnings)
 
+    @pytest.mark.parametrize("task,operation_name,verb", CLEANUP_TASKS)
+    def test_one_warning_names_every_failing_graph(
+        self, task, operation_name, verb, caplog
+    ):
+        """AC4: several failures are reported once, together, not once per graph.
+
+        Only the first failure is re-raised, so a per-graph log beside the
+        summary repeated the same remediation text per failure while the
+        summary itself named no graph at all.
+        """
+        operation, attempted, completed = _recording_operation(fail_ids={"g-1", "g-3"})
+
+        with caplog.at_level(logging.WARNING, logger="nx_neptune.session_manager"):
+            with patch("boto3.client", return_value=_client(("g-1", "g-2", "g-3"))):
+                with patch(OPERATION.format(operation_name), side_effect=operation):
+                    with pytest.raises(ValueError, match="body"):
+                        with SessionManager(session_name="test", cleanup_task=task):
+                            raise ValueError("body")
+
+        warnings = [
+            r.getMessage() for r in caplog.records if r.levelno == logging.WARNING
+        ]
+        assert len(warnings) == 1
+        assert "g-1" in warnings[0]
+        assert "g-3" in warnings[0]
+        assert "g-2" not in warnings[0]
+        assert completed == ["g-2"]
+
 
 def _cancelled_operation():
     """A cleanup operation whose graph is cancelled mid-cleanup.
