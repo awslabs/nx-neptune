@@ -4,6 +4,7 @@
 import asyncio
 import time
 from dataclasses import asdict
+from typing import NoReturn
 
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -38,6 +39,13 @@ from nx_neptune_proxy.services.projection_service import (
     ProjectionNotFound,
     projection_service,
 )
+from nx_neptune_proxy.services.projection_store import (
+    IN_FLIGHT_STATUSES,
+    STATUS_ARCHIVED,
+    STATUS_DELETING,
+    STATUS_FAILED,
+    STATUS_IMPORTING,
+)
 from nx_neptune_proxy.utils import unpack_query_results
 from nx_neptune_proxy.utils.aws_helper import (
     assert_managed_graph,
@@ -46,6 +54,20 @@ from nx_neptune_proxy.utils.aws_helper import (
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 router = APIRouter(prefix="/api/v0/projection", tags=["projection"])
+
+
+def _raise_claim_refused(projection_id: str, busy_detail: str) -> NoReturn:
+    """Explain a refused claim: 404 if the row vanished, else 409."""
+    current = projection_service.get(projection_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="Projection not found")
+    if current.status == STATUS_ARCHIVED:
+        raise HTTPException(
+            status_code=409,
+            detail="Projection is archived; its graph is still recorded, "
+            "so it cannot be deleted again",
+        )
+    raise HTTPException(status_code=409, detail=busy_detail)
 
 
 def _get_projection_or_404(projection_id: str):
@@ -229,8 +251,6 @@ async def preview_projection(projection_id: str, limit: int = Query(10, ge=1, le
 def execute_projection(projection_id: str, background_tasks: BackgroundTasks):
     """Kick off the full import pipeline as a background task."""
     p = _get_projection_or_404(projection_id)
-    if p.status == "executing":
-        raise HTTPException(status_code=409, detail="Pipeline already running")
     required = {
         "graph name": p.graph_name,
         "S3 staging bucket": p.s3_staging_bucket,
@@ -241,19 +261,33 @@ def execute_projection(projection_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(
             status_code=400, detail=f"Missing required fields: {', '.join(missing)}."
         )
+    # Atomic claim, after validation so a 400 never needs a rollback.
+    if not projection_service.try_transition(projection_id, STATUS_IMPORTING):
+        _raise_claim_refused(projection_id, "Pipeline already running")
     background_tasks.add_task(run_pipeline, p)
     return {"id": p.id, "status": "accepted"}
 
 
 @router.delete("/{projection_id}", summary="Delete projection record", status_code=200)
-def delete_projection(projection_id: str):
-    """Permanently remove the projection record from the database."""
+def delete_projection(projection_id: str, force: bool = Query(False)):
+    """Permanently remove the projection record from the database.
+
+    ``force`` lets a stuck in-flight record without a graph be removed; it
+    never bypasses the "graph still attached" check.
+    """
     p = _get_projection_or_404(projection_id)
-    if p.status == "deleting":
+    if p.graph_id:
         raise HTTPException(
-            status_code=409, detail="Graph deletion in progress, cannot purge yet"
+            status_code=409, detail="Delete the graph before purging this projection"
         )
-    projection_service.delete(projection_id)
+    # The conditional DELETE is the authority; the checks above only pick the message.
+    if not projection_service.purge(projection_id, force=force):
+        if projection_service.get(projection_id) is None:
+            raise HTTPException(status_code=404, detail="Projection not found")
+        raise HTTPException(
+            status_code=409,
+            detail="Projection is busy (importing or deleting), cannot purge yet",
+        )
     return {"id": p.id, "status": "deleted"}
 
 
@@ -262,27 +296,59 @@ def delete_projection(projection_id: str):
     summary="Delete associated graph and archive projection",
     status_code=202,
 )
-def delete_projection_graph(projection_id: str, background_tasks: BackgroundTasks):
-    """Delete the Neptune graph in background, then mark projection as archived."""
+def delete_projection_graph(
+    projection_id: str, background_tasks: BackgroundTasks, force: bool = Query(False)
+):
+    """Delete the Neptune graph in background, then mark projection as archived.
+
+    ``force`` lets a stuck in-flight projection be taken over; it never
+    bypasses the archived, graph-recorded or managed-prefix checks.
+    """
     p = _get_projection_or_404(projection_id)
     if not p.graph_id:
         raise HTTPException(
             status_code=409, detail="No graph associated with this projection"
         )
-    if p.status == "deleting":
-        raise HTTPException(status_code=409, detail="Already deleting")
 
     # Prefix guard: only delete graphs managed by this tool
     client = ClientFactory().neptune()
-    resp = get_graph_or_exception(client, p.graph_id)
+    try:
+        resp = get_graph_or_exception(client, p.graph_id)
+    except HTTPException as e:
+        if e.status_code == 404:
+            # The graph is gone from Neptune: clear the dangling reference so the
+            # record can be purged. An in-flight pipeline still owns the row.
+            projection_service.try_transition(
+                projection_id,
+                STATUS_ARCHIVED,
+                refuse_when=frozenset() if force else IN_FLIGHT_STATUSES,
+                graph_id=None,
+                graph_endpoint=None,
+            )
+        raise
+    except ClientError:
+        # Not-found was handled above. Anything else (denied, throttled, expired
+        # credentials) says nothing about whether the graph exists, so the record
+        # is left untouched and purge keeps refusing it.
+        raise HTTPException(
+            status_code=502,
+            detail="Could not verify the graph in Neptune Analytics; try again later",
+        )
     assert_managed_graph(resp.get("name"))
 
-    projection_service.update(
+    refused = {STATUS_ARCHIVED} if force else IN_FLIGHT_STATUSES | {STATUS_ARCHIVED}
+    if not projection_service.try_transition(
         projection_id,
-        status="deleting",
+        STATUS_DELETING,
+        # An archived record is one whose graph deletion already finished; a
+        # request that read it before the archive landed must not claim it again.
+        refuse_when=frozenset(refused),
         step="graph_delete",
         step_label="Deleting graph",
-    )
+    ):
+        _raise_claim_refused(
+            projection_id, "Projection is busy (importing or deleting)"
+        )
 
     async def _delete_graph():
         client = ClientFactory().neptune()
@@ -291,7 +357,9 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
         except ClientError as e:
             if e.response["Error"]["Code"] != "ResourceNotFoundException":
                 projection_service.update(
-                    projection_id, status="failed", error=sanitize_error_message(str(e))
+                    projection_id,
+                    status=STATUS_FAILED,
+                    error=sanitize_error_message(str(e)),
                 )
                 return
         # Poll until gone
@@ -299,18 +367,27 @@ def delete_projection_graph(projection_id: str, background_tasks: BackgroundTask
             await asyncio.sleep(10)
             try:
                 client.get_graph(graphIdentifier=p.graph_id)
-            except ClientError:
-                break
+            except ClientError as e:
+                if e.response["Error"]["Code"] == "ResourceNotFoundException":
+                    break
+                # Denied/throttled/expired says nothing about the graph being
+                # gone: keep graph_id so purge keeps refusing the record.
+                projection_service.update(
+                    projection_id,
+                    status=STATUS_FAILED,
+                    error=sanitize_error_message(str(e)),
+                )
+                return
         else:
             projection_service.update(
                 projection_id,
-                status="failed",
+                status=STATUS_FAILED,
                 error="Timeout waiting for graph deletion",
             )
             return
         projection_service.update(
             projection_id,
-            status="archived",
+            status=STATUS_ARCHIVED,
             graph_id=None,
             graph_endpoint=None,
             step=None,

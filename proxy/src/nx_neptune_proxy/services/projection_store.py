@@ -10,6 +10,17 @@ from typing import List, Optional
 
 from .db import connection
 
+STATUS_DRAFT = "draft"
+STATUS_EXECUTING = "executing"
+STATUS_IMPORTING = "importing"
+STATUS_DELETING = "deleting"
+STATUS_COMPLETE = "complete"
+STATUS_FAILED = "failed"
+STATUS_ARCHIVED = "archived"
+
+# States in which a long-running operation owns the projection.
+IN_FLIGHT_STATUSES = frozenset({STATUS_EXECUTING, STATUS_IMPORTING, STATUS_DELETING})
+
 _FIELDS = [
     "id",
     "status",
@@ -71,7 +82,7 @@ class ProjectionStore:
     ) -> Projection:
         p = Projection(
             id=str(uuid.uuid4()),
-            status="draft",
+            status=STATUS_DRAFT,
             catalog=catalog,
             database=database,
             node_query=node_query,
@@ -145,20 +156,50 @@ class ProjectionStore:
             conn.execute(f"UPDATE projections SET {sets} WHERE id = ?", vals)
         return self.get(projection_id)
 
-    def delete(self, projection_id: str) -> bool:
+    def try_transition(
+        self,
+        projection_id: str,
+        to_status: str,
+        refuse_when: frozenset = IN_FLIGHT_STATUSES,
+        **fields,
+    ) -> bool:
+        """Atomically set ``status`` unless it is currently in ``refuse_when``.
+
+        A single compare-and-set UPDATE, so concurrent callers cannot both win.
+        Extra ``fields`` are written in the same statement. Returns True if the
+        row was claimed, False if it is missing or in a refused status.
+        """
+        invalid = set(fields) - self._ALLOWED_UPDATE_COLUMNS
+        if invalid:
+            raise ValueError(f"Invalid column(s): {invalid}")
+        columns = {"status": to_status, **fields}
+        sets = ", ".join(f"{k} = ?" for k in columns)
+        guard = ", ".join("?" for _ in refuse_when)
         with connection() as conn:
-            cur = conn.execute("DELETE FROM projections WHERE id = ?", (projection_id,))
+            cur = conn.execute(
+                f"UPDATE projections SET {sets} WHERE id = ? AND status NOT IN ({guard})",
+                [*columns.values(), projection_id, *refuse_when],
+            )
             return cur.rowcount > 0
 
     @staticmethod
-    def delete_on(conn, projection_id: str) -> bool:
-        """Delete a projection row on an existing connection.
+    def purge_on(conn, projection_id: str, force: bool = False) -> bool:
+        """Atomically delete a row only if it is safe to purge.
 
-        Runs on a caller-supplied connection so it can participate in a larger
-        transaction (e.g. deleting a projection and its queries atomically).
+        A single conditional DELETE: the row goes only when no graph is
+        attached and, unless ``force``, the status is not in flight. ``force``
+        relaxes the status check only, never the graph check. Runs on a
+        caller-supplied connection so it can join a larger transaction.
         """
-        cur = conn.execute("DELETE FROM projections WHERE id = ?", (projection_id,))
-        return cur.rowcount > 0
+        sql = (
+            "DELETE FROM projections WHERE id = ? "
+            "AND (graph_id IS NULL OR graph_id = '')"
+        )
+        params: list = [projection_id]
+        if not force:
+            sql += f" AND status NOT IN ({', '.join('?' for _ in IN_FLIGHT_STATUSES)})"
+            params += list(IN_FLIGHT_STATUSES)
+        return conn.execute(sql, params).rowcount > 0
 
     @staticmethod
     def _row_to_projection(row) -> Projection:

@@ -8,7 +8,13 @@ from botocore.exceptions import ClientError
 
 from nx_neptune_proxy.config import get_settings
 from nx_neptune_proxy.services.projection_service import projection_service
-from nx_neptune_proxy.services.projection_store import Projection, store
+from nx_neptune_proxy.services.projection_store import (
+    STATUS_COMPLETE,
+    STATUS_FAILED,
+    STATUS_IMPORTING,
+    Projection,
+    store,
+)
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
@@ -38,7 +44,7 @@ async def run_pipeline(projection: Projection) -> None:
     s3_location = projection.s3_staging_bucket.rstrip("/") + f"/{projection.id}/"  # type: ignore[union-attr]  # noqa: E501
 
     try:
-        projection_service.update(projection.id, status="importing")
+        projection_service.update(projection.id, status=STATUS_IMPORTING)
 
         # Step 1: Create or reuse graph
         _update(
@@ -117,7 +123,7 @@ async def run_pipeline(projection: Projection) -> None:
 
         # Step 3: Done
         _update(projection.id, step="ready", label="Graph ready", progress=100)
-        projection_service.update(projection.id, status="complete")
+        projection_service.update(projection.id, status=STATUS_COMPLETE)
 
     except Exception as e:
         logger.exception("Pipeline failed")
@@ -129,7 +135,7 @@ async def run_pipeline(projection: Projection) -> None:
 
         # Sanitize before persisting — strip ARNs, account IDs
         projection_service.update(
-            projection.id, status="failed", error=sanitize_error_message(error_msg)
+            projection.id, status=STATUS_FAILED, error=sanitize_error_message(error_msg)
         )
 
 
