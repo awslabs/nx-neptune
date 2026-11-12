@@ -21,6 +21,7 @@ check. These tests instead assert — with no AWS, so they run in CI and release
 that each guard is present and correctly shaped, so a later edit cannot silently
 remove it.
 """
+
 import json
 from pathlib import Path
 
@@ -47,6 +48,7 @@ def _find_statement(obj, sid):
 
 
 # --- Control 1: notebook role can only read assets from the stack's account ---
+
 
 def test_asset_download_requires_same_account():
     stmt = _find_statement(TEMPLATE, "S3AssetDownload")
@@ -77,11 +79,14 @@ def test_aws_graph_notebook_bucket_is_separate_and_unconditioned():
 
 # --- Control 2: notebook setup fails loudly if the asset read is denied ---
 
+
 def test_notebook_setup_fails_when_assets_unreadable():
     # Without this, a denied asset copy fell through to 'pip install nx_neptune'
     # from PyPI, installing code the operator did not stage.
     assert "failed to read assets from ${ASSETS_PREFIX}" in TEMPLATE_TEXT
     copy_line = next(
-        line for line in TEMPLATE_TEXT.splitlines() if "aws s3 cp" in line and "ASSETS_PREFIX" in line
+        line
+        for line in TEMPLATE_TEXT.splitlines()
+        if "aws s3 cp" in line and "ASSETS_PREFIX" in line
     )
     assert "exit 1" in copy_line, "OnCreate asset copy must exit non-zero on failure"
