@@ -88,7 +88,7 @@ These are the `--parameter-overrides` accepted by the CloudFormation template:
 | PublicConnectivity | Enable public connectivity for the graph. `false` = private (VPC-only); the bundled notebook is **not** placed in the graph's VPC, so set `true` to run the demo today. | `false` |
 | DeletionProtection | Protect the graph from deletion (`false` for ephemeral/demo graphs) | `true` |
 | NotebookInstanceType | SageMaker instance type | `ml.t3.medium` |
-| AssetsS3Prefix | S3 prefix containing `notebooks.zip` and optionally a `.whl` | _(required)_ |
+| AssetsS3Prefix | S3 prefix containing `notebooks.zip` and optionally a `.whl`. Must be in the same account as the stack. | _(required)_ |
 
 > **Note on `PublicConnectivity`.** The `false` default is the secure posture, but
 > this template doesn't place the notebook in the graph's VPC — so with `false` the
@@ -137,6 +137,12 @@ Use the provided script which handles bucket cleanup and stack deletion:
 ./cloudformation-templates/teardown.sh                      # defaults: nx-neptune-demo, us-west-1
 ./cloudformation-templates/teardown.sh nx-neptune-demo us-east-1
 ```
+
+> **Upgrading from an earlier deploy.** The assets bucket name is now scoped per
+> stack (`nx-neptune-assets-<stack>-<account>-<region>`). If you deployed before
+> this change, the old `nx-neptune-assets-<account>-<region>` bucket is no longer
+> matched by `teardown.sh`; delete it by hand with
+> `aws s3 rb s3://nx-neptune-assets-<account>-<region> --force`.
 
 Or manually:
 

@@ -45,8 +45,17 @@ echo "Stack deleted."
 
 # Clean up assets bucket
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-ASSETS_BUCKET="nx-neptune-assets-${ACCOUNT_ID}-${REGION}"
-echo "Cleaning up assets bucket s3://${ASSETS_BUCKET}..."
-aws s3 rb "s3://${ASSETS_BUCKET}" --force --region "$REGION" 2>/dev/null || true
+# Must match the name deploy.sh creates.
+ASSETS_BUCKET="nx-neptune-assets-${STACK_NAME}-${ACCOUNT_ID}-${REGION}"
+if aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" 2>/dev/null; then
+  echo "Cleaning up assets bucket s3://${ASSETS_BUCKET}..."
+  # Do not let a transient delete error abort teardown; the stack is already gone.
+  aws s3 rb "s3://${ASSETS_BUCKET}" --force --region "$REGION" || \
+    echo "Warning: failed to remove s3://${ASSETS_BUCKET}; remove it manually." >&2
+else
+  # Bucket is missing, or owned by another account, or not accessible. In every
+  # case we leave it alone rather than guess.
+  echo "Assets bucket s3://${ASSETS_BUCKET} not found or not owned by account ${ACCOUNT_ID}; leaving it in place."
+fi
 
 echo "Done."
