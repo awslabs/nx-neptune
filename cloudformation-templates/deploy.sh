@@ -38,9 +38,10 @@ cd "$REPO_DIR"
 zip -r "$BUILD_DIR/notebooks.zip" notebooks/ -q
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-# Scope the name to this stack as well as the account so it is not derivable from
-# the account ID and region alone. STACK_NAME is capped at 16 chars above, which
-# keeps this within S3's 63-char bucket-name limit.
+# Scope the name per stack (as well as account and region). The ownership checks
+# below are what keep this safe; scoping just avoids a single shared name across
+# stacks (with the default STACK_NAME the name is still predictable). STACK_NAME
+# is capped at 16 chars above, keeping this within S3's 63-char bucket-name limit.
 ASSETS_BUCKET="nx-neptune-assets-${STACK_NAME}-${ACCOUNT_ID}-${REGION}"
 
 if aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" 2>/dev/null; then
@@ -63,12 +64,23 @@ else
     create_args+=(--create-bucket-configuration "LocationConstraint=${REGION}")
   fi
   if ! CREATE_ERR=$(aws s3api create-bucket "${create_args[@]}" 2>&1); then
-    echo "Error: could not create s3://${ASSETS_BUCKET}. The name may already be taken in another account, or you may lack permission. Refusing to upload." >&2
+    if printf '%s' "$CREATE_ERR" | grep -q 'BucketAlreadyOwnedByYou'; then
+      # This account owns the bucket, but the earlier head-bucket could not
+      # confirm it (commonly a missing s3:ListBucket, or a transient error).
+      echo "Error: s3://${ASSETS_BUCKET} already exists in this account but its ownership could not be confirmed. Check the caller's s3:ListBucket permission and retry. Refusing to upload." >&2
+    else
+      echo "Error: could not create s3://${ASSETS_BUCKET}. The name may already be taken in another account, or you may lack permission. Refusing to upload." >&2
+    fi
     echo "$CREATE_ERR" >&2
     exit 1
   fi
-  # Confirm we own what we just created before uploading to it.
-  aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" >/dev/null
+  # Confirm we own what we just created before uploading to it. (In us-east-1,
+  # create-bucket succeeds for a bucket we already own, so this is the only
+  # ownership gate on that path.)
+  if ! aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" >/dev/null 2>&1; then
+    echo "Error: created s3://${ASSETS_BUCKET} but could not confirm ownership (check the caller's s3:ListBucket permission). Refusing to upload." >&2
+    exit 1
+  fi
 fi
 
 upload_asset() {
