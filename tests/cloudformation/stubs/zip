@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+# Copyright 2025 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License").
+#
+# Test stub for `zip`: creates each target .zip argument so deploy.sh has an
+# artifact to upload, without depending on the real zip binary or notebook files.
+import pathlib
+import sys
+
+for arg in sys.argv[1:]:
+    if arg.endswith(".zip"):
+        target = pathlib.Path(arg)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.touch()
+sys.exit(0)
