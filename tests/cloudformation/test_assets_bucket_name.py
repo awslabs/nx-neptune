@@ -45,8 +45,8 @@ def test_assets_bucket_matches_expected(script):
 
 @pytest.mark.parametrize("script", ["deploy.sh", "teardown.sh"])
 def test_assets_bucket_scoped_to_account_and_stack(script):
-    # Security property: the name must include the account and stack so it is not
-    # derivable from the region alone. Dropping either would regress the fix.
+    # The name must include the account and stack so it is not derivable from the
+    # region alone. Dropping either would regress the fix.
     expr = _assets_bucket_expr(script)
     assert "${ACCOUNT_ID}" in expr
     assert "${STACK_NAME}" in expr
