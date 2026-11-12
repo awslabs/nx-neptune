@@ -38,18 +38,37 @@ cd "$REPO_DIR"
 zip -r "$BUILD_DIR/notebooks.zip" notebooks/ -q
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-ASSETS_BUCKET="nx-neptune-assets-${ACCOUNT_ID}-${REGION}"
+# Scope the name to this stack as well as the account so it is not derivable from
+# the account ID and region alone. STACK_NAME is capped at 16 chars above, which
+# keeps this within S3's 63-char bucket-name limit.
+ASSETS_BUCKET="nx-neptune-assets-${STACK_NAME}-${ACCOUNT_ID}-${REGION}"
 
-# The bucket name is predictable, so refuse to use it unless this account owns it.
-if ! HEAD_ERR=$(aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" 2>&1 >/dev/null); then
-  if printf '%s' "$HEAD_ERR" | grep -q '(404)'; then
-    aws s3 mb "s3://${ASSETS_BUCKET}" --region "$REGION"
-    aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" >/dev/null
-  else
-    echo "Error: s3://${ASSETS_BUCKET} exists but is not owned by account ${ACCOUNT_ID}, or is not accessible. Refusing to upload." >&2
-    echo "$HEAD_ERR" >&2
+if aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" 2>/dev/null; then
+  # Already exists in this account (e.g. a prior deploy). Confirm it is in the
+  # expected region before reusing it; a name resolving to another region would
+  # otherwise route uploads through redirects.
+  LOC=$(aws s3api get-bucket-location --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --query 'LocationConstraint' --output text)
+  if [ "$LOC" = "None" ]; then LOC="us-east-1"; fi
+  if [ "$LOC" != "$REGION" ]; then
+    echo "Error: s3://${ASSETS_BUCKET} is in ${LOC}, not ${REGION}. Refusing to upload." >&2
     exit 1
   fi
+else
+  # Not owned by this account, or does not exist. Create it fresh: S3's global
+  # namespace makes create-bucket fail closed if the name is already taken in
+  # another account, so we never adopt a bucket we do not own.
+  echo "Creating assets bucket s3://${ASSETS_BUCKET}..."
+  create_args=(--bucket "$ASSETS_BUCKET" --region "$REGION")
+  if [ "$REGION" != "us-east-1" ]; then
+    create_args+=(--create-bucket-configuration "LocationConstraint=${REGION}")
+  fi
+  if ! CREATE_ERR=$(aws s3api create-bucket "${create_args[@]}" 2>&1); then
+    echo "Error: could not create s3://${ASSETS_BUCKET}. The name may already be taken in another account, or you may lack permission. Refusing to upload." >&2
+    echo "$CREATE_ERR" >&2
+    exit 1
+  fi
+  # Confirm we own what we just created before uploading to it.
+  aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" >/dev/null
 fi
 
 upload_asset() {
