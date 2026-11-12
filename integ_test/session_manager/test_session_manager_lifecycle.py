@@ -165,37 +165,3 @@ class TestStopCleanupOnExit:
             assert status == "STOPPED", f"STOPPED graph was not left alone, got {status}"
         finally:
             _force_delete(graph_id, resource_tracker)
-
-
-class TestSessionMembershipAgainstRealGraphs:
-    """Session membership decides whose graphs a cleanup touches.
-
-    A graph is this session's only when its name is exactly
-    ``{session_name}-{uuid4}``. A prefix test is not enough, because session
-    names here are routinely hyphenated: under ``startswith('integ-sib-')``,
-    session ``integ-sib`` would claim ``integ-sib-child``'s graphs, and RESET
-    wipes data while DESTROY deletes without a snapshot.
-    """
-
-    @pytest.mark.asyncio
-    async def test_a_hyphenated_sibling_session_is_not_claimed(self, resource_tracker):
-        parent = SessionManager(session_name="integ-sib")
-        child = SessionManager(session_name="integ-sib-child")
-
-        graph = await child.get_or_create_graph(config=CONFIG)
-        graph_id = graph.graph_id
-        resource_tracker.register_graph(graph_id)
-
-        try:
-            assert graph.name.startswith("integ-sib-child-")
-
-            child_ids = [g.graph_id for g in child.list_graphs()]
-            parent_ids = [g.graph_id for g in parent.list_graphs()]
-
-            assert graph_id in child_ids, "the owning session lost its own graph"
-            assert graph_id not in parent_ids, (
-                f"session 'integ-sib' claimed {graph.name}, which belongs to "
-                f"session 'integ-sib-child'"
-            )
-        finally:
-            _force_delete(graph_id, resource_tracker)

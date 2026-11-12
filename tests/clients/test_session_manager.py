@@ -21,7 +21,6 @@ from nx_neptune.session_manager import (
     CleanupTask,
     NeptuneAnalyticsClient,
     SessionManager,
-    _belongs_to_session,
 )
 
 UUID_1 = "1b4e28ba-2fa1-41d2-883f-0016d3cca427"
@@ -32,11 +31,12 @@ def graph_name(session_name, key="1"):
     """A graph name in the shape the library really generates.
 
     ``instance_management._create_random_graph_name`` returns
-    ``f"{prefix}-{uuid.uuid4()}"``, and ``_belongs_to_session`` matches that
-    whole shape rather than just the prefix - so a readable stub like
-    ``"test-1"`` is not a session graph and cleanup correctly ignores it.
-    The uuid is derived from ``key`` so it is stable across a run and a test
-    can name the same graph twice.
+    ``f"{prefix}-{uuid.uuid4()}"``, and
+    ``instance_management._is_session_graph`` matches that whole shape rather
+    than just the prefix - so a readable stub like ``"test-1"`` is not a
+    session graph and cleanup correctly ignores it. The uuid is derived from
+    ``key`` so it is stable across a run and a test can name the same graph
+    twice.
     """
     return f"{session_name}-{uuid.uuid5(uuid.NAMESPACE_DNS, f'{session_name}/{key}')}"
 
@@ -137,9 +137,9 @@ class TestSessionManager:
 
         sm = SessionManager(session_name="test-graph")
         graphs = sm.list_graphs()
-        # g-7 is named exactly the session; the exact-match rule does not
-        # claim it, so cleanup leaves it alone.
-        assert [g.graph_id for g in graphs] == ["g-1", "g-3"]
+        # g-7 is named exactly the session - e.g. the CloudFormation graph -
+        # which _is_session_graph counts as the session's own.
+        assert [g.graph_id for g in graphs] == ["g-1", "g-3", "g-7"]
 
     @patch("boto3.client")
     def test_get_existing_graph_no_filter(self, mock_boto3_client):
@@ -632,48 +632,54 @@ class TestSessionMembership:
     """Which graphs a session owns, and so which ones cleanup may touch.
 
     ``__exit__`` -> ``_graph_bulk_operation`` -> ``list_graphs`` all narrow down
-    to ``_belongs_to_session``, so a bug here either leaks a graph or stops one
-    belonging to a different session.
+    to ``instance_management._is_session_graph``, so a bug here either leaks a
+    graph or stops one belonging to a different session. The rule itself is
+    covered by ``test_instance_management.test_is_session_graph``; what matters
+    here is that this is the rule the session cleanup path actually applies.
     """
 
-    @pytest.mark.parametrize(
-        "name,expected",
-        [
-            (graph_name("test"), True),  # the generated '{prefix}-{uuid4}' shape
-            (graph_name("testing"), False),  # belongs to session 'testing'
-            ("testgraph", False),  # no separator: not this session's
-            ("test", False),  # the bare prefix is not a session graph
-            (graph_name("other-test"), False),  # prefix must anchor at the start
-            ("test-abc123", False),  # right prefix, but not a generated name
-            # a uuid is lowercase hex, so the shape alone is not enough
-            ("test-ABCDEF01-1234-5678-9ABC-DEF012345678", False),
-            (None, False),  # list_graphs can omit the name
-        ],
-    )
-    def test_membership_rule(self, name, expected):
-        assert _belongs_to_session(name, "test") is expected
+    @staticmethod
+    def _graph_entry(name, graph_id):
+        return {"name": name, "id": graph_id, "status": "AVAILABLE"}
 
-    @pytest.mark.parametrize(
-        "session,sibling",
-        [
-            ("demo", "demo-reset"),
-            ("reset", "reset-demo"),
-            ("snapshot", "snapshot-demo"),
-        ],
-    )
-    def test_a_hyphenated_sibling_session_is_not_claimed(self, session, sibling):
-        """The case a prefix test gets wrong, and the reason the match is exact.
+    @patch("boto3.client")
+    def test_list_graphs_applies_the_shared_membership_rule(self, mock_boto3_client):
+        """A session sees its own graphs and no one else's.
 
-        Session names here are routinely hyphenated, so ``demo`` and
-        ``demo-reset`` coexist in one account. Under ``startswith('demo-')``,
-        session ``demo`` claims every ``demo-reset-<uuid>`` graph - and this PR
-        is what makes RESET actually run on exit, which wipes data with
+        The hyphenated-sibling row is the one a prefix test gets wrong: session
+        names here are routinely hyphenated, so ``test`` and ``test-sibling``
+        coexist in one account, and under ``startswith('test-')`` session
+        ``test`` would claim every ``test-sibling-<uuid>`` graph. This PR is
+        what makes RESET actually run on exit, which wipes data with
         ``skip_snapshot=True``, while DESTROY deletes without a snapshot.
         """
-        sibling_graph = graph_name(sibling)
+        mock_client = MagicMock()
+        mock_boto3_client.return_value = mock_client
+        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
+        mock_client.list_graphs.return_value = {
+            "graphs": [
+                # this session's own: the generated '{prefix}-{uuid4}' shape
+                self._graph_entry(graph_name("test"), "g-own"),
+                # and a graph named exactly the session, e.g. one created by
+                # the CloudFormation template
+                self._graph_entry("test", "g-cfn"),
+                self._graph_entry(graph_name("testing"), "g-other-session"),
+                self._graph_entry(graph_name("test-sibling"), "g-sibling"),
+                self._graph_entry("testgraph", "g-no-separator"),
+                self._graph_entry("test-abc123", "g-not-generated"),
+                self._graph_entry(graph_name("other-test"), "g-unanchored"),
+                # a uuid is lowercase hex, so the shape alone is not enough
+                self._graph_entry(
+                    "test-ABCDEF01-1234-5678-9ABC-DEF012345678", "g-uppercase"
+                ),
+                # list_graphs can return an entry with no name at all
+                self._graph_entry(None, "g-nameless"),
+            ]
+        }
 
-        assert _belongs_to_session(sibling_graph, sibling) is True
-        assert _belongs_to_session(sibling_graph, session) is False
+        graphs = SessionManager(session_name="test").list_graphs()
+
+        assert [g.graph_id for g in graphs] == ["g-own", "g-cfn"]
 
     @staticmethod
     def _client(name):
@@ -721,28 +727,6 @@ class TestSessionMembership:
                     pass
 
         mock_stop.assert_awaited_once_with("g-1")
-
-    @patch("boto3.client")
-    def test_list_graphs_ignores_a_sibling_prefix(self, mock_boto3_client):
-        """list_graphs is the source of truth, so it applies the same rule."""
-        mock_client = MagicMock()
-        mock_boto3_client.return_value = mock_client
-        mock_client.get_caller_identity.return_value = {"Arn": "test-arn"}
-        mock_client.list_graphs.return_value = {
-            "graphs": [
-                {"name": graph_name("test"), "id": "g-1", "status": "AVAILABLE"},
-                {"name": graph_name("testing"), "id": "g-2", "status": "AVAILABLE"},
-                {
-                    "name": graph_name("test-sibling"),
-                    "id": "g-3",
-                    "status": "AVAILABLE",
-                },
-            ]
-        }
-
-        graphs = SessionManager(session_name="test").list_graphs()
-
-        assert [g.graph_id for g in graphs] == ["g-1"]
 
 
 class TestCreateMultipleInstances:

@@ -2,8 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
 import logging
-import re
-from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from typing import Callable, Optional, Sequence, Union
 
@@ -18,6 +16,7 @@ from .property_graph import (
     PropertyGraph,
     property_graph_to_sql,
 )
+from .utils.async_utils import caller_is_being_cancelled, has_running_loop, run_sync
 
 logger = logging.getLogger(__name__)
 
@@ -25,79 +24,6 @@ __all__ = [
     "CleanupTask",
     "SessionManager",
 ]
-
-
-# The uuid4 suffix instance_management._create_random_graph_name appends to a
-# session prefix: `str(uuid.uuid4())`, i.e. lowercase hex in 8-4-4-4-12 groups.
-_UUID4_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-
-
-def _has_running_loop() -> bool:
-    """Whether the calling thread is inside a running event loop."""
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return False
-    return True
-
-
-def _caller_is_being_cancelled() -> bool:
-    """Whether the running task itself has been asked to cancel.
-
-    This separates the two `CancelledError`s that can reach an ``__aexit__``.
-    One is a cancellation *of the caller* - ``asyncio.timeout``, a
-    ``TaskGroup`` unwinding, a plain ``task.cancel()`` - which must propagate,
-    because ``timeout`` and ``TaskGroup`` rely on seeing it to convert it into
-    ``TimeoutError`` or to finish unwinding. The other is the `CancelledError`
-    that ``gather(return_exceptions=True)`` hands back *as a value* for a
-    cancelled child graph operation; that one is a cleanup failure and is
-    reported as such, and it must not be mistaken for the caller going away.
-
-    ``Task.cancelling()`` counts outstanding cancellation requests against the
-    current task, which is non-zero only in the first case.
-    """
-    task = asyncio.current_task()
-    return task is not None and task.cancelling() > 0
-
-
-def _run_sync(coro):
-    """Run ``coro`` to completion from synchronous code.
-
-    ``asyncio.run`` raises when a loop is already running, so in that case the
-    coroutine runs on its own loop in a worker thread. That bridge blocks the
-    caller's loop until cleanup finishes, which also holds Ctrl-C, so async
-    callers should use ``async with`` and let ``__aexit__`` await instead -
-    ``__exit__`` warns when it has to come through here.
-    """
-    if not _has_running_loop():
-        return asyncio.run(coro)
-
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result()
-
-
-def _belongs_to_session(graph_name, session_name: str) -> bool:
-    """Whether ``graph_name`` is a graph of the session called ``session_name``.
-
-    Generated names are exactly ``'{prefix}-{uuid4}'`` (see
-    ``instance_management._create_random_graph_name``), so the whole name is
-    matched rather than just the prefix. A prefix test is not enough: session
-    names in this repo are routinely hyphenated (``reset-demo``,
-    ``snapshot-demo``), so ``startswith('demo-')`` would let session ``'demo'``
-    claim ``'demo-reset-<uuid>'``, which belongs to session ``'demo-reset'``.
-    Cleanup decides whose data gets reset or deleted, so the match has to be
-    exact.
-
-    A consequence worth knowing: a graph this session did not create through
-    ``instance_management`` - say one hand-named ``'demo-scratch'`` - no longer
-    belongs to any session, so cleanup leaves it alone.
-    """
-    return (
-        re.fullmatch(
-            rf"{re.escape(session_name)}-{_UUID4_PATTERN}", str(graph_name or "")
-        )
-        is not None
-    )
 
 
 class CleanupTask(Enum):
@@ -113,10 +39,12 @@ class CleanupTask(Enum):
 #
 # Every task stays AVAILABLE-only, DESTROY included. A STOPPED graph is deletable
 # and still bills for storage, so widening DESTROY to it is tempting, but session
-# membership is a name-prefix match rather than a record of what this session
-# created: a graph someone else stopped *to keep its data* can match the prefix,
-# and delete_na_instance clears deletion protection and skips the snapshot. Any
-# widening needs an ownership check or an explicit opt-in first.
+# membership is a name match (``instance_management._is_session_graph``) rather
+# than a record of what this session created: any graph named `{session}-{uuid}`
+# or exactly `{session}` is claimed, whoever made it, and the name of a graph
+# someone else stopped *to keep its data* can match. delete_na_instance then
+# clears deletion protection and skips the snapshot. Any widening needs an
+# ownership check or an explicit opt-in first.
 _ACTIVE_STATUSES = ("AVAILABLE",)
 
 # cleanup task -> (instance_management function to run, `aws neptune-graph` verb,
@@ -167,7 +95,7 @@ class SessionManager:
         self._s3_client = self._clients.s3()
         self._athena_client = self._clients.athena()
         # (graph_id, error) for the last cleanup run; read by
-        # _describe_cleanup_failure so the one failure warning can name them all.
+        # _handle_cleanup_failure so the one failure warning can name them all.
         self._cleanup_failures: list[tuple[str, BaseException]] = []
 
     @classmethod
@@ -219,7 +147,7 @@ class SessionManager:
 
         if self.cleanup_task not in _CLEANUP_OPERATIONS:
             return
-        if _has_running_loop():
+        if has_running_loop():
             logger.warning(
                 f"Session cleanup ({self.cleanup_task.value}) is running through "
                 f"the synchronous `with` path inside a running event loop. It will "
@@ -228,7 +156,7 @@ class SessionManager:
                 f"...)` in async code, including notebook cells."
             )
         try:
-            _run_sync(self._cleanup_coro())
+            run_sync(self._cleanup_coro())
         except BaseException as e:  # noqa: BLE001 - see _handle_cleanup_failure
             self._handle_cleanup_failure(e, exc_type)
 
@@ -263,7 +191,7 @@ class SessionManager:
         try:
             await self._cleanup_coro()
         except BaseException as e:  # noqa: BLE001 - see _handle_cleanup_failure
-            if isinstance(e, asyncio.CancelledError) and _caller_is_being_cancelled():
+            if isinstance(e, asyncio.CancelledError) and caller_is_being_cancelled():
                 raise
             self._handle_cleanup_failure(e, exc_type)
 
@@ -284,31 +212,29 @@ class SessionManager:
         ``KeyboardInterrupt`` and ``SystemExit`` are carved out: they are
         control-flow signals (e.g. Ctrl-C during a minutes-long cleanup), not
         cleanup failures, so they propagate even when the body already raised.
+
+        The report names every graph that failed, not just the error being
+        re-raised: ``_await_cleanup_all_graphs`` attempts every graph and raises
+        only the first failure, so the error alone hides the others and names
+        none of the graph ids the operator has to retry. This is the single
+        place those are reported - the per-graph warnings it used to emit
+        duplicated this line for every failure.
         """
         _, verb, _ = _CLEANUP_OPERATIONS[self.cleanup_task]
+        failures = self._cleanup_failures
+        described = (
+            ", ".join(f"{graph_id}: {err!r}" for graph_id, err in failures)
+            if failures
+            else repr(error)
+        )
         logger.warning(
-            f"Session cleanup ({self.cleanup_task.value}) failed: "
-            f"{self._describe_cleanup_failure(error)}. Affected "
-            f"graphs may still be running and billed; list them with "
+            f"Session cleanup ({self.cleanup_task.value}) failed: {described}. "
+            f"Affected graphs may still be running and billed; list them with "
             f"`aws neptune-graph list-graphs` and retry each with "
             f"`aws neptune-graph {verb} --graph-identifier <id>`"
         )
         if exc_type is None or isinstance(error, (KeyboardInterrupt, SystemExit)):
             raise error
-
-    def _describe_cleanup_failure(self, error: BaseException) -> str:
-        """Name every graph that failed, not just the error that is re-raised.
-
-        ``_await_cleanup_all_graphs`` attempts every graph and raises only the
-        first failure, so the error alone hides the others and names none of
-        the graph ids the operator has to retry. It records the full list here
-        and this is the single place it is reported: the per-graph warnings it
-        used to emit duplicated this line for every failure.
-        """
-        failures = self._cleanup_failures
-        if not failures:
-            return repr(error)
-        return ", ".join(f"{graph_id}: {err!r}" for graph_id, err in failures)
 
     async def _await_cleanup_all_graphs(
         self, operation_name: str, statuses: Sequence[str]
@@ -325,17 +251,21 @@ class SessionManager:
         results = await asyncio.gather(
             *[operation(graph_id) for graph_id in graph_ids], return_exceptions=True
         )
+        # strict: gather preserves order and arity, so a length mismatch here is
+        # impossible - and if that ever stops holding, a ValueError is better
+        # than silently dropping the graphs that fell off the end.
         failures = [
             (graph_id, result)
-            for graph_id, result in zip(graph_ids, results)
+            for graph_id, result in zip(graph_ids, results, strict=True)
             if isinstance(result, BaseException)
         ]
-        # Reported once, by _handle_cleanup_failure via
-        # _describe_cleanup_failure. repr, not str: str(CancelledError()) is
-        # empty, which rendered as "failed for graph g-1: " and named no cause.
+        # Reported once, by _handle_cleanup_failure, which renders these with
+        # repr: str(CancelledError()) is empty, which rendered as "failed for
+        # graph g-1: " and named no cause.
         self._cleanup_failures = failures
         if failures:
-            raise failures[0][1]
+            _, first_error = failures[0]
+            raise first_error
 
     def validate_permissions(self):
         """Validate AWS permissions for Neptune Analytics operations.
@@ -348,8 +278,10 @@ class SessionManager:
     def list_graphs(self) -> list[NeptuneAnalyticsClient]:
         """List available Neptune Analytics graphs.
 
-        If session_name is set, filters graphs to this session's graphs, i.e.
-        those named ``'{session_name}-...'`` - see :func:`_belongs_to_session`.
+        If session_name is set, filters graphs to this session's graphs: those
+        named ``session_name`` or ``'{session_name}-{uuid}'`` - see
+        :func:`instance_management._is_session_graph`, the one membership rule
+        shared with the rest of the library.
 
         Returns:
             list: List of NeptuneAnalyticsClient objects containing graph metadata.
@@ -361,7 +293,11 @@ class SessionManager:
             graphs = [
                 NeptuneAnalyticsClient.from_response(g, self._neptune_client)
                 for g in graphs
-                if _belongs_to_session(g.get("name"), self.session_name)
+                # `or ""`: list_graphs can return an entry with no name, and
+                # _is_session_graph takes a str.
+                if instance_management._is_session_graph(
+                    g.get("name") or "", self.session_name
+                )
             ]
         else:
             graphs = [
