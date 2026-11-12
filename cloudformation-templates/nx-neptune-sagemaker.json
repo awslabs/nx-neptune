@@ -399,7 +399,7 @@
                     "conda create -y -n nxneptune python=3.11\n",
                     "source /home/ec2-user/anaconda3/bin/activate nxneptune\n",
                     "mkdir -p /home/ec2-user/SageMaker/.nx-neptune\n",
-                    "aws s3 cp \"${ASSETS_PREFIX%/}/\" /tmp/nx-assets/ --recursive --exclude '*' --include '*.whl' --include 'notebooks.zip'\n",
+                    "aws s3 cp \"${ASSETS_PREFIX%/}/\" /tmp/nx-assets/ --recursive --exclude '*' --include '*.whl' --include 'notebooks.zip' || { echo \"ERROR: failed to read assets from ${ASSETS_PREFIX}\" >&2; exit 1; }\n",
                     "if ls /tmp/nx-assets/*.whl 1>/dev/null 2>&1; then\n",
                     "  cp /tmp/nx-assets/*.whl /home/ec2-user/SageMaker/.nx-neptune/\n",
                     "  pip install /home/ec2-user/SageMaker/.nx-neptune/*.whl\n",
