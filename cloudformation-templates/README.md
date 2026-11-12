@@ -138,6 +138,12 @@ Use the provided script which handles bucket cleanup and stack deletion:
 ./cloudformation-templates/teardown.sh nx-neptune-demo us-east-1
 ```
 
+> **Upgrading from an earlier deploy.** The assets bucket name is now scoped per
+> stack (`nx-neptune-assets-<stack>-<account>-<region>`). If you deployed before
+> this change, the old `nx-neptune-assets-<account>-<region>` bucket is no longer
+> matched by `teardown.sh`; delete it by hand with
+> `aws s3 rb s3://nx-neptune-assets-<account>-<region> --force`.
+
 Or manually:
 
 ```bash
