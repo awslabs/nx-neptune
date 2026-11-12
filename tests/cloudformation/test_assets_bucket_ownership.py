@@ -22,14 +22,11 @@ that each guard is present and correctly shaped, so a later edit cannot silently
 remove it.
 """
 import json
-import re
 from pathlib import Path
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "cloudformation-templates"
 TEMPLATE = json.loads((TEMPLATES_DIR / "nx-neptune-sagemaker.json").read_text())
 TEMPLATE_TEXT = (TEMPLATES_DIR / "nx-neptune-sagemaker.json").read_text()
-DEPLOY = (TEMPLATES_DIR / "deploy.sh").read_text()
-TEARDOWN = (TEMPLATES_DIR / "teardown.sh").read_text()
 
 
 def _find_statement(obj, sid):
@@ -72,37 +69,13 @@ def test_aws_graph_notebook_bucket_is_separate_and_unconditioned():
     assert "aws-neptune-notebook" in json.dumps(stmt["Resource"])
 
 
-# --- Control 2: every deploy S3 op asserts the expected bucket owner ---
-
-def test_deploy_asserts_bucket_owner_on_head_and_upload():
-    assert re.search(
-        r"head-bucket .*--expected-bucket-owner", DEPLOY
-    ), "deploy.sh must verify ownership with head-bucket --expected-bucket-owner"
-    assert re.search(
-        r"put-object .*(\n.*)?--expected-bucket-owner", DEPLOY
-    ), "deploy.sh uploads must pass --expected-bucket-owner"
+# deploy.sh / teardown.sh ownership and region behavior (the --expected-bucket-owner
+# assertions, fail-closed create-bucket, and the ownership check before delete) are
+# exercised by running the scripts in test_deploy_behavior.py and
+# test_teardown_behavior.py.
 
 
-def test_teardown_verifies_owner_before_delete():
-    assert "--expected-bucket-owner" in TEARDOWN
-    # The ownership check must gate the destructive rb, not follow it.
-    head = TEARDOWN.index("head-bucket")
-    remove = TEARDOWN.index("s3 rb")
-    assert head < remove, "teardown.sh must check ownership before 'rb'"
-
-
-# --- Control 3: the bucket is created fail-closed, never silently adopted ---
-
-def test_deploy_creates_bucket_fail_closed():
-    assert "create-bucket" in DEPLOY, "deploy.sh must create the bucket explicitly"
-    # The old 'aws s3 mb ... || true' silently adopted a pre-existing bucket.
-    assert not re.search(r"s3\s+mb", DEPLOY), (
-        "deploy.sh must not use 's3 mb' (silently succeeds on a foreign-owned "
-        "bucket); use create-bucket, which fails closed"
-    )
-
-
-# --- Control 4: notebook setup fails loudly if the asset read is denied ---
+# --- Control 2: notebook setup fails loudly if the asset read is denied ---
 
 def test_notebook_setup_fails_when_assets_unreadable():
     # Without this, a denied asset copy fell through to 'pip install nx_neptune'
