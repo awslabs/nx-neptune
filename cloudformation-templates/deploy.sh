@@ -44,7 +44,7 @@ ASSETS_BUCKET="nx-neptune-assets-${ACCOUNT_ID}-${REGION}"
 if ! HEAD_ERR=$(aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" 2>&1 >/dev/null); then
   if printf '%s' "$HEAD_ERR" | grep -q '(404)'; then
     aws s3 mb "s3://${ASSETS_BUCKET}" --region "$REGION"
-    aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION"
+    aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" >/dev/null
   else
     echo "Error: s3://${ASSETS_BUCKET} exists but is not owned by account ${ACCOUNT_ID}, or is not accessible. Refusing to upload." >&2
     echo "$HEAD_ERR" >&2

@@ -46,11 +46,14 @@ echo "Stack deleted."
 # Clean up assets bucket
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ASSETS_BUCKET="nx-neptune-assets-${ACCOUNT_ID}-${REGION}"
-if aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" >/dev/null 2>&1; then
+if HEAD_ERR=$(aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" 2>&1 >/dev/null); then
   echo "Cleaning up assets bucket s3://${ASSETS_BUCKET}..."
   aws s3 rb "s3://${ASSETS_BUCKET}" --force --region "$REGION"
+elif printf '%s' "$HEAD_ERR" | grep -q '(404)'; then
+  echo "Assets bucket s3://${ASSETS_BUCKET} not found, nothing to clean up."
 else
-  echo "Skipping s3://${ASSETS_BUCKET}: not found or not owned by account ${ACCOUNT_ID}."
+  echo "Warning: s3://${ASSETS_BUCKET} is not owned by account ${ACCOUNT_ID} or is not accessible. Leaving it in place." >&2
+  echo "$HEAD_ERR" >&2
 fi
 
 echo "Done."
