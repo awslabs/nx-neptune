@@ -39,13 +39,31 @@ zip -r "$BUILD_DIR/notebooks.zip" notebooks/ -q
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ASSETS_BUCKET="nx-neptune-assets-${ACCOUNT_ID}-${REGION}"
-aws s3 mb "s3://${ASSETS_BUCKET}" --region "$REGION" 2>/dev/null || true
+
+# The bucket name is predictable, so refuse to use it unless this account owns it.
+if ! HEAD_ERR=$(aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" 2>&1 >/dev/null); then
+  if printf '%s' "$HEAD_ERR" | grep -q '(404)'; then
+    aws s3 mb "s3://${ASSETS_BUCKET}" --region "$REGION"
+    aws s3api head-bucket --bucket "$ASSETS_BUCKET" --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION"
+  else
+    echo "Error: s3://${ASSETS_BUCKET} exists but is not owned by account ${ACCOUNT_ID}, or is not accessible. Refusing to upload." >&2
+    echo "$HEAD_ERR" >&2
+    exit 1
+  fi
+fi
+
+upload_asset() {
+  aws s3api put-object --bucket "$ASSETS_BUCKET" --key "$(basename "$1")" --body "$1" \
+    --expected-bucket-owner "$ACCOUNT_ID" --region "$REGION" >/dev/null
+}
 
 echo "Uploading assets to s3://${ASSETS_BUCKET}/..."
 if [ "$BUILD_WHEEL" = true ]; then
-  aws s3 cp "$BUILD_DIR"/nx_neptune-*.whl "s3://${ASSETS_BUCKET}/" --region "$REGION"
+  for whl in "$BUILD_DIR"/nx_neptune-*.whl; do
+    upload_asset "$whl"
+  done
 fi
-aws s3 cp "$BUILD_DIR/notebooks.zip" "s3://${ASSETS_BUCKET}/" --region "$REGION"
+upload_asset "$BUILD_DIR/notebooks.zip"
 
 echo "Cleaning up build artifacts..."
 rm -rf "$BUILD_DIR"
