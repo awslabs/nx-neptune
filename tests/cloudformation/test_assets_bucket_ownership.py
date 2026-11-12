@@ -11,15 +11,17 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 """
-Release gate for the assets-bucket ownership fix.
+Structural checks on the CloudFormation template's asset-handling controls.
+Run with no AWS, so they belong in CI:
 
-A third party who knew the target's account ID could pre-create the predictable
-assets bucket in their own account; the tool would then upload to it and the
-notebook would install code from it. The fix adds four controls. Proving a real
-cross-account denial needs two accounts and live AWS, so it stays a manual/integ
-check. These tests instead assert — with no AWS, so they run in CI and releases —
-that each guard is present and correctly shaped, so a later edit cannot silently
-remove it.
+- the notebook role's asset read is gated on ``s3:ResourceAccount`` equal to the
+  stack's account, and the AWS-owned graph-notebook bucket is a separate,
+  unconditioned statement;
+- the notebook OnCreate step exits non-zero when the asset copy fails, rather
+  than falling back to a PyPI install.
+
+deploy.sh / teardown.sh ownership and region behaviour is covered separately by
+running the scripts in test_deploy_behavior.py and test_teardown_behavior.py.
 """
 
 import json
