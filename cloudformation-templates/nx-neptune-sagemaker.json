@@ -176,6 +176,47 @@
         "Path": "/"
       }
     },
+    "ImportRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "NeptuneGraphAssumeUnconditioned",
+              "Effect": "Allow",
+              "Principal": { "Service": "neptune-graph.amazonaws.com" },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "ImportExportS3Access",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": ["s3:GetObject", "s3:ListBucket", "s3:PutObject"],
+                  "Resource": [
+                    { "Fn::Sub": "arn:aws:s3:::${StagingBucket}" },
+                    { "Fn::Sub": "arn:aws:s3:::${StagingBucket}/*" }
+                  ]
+                },
+                {
+                  "Sid": "StagingBucketKeyAccess",
+                  "Effect": "Allow",
+                  "Action": ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"],
+                  "Resource": { "Fn::GetAtt": ["S3BucketKey", "Arn"] }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
     "NeptuneAccessPolicy": {
       "Type": "AWS::IAM::ManagedPolicy",
       "Properties": {
@@ -320,7 +361,10 @@
               "Sid": "PassRoleToNeptune",
               "Effect": "Allow",
               "Action": ["iam:PassRole", "iam:GetRole", "iam:SimulatePrincipalPolicy"],
-              "Resource": { "Fn::GetAtt": ["NotebookRole", "Arn"] }
+              "Resource": [
+                { "Fn::GetAtt": ["NotebookRole", "Arn"] },
+                { "Fn::GetAtt": ["ImportRole", "Arn"] }
+              ]
             },
             {
               "Sid": "AthenaStartQuery",
@@ -473,6 +517,9 @@
                     "os.environ['NETWORKX_ATHENA_WORKGROUP'] = '",
                     { "Ref": "AthenaWorkGroup" },
                     "'\n",
+                    "os.environ['NETWORKX_S3_IAM_ROLE_ARN'] = '",
+                    { "Fn::GetAtt": ["ImportRole", "Arn"] },
+                    "'\n",
                     "os.environ['NETWORKX_S3_TABLES_CATALOG'] = 'AwsDataCatalog'\n",
                     "os.environ['NETWORKX_S3_TABLES_DATABASE'] = '",
                     { "Ref": "GlueDatabaseScope" },
@@ -534,6 +581,10 @@
     "StagingBucketName": {
       "Description": "S3 bucket for import/export, datasets, Athena results, and general use",
       "Value": { "Ref": "StagingBucket" }
+    },
+    "ImportRoleArn": {
+      "Description": "Role Neptune Analytics assumes for S3 import and export. Its trust is unconditioned because the service does not satisfy aws:SourceAccount or aws:SourceArn.",
+      "Value": { "Fn::GetAtt": ["ImportRole", "Arn"] }
     }
   }
 }
