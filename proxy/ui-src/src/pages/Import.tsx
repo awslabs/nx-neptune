@@ -49,6 +49,7 @@ export function Import() {
   const [databases, setDatabases] = useState<string[]>([]);
   const [buckets, setBuckets] = useState<string[]>([]);
   const [dbLoading, setDbLoading] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // --- Project state ---
   const [projects, setProjects] = useState<Project[]>([]);
@@ -118,8 +119,20 @@ export function Import() {
   }, [searchParams]);
 
   useEffect(() => {
+    // Ignore a response for a catalog that is no longer selected, so a slow
+    // (e.g. federated) catalog can't overwrite the current list.
+    let stale = false;
     setDbLoading(true);
-    metadata.databases(catalog).then((d) => { setDatabases(d.databases); setDbLoading(false); });
+    setDbError(null);
+    metadata.databases(catalog)
+      .then((d) => { if (!stale) setDatabases(d.databases); })
+      .catch((e) => {
+        if (stale) return;
+        setDatabases([]);
+        setDbError(`Could not load databases for ${catalog}: ${e.message}`);
+      })
+      .finally(() => { if (!stale) setDbLoading(false); });
+    return () => { stale = true; };
   }, [catalog]);
 
   function resetForm() {
@@ -510,10 +523,11 @@ export function Import() {
             </label>
             <label className="space-y-1">
               <span className="text-sm font-medium text-gray-700">Database</span>
-              <Select value={database} onChange={(e) => setDatabase(e.target.value)} disabled={dbLoading}>
+              <Select value={database} onChange={(e) => setDatabase(e.target.value)} disabled={dbLoading} aria-invalid={!!dbError} aria-describedby="database-error">
                 <option value="">{dbLoading ? "Loading..." : "Select database..."}</option>
                 {databases.map((db) => <option key={db} value={db}>{db}</option>)}
               </Select>
+              <span id="database-error" className="text-xs text-red-600" aria-live="polite">{dbError}</span>
             </label>
           </div>
 
