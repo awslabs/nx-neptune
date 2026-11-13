@@ -3,11 +3,9 @@
 import asyncio
 import logging
 from enum import Enum
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Sequence, Union
 
-import boto3
 import networkx as nx
-from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from . import NeptuneGraph, instance_management
@@ -18,6 +16,7 @@ from .property_graph import (
     PropertyGraph,
     property_graph_to_sql,
 )
+from .utils.async_utils import caller_is_being_cancelled, has_running_loop, run_sync
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +35,37 @@ class CleanupTask(Enum):
     STOP = "stop"
 
 
+# Graph statuses each operation acts on; any other status is skipped with a warning.
+#
+# Every task stays AVAILABLE-only, DESTROY included. A STOPPED graph is deletable
+# and still bills for storage, so widening DESTROY to it is tempting, but session
+# membership is a name match (``instance_management._is_session_graph``) rather
+# than a record of what this session created: any graph named `{session}-{uuid}`
+# or exactly `{session}` is claimed, whoever made it, and the name of a graph
+# someone else stopped *to keep its data* can match. delete_na_instance then
+# clears deletion protection and skips the snapshot. Any widening needs an
+# ownership check or an explicit opt-in first.
+_ACTIVE_STATUSES = ("AVAILABLE",)
+
+# cleanup task -> (instance_management function to run, `aws neptune-graph` verb,
+#                  graph statuses the task acts on)
+_CLEANUP_OPERATIONS = {
+    CleanupTask.STOP: ("stop_na_instance", "stop-graph", _ACTIVE_STATUSES),
+    CleanupTask.RESET: ("reset_graph", "reset-graph", _ACTIVE_STATUSES),
+    CleanupTask.DESTROY: ("delete_na_instance", "delete-graph", _ACTIVE_STATUSES),
+}
+
+
 class SessionManager:
-    """Manages Neptune Analytics sessions and graph operations."""
+    """Manages Neptune Analytics sessions and graph operations.
+
+    Usable as either a synchronous or an asynchronous context manager. Async
+    callers should prefer ``async with``, which awaits the exit-time cleanup on
+    their own event loop instead of blocking it on a worker thread::
+
+        async with SessionManager.session("demo", CleanupTask.STOP) as session:
+            graph = await session.get_or_create_graph()
+    """
 
     def __init__(self, session_name=None, cleanup_task=None):
         """Initialize a SessionManager instance.
@@ -49,9 +77,16 @@ class SessionManager:
               When set to DESTROY, will destroy all instances in the session on exit.
               When set to RESET, will reset all instances in the session on exit.
               When set to STOP, will stop all instances in the session on exit.
+              STOP, RESET and DESTROY each require a session_name and raise
+              ValueError without one.
         """
         self.session_name = session_name
         self.cleanup_task = cleanup_task or CleanupTask.NONE
+        if self.cleanup_task in _CLEANUP_OPERATIONS and not session_name:
+            raise ValueError(
+                f"{self.cleanup_task} requires a session_name: without one the cleanup "
+                "would target every Neptune Analytics graph in the account/region."
+            )
         self._clients = ClientFactory()
         self._neptune_client = self._clients.neptune()
         self._sts_client = self._clients.sts()
@@ -59,6 +94,9 @@ class SessionManager:
         self._iam_client = self._clients.iam()
         self._s3_client = self._clients.s3()
         self._athena_client = self._clients.athena()
+        # (graph_id, error) for the last cleanup run; read by
+        # _handle_cleanup_failure so the one failure warning can name them all.
+        self._cleanup_failures: list[tuple[str, BaseException]] = []
 
     @classmethod
     def session(cls, session_name=None, cleanup_task=None):
@@ -75,16 +113,159 @@ class SessionManager:
         return cls(session_name, cleanup_task)
 
     def __enter__(self):
-        """Enter the session manager."""
+        """Enter the session manager.
+
+        In async code prefer ``async with``, which cleans up without blocking
+        the caller's event loop. See :meth:`__exit__`.
+        """
 
         # TODO: consider creating graphs here
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit the context manager and clean up graphs."""
+        """Exit the context manager and clean up graphs.
 
-        if self.cleanup_task == CleanupTask.DESTROY:
-            self.destroy_all_graphs()
+        A ``with`` block is the only cleanup hook: a ``SessionManager`` used
+        without one never cleans up its graphs automatically.
+
+        Exit runs the configured cleanup task (STOP, RESET or DESTROY) over every
+        ``AVAILABLE`` graph in the session and waits for each to reach its
+        terminal state, so exiting the block can take minutes. Graphs in any
+        other status, including ``STOPPED``, are skipped with a warning.
+
+        ``async with`` is the supported path in async code. Cleanup is async, so
+        reaching it from this synchronous hook inside a running loop means
+        running it on a worker thread and blocking the caller's loop until it
+        finishes - which also delays Ctrl-C for the whole cleanup. That case is
+        warned about rather than refused, because refusing it would leak the
+        running, billed graphs the cleanup exists to release.
+
+        A cleanup failure is never allowed to replace an exception raised by the
+        ``with`` body: that error is the one the caller needs to see, so a failed
+        cleanup is logged instead and the original exception propagates.
+        """
+
+        if self.cleanup_task not in _CLEANUP_OPERATIONS:
+            return
+        if has_running_loop():
+            logger.warning(
+                f"Session cleanup ({self.cleanup_task.value}) is running through "
+                f"the synchronous `with` path inside a running event loop. It will "
+                f"block this loop until every graph finishes, and Ctrl-C will not "
+                f"be delivered until then. Use `async with SessionManager.session("
+                f"...)` in async code, including notebook cells."
+            )
+        try:
+            run_sync(self._cleanup_coro())
+        except BaseException as e:  # noqa: BLE001 - see _handle_cleanup_failure
+            self._handle_cleanup_failure(e, exc_type)
+
+    async def __aenter__(self):
+        """Enter the session manager from async code.
+
+        The async counterpart of :meth:`__enter__`, and the supported path for
+        async callers: every ``SessionManager`` create method is ``async``, so
+        this is the usual case.
+        """
+
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager from async code and clean up graphs.
+
+        Same cleanup as :meth:`__exit__`, awaited directly on the caller's loop
+        rather than bridged to a worker thread, so a Ctrl-C during a
+        minutes-long cleanup is delivered when it arrives instead of when the
+        cleanup ends, and a cancellation of the calling task reaches the caller.
+
+        This removes the thread bridge, not every stall: the underlying
+        ``boto3`` calls are synchronous, so ``list_graphs``, the per-graph
+        status checks, the IAM permission checks and each stop/reset/delete
+        still occupy the loop for as long as the AWS call takes. Other tasks
+        make progress between those calls, not during them. Moving them to
+        ``asyncio.to_thread`` is a separate change.
+        """
+
+        if self.cleanup_task not in _CLEANUP_OPERATIONS:
+            return
+        try:
+            await self._cleanup_coro()
+        except BaseException as e:  # noqa: BLE001 - see _handle_cleanup_failure
+            if isinstance(e, asyncio.CancelledError) and caller_is_being_cancelled():
+                raise
+            self._handle_cleanup_failure(e, exc_type)
+
+    def _cleanup_coro(self):
+        """The configured cleanup task, as an un-awaited coroutine."""
+        operation_name, _, statuses = _CLEANUP_OPERATIONS[self.cleanup_task]
+        return self._await_cleanup_all_graphs(operation_name, statuses)
+
+    def _handle_cleanup_failure(self, error: BaseException, exc_type):
+        """Report a failed cleanup, and decide whether it may propagate.
+
+        ``BaseException`` is deliberate at the call sites: it pairs with the
+        ``BaseException`` filter in ``_await_cleanup_all_graphs``, since
+        ``gather(return_exceptions=True)`` returns e.g. ``CancelledError`` as a
+        value that is then re-raised. Catching only ``Exception`` would let it
+        replace the body's exception.
+
+        ``KeyboardInterrupt`` and ``SystemExit`` are carved out: they are
+        control-flow signals (e.g. Ctrl-C during a minutes-long cleanup), not
+        cleanup failures, so they propagate even when the body already raised.
+
+        The report names every graph that failed, not just the error being
+        re-raised: ``_await_cleanup_all_graphs`` attempts every graph and raises
+        only the first failure, so the error alone hides the others and names
+        none of the graph ids the operator has to retry. This is the single
+        place those are reported - the per-graph warnings it used to emit
+        duplicated this line for every failure.
+        """
+        _, verb, _ = _CLEANUP_OPERATIONS[self.cleanup_task]
+        failures = self._cleanup_failures
+        described = (
+            ", ".join(f"{graph_id}: {err!r}" for graph_id, err in failures)
+            if failures
+            else repr(error)
+        )
+        logger.warning(
+            f"Session cleanup ({self.cleanup_task.value}) failed: {described}. "
+            f"Affected graphs may still be running and billed; list them with "
+            f"`aws neptune-graph list-graphs` and retry each with "
+            f"`aws neptune-graph {verb} --graph-identifier <id>`"
+        )
+        if exc_type is None or isinstance(error, (KeyboardInterrupt, SystemExit)):
+            raise error
+
+    async def _await_cleanup_all_graphs(
+        self, operation_name: str, statuses: Sequence[str]
+    ):
+        """Run an instance_management operation on every graph, to completion.
+
+        The gather is built *and* awaited inside the running loop. Every graph
+        is attempted even if another fails (``return_exceptions=True``, kept on
+        this private path so the public bulk methods still raise); the failures
+        are recorded for the exit hook to report and the first one is raised.
+        """
+        operation = getattr(instance_management, operation_name)
+        graph_ids = self._select_graph_ids(statuses, [])
+        results = await asyncio.gather(
+            *[operation(graph_id) for graph_id in graph_ids], return_exceptions=True
+        )
+        # strict: gather preserves order and arity, so a length mismatch here is
+        # impossible - and if that ever stops holding, a ValueError is better
+        # than silently dropping the graphs that fell off the end.
+        failures = [
+            (graph_id, result)
+            for graph_id, result in zip(graph_ids, results, strict=True)
+            if isinstance(result, BaseException)
+        ]
+        # Reported once, by _handle_cleanup_failure, which renders these with
+        # repr: str(CancelledError()) is empty, which rendered as "failed for
+        # graph g-1: " and named no cause.
+        self._cleanup_failures = failures
+        if failures:
+            _, first_error = failures[0]
+            raise first_error
 
     def validate_permissions(self):
         """Validate AWS permissions for Neptune Analytics operations.
@@ -97,8 +278,10 @@ class SessionManager:
     def list_graphs(self) -> list[NeptuneAnalyticsClient]:
         """List available Neptune Analytics graphs.
 
-        If session_name is set, filters graphs to those named session_name or
-        '{session_name}-{uuid}'.
+        If session_name is set, filters graphs to this session's graphs: those
+        named ``session_name`` or ``'{session_name}-{uuid}'`` - see
+        :func:`instance_management._is_session_graph`, the one membership rule
+        shared with the rest of the library.
 
         Returns:
             list: List of NeptuneAnalyticsClient objects containing graph metadata.
@@ -110,8 +293,10 @@ class SessionManager:
             graphs = [
                 NeptuneAnalyticsClient.from_response(g, self._neptune_client)
                 for g in graphs
+                # `or ""`: list_graphs can return an entry with no name, and
+                # _is_session_graph takes a str.
                 if instance_management._is_session_graph(
-                    g.get("name", ""), self.session_name
+                    g.get("name") or "", self.session_name
                 )
             ]
         else:
@@ -674,11 +859,15 @@ class SessionManager:
     def destroy_graph(self, graph_name: Union[str, list[str]]):
         """Destroy one or more Neptune Analytics graphs.
 
+        Deletes graphs in ``AVAILABLE`` status; graphs in any other status,
+        ``STOPPED`` included, are skipped with a warning. This operation cannot
+        be undone.
+
         Args:
-            graph_name (Union[str, list[str]]): Name or list of names of graphs to stop
+            graph_name (Union[str, list[str]]): Name or list of names of graphs to destroy
 
         Returns:
-            asyncio.Future: A future that resolves when the graphs have been stopped.
+            asyncio.Future: A future that resolves when the graphs have been deleted.
         """
         return self._destroy_graphs(graph_name)
 
@@ -686,7 +875,9 @@ class SessionManager:
         """Delete all Neptune Analytics graphs associated with this session.
 
         Fetches all graph IDs for the current session and permanently deletes each graph instance.
-        This operation cannot be undone.
+        This operation cannot be undone. Only graphs in ``AVAILABLE`` status are
+        deleted; graphs in any other status, ``STOPPED`` included, are skipped
+        with a warning.
 
         Returns:
             asyncio.Future: A future that resolves when all graphs have been deleted.
@@ -697,20 +888,20 @@ class SessionManager:
         """Start one or more Neptune Analytics graphs.
 
         Args:
-            graph_name (Union[str, list[str]]): Name or list of names of graphs to stop
+            graph_name (Union[str, list[str]]): Name or list of names of graphs to start
 
         Returns:
-            asyncio.Future: A future that resolves when the graphs have been stopped.
+            asyncio.Future: A future that resolves when the graphs have been started.
         """
         return self._start_graphs(graph_name)
 
     def start_all_graphs(self):
         """Start all Neptune Analytics graphs associated with this session.
 
-        Fetches all graph IDs for the current session and stops each graph instance.
+        Fetches all graph IDs for the current session and starts each graph instance.
 
         Returns:
-            asyncio.Future: A future that resolves when all graphs have been stopped.
+            asyncio.Future: A future that resolves when all graphs have been started.
         """
         return self._start_graphs([])
 
@@ -739,20 +930,20 @@ class SessionManager:
         """Reset one or more Neptune Analytics graphs.
 
         Args:
-            graph_name (Union[str, list[str]]): Name or list of names of graphs to stop
+            graph_name (Union[str, list[str]]): Name or list of names of graphs to reset
 
         Returns:
-            asyncio.Future: A future that resolves when the graphs have been stopped.
+            asyncio.Future: A future that resolves when the graphs have been reset.
         """
         return self._reset_graphs(graph_name)
 
     def reset_all_graphs(self):
-        """Stop all Neptune Analytics graphs associated with this session.
+        """Reset all Neptune Analytics graphs associated with this session.
 
-        Fetches all graph IDs for the current session and stops each graph instance.
+        Fetches all graph IDs for the current session and resets each graph instance.
 
         Returns:
-            asyncio.Future: A future that resolves when all graphs have been stopped.
+            asyncio.Future: A future that resolves when all graphs have been reset.
         """
         return self._reset_graphs([])
 
@@ -761,7 +952,7 @@ class SessionManager:
             graph_name = [graph_name]
         return self._graph_bulk_operation(
             operation=instance_management.delete_na_instance,
-            status_to_check="AVAILABLE",
+            status_to_check=_ACTIVE_STATUSES,
             graph_names=graph_name,
         )
 
@@ -793,8 +984,20 @@ class SessionManager:
         )
 
     def _graph_bulk_operation(
-        self, operation: Callable, status_to_check: str, graph_names: list[str]
+        self,
+        operation: Callable,
+        status_to_check: Union[str, Sequence[str]],
+        graph_names: list[str],
     ):
+        graph_ids = self._select_graph_ids(status_to_check, graph_names)
+        return asyncio.gather(*[operation(graph_id) for graph_id in graph_ids])
+
+    def _select_graph_ids(
+        self, status_to_check: Union[str, Sequence[str]], graph_names: list[str]
+    ):
+        if isinstance(status_to_check, str):
+            status_to_check = (status_to_check,)
+        expected = " or ".join(status_to_check)
         # Guard: an empty graph_names means "all graphs in this session", which
         # relies on session_name to scope list_graphs(). With no session_name,
         # list_graphs() returns every graph in the account/region, so a bulk
@@ -815,20 +1018,17 @@ class SessionManager:
         ]
         if graph_names and len(graphs) == 0:
             logger.warning(
-                f"No graphs found matching name: {graph_names} and status: {status_to_check}"
+                f"No graphs found matching name: {graph_names} and status: {expected}"
             )
 
         # Filter for graphs in correct status, log warning for others
         graph_ids = []
         for graph in graphs:
-            if graph.status == status_to_check:
+            if graph.status in status_to_check:
                 graph_ids.append(graph.graph_id)
             else:
                 logger.warning(
-                    f"Skipping graph {graph.graph_id} - status is {graph.status}, expected {status_to_check}"
+                    f"Skipping graph {graph.graph_id} - status is {graph.status}, expected {expected}"
                 )
 
-        future_list = []
-        for graph_id in graph_ids:
-            future_list.append(operation(graph_id))
-        return asyncio.gather(*future_list)
+        return graph_ids
