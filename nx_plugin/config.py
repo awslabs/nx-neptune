@@ -87,9 +87,29 @@ class NeptuneConfig(Config):
 
     destroy_instance: bool
         If True, destroys the instance. Defaults to False.
+        Destroy fails while a private graph endpoint is attached (the service
+        raises ConflictException: "Graph cannot be deleted because it has private
+        graph endpoints attached"). Remove the endpoint before using this option.
 
     reset_graph: bool
-        If True, resets the graph. Defaults to False.
+        If True, resets the graph. Requires export_s3_bucket when used with mutate algorithm variants.
+        Defaults to False.
+        The reset is performed with skip_snapshot=True, so it wipes the graph with
+        no snapshot to return to. Take care when pointing it at a long-lived graph.
+
+    stop_instance: bool
+        If True, stops the instance, keeping graph_id. Defaults to False.
+        Setup never restarts a STOPPED graph, so this is terminal for the session:
+        restart the graph (e.g. via SessionManager) before reusing the config.
+
+    Only one completion action (destroy_instance, stop_instance, reset_graph) may be True.
+
+    When the algorithm succeeds, export_s3_bucket (if set) runs first, then the
+    chosen action. When the algorithm raises an Exception, the export is skipped,
+    reset_graph never runs, stop_instance still runs, and destroy_instance runs only
+    for an instance created by that call; a teardown error is logged and the
+    algorithm's exception propagates. KeyboardInterrupt and SystemExit trigger no
+    teardown.
 
     Notes
     -----
@@ -133,6 +153,7 @@ class NeptuneConfig(Config):
     save_snapshot: bool = False
     destroy_instance: bool = False
     reset_graph: bool = False
+    stop_instance: bool = False
 
     ############################################
     # Configuration for batch inserts:
@@ -186,19 +207,27 @@ class NeptuneConfig(Config):
                 "export_s3_bucket is defined, s3_iam_role must be defined in the configuration."
             )
 
-        if self.destroy_instance is True and self.reset_graph is True:
+        completion_actions = [
+            name
+            for name in ("destroy_instance", "stop_instance", "reset_graph")
+            if getattr(self, name) is True
+        ]
+        if len(completion_actions) > 1:
             raise ValueError(
-                "Configuration error: destroy_instance and reset_graph are both True.  Only one of these options may "
-                "be True in the configuration."
+                f"Configuration error: {', '.join(completion_actions)} are all True.  "
+                "Choose only one completion action (destroy_instance, stop_instance, "
+                "reset_graph) in the configuration."
             )
 
     def validate_mutate_execution_config(self):
         """Validate the Neptune configuration to make sure mutated graph's state stay after the execution."""
-        if self.destroy_instance is True and self.export_s3_bucket is None:
+        if (
+            self.destroy_instance is True or self.reset_graph is True
+        ) and self.export_s3_bucket is None:
             raise ValueError(
                 "Configuration error: The mutate variant of the algorithm does not support persisting changes."
                 "To maintain the mutated graph's state, "
-                "either disable the destroy_instance option or enable the export_s3_bucket option."
+                "either disable the destroy_instance and reset_graph options or enable the export_s3_bucket option."
             )
 
 
