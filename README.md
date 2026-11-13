@@ -99,7 +99,7 @@ pip install nx_neptune
 python -m pip wheel -w dist .
 
 # Install with Jupyter dependencies from wheel: 
-pip install "dist/nx_neptune-0.9.1-py3-none-any.whl"
+pip install "dist/nx_neptune-0.9.2-py3-none-any.whl"
 ```
 
 ### Install from source
