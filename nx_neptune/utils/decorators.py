@@ -54,6 +54,10 @@ def configure_if_nx_active():
 
             logger.debug(f"configure_if_nx_active: {func.__name__}")
             graph = args[0]
+            # Whether this call created the instance, tracked by the branch the
+            # wrapper takes. destroy_instance is global config that outlives a
+            # single call, so it cannot answer this.
+            created_here = False
 
             neptune_config = get_config()
             neptune_config.validate_config()
@@ -77,6 +81,7 @@ def configure_if_nx_active():
             elif neptune_config.create_new_instance is True or isinstance(
                 neptune_config.create_new_instance, dict
             ):
+                created_here = True
                 if loop and loop.is_running():
                     pool = concurrent.futures.ThreadPoolExecutor()
                     neptune_config = pool.submit(
@@ -96,7 +101,26 @@ def configure_if_nx_active():
             converted_args = (na_graph,) + args[1:]
 
             # Call algorithm
-            rv = func(*converted_args, **kwargs)
+            try:
+                rv = func(*converted_args, **kwargs)
+            except (KeyboardInterrupt, SystemExit):
+                # Control flow, not an algorithm failure: run no teardown, so a
+                # Ctrl-C is not turned into a delete.
+                raise
+            except BaseException:
+                try:
+                    _run_failure_teardown(na_graph, neptune_config, created_here, loop)
+                except BaseException:  # noqa: BLE001 - see below
+                    # The algorithm's exception is the one the caller needs. A
+                    # teardown failure is logged and swallowed so it cannot
+                    # replace it; BaseException so an interrupt during teardown
+                    # cannot either.
+                    logger.error(
+                        "Teardown after a failed algorithm call did not complete; "
+                        "the instance may still be running and billed",
+                        exc_info=True,
+                    )
+                raise
 
             # Execute teardown instructions
             if neptune_config.graph_id is not None:
@@ -116,6 +140,40 @@ def configure_if_nx_active():
         return wrapper
 
     return decorator
+
+
+def _run_failure_teardown(na_graph, neptune_config, created_here, loop) -> None:
+    """Run the failure-path teardown, from inside a running loop or not."""
+    coro = _execute_failure_teardown(na_graph, neptune_config, created_here)
+    if loop and loop.is_running():
+        pool = concurrent.futures.ThreadPoolExecutor()
+        pool.submit(asyncio.run, coro).result()
+    else:
+        asyncio.run(coro)
+
+
+async def _execute_failure_teardown(
+    na_graph: NeptuneGraph, neptune_config: NeptuneConfig, created_here: bool
+) -> None:
+    """Release what this call created, after the algorithm raised.
+
+    Deliberately narrower than the success teardown, so that a failure cannot
+    destroy data:
+
+    - the S3 export is skipped, so a partial export cannot overwrite the last
+      good one;
+    - the instance is destroyed only when this call created it. A
+      caller-supplied ``graph_id`` is never deleted because an algorithm raised.
+    """
+    if not (created_here and neptune_config.destroy_instance):
+        return
+    if neptune_config.graph_id is None:
+        return
+
+    logger.debug(f"Destroy instance created by this call: {neptune_config.graph_id}")
+    await delete_na_instance(neptune_config.graph_id)
+    set_config_graph_id(None)
+    logger.debug("Instance destroyed")
 
 
 async def _execute_setup_routines_on_graph(
