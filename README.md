@@ -308,13 +308,22 @@ To run the Jupyter notebooks:
    export NETWORKX_GRAPH_ID=your-neptune-analytics-graph-id
    ```
 
-2. You will also need to specify the IAM roles that will execute S3 import or export:
+2. Set the S3 paths for import and export, and optionally the IAM role Neptune
+   Analytics assumes to reach them:
 
    ```bash
-   export NETWORKX_ARN_IAM_ROLE=arn:aws:iam::AWS_ACCOUNT:role/IAM_ROLE_NAME
    export NETWORKX_S3_IMPORT_BUCKET_PATH=s3://S3_BUCKET_PATH
    export NETWORKX_S3_EXPORT_BUCKET_PATH=s3://S3_BUCKET_PATH
+   export NETWORKX_S3_IAM_ROLE_ARN=arn:aws:iam::AWS_ACCOUNT:role/IAM_ROLE_NAME
    ```
+
+   `NETWORKX_S3_IAM_ROLE_ARN` is optional — without it the library falls back to
+   the caller identity. Two things to know about it:
+
+   - It is read when `nx_neptune` is imported, so export it before starting
+     Jupyter. Setting it from inside a running kernel has no effect.
+   - It applies to the NetworkX backend only. `SessionManager` builds its own
+     role from the caller identity and ignores this variable.
 
 3. Launch Jupyter Notebook:
    ```bash
