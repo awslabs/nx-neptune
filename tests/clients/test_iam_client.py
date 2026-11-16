@@ -718,3 +718,184 @@ class TestIamClientWrapper:
                 "s3://test-bucket/", "arn:aws:kms:us-east-1:123456789012:key/test-key"
             )
             assert result is True
+
+
+class TestSimulatedResourceArns:
+    """The preflight must simulate against the resource ARN IAM really evaluates.
+
+    Simulating Neptune actions against "*" and putting bucket- and object-level S3
+    actions on one ARN made IAM report a correctly scoped least-privilege policy as
+    insufficient, so the operation aborted
+    (https://github.com/awslabs/nx-neptune/issues/576).
+    """
+
+    ROLE = "arn:aws:iam::123456789012:role/test-role"
+    REGION = "us-west-2"
+
+    def _wrapper(self, role=None, region=REGION):
+        """A wrapper over a simulator fake that allows whatever is asked of it.
+
+        These tests assert on the request the preflight builds, not on the
+        decision, so an allow-everything simulator keeps them focused on the ARNs.
+        """
+        from unittest.mock import MagicMock
+
+        client = MagicMock()
+
+        def simulate(**kwargs):
+            return {
+                "EvaluationResults": [
+                    {"EvalActionName": action, "EvalDecision": "allowed"}
+                    for action in kwargs["ActionNames"]
+                ]
+            }
+
+        client.simulate_principal_policy.side_effect = simulate
+        return (
+            IamClientWrapper(role_arn=role or self.ROLE, client=client, region=region),
+            client,
+        )
+
+    @staticmethod
+    def _requests(client):
+        """(ResourceArns, ActionNames) of every simulate call, in order."""
+        return [
+            (c.kwargs["ResourceArns"], c.kwargs["ActionNames"])
+            for c in client.simulate_principal_policy.call_args_list
+        ]
+
+    # --- Neptune Analytics resource ARNs -------------------------------------
+
+    def test_graph_actions_simulate_against_the_graph_arn_not_a_wildcard(self):
+        wrapper, client = self._wrapper()
+
+        wrapper.has_create_na_permissions()
+
+        arns, actions = self._requests(client)[0]
+        assert arns == [
+            "arn:aws:neptune-graph:us-west-2:123456789012:graph/*"
+        ], "simulating against '*' is what #576 reports"
+        assert set(actions) == {
+            "neptune-graph:CreateGraph",
+            "neptune-graph:TagResource",
+        }
+
+    def test_snapshot_actions_simulate_against_the_snapshot_arn(self):
+        wrapper, client = self._wrapper()
+
+        wrapper.has_delete_snapshot_permissions()
+
+        arns, actions = self._requests(client)[0]
+        assert arns == ["arn:aws:neptune-graph:us-west-2:123456789012:graph-snapshot/*"]
+        assert actions == ["neptune-graph:DeleteGraphSnapshot"]
+
+    def test_mixed_actions_are_split_by_resource_type(self):
+        """A snapshot action and a graph action cannot share one request."""
+        wrapper, client = self._wrapper()
+
+        wrapper.has_create_na_snapshot_permissions()
+
+        by_arn = {arns[0]: set(actions) for arns, actions in self._requests(client)}
+        assert by_arn == {
+            "arn:aws:neptune-graph:us-west-2:123456789012:graph/*": {
+                "neptune-graph:TagResource"
+            },
+            "arn:aws:neptune-graph:us-west-2:123456789012:graph-snapshot/*": {
+                "neptune-graph:CreateGraphSnapshot"
+            },
+        }
+
+    def test_partition_comes_from_the_role_arn(self):
+        wrapper, client = self._wrapper(
+            role="arn:aws-us-gov:iam::123456789012:role/test-role"
+        )
+
+        wrapper.has_start_na_permissions()
+
+        arns, _ = self._requests(client)[0]
+        assert arns == ["arn:aws-us-gov:neptune-graph:us-west-2:123456789012:graph/*"]
+
+    def test_region_falls_back_to_a_wildcard_segment_when_unset(self):
+        """Keeps the ARN well formed rather than embedding "None"."""
+        from unittest.mock import patch
+
+        wrapper, client = self._wrapper(region=None)
+        with patch("nx_neptune.clients.iam_client.boto3") as mock_boto3:
+            mock_boto3.DEFAULT_SESSION = None
+            mock_boto3.Session.return_value.region_name = None
+
+            wrapper.has_start_na_permissions()
+
+        arns, _ = self._requests(client)[0]
+        assert arns == ["arn:aws:neptune-graph:*:123456789012:graph/*"]
+
+    def test_region_prefers_the_default_session_over_a_fresh_one(self):
+        """ClientFactory's clients resolve through the default session, so this agrees."""
+        from unittest.mock import MagicMock, patch
+
+        wrapper, client = self._wrapper(region=None)
+        with patch("nx_neptune.clients.iam_client.boto3") as mock_boto3:
+            mock_boto3.DEFAULT_SESSION = MagicMock(region_name="eu-central-1")
+            mock_boto3.Session.return_value.region_name = "us-east-1"
+
+            wrapper.has_start_na_permissions()
+
+        arns, _ = self._requests(client)[0]
+        assert arns == ["arn:aws:neptune-graph:eu-central-1:123456789012:graph/*"]
+
+    # --- S3 bucket-level vs object-level ------------------------------------
+
+    def test_s3_bucket_and_object_actions_use_different_arns(self):
+        wrapper, client = self._wrapper()
+        wrapper.check_assume_role = lambda service_name: True
+        wrapper.check_s3_versioning_enabled = lambda *a, **k: None
+
+        wrapper.has_export_to_s3_permissions("s3://my-bucket/staging")
+
+        by_arn = {arns[0]: set(actions) for arns, actions in self._requests(client)}
+        assert by_arn == {
+            "arn:aws:s3:::my-bucket": {"s3:ListBucket"},
+            "arn:aws:s3:::my-bucket/staging/*": {"s3:PutObject", "s3:DeleteObject"},
+        }
+
+    def test_s3_object_arn_without_a_prefix_covers_the_whole_bucket(self):
+        wrapper, client = self._wrapper()
+        wrapper.check_assume_role = lambda service_name: True
+        wrapper.check_s3_versioning_enabled = lambda *a, **k: None
+
+        wrapper.has_export_to_s3_permissions("s3://my-bucket")
+
+        by_arn = {arns[0]: set(actions) for arns, actions in self._requests(client)}
+        assert "arn:aws:s3:::my-bucket/*" in by_arn
+        assert by_arn["arn:aws:s3:::my-bucket"] == {"s3:ListBucket"}
+
+    def test_s3_arns_carry_the_role_partition(self):
+        wrapper, client = self._wrapper(
+            role="arn:aws-cn:iam::123456789012:role/test-role"
+        )
+        wrapper.check_assume_role = lambda service_name: True
+        wrapper.check_s3_versioning_enabled = lambda *a, **k: None
+
+        wrapper.has_delete_s3_permissions("s3://my-bucket/staging")
+
+        for arns, _ in self._requests(client):
+            assert arns[0].startswith("arn:aws-cn:s3:::")
+
+
+@pytest.mark.parametrize(
+    "sts_arn,expected",
+    [
+        (
+            "arn:aws-us-gov:sts::123456789012:assumed-role/my-role/session",
+            "arn:aws-us-gov:iam::123456789012:role/my-role",
+        ),
+        (
+            "arn:aws-cn:sts::123456789012:assumed-role/path/my-role/session",
+            "arn:aws-cn:iam::123456789012:role/path/my-role",
+        ),
+    ],
+)
+def test_sts_to_iam_arn_preserves_the_partition(sts_arn, expected):
+    """A hard-coded 'aws' partition produced an ARN no policy in aws-cn or
+    aws-us-gov could match."""
+    assert _convert_sts_to_iam_arn(sts_arn) == expected

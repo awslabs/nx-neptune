@@ -11,8 +11,10 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 import logging
+import re
 from typing import Optional, Union
 
+import boto3
 import jmespath
 from botocore.client import BaseClient
 from botocore.exceptions import ClientError
@@ -22,6 +24,22 @@ __all__ = ["IamClientWrapper", "split_s3_arn_to_bucket_and_path"]
 
 from .client_factory import ClientFactory
 from .neptune_constants import SERVICE_NA
+
+# S3 actions that IAM authorizes against the bucket ARN rather than an object ARN.
+# Everything else in this module's permission sets is object-level.
+S3_BUCKET_LEVEL_ACTIONS = frozenset(
+    {
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
+        "s3:ListBucketMultipartUploads",
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+    }
+)
+
+# Neptune Analytics resource types used in simulated ARNs.
+_NA_RESOURCE_TYPE_GRAPH = "graph"
+_NA_RESOURCE_TYPE_SNAPSHOT = "graph-snapshot"
 
 
 class IamClientWrapper:
@@ -40,6 +58,7 @@ class IamClientWrapper:
         role_arn: str,
         client: BaseClient,
         logger: Optional[logging.Logger] = None,
+        region: Optional[str] = None,
     ):
         """
         Constructs an IAM Client object for AWS IAM service interaction, with logger and boto client.
@@ -48,6 +67,8 @@ class IamClientWrapper:
             role_arn (str): The ARN of the IAM role to use.
             client (BaseClient): Custom boto3 IAM client.
             logger (logging.Logger): Custom logger. Creates a default logger if None is provided.
+            region (str, optional): Region for the simulated Neptune Analytics resource
+                ARNs. Defaults to the region ``ClientFactory`` resolves.
         """
         if "sts" in role_arn:
             self.role_arn = _convert_sts_to_iam_arn(role_arn)
@@ -55,6 +76,108 @@ class IamClientWrapper:
             self.role_arn = role_arn
         self.client = client
         self.logger = logger or logging.getLogger(__name__)
+        self._region = region
+
+    @property
+    def _partition(self) -> str:
+        """AWS partition (aws, aws-cn, aws-us-gov) parsed from the role ARN."""
+        parts = self.role_arn.split(":")
+        return parts[1] if len(parts) > 1 and parts[1] else "aws"
+
+    @property
+    def _account_id(self) -> str:
+        """AWS account id parsed from the role ARN."""
+        parts = self.role_arn.split(":")
+        return parts[4] if len(parts) > 4 else ""
+
+    @property
+    def _resolved_region(self) -> Optional[str]:
+        """The region ``ClientFactory``'s clients use; ``None`` if none is configured.
+
+        Order: the ``region=`` keyword, ``boto3.DEFAULT_SESSION`` (what the
+        module-level ``boto3.client(...)`` calls in ``ClientFactory`` resolve
+        through), then a fresh ``boto3.Session()``. A fresh Session ignores
+        ``setup_default_session``, so the default session has to be consulted first
+        for this to agree with the Neptune clients.
+
+        Never the IAM client's ``meta.region_name``: IAM is global and reports a
+        pseudo-region such as ``aws-global`` that no policy can match.
+        """
+        if self._region:
+            return self._region
+        default_session = boto3.DEFAULT_SESSION
+        if default_session is not None and default_session.region_name:
+            return default_session.region_name
+        return boto3.Session().region_name
+
+    def _neptune_graph_arn(self, resource_type: str = _NA_RESOURCE_TYPE_GRAPH) -> str:
+        """Resource ARN matching any Neptune Analytics ``resource_type`` in the
+        caller's account and region.
+
+        With no region configured a wildcard keeps the ARN well formed rather than
+        embedding "None". That is a fallback, not a match-anything: IAM matches a
+        policy's Resource against this literal request ARN, so a grant pinned to one
+        region will not match it.
+        """
+        region = self._resolved_region or "*"
+        return (
+            f"arn:{self._partition}:neptune-graph:{region}:"
+            f"{self._account_id}:{resource_type}/*"
+        )
+
+    def _check_neptune_permission(self, operation_name: str, permissions: list) -> dict:
+        """Simulate Neptune Analytics actions against the resource ARN IAM evaluates.
+
+        Snapshot actions are authorized against a ``graph-snapshot`` ARN, everything
+        else against a ``graph`` ARN, so the two groups go in separate requests.
+
+        Known limitation: AWS lists two resource types for some actions
+        (``CreateGraphSnapshot``, ``RestoreGraphFromSnapshot``, ``TagResource``),
+        which are pinned to one type here. A grant scoped only to the other type is
+        not confirmed.
+        """
+        by_type: dict = {}
+        for action in permissions:
+            resource_type = (
+                _NA_RESOURCE_TYPE_SNAPSHOT
+                if "Snapshot" in action
+                else _NA_RESOURCE_TYPE_GRAPH
+            )
+            by_type.setdefault(resource_type, []).append(action)
+
+        results: dict = {}
+        for resource_type, actions in by_type.items():
+            # Built here from the role ARN and region rather than supplied by a
+            # caller, so these skip the user-input validation in check_aws_permission.
+            results.update(
+                self.check_aws_permission(
+                    operation_name,
+                    actions,
+                    self._neptune_graph_arn(resource_type),
+                    validate_arns=False,
+                )
+            )
+        return results
+
+    def _check_s3_permission(
+        self, operation_name: str, permissions: list, s3_path: str
+    ) -> dict:
+        """Simulate S3 actions, bucket-level against the bucket ARN and object-level
+        against the object ARN, in separate requests."""
+        bucket_arn, object_arn = _get_s3_bucket_and_object_arns(
+            s3_path, self._partition
+        )
+        bucket_actions = [p for p in permissions if p in S3_BUCKET_LEVEL_ACTIONS]
+        object_actions = [p for p in permissions if p not in S3_BUCKET_LEVEL_ACTIONS]
+
+        results: dict = {}
+        for actions, arn in (
+            (bucket_actions, bucket_arn),
+            (object_actions, object_arn),
+        ):
+            if actions:
+                results.update(self.check_aws_permission(operation_name, actions, arn))
+        return results
 
     @classmethod
     def default(
@@ -141,7 +264,11 @@ class IamClientWrapper:
             raise e
 
     def check_aws_permission(
-        self, operation_name: str, permissions: list, resource_arn: str = "*"
+        self,
+        operation_name: str,
+        permissions: list,
+        resource_arn: str = "*",
+        validate_arns: bool = True,
     ) -> dict:
         """
         Validates if the configured IAM role has the required permissions for a specified resource ARN.
@@ -149,6 +276,8 @@ class IamClientWrapper:
         Args:
             permissions (list): List of permission strings to check (e.g., ['s3:GetObject'])
             resource_arn (str): The resource ARN to check permissions against
+            validate_arns (bool): Validate the ARN format first. False for ARNs this
+                module builds itself, which are not caller input.
 
         Returns:
             dict: A dictionary mapping each permission to a boolean indicating if it's allowed
@@ -161,7 +290,7 @@ class IamClientWrapper:
 
         try:
             # Validate ARN formats
-            if resource_arn != "*":
+            if validate_arns and resource_arn != "*":
                 self._validate_arns([self.role_arn, resource_arn])
             self.logger.debug(
                 f"Perform role permission check with: \n"
@@ -266,11 +395,10 @@ class IamClientWrapper:
             f"Permission check on ARN(s): {self.role_arn}, {bucket_arn}, {key_arn}"
         )
 
-        bucket_full_path = _get_s3_in_arn(bucket_arn)
         if not self.check_assume_role(SERVICE_NA):
             raise ValueError(f"Missing role assume on principle {SERVICE_NA}")
-        # Check S3
-        self.check_aws_permission(operation_name, s3_permissions, bucket_full_path)
+        # Check S3: bucket-level and object-level actions go to different ARNs
+        self._check_s3_permission(operation_name, s3_permissions, bucket_arn)
 
         # Check KMS
         if key_arn is not None:
@@ -333,7 +461,7 @@ class IamClientWrapper:
         na_permissions = ["neptune-graph:CreateGraph", "neptune-graph:TagResource"]
         operation_name = "Create Neptune Instance"
         # Check permission
-        self.check_aws_permission(operation_name, na_permissions)
+        self._check_neptune_permission(operation_name, na_permissions)
 
     def has_start_na_permissions(self):
         """Check if the configured IAM role has permissions to start a Neptune Analytics instance.
@@ -353,7 +481,7 @@ class IamClientWrapper:
         na_permissions = ["neptune-graph:StartGraph"]
         operation_name = "Start Neptune Instance"
         # Check permission
-        self.check_aws_permission(operation_name, na_permissions)
+        self._check_neptune_permission(operation_name, na_permissions)
 
     def has_stop_na_permissions(self):
         """Check if the configured IAM role has permissions to stop a Neptune Analytics instance.
@@ -373,7 +501,7 @@ class IamClientWrapper:
         na_permissions = ["neptune-graph:StopGraph"]
         operation_name = "Stop Neptune Instance"
         # Check permission
-        self.check_aws_permission(operation_name, na_permissions)
+        self._check_neptune_permission(operation_name, na_permissions)
 
     def has_delete_snapshot_permissions(self):
         """Check if the configured IAM role has permissions to delete a Neptune Analytics snapshot.
@@ -393,7 +521,7 @@ class IamClientWrapper:
         na_permissions = ["neptune-graph:DeleteGraphSnapshot"]
         operation_name = "Delete Neptune Snapshot"
         # Check permission
-        self.check_aws_permission(operation_name, na_permissions)
+        self._check_neptune_permission(operation_name, na_permissions)
 
     def has_create_na_from_snapshot_permissions(self):
         """Check if the configured IAM role has permissions to create a Neptune Analytics instance from a snapshot.
@@ -417,7 +545,7 @@ class IamClientWrapper:
         ]
         operation_name = "Create Neptune Instance From Snapshot"
         # Check permission
-        self.check_aws_permission(operation_name, na_permissions)
+        self._check_neptune_permission(operation_name, na_permissions)
 
     def has_create_na_snapshot_permissions(self):
         """Check if the configured IAM role has permissions to create a Neptune Analytics snapshot.
@@ -441,7 +569,7 @@ class IamClientWrapper:
         ]
         operation_name = "Create Neptune Analytics Snapshot"
         # Check permission
-        self.check_aws_permission(operation_name, na_permissions)
+        self._check_neptune_permission(operation_name, na_permissions)
 
     def has_delete_na_permissions(self):
         """Check if the configured IAM role has permissions to delete Neptune Analytics instance.
@@ -456,7 +584,7 @@ class IamClientWrapper:
         na_permissions = ["neptune-graph:DeleteGraph"]
         operation_name = "Delete Neptune Instance"
         # Check permission
-        self.check_aws_permission(operation_name, na_permissions)
+        self._check_neptune_permission(operation_name, na_permissions)
 
     def has_update_na_permissions(self):
         """Check if the configured IAM role has permissions to update a Neptune Analytics instance.
@@ -476,7 +604,7 @@ class IamClientWrapper:
         na_permissions = ["neptune-graph:UpdateGraph"]
         operation_name = "Update Neptune Instance"
         # Check permission
-        self.check_aws_permission(operation_name, na_permissions)
+        self._check_neptune_permission(operation_name, na_permissions)
 
     def has_import_from_s3_permissions(self, bucket_arn, key_arn=None):
         """Check if the configured IAM role has permissions to import data from S3.
@@ -746,16 +874,17 @@ def split_s3_arn_to_bucket_and_path(s3_arn: str) -> tuple:
     return bucket_name, bucket_path_str
 
 
-def _get_s3_in_arn(s3_path: str) -> str:
+def _get_s3_in_arn(s3_path: str, partition: str = "aws") -> str:
     """
     Converts an S3 path to an ARN format for use in IAM policy evaluation.
 
     This method transforms S3 paths by:
     1. Removing any trailing slashes
-    2. Replacing the 's3://' prefix with 'arn:aws:s3:::'
+    2. Replacing the 's3://' prefix with 'arn:<partition>:s3:::'
 
     Args:
         s3_path (str): The S3 path to convert.
+        partition (str): AWS partition for the ARN. Defaults to 'aws'.
 
     Returns:
         str: The S3 path converted to ARN format (arn:aws:s3:::bucket-name/folder)
@@ -763,13 +892,34 @@ def _get_s3_in_arn(s3_path: str) -> str:
              start with 's3://'
     """
     s3_path = s3_path.rstrip("/")
-    s3_path = s3_path.replace("s3://", "arn:aws:s3:::", 1)
+    s3_path = s3_path.replace("s3://", f"arn:{partition}:s3:::", 1)
     return s3_path
+
+
+def _split_s3_bucket_and_prefix(s3_path: str) -> tuple:
+    """Split an ``s3://`` URI, plain path or S3 ARN into (bucket, prefix without slashes)."""
+    path = re.sub(r"^(s3://|arn:[^:]*:s3:::)", "", s3_path)
+    bucket, prefix = split_s3_arn_to_bucket_and_path(path)
+    return bucket, prefix.strip("/")
+
+
+def _get_s3_bucket_and_object_arns(s3_path: str, partition: str = "aws") -> tuple:
+    """
+    Build the (bucket ARN, object ARN) pair used to simulate S3 permissions.
+
+    Bucket-level actions (e.g. s3:ListBucket) apply to the bucket ARN; object-level
+    actions apply to ``<bucket>/<prefix>/*``, or ``<bucket>/*`` when there is no prefix.
+    Accepts ``s3://`` URIs, plain ``bucket/prefix`` paths and S3 ARNs.
+    """
+    bucket, prefix = _split_s3_bucket_and_prefix(s3_path)
+    bucket_arn = f"arn:{partition}:s3:::{bucket}"
+    object_arn = f"{bucket_arn}/{prefix}/*" if prefix else f"{bucket_arn}/*"
+    return bucket_arn, object_arn
 
 
 def _convert_sts_to_iam_arn(sts_arn):
     """
-    Convert an STS assumed-role ARN to an IAM role ARN.
+    Convert an STS assumed-role ARN to an IAM role ARN, preserving the partition.
 
     Example:
     arn:aws:sts::ACCOUNT:assumed-role/ROLE/SESSION
@@ -781,23 +931,15 @@ def _convert_sts_to_iam_arn(sts_arn):
     to
     arn:aws:iam::ACCOUNT:role/PATH/ROLE
     """
-    sts_prefix = "arn:aws:sts::"
-    if not sts_arn.startswith(sts_prefix):
+    parts = sts_arn.split(":")
+    if len(parts) < 6 or parts[0] != "arn" or parts[2] != "sts":
         raise ValueError("Input is not a valid STS assumed-role ARN")
 
-    account_part = sts_arn[len(sts_prefix) :]
-    account_id = account_part.split(":")[0]
+    partition = parts[1]
+    account_id = parts[4]
+    resource_part = ":".join(parts[5:])  # e.g., "assumed-role/path/role-name/session"
 
-    # Get the resource part after the account:assumed-role/
-    resource_part = sts_arn.split(":")[5]  # e.g., "assumed-role/path/role-name/session"
+    # Drop the "assumed-role" prefix and the session suffix; the rest is path + name
+    role_with_path = "/".join(resource_part.split("/")[1:-1])
 
-    # Split by "/" and remove "assumed-role" prefix and session suffix
-    parts = resource_part.split("/")
-    # parts[0] = "assumed-role", parts[-1] = session name
-    # Everything in between is the role path and name
-    role_with_path = "/".join(parts[1:-1])
-
-    # Compose the IAM ARN
-    iam_arn = f"arn:aws:iam::{account_id}:role/{role_with_path}"
-
-    return iam_arn
+    return f"arn:{partition}:iam::{account_id}:role/{role_with_path}"
