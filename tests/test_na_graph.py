@@ -20,6 +20,7 @@ from nx_neptune.clients import (
     PARAM_TRAVERSAL_DIRECTION_INBOUND,
     PARAM_TRAVERSAL_DIRECTION_OUTBOUND,
 )
+from nx_neptune import na_graph
 from nx_neptune.na_graph import NeptuneGraph
 from nx_plugin import NeptuneConfig
 from nx_neptune.clients import (
@@ -311,3 +312,24 @@ class TestNeptuneGraph:
 
         assert mock_na_cls.call_args.args[0] == "g-override"
         assert config.graph_id == "g-from-config"
+
+    @pytest.mark.parametrize(
+        "env_role,expected",
+        [
+            (CONFIGURED_ROLE, CONFIGURED_ROLE),  # the override is applied
+            (None, CALLER_ROLE),  # unset leaves the configured role alone
+        ],
+    )
+    def test_get_config_applies_s3_iam_role_override(
+        self, monkeypatch, env_role, expected
+    ):
+        """get_config() writes NETWORKX_S3_IAM_ROLE_ARN to s3_iam_role.
+
+        It used to assign config.role_arn, a field NeptuneConfig does not
+        define, so setting the variable raised AttributeError instead of
+        applying the role (awslabs/nx-neptune#555).
+        """
+        monkeypatch.setattr(nx.config.backends.neptune, "s3_iam_role", CALLER_ROLE)
+        monkeypatch.setattr(na_graph, "NETWORKX_S3_IAM_ROLE_ARN", env_role)
+
+        assert na_graph.get_config().s3_iam_role == expected
