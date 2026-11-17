@@ -1,4 +1,4 @@
-.PHONY: dev install test build run stop clean ui relock
+.PHONY: dev install test build run stop clean ui ui-test relock
 
 SHELL := /bin/bash
 
@@ -6,6 +6,9 @@ RUNTIME ?= finch
 
 ui:               ## Build frontend into ui/ directory.
 	cd ui-src && npm install && npm run build
+
+ui-test:          ## Run frontend unit tests.
+	cd ui-src && npm install && npm test
 
 relock:           ## Rebuild the ui-src lockfile and print a clean version diff.
 	@cd ui-src && jq -r '.packages | to_entries[] | select(.key != "") | "\(.key | sub("^node_modules/";""))@\(.value.version)"' package-lock.json 2>/dev/null | sort > /tmp/npm-before.txt || true

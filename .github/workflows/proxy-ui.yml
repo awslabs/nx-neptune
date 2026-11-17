@@ -34,3 +34,4 @@ jobs:
       - run: npm ci
       # tsc --noEmit && vite build
       - run: npm run build
+      - run: npm test
