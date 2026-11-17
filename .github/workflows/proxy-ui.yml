@@ -1,0 +1,36 @@
+name: Proxy UI
+
+# Type-checks and builds the proxy's React UI. Runs only when the UI source
+# (or this workflow) changes.
+on:
+  pull_request:
+    paths:
+      - 'proxy/ui-src/**'
+      - '!proxy/ui-src/README.md'
+      - '.github/workflows/proxy-ui.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'proxy/ui-src/**'
+      - '!proxy/ui-src/README.md'
+      - '.github/workflows/proxy-ui.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: proxy/ui-src
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: proxy/ui-src/package-lock.json
+      - run: npm ci
+      # tsc --noEmit && vite build
+      - run: npm run build
