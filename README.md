@@ -170,7 +170,9 @@ NETWORKX_GRAPH_ID=your-neptune-analytics-graph-id python ./nx_example.py
 Without a valid `NETWORKX_GRAPH_ID`, the examples will fail to connect to your Neptune
 Analytics instance. Make sure your AWS credentials are properly configured and
 your IAM role/user has the required permissions (ReadDataViaQuery,
-WriteDataViaQuery, DeleteDataViaQuery).
+WriteDataViaQuery, DeleteDataViaQuery). See
+[Prerequisites](https://awslabs.github.io/nx-neptune/getting-started/prerequisites/)
+for the full list.
 
 ## Graph creation defaults
 

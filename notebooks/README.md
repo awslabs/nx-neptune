@@ -34,36 +34,8 @@ You can run these notebooks on AWS Neptune Notebook, which provides a flexible J
 ### Prerequisites
 
 1. An active Neptune Analytics instance in your AWS account
-2. Appropriate IAM permissions (as described in the main [README](../README.md)):
-   1. To run NetworkX algorithms or sync-data with Neptune Analytics 
-      - `neptune-graph:ReadDataViaQuery`
-      - `neptune-graph:WriteDataViaQuery`
-      - `neptune-graph:DeleteDataViaQuery`
-   2. To create/delete a new Neptune Analytics graph:
-      - `neptune-graph:CreateGraph`
-      - `neptune-graph:TagResource`
-      - `neptune-graph:DeleteGraph` (for delete)
-   3. To start/stop a Neptune Analytics graph:
-      - `neptune-graph:StartGraph`
-      - `neptune-graph:StopGraph`
-   4. To save/restore a Neptune Analytics snapshot:
-      - `neptune-graph:CreateGraphSnapshot` (for save)
-      - `neptune-graph:RestoreGraphFromSnapshot` (for restore)
-      - `neptune-graph:DeleteGraphSnapshot` (for delete)
-      - `neptune-graph:TagResource`
-   5. To import/export data with S3: 
-      - `s3:GetObject` (for import)
-      - `s3:PutObject` (for export)
-      - `s3:ListBucket` (for export)
-      - `s3:DeleteBucket` (for delete)
-      - `kms:Decrypt`
-      - `kms:GenerateDataKey`
-      - `kms:DescribeKey`
-   6. To read/write data with a datalake in S3 Tables:
-      - _The S3 bucket permissions listed above, plus:_
-      - `athena:StartQueryExecution`
-      - `athena:GetQueryExecution`
-4. Access to AWS Neptune Notebook
+2. Appropriate IAM permissions, as listed in [Prerequisites](https://awslabs.github.io/nx-neptune/getting-started/prerequisites/) on the documentation site
+3. Access to AWS Neptune Notebook
 
 Note: you can check the permissions of your iam user by calling `instance_management.validate_permissions()`.
 

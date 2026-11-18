@@ -95,7 +95,8 @@ The import role must:
 The role you run as needs these actions on the import role:
 
 - `iam:PassRole`, with the condition `iam:PassedToService` = `neptune-graph.amazonaws.com`
-- `iam:GetRole` and `iam:SimulatePrincipalPolicy`, which nx-neptune uses to check the import role before an import or export
+- `iam:GetRole` (required): nx-neptune reads the import role's trust policy before an import or export. Without it the trust check raises and the operation aborts.
+- `iam:SimulatePrincipalPolicy` (optional): nx-neptune uses it to preflight the permissions the operation needs. Without it the preflight logs a warning and is skipped, so a misconfiguration surfaces later as a raw AWS error instead of an early, specific one.
 
 With `SessionManager` and the proxy UI, the role you run as is the import role, so it needs both sets of permissions and the trust statement. IAM Identity Center (SSO) permission-set roles can't have their trust policy edited, so with SSO, assume a separate role that meets these requirements (for example with `aws sts assume-role`) and run nx-neptune with its credentials.
 
@@ -132,7 +133,16 @@ To query Amazon S3 Tables through Athena, also allow:
 - `s3tables:GetTable`
 - `s3tables:GetTableData`
 - `s3tables:GetTableMetadataLocation`
-- `lakeformation:GetDataAccess`
+- `lakeformation:GetDataAccess` (see also [Lake Formation](#lake-formation))
+
+### Lake Formation
+
+If [AWS Lake Formation](https://docs.aws.amazon.com/lake-formation/latest/dg/lf-permissions-reference.html) enforces access control on your Glue databases, IAM permissions alone aren't enough. In addition to the `glue:*` actions above, the role you run as needs these Lake Formation grants:
+
+- `DESCRIBE` on each database
+- `SELECT` and `DESCRIBE` on each table
+
+These are the grants Lake Formation documents for reading a catalog this way. nx-neptune does not check them, and the exact grants your account needs depend on how Lake Formation is configured, so confirm them for your setup in the [Lake Formation permissions reference](https://docs.aws.amazon.com/lake-formation/latest/dg/lf-permissions-reference.html). Missing grants have been reported to show up as a partial catalog in the proxy UI's database listing, rather than as an error. A data lake administrator makes these grants in Lake Formation, not in an IAM policy.
 
 ### Embedding helpers
 
@@ -191,6 +201,10 @@ This policy combines graph management, S3 import/export, Athena, the import role
         "neptune-graph:StopGraph",
         "neptune-graph:DeleteGraph",
         "neptune-graph:TagResource",
+        "neptune-graph:CreateGraphSnapshot",
+        "neptune-graph:GetGraphSnapshot",
+        "neptune-graph:RestoreGraphFromSnapshot",
+        "neptune-graph:DeleteGraphSnapshot",
         "neptune-graph:StartImportTask",
         "neptune-graph:GetImportTask",
         "neptune-graph:StartExportTask",
@@ -295,6 +309,14 @@ This policy combines graph management, S3 import/export, Athena, the import role
 ```
 
 `athena:ListDataCatalogs` and `s3:ListAllMyBuckets` don't support resource-level permissions, so they use `"*"`. With the Glue statement limited to your databases, the proxy UI lists only those databases, and validation fails early for tables in others. The import role also needs the trust statement in [Import role](#import-role), and read access to your source tables' buckets isn't included.
+
+Keep the graph management, import/export and snapshot actions in the `NeptuneAnalytics` statement at `"*"`. Before an operation such as creating, deleting, updating, starting or stopping a graph, or taking, restoring or deleting a snapshot, nx-neptune checks that you have the `neptune-graph` actions it needs, testing them against the resource `"*"`. An action scoped to a graph ARN is reported as insufficient. This is tracked in [awslabs/nx-neptune#576](https://github.com/awslabs/nx-neptune/issues/576).
+
+Be aware that `"*"` is account-wide: `DeleteGraph`, `StopGraph` and `DeleteGraphSnapshot` at `"*"` let the principal act on every graph and snapshot in the account, not only the ones nx-neptune created. Until #576 is resolved the check can't pass with a narrower resource, so grant these to a role you trust with that scope.
+
+When that check fails, the operation stops with an error. To see which operations your role can run without attempting them, call `instance_management.validate_permissions()`, which reports `False` for each operation that fails the check. `validate_permissions()` runs its checks against the role you run as, not the import role, so if the two differ it also needs `iam:SimulatePrincipalPolicy` on the role you run as, which the `CheckImportRole` statement above doesn't grant. This affects only `validate_permissions()`, not import or export.
+
+The query actions in `NeptuneAnalyticsTaggedGraphs` (`ReadDataViaQuery`, `WriteDataViaQuery`, `DeleteDataViaQuery`) and `GetGraphSummary` aren't part of these checks, so they can stay scoped to a graph ARN.
 
 ## Environment Variables
 
