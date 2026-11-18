@@ -30,21 +30,27 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "cloudformation-templates"
 TEMPLATE = json.loads((TEMPLATES_DIR / "nx-neptune-sagemaker.json").read_text())
 
 
-def _render_oncreate_heredoc():
+def _render_oncreate_heredoc(refs=None):
     """Return the OnCreate heredoc body as a runnable shell script.
 
-    Joins the ``Fn::Join`` parts, substituting each intrinsic ({"Ref": ...} etc.)
-    with a harmless placeholder, then extracts the text inside the ``<<'EOF'``
-    heredoc.
+    Joins the ``Fn::Join`` parts, resolving ``{"Ref": name}`` from ``refs`` (any
+    other intrinsic becomes a harmless placeholder), then extracts the text
+    inside the ``<<'EOF'`` heredoc.
     """
+    refs = refs or {}
     parts = TEMPLATE["Resources"]["NotebookLifecycleConfig"]["Properties"][
         "OnCreate"
     ][0]["Content"]["Fn::Base64"]["Fn::Join"][1]
-    rendered = "".join(p if isinstance(p, str) else "PLACEHOLDER" for p in parts)
+    rendered = "".join(
+        p if isinstance(p, str) else refs.get(p.get("Ref"), "PLACEHOLDER")
+        for p in parts
+    )
     marker = "<<'EOF'\n"
     start = rendered.index(marker) + len(marker)
     end = rendered.index("\nEOF", start)
@@ -56,32 +62,45 @@ def _make_stub(path, body):
     path.chmod(0o755)
 
 
-def _run_oncreate(tmp_path, *, wheel_install_fails):
+def _run_oncreate(tmp_path, *, wheel_install_fails, custom_notebooks):
     """Render and run the OnCreate body with stubbed commands.
 
-    Rewrites the hard-coded ``/home/ec2-user`` and ``/tmp/nx-assets`` paths to
-    throwaway locations so the body runs unprivileged, stages a wheel so the
-    body takes its wheel-install branch, and returns the process result.
+    Hermetic: every external command is stubbed (no network), and the
+    hard-coded ``/tmp`` and ``/home/ec2-user`` paths are rewritten to throwaway
+    locations so the body runs unprivileged and never touches the real /tmp.
+    A wheel is pre-staged so the body takes its wheel-install branch;
+    ``custom_notebooks`` selects the bundled-zip branch (what deploy.sh passes)
+    or the GitHub-download branch.
     """
+    scratch = tmp_path / "tmp"
     home = tmp_path / "home"
     (home / "anaconda3" / "bin").mkdir(parents=True)
     (home / "anaconda3" / "bin" / "activate").write_text("")  # sourced, no-op
-    assets = tmp_path / "nx-assets"
-    assets.mkdir()
+    assets = scratch / "nx-assets"
+    assets.mkdir(parents=True)
     (assets / "nx_neptune.whl").write_text("")  # makes `ls *.whl` succeed
+    (assets / "notebooks.zip").write_text("")  # bundled notebooks branch -> true
 
-    body = _render_oncreate_heredoc()
+    body = _render_oncreate_heredoc(
+        {"CustomNotebooks": "true" if custom_notebooks else "false"}
+    )
+    # Rewrite /tmp before /home: tmp_path itself may live under /tmp.
+    body = body.replace("/tmp", str(scratch))
     body = body.replace("/home/ec2-user", str(home))
-    body = body.replace("/tmp/nx-assets", str(assets))
     script = tmp_path / "oncreate.sh"
     script.write_text(body)
 
     stubs = tmp_path / "stubs"
     stubs.mkdir()
-    _make_stub(stubs / "conda", "exit 0\n")
-    _make_stub(stubs / "python", "exit 0\n")
-    _make_stub(stubs / "unzip", "exit 0\n")
-    _make_stub(stubs / "aws", "exit 0\n")  # s3 cp is a no-op; wheel is pre-staged
+    for cmd in ("conda", "python", "unzip", "aws", "sha256sum"):
+        _make_stub(stubs / cmd, "exit 0\n")
+    # curl writes a fake file to its -o target; SHA256SUMS gets a matching line.
+    _make_stub(
+        stubs / "curl",
+        'while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done\n'
+        'case "$out" in *SHA256SUMS) echo "0  notebooks.zip" > "$out";; '
+        '*) : > "$out";; esac\n',
+    )
     # pip fails only on a wheel install when the scenario asks for it.
     pip_body = (
         'for a in "$@"; do case "$a" in *.whl) exit 1;; esac; done\nexit 0\n'
@@ -109,8 +128,11 @@ def test_oncreate_body_sets_its_own_errexit():
     )
 
 
-def test_failed_wheel_install_aborts_oncreate(tmp_path):
-    proc = _run_oncreate(tmp_path, wheel_install_fails=True)
+@pytest.mark.parametrize("custom_notebooks", [True, False])
+def test_failed_wheel_install_aborts_oncreate(tmp_path, custom_notebooks):
+    proc = _run_oncreate(
+        tmp_path, wheel_install_fails=True, custom_notebooks=custom_notebooks
+    )
     assert proc.returncode != 0, (
         "A failed wheel pip install must abort OnCreate; it exited 0, meaning "
         "SageMaker would report a half-provisioned notebook as successful.\n"
@@ -118,9 +140,12 @@ def test_failed_wheel_install_aborts_oncreate(tmp_path):
     )
 
 
-def test_oncreate_succeeds_when_steps_pass(tmp_path):
+@pytest.mark.parametrize("custom_notebooks", [True, False])
+def test_oncreate_succeeds_when_steps_pass(tmp_path, custom_notebooks):
     # Positive control: the in-heredoc `set -e` must not break the happy path.
-    proc = _run_oncreate(tmp_path, wheel_install_fails=False)
+    proc = _run_oncreate(
+        tmp_path, wheel_install_fails=False, custom_notebooks=custom_notebooks
+    )
     assert proc.returncode == 0, (
         f"OnCreate should exit 0 when all steps succeed.\n"
         f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
