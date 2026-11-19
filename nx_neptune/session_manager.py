@@ -203,6 +203,12 @@ class SessionManager:
         this private path so the public bulk methods still raise); the failures
         are recorded for the exit hook to report and the first one is raised.
         """
+        # Cleared before anything that can raise. A session may be entered more
+        # than once, and the steps below (``list_graphs`` raising, or a cancel
+        # interrupting the gather) can leave the assignment at the end of this
+        # method unreached - which used to report the *previous* exit's failures
+        # and hide the real error.
+        self._cleanup_failures = []
         operation_name, _, statuses = _CLEANUP_OPERATIONS[self.cleanup_task]
         operation = getattr(instance_management, operation_name)
         graph_ids = self._select_graph_ids(statuses, [])
@@ -259,6 +265,16 @@ class SessionManager:
             f"`aws neptune-graph {verb} --graph-identifier <id>`"
         )
         if exc_type is None or isinstance(error, (KeyboardInterrupt, SystemExit)):
+            if isinstance(error, asyncio.CancelledError):
+                # A *child* operation was cancelled, not this caller - the
+                # caller's own cancel is re-raised in the exit hook before it
+                # reaches here. Propagating CancelledError would make a
+                # TaskGroup, ``asyncio.timeout`` or an outer
+                # ``except CancelledError`` treat it as the caller's own cancel
+                # and swallow it, so it surfaces as an ordinary failure.
+                raise RuntimeError(
+                    f"Session cleanup ({self.cleanup_task.value}) was cancelled"
+                ) from error
             raise error
 
     def validate_permissions(self):

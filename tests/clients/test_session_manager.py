@@ -1042,15 +1042,62 @@ class TestExitCleanupBaseExceptionFailure:
             with patch(OPERATION.format(operation_name), side_effect=operation):
 
                 def body():
-                    # CancelledError is not an Exception; the contract is only
-                    # that the failure is not swallowed.
-                    with pytest.raises(asyncio.CancelledError):
+                    # A *child* operation was cancelled, not this caller, so the
+                    # failure surfaces as an ordinary exception. Re-raising
+                    # CancelledError here would let a TaskGroup, asyncio.timeout
+                    # or an outer `except CancelledError` read it as the caller's
+                    # own cancel and swallow a real cleanup failure.
+                    with pytest.raises(RuntimeError, match="was cancelled") as exc:
                         with SessionManager(session_name="test", cleanup_task=task):
                             pass
+                    assert isinstance(exc.value.__cause__, asyncio.CancelledError)
 
                 _in_context(in_loop, body)
 
         assert attempted == ["g-1"]
+
+
+class TestExitCleanupFailuresDoNotCarryBetweenExits:
+    """AC4: a session may be entered more than once; each exit reports its own failures."""
+
+    @pytest.mark.parametrize("task,operation_name,verb", CLEANUP_TASKS)
+    def test_a_second_exit_does_not_report_the_first_exits_failure(
+        self, task, operation_name, verb, caplog
+    ):
+        """The recorded failures were only cleared on a path that completed.
+
+        When a later exit failed *before* that point - list_graphs raising, or a
+        cancel interrupting the gather - the stale list survived and the warning
+        named the previous exit's graph instead of the real error.
+        """
+        operation, _, _ = _recording_operation(fail_ids={"g-2"})
+        client = _client(("g-1", "g-2"))
+
+        with patch("boto3.client", return_value=client):
+            session = SessionManager(session_name="test", cleanup_task=task)
+            with patch(OPERATION.format(operation_name), side_effect=operation):
+                with pytest.raises(ValueError, match="first body"):
+                    with session:
+                        raise ValueError("first body")
+
+                # Only the second exit's report is under test here.
+                caplog.clear()
+
+                # The second exit fails before any graph is attempted.
+                client.list_graphs.side_effect = RuntimeError("list_graphs exploded")
+                with caplog.at_level(
+                    logging.WARNING, logger="nx_neptune.session_manager"
+                ):
+                    with pytest.raises(ValueError, match="second body"):
+                        with session:
+                            raise ValueError("second body")
+
+        warnings = [
+            r.getMessage() for r in caplog.records if r.levelno == logging.WARNING
+        ]
+        assert len(warnings) == 1
+        assert "list_graphs exploded" in warnings[0]
+        assert "g-2" not in warnings[0], "stale failure from the first exit"
 
 
 class TestBulkCleanupTaskRequiresSessionName:
@@ -1539,7 +1586,9 @@ class TestAsyncExitCancellationReachesTheCaller:
                 with patch(
                     OPERATION.format("stop_na_instance"), side_effect=cancelled_stop
                 ):
-                    with pytest.raises(asyncio.CancelledError):
+                    # The child's cancel surfaces as an ordinary exception; the
+                    # warning still renders the CancelledError itself.
+                    with pytest.raises(RuntimeError, match="was cancelled"):
                         async with SessionManager(
                             session_name="test", cleanup_task=CleanupTask.STOP
                         ):
