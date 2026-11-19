@@ -38,7 +38,11 @@ Requirements:
                                      so `make integ-test` does not create IAM roles or
                                      import five times into the shared graph
   - NETWORKX_GRAPH_ID              - live Neptune Analytics graph
-  - NETWORKX_S3_EXPORT_BUCKET_PATH - S3 prefix with CSV data to import (read only here)
+  - NETWORKX_S3_EXPORT_BUCKET_PATH - S3 prefix with CSV data to import. Read for the
+                                     imports; the export case writes to a SIBLING prefix
+                                     (`<prefix>-trust-export-<id>/`) so it never feeds its
+                                     own output back into a later import, and empties it
+                                     afterwards on a best-effort basis
   - IAM permissions to create/tag/delete roles and put/delete role policies, and
     iam:PassRole for the created roles
 Only roles created by this module (prefix ``nxn-trusttest-``) are ever modified or deleted.
@@ -126,7 +130,7 @@ def _trust_policy(form, partition, region, account):
 
 
 TEMPLATE_PATH = (
-    pathlib.Path(__file__).resolve().parents[2]
+    pathlib.Path(__file__).resolve().parents[1]
     / "cloudformation-templates"
     / "nx-neptune-sagemaker.json"
 )
@@ -228,6 +232,33 @@ def created_roles(iam):
     yield names
     for name in names:
         _delete_role(iam, name)
+
+
+@pytest.fixture(scope="module")
+def exported_prefixes():
+    """S3 prefixes this module exported to; emptied when the module finishes.
+
+    Belt and braces alongside the sibling-prefix choice: the export lands
+    outside the import source either way, but leaving CSVs behind in the
+    maintainer's bucket run after run is its own small mess. Best effort - a
+    caller without s3:DeleteObject gets a warning, not a failure.
+    """
+    prefixes = []
+    yield prefixes
+    s3 = boto3.client("s3")
+    for s3_uri in prefixes:
+        bucket, prefix = split_s3_arn_to_bucket_and_path(s3_uri)
+        try:
+            pages = s3.get_paginator("list_objects_v2").paginate(
+                Bucket=bucket, Prefix=prefix
+            )
+            keys = [
+                {"Key": o["Key"]} for page in pages for o in page.get("Contents", [])
+            ]
+            for i in range(0, len(keys), 1000):
+                s3.delete_objects(Bucket=bucket, Delete={"Objects": keys[i : i + 1000]})
+        except ClientError as e:
+            print(f"WARNING: could not clean up exported objects at {s3_uri}: {e}")
 
 
 @pytest.fixture(scope="module")
@@ -369,7 +400,7 @@ def test_import_with_trust_form(
 
 
 def test_export_with_the_shipped_trust_form(
-    env, iam, na_client, created_roles, record_property
+    env, iam, na_client, created_roles, exported_prefixes, record_property
 ):
     """The shipped role must also complete an *export*, not just an import.
 
@@ -404,7 +435,12 @@ def test_export_with_the_shipped_trust_form(
     role_arn = iam.get_role(RoleName=role_name)["Role"]["Arn"]
     time.sleep(IAM_PROPAGATION_SECONDS)
 
-    destination = S3_BUCKET.rstrip("/") + f"/trust-test-export-{env['run_id']}/"
+    # Sibling prefix, deliberately not under S3_BUCKET: that prefix is the import
+    # source, so exporting into it would feed the previous run's CSVs back into
+    # the next run's import. Still inside the `{prefix}*` grant the throwaway
+    # role gets, so no policy change is needed.
+    destination = S3_BUCKET.rstrip("/") + f"-trust-export-{env['run_id']}/"
+    exported_prefixes.append(destination)
     task_id = _start_export_task(
         na_client, NETWORKX_GRAPH_ID, destination, role_arn, key_arn
     )

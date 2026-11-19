@@ -253,17 +253,22 @@ same unconditioned-trust requirement for roles you build yourself.
 
 #### To re-measure
 
-The test needs an explicit `NX_RUN_TRUST_MEASUREMENT=1` on top of `NETWORKX_GRAPH_ID` and
-`NETWORKX_S3_EXPORT_BUCKET_PATH`, and is skipped without it — a routine `make integ-test` sets
-the latter two, and this module creates and deletes throwaway IAM roles prefixed
-`nxn-trusttest-`, starts real imports, and adds data to the graph without resetting it. Point it
-at a disposable graph:
+The measurement lives in `deployment_test/`, not `integ_test/`: the latter exercises the Python
+library against AWS resources, while this checks the behaviour of what the template deploys. It
+has its own make target, so a routine `make integ-test` cannot trigger it.
+
+It still needs an explicit `NX_RUN_TRUST_MEASUREMENT=1` on top of `NETWORKX_GRAPH_ID` and
+`NETWORKX_S3_EXPORT_BUCKET_PATH`, and is skipped without it, because it creates and deletes
+throwaway IAM roles prefixed `nxn-trusttest-`, starts real imports, and adds data to the graph
+without resetting it. Point it at a disposable graph:
 
 ```bash
-NX_RUN_TRUST_MEASUREMENT=1 \
-  NETWORKX_GRAPH_ID=g-xxxxx NETWORKX_S3_EXPORT_BUCKET_PATH=s3://<bucket>/<prefix>/ \
-  pytest integ_test/session_manager/test_import_role_trust.py -v -rA
+NETWORKX_GRAPH_ID=g-xxxxx NETWORKX_S3_EXPORT_BUCKET_PATH=s3://<bucket>/<prefix>/ \
+  make deployment-test
 ```
+
+The export case writes to a sibling prefix, `<prefix>-trust-export-<run-id>/`, so that its own
+output is never fed back into a later import, and empties it afterwards on a best-effort basis.
 
 It records a verdict per form and asserts nothing about which one passes, so a green run is not
 a result — read the per-form summary it prints. The IAM propagation wait is
