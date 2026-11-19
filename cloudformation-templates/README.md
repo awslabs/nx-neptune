@@ -205,10 +205,27 @@ you need certainty for your own threat model, re-run it (below) rather than rely
 An `aws:SourceAccount` or `aws:SourceArn` condition is the usual confused-deputy protection for
 a service principal, and `ImportRole` does not have one, because with one it cannot do its job.
 The protection is replaced by making the role not worth confusing: its only permissions are
-`s3:GetObject`, `s3:ListBucket` and `s3:PutObject` on this stack's staging bucket, and
-`kms:Decrypt`/`GenerateDataKey`/`DescribeKey` on that bucket's key. No Neptune actions, no Glue,
-no logs, no SageMaker. Anything that managed to have the service assume it could read and write
-one bucket.
+`s3:GetObject`, `s3:ListBucket`, `s3:PutObject` and `s3:DeleteObject` on this stack's staging
+bucket, and `kms:Decrypt`/`GenerateDataKey`/`DescribeKey` on that bucket's key. No Neptune
+actions, no Glue, no logs, no SageMaker. Anything that managed to have the service assume it
+could read, write and delete objects in one bucket.
+
+`s3:DeleteObject` is there because the export preflight
+(`has_export_to_s3_permissions`) simulates it, and export is how the demo notebook gets data
+into the bucket in the first place; `tests/cloudformation/test_import_role_policy.py` pins the
+whole set against what the preflights check.
+
+**What is not established: cross-account containment.** The reasoning above is about blast
+radius, not about who can trigger it. The role's ARN is a stack output and its name is
+predictable, and without a source condition the only thing stopping another account from naming
+it in its own `StartImportTask`/`StartExportTask` is Neptune Analytics refusing a role it was
+not passed legitimately. That refusal has **not been tested here**, and the bucket it guards
+also holds Athena results and any datasets staged in it. Narrowing the grants to the `import/`,
+`export/` and `athena-results/` prefixes would reduce this, but an `s3:prefix` condition on
+`ListBucket` currently makes the permission preflight report the policy as insufficient, because
+the simulation sends no context keys — so that narrowing has to wait for the preflight to supply
+them. If this matters for your threat model, run the two calls from a second account before
+relying on the stack.
 
 `NotebookRole` is deliberately **not** changed. It keeps its conditioned `neptune-graph`
 statement, which means it still cannot be used for import — but it also holds Neptune
@@ -227,12 +244,15 @@ same unconditioned-trust requirement for roles you build yourself.
 
 #### To re-measure
 
-The test is skipped unless `NETWORKX_GRAPH_ID` and `NETWORKX_S3_EXPORT_BUCKET_PATH` are set. It
-creates and deletes throwaway IAM roles prefixed `nxn-trusttest-`, starts real imports, and adds
-data to the graph without resetting it, so point it at a disposable graph:
+The test needs an explicit `NX_RUN_TRUST_MEASUREMENT=1` on top of `NETWORKX_GRAPH_ID` and
+`NETWORKX_S3_EXPORT_BUCKET_PATH`, and is skipped without it — a routine `make integ-test` sets
+the latter two, and this module creates and deletes throwaway IAM roles prefixed
+`nxn-trusttest-`, starts real imports, and adds data to the graph without resetting it. Point it
+at a disposable graph:
 
 ```bash
-NETWORKX_GRAPH_ID=g-xxxxx NETWORKX_S3_EXPORT_BUCKET_PATH=s3://<bucket>/<prefix>/ \
+NX_RUN_TRUST_MEASUREMENT=1 \
+  NETWORKX_GRAPH_ID=g-xxxxx NETWORKX_S3_EXPORT_BUCKET_PATH=s3://<bucket>/<prefix>/ \
   pytest integ_test/session_manager/test_import_role_trust.py -v -rA
 ```
 

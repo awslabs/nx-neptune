@@ -34,6 +34,9 @@ The pair that decides the shipped template is arn_only_wild (does it work?) and 
 The S3 prefix must contain CSV import data. Run it deliberately.
 
 Requirements:
+  - NX_RUN_TRUST_MEASUREMENT=1     - explicit opt-in; without it the module is skipped,
+                                     so `make integ-test` does not create IAM roles or
+                                     import five times into the shared graph
   - NETWORKX_GRAPH_ID              - live Neptune Analytics graph
   - NETWORKX_S3_EXPORT_BUCKET_PATH - S3 prefix with CSV data to import (read only here)
   - IAM permissions to create/tag/delete roles and put/delete role policies, and
@@ -43,6 +46,7 @@ Only roles created by this module (prefix ``nxn-trusttest-``) are ever modified 
 
 import json
 import os
+import pathlib
 import time
 import uuid
 
@@ -54,14 +58,26 @@ from nx_neptune import NETWORKX_GRAPH_ID
 from nx_neptune.clients.iam_client import split_s3_arn_to_bucket_and_path
 from nx_neptune.instance_management import (
     _get_bucket_encryption_key_arn,
+    _start_export_task,
     _start_import_task,
 )
 
 S3_BUCKET = os.environ.get("NETWORKX_S3_EXPORT_BUCKET_PATH")
 
+# Opt-in, deliberately separate from the usual integ variables. `make integ-test`
+# runs all of integ_test/ with NETWORKX_GRAPH_ID and NETWORKX_S3_EXPORT_BUCKET_PATH
+# already set, so gating on those alone meant a routine run created IAM roles in
+# the caller's account and added five imports to the shared graph without a reset.
+# This is a measurement, not a regression test: ask for it explicitly.
+RUN_MEASUREMENT = os.environ.get("NX_RUN_TRUST_MEASUREMENT") == "1"
+
 pytestmark = pytest.mark.skipif(
-    not (S3_BUCKET and NETWORKX_GRAPH_ID),
-    reason="NETWORKX_S3_EXPORT_BUCKET_PATH and NETWORKX_GRAPH_ID must both be set",
+    not (RUN_MEASUREMENT and S3_BUCKET and NETWORKX_GRAPH_ID),
+    reason=(
+        "Set NX_RUN_TRUST_MEASUREMENT=1 (plus NETWORKX_S3_EXPORT_BUCKET_PATH and "
+        "NETWORKX_GRAPH_ID) to run the trust measurement. It creates IAM roles and "
+        "imports five times into the graph without resetting it."
+    ),
 )
 
 ROLE_PREFIX = "nxn-trusttest-"
@@ -109,7 +125,45 @@ def _trust_policy(form, partition, region, account):
     return {"Version": "2012-10-17", "Statement": [statement]}
 
 
+TEMPLATE_PATH = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "cloudformation-templates"
+    / "nx-neptune-sagemaker.json"
+)
+
+
+def _template_import_role_actions():
+    """The S3 and KMS actions ``ImportRole`` grants in the shipped template.
+
+    Read from the template rather than written out here. A hand-kept subset is
+    what let this measurement stay green while ``ImportRole`` was missing
+    ``s3:DeleteObject``: the throwaway role never exercised the action, so no
+    export was ever attempted through it.
+    """
+    template = json.loads(TEMPLATE_PATH.read_text())
+    role = template["Resources"]["ImportRole"]
+    s3_actions, kms_actions = set(), set()
+    for policy in role["Properties"]["Policies"]:
+        for statement in policy["PolicyDocument"]["Statement"]:
+            if statement.get("Effect") != "Allow":
+                continue
+            action = statement["Action"]
+            for entry in [action] if isinstance(action, str) else action:
+                service = entry.split(":")[0]
+                if service == "s3":
+                    s3_actions.add(entry)
+                elif service == "kms":
+                    kms_actions.add(entry)
+    assert s3_actions, f"No S3 actions found on ImportRole in {TEMPLATE_PATH}"
+    return sorted(s3_actions), sorted(kms_actions)
+
+
 def _import_access_policy(partition, s3_path, key_arn):
+    """The template's ``ImportRole`` permissions, retargeted at the test's bucket.
+
+    Object-level and bucket-level actions go on different ARNs, the same split
+    the library's preflights simulate.
+    """
     bucket, prefix = split_s3_arn_to_bucket_and_path(s3_path)
     prefix = prefix.rstrip("/")
     object_arn = (
@@ -117,21 +171,26 @@ def _import_access_policy(partition, s3_path, key_arn):
         if prefix
         else f"arn:{partition}:s3:::{bucket}/*"
     )
-    statements = [
-        {"Effect": "Allow", "Action": "s3:GetObject", "Resource": object_arn},
-        {
-            "Effect": "Allow",
-            "Action": "s3:ListBucket",
-            "Resource": f"arn:{partition}:s3:::{bucket}",
-        },
-    ]
-    if key_arn:
+    s3_actions, kms_actions = _template_import_role_actions()
+    bucket_level = [a for a in s3_actions if a == "s3:ListBucket"]
+    object_level = [a for a in s3_actions if a != "s3:ListBucket"]
+
+    statements = []
+    if object_level:
+        statements.append(
+            {"Effect": "Allow", "Action": object_level, "Resource": object_arn}
+        )
+    if bucket_level:
         statements.append(
             {
                 "Effect": "Allow",
-                "Action": ["kms:Decrypt", "kms:GenerateDataKey"],
-                "Resource": key_arn,
+                "Action": bucket_level,
+                "Resource": f"arn:{partition}:s3:::{bucket}",
             }
+        )
+    if key_arn and kms_actions:
+        statements.append(
+            {"Effect": "Allow", "Action": kms_actions, "Resource": key_arn}
         )
     return {"Version": "2012-10-17", "Statement": statements}
 
@@ -235,8 +294,13 @@ def test_import_with_trust_form(
 ):
     """Create a throwaway role with this trust form, start an import, record the outcome.
 
-    Records, never asserts, whether the service accepted the form. Only an error in the
-    test's own scaffolding (role creation, policy attach) fails the test.
+    The conditioned forms are record-only: which ``aws:Source*`` keys the service
+    supplies is exactly what is unknown, so a rejection is data, not a failure.
+
+    ``no_condition`` is different. It is the form the template ships, so it *is*
+    asserted: if the shipped trust plus the shipped ``ImportRole`` permissions
+    cannot complete an import, the stack is broken and this module should say so
+    rather than printing a summary nobody reads.
     """
     role_name = f"{ROLE_PREFIX}{env['run_id']}-{form.replace('_', '-')}"
     created_roles.append(
@@ -288,6 +352,11 @@ def test_import_with_trust_form(
         }
 
     outcomes[form] = result
+    if form == "no_condition":
+        assert result["verdict"] == "ACCEPTED, import SUCCEEDED", (
+            "The shipped trust form plus the shipped ImportRole permissions must "
+            f"complete an import. Got: {result['verdict']} - {result['detail']}"
+        )
     record_property("trust_form", form)
     record_property(
         "trust_policy",
@@ -297,3 +366,73 @@ def test_import_with_trust_form(
     )
     record_property("verdict", result["verdict"])
     record_property("detail", result["detail"])
+
+
+def test_export_with_the_shipped_trust_form(
+    env, iam, na_client, created_roles, record_property
+):
+    """The shipped role must also complete an *export*, not just an import.
+
+    Export is the half that was broken: ``has_export_to_s3_permissions`` simulates
+    ``s3:DeleteObject``, which ``ImportRole`` did not grant, and nothing here
+    attempted an export so the run stayed green. Uses the template's own trust
+    form and permission set, retargeted at this test's bucket.
+    """
+    role_name = f"{ROLE_PREFIX}{env['run_id']}-export"
+    created_roles.append(role_name)
+
+    iam.create_role(
+        RoleName=role_name,
+        AssumeRolePolicyDocument=json.dumps(
+            _trust_policy(
+                "no_condition", env["partition"], env["region"], env["account"]
+            )
+        ),
+        Description="Throwaway role for nx-neptune export trust test; safe to delete",
+        Tags=[
+            {"Key": "created-by", "Value": "nx-neptune-integ-test-import-role-trust"}
+        ],
+    )
+    key_arn = _get_bucket_encryption_key_arn(S3_BUCKET)
+    iam.put_role_policy(
+        RoleName=role_name,
+        PolicyName="import-access",
+        PolicyDocument=json.dumps(
+            _import_access_policy(env["partition"], S3_BUCKET, key_arn)
+        ),
+    )
+    role_arn = iam.get_role(RoleName=role_name)["Role"]["Arn"]
+    time.sleep(IAM_PROPAGATION_SECONDS)
+
+    destination = S3_BUCKET.rstrip("/") + f"/trust-test-export-{env['run_id']}/"
+    task_id = _start_export_task(
+        na_client, NETWORKX_GRAPH_ID, destination, role_arn, key_arn
+    )
+    final = _wait_for_export_terminal(na_client, task_id)
+    record_property("export_task", task_id)
+    record_property("export_status", str(final.get("status")))
+
+    assert final.get("status") == "SUCCEEDED", (
+        "The shipped ImportRole permissions must complete an export. Got "
+        f"{final.get('status')}: {final.get('statusReason')}. A missing "
+        "s3:DeleteObject shows up here."
+    )
+
+
+def _wait_for_export_terminal(na_client, task_id):
+    """Poll an export until terminal; cancel it if it outlives the timeout."""
+    deadline = time.time() + IMPORT_MAX_WAIT_SECONDS
+    resp = {}
+    while time.time() < deadline:
+        resp = na_client.get_export_task(taskIdentifier=task_id)
+        if resp.get("status") in TERMINAL_STATUSES:
+            return resp
+        time.sleep(IMPORT_POLL_SECONDS)
+    try:
+        na_client.cancel_export_task(taskIdentifier=task_id)
+    except ClientError:
+        pass
+    resp["status"] = (
+        f"{resp.get('status')} (cancelled after {IMPORT_MAX_WAIT_SECONDS}s)"
+    )
+    return resp
