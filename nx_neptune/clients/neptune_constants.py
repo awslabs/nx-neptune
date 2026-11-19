@@ -24,6 +24,10 @@ SERVICE_S3 = "s3"
 # APP_ID
 APP_ID_NX = "nx-neptune"
 
+# Tag applied to graphs created by nx-neptune; used as IAM simulation context.
+AGENT_TAG_KEY = "agent"
+AGENT_TAG_VALUE = "nx-neptune"
+
 # Internal constants for parameters
 PARAM_MAX_DEPTH = "maxDepth"
 PARAM_TRAVERSAL_DIRECTION = "traversalDirection"
