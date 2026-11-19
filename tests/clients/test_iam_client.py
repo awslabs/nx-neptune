@@ -17,6 +17,7 @@ import pytest
 from nx_neptune.clients.iam_client import (
     IamClientWrapper,
     _convert_sts_to_iam_arn,
+    _is_sts_arn,
     split_s3_arn_to_bucket_and_path,
 )
 
@@ -91,118 +92,98 @@ def test_split_s3_arn_to_bucket_and_path(s3_arn, expected_bucket, expected_path)
     assert path == expected_path
 
 
-@pytest.mark.parametrize(
-    "role_arn",
-    [
-        "arn:aws:iam::123456789012:role/tests-role",
-        "arn:aws:iam::123456789012:role/analysts",
-        "arn:aws:iam::123456789012:role/my-posts-role",
-        "arn:aws:iam::123456789012:role/analysts/my-role",
-        "arn:aws:iam::123456789012:role/path/to/tests-role",
-        # Non-aws partition, IAM service
-        "arn:aws-us-gov:iam::123456789012:role/tests-role",
-    ],
-)
-def test_wrapper_keeps_iam_role_arn_unchanged_when_it_contains_sts(role_arn):
-    """An IAM role ARN is never converted, whatever characters the name/path has."""
-    from unittest.mock import MagicMock
-
-    wrapper = IamClientWrapper(role_arn=role_arn, client=MagicMock())
-    assert wrapper.role_arn == role_arn
-
-
-@pytest.mark.parametrize(
-    "sts_arn,expected",
-    [
-        (
-            "arn:aws:sts::123456789012:assumed-role/MyRole/session",
-            "arn:aws:iam::123456789012:role/MyRole",
-        ),
-        (
-            "arn:aws:sts::123456789012:assumed-role/path/MyRole/session",
-            "arn:aws:iam::123456789012:role/path/MyRole",
-        ),
-        # Non-aws partition, STS service
-        (
-            "arn:aws-cn:sts::123456789012:assumed-role/MyRole/session",
-            "arn:aws-cn:iam::123456789012:role/MyRole",
-        ),
-    ],
-)
-def test_wrapper_converts_sts_assumed_role_arn(sts_arn, expected):
-    from unittest.mock import MagicMock
-
-    wrapper = IamClientWrapper(role_arn=sts_arn, client=MagicMock())
-    assert wrapper.role_arn == expected
-
-
 _INVALID_STS_MSG = "Input is not a valid STS assumed-role ARN"
 
 
-@pytest.mark.parametrize("short", ["", "sts", "arn:aws", "arn:sts"])
-def test_wrapper_stores_input_with_fewer_than_three_parts_unchanged(short):
-    """The len(arn_parts) > 2 guard: short strings are stored as-is, no raise."""
+@pytest.mark.parametrize(
+    "arn,is_sts",
+    [
+        # The service field is exactly "sts"
+        ("arn:aws:sts::1:assumed-role/R/s", True),
+        ("arn:aws-cn:sts::1:assumed-role/R/s", True),
+        # "sts" in the service field but too short to convert. Matching is still
+        # True; the length is _convert_sts_to_iam_arn's problem, not this one's.
+        ("arn:aws:sts", True),
+        ("a:b:sts", True),
+        # An IAM role whose name or path merely contains "sts"
+        ("arn:aws:iam::1:role/tests-role", False),
+        ("arn:aws:iam::1:role/analysts", False),
+        ("arn:aws:iam::1:role/my-posts-role", False),
+        ("arn:aws:iam::1:role/analysts/my-role", False),
+        ("arn:aws:iam::1:role/path/to/tests-role", False),
+        ("arn:aws-us-gov:iam::1:role/tests-role", False),
+        # A service that only resembles "sts"
+        ("arn:aws:stsx::1:assumed-role/R/s", False),
+        ("arn:aws:x-sts::1:assumed-role/R/s", False),
+        # Case-sensitive: AWS always writes the service field in lowercase
+        ("arn:aws:STS::1:assumed-role/R/s", False),
+        # Too few components is False, not IndexError
+        ("", False),
+        ("sts", False),
+        ("arn:aws", False),
+        ("arn:sts", False),
+    ],
+)
+def test_is_sts_arn(arn, is_sts):
+    """The STS match is a service-field comparison, defined in one place.
+
+    Searching the whole string for "sts" is what made a plain IAM role named
+    `tests-role` or `analysts` hard-fail in the constructor, with no workaround
+    short of renaming the role.
+    """
+    assert _is_sts_arn(arn) is is_sts
+
+
+@pytest.mark.parametrize(
+    "role_arn,expected",
+    [
+        # IAM role ARNs are unchanged, even when the name contains "sts"
+        ("arn:aws:iam::1:role/tests-role", "arn:aws:iam::1:role/tests-role"),
+        ("arn:aws:iam::1:role/path/analysts", "arn:aws:iam::1:role/path/analysts"),
+        (
+            "arn:aws-us-gov:iam::1:role/tests-role",
+            "arn:aws-us-gov:iam::1:role/tests-role",
+        ),
+        # Services that only resemble sts are unchanged
+        ("arn:aws:stsx::1:assumed-role/R/s", "arn:aws:stsx::1:assumed-role/R/s"),
+        ("arn:aws:x-sts::1:assumed-role/R/s", "arn:aws:x-sts::1:assumed-role/R/s"),
+        # Unrecognised short input is stored as-is rather than raising
+        ("", ""),
+        ("arn:aws", "arn:aws"),
+        # STS ARNs are converted, partition kept, session dropped
+        ("arn:aws:sts::1:assumed-role/R/s", "arn:aws:iam::1:role/R"),
+        ("arn:aws:sts::1:assumed-role/p/R/s", "arn:aws:iam::1:role/p/R"),
+        ("arn:aws-cn:sts::1:assumed-role/R/s", "arn:aws-cn:iam::1:role/R"),
+        # Colons inside the resource never count as ARN fields
+        ("arn:aws:sts::1:assumed-role/R/sess:ion", "arn:aws:iam::1:role/R"),
+        ("arn:aws:sts::1:assumed-role/a:b/R/s", "arn:aws:iam::1:role/a:b/R"),
+        # Malformed STS ARNs raise
+        ("arn:aws:sts", ValueError),
+        ("arn:aws:sts::1", ValueError),
+        ("arn:aws:sts:us-east-1:1", ValueError),
+        ("a:b:sts", ValueError),
+        ("notarn:aws:sts::1:assumed-role/R/s", ValueError),
+        ("ARN:aws:sts::1:assumed-role/R/s", ValueError),
+        (":aws:sts::1:assumed-role/R/s", ValueError),
+        ("arn::sts::1:assumed-role/R/s", ValueError),
+    ],
+)
+def test_wrapper_role_arn(role_arn, expected):
+    """One input-to-output table for the ARN the wrapper ends up storing."""
     from unittest.mock import MagicMock
 
-    wrapper = IamClientWrapper(role_arn=short, client=MagicMock())
-    assert wrapper.role_arn == short
+    if expected is ValueError:
+        with pytest.raises(ValueError, match=_INVALID_STS_MSG):
+            IamClientWrapper(role_arn=role_arn, client=MagicMock())
+    else:
+        wrapper = IamClientWrapper(role_arn=role_arn, client=MagicMock())
+        assert wrapper.role_arn == expected
 
 
-@pytest.mark.parametrize(
-    "bad_arn",
-    [
-        "arn:aws:sts",  # 3 fields
-        "arn:aws:sts::123456789012",  # 5 fields
-        "arn:aws:sts:us-east-1:123456789012",  # 5 fields
-    ],
-)
-def test_convert_rejects_sts_arn_with_too_few_fields(bad_arn):
-    with pytest.raises(ValueError) as exc:
-        _convert_sts_to_iam_arn(bad_arn)
-    assert str(exc.value) == _INVALID_STS_MSG
-
-
-@pytest.mark.parametrize(
-    "bad_arn",
-    [
-        "notarn:aws:sts::1:assumed-role/R/s",
-        "ARN:aws:sts::1:assumed-role/R/s",
-        ":aws:sts::1:assumed-role/R/s",
-    ],
-)
-def test_convert_rejects_arn_without_arn_prefix(bad_arn):
-    with pytest.raises(ValueError) as exc:
-        _convert_sts_to_iam_arn(bad_arn)
-    assert str(exc.value) == _INVALID_STS_MSG
-
-
-def test_convert_rejects_empty_partition():
-    with pytest.raises(ValueError) as exc:
-        _convert_sts_to_iam_arn("arn::sts::1:assumed-role/R/s")
-    assert str(exc.value) == _INVALID_STS_MSG
-
-
-def test_convert_rejects_non_sts_service():
-    with pytest.raises(ValueError) as exc:
+def test_convert_rejects_a_non_sts_service_arn():
+    """Only reachable by calling the converter directly; the wrapper screens it out."""
+    with pytest.raises(ValueError, match=_INVALID_STS_MSG):
         _convert_sts_to_iam_arn("arn:aws:iam::1:role/R")
-    assert str(exc.value) == _INVALID_STS_MSG
-
-
-@pytest.mark.parametrize(
-    "bad_arn",
-    [
-        "a:b:sts",  # sts in slot 2 but only 3 fields
-        "notarn:aws:sts::1:assumed-role/R/s",
-        "arn::sts::1:assumed-role/R/s",
-    ],
-)
-def test_wrapper_propagates_invalid_sts_error(bad_arn):
-    """Once slot 2 is 'sts', a malformed ARN raises rather than passing through."""
-    from unittest.mock import MagicMock
-
-    with pytest.raises(ValueError) as exc:
-        IamClientWrapper(role_arn=bad_arn, client=MagicMock())
-    assert str(exc.value) == _INVALID_STS_MSG
 
 
 # CHARACTERISATION ONLY: documents current behaviour, NOT a requirement.
@@ -218,52 +199,6 @@ def test_wrapper_propagates_invalid_sts_error(bad_arn):
 )
 def test_characterisation_convert_yields_empty_role_name(arn, current_output):
     assert _convert_sts_to_iam_arn(arn) == current_output
-
-
-@pytest.mark.parametrize(
-    "arn",
-    [
-        "arn:aws:stsx::123456789012:assumed-role/R/s",  # starts with "sts"
-        "arn:aws:x-sts::123456789012:assumed-role/R/s",  # contains "sts"
-    ],
-)
-def test_wrapper_does_not_convert_service_that_only_resembles_sts(arn):
-    """Service field must equal 'sts'; containing/starting with it is not enough."""
-    from unittest.mock import MagicMock
-
-    wrapper = IamClientWrapper(role_arn=arn, client=MagicMock())
-    assert wrapper.role_arn == arn
-
-
-# CHARACTERISATION ONLY: documents current behaviour, NOT a requirement.
-# AWS writes the service field in lowercase, so uppercase "STS" never occurs
-# in practice; the match is case-sensitive and such input is left unchanged.
-def test_characterisation_wrapper_sts_match_is_case_sensitive():
-    from unittest.mock import MagicMock
-
-    arn = "arn:aws:STS::123456789012:assumed-role/R/s"
-    wrapper = IamClientWrapper(role_arn=arn, client=MagicMock())
-    assert wrapper.role_arn == arn
-
-
-@pytest.mark.parametrize(
-    "sts_arn,expected",
-    [
-        # colon in the session segment is dropped with the session
-        (
-            "arn:aws:sts::123456789012:assumed-role/R/sess:ion",
-            "arn:aws:iam::123456789012:role/R",
-        ),
-        # colon inside the role segment survives intact
-        (
-            "arn:aws:sts::123456789012:assumed-role/a:b/R/s",
-            "arn:aws:iam::123456789012:role/a:b/R",
-        ),
-    ],
-)
-def test_convert_keeps_colons_within_resource_part(sts_arn, expected):
-    """split(':', 5) means colons in the resource never count as ARN fields."""
-    assert _convert_sts_to_iam_arn(sts_arn) == expected
 
 
 class TestIamClientWrapper:

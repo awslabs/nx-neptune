@@ -70,8 +70,7 @@ class IamClientWrapper:
             region (str, optional): Region for the simulated Neptune Analytics resource
                 ARNs. Defaults to the region ``ClientFactory`` resolves.
         """
-        arn_parts = role_arn.split(":")
-        if len(arn_parts) > 2 and arn_parts[2] == "sts":
+        if _is_sts_arn(role_arn):
             self.role_arn = _convert_sts_to_iam_arn(role_arn)
         else:
             self.role_arn = role_arn
@@ -963,6 +962,22 @@ def _s3_exact_object_arn(s3_path: str, partition: str = "aws") -> Optional[str]:
     return f"arn:{partition}:s3:::{bucket}/{prefix}"
 
 
+def _is_sts_arn(arn: str) -> bool:
+    """True when the ARN's service field is exactly ``sts``.
+
+    The single place the STS match is defined. It reads the service field rather
+    than searching the whole string, so a plain IAM role whose name merely
+    contains "sts" (``tests-role``, ``analysts``) is not treated as an STS ARN,
+    and neither is a service that only resembles it (``stsx``, ``x-sts``).
+
+    Too few components is False rather than an ``IndexError``, which lets the
+    caller store an unrecognised string unchanged. The comparison is
+    case-sensitive; AWS always writes the service field in lowercase.
+    """
+    parts = arn.split(":")
+    return len(parts) > 2 and parts[2] == "sts"
+
+
 def _convert_sts_to_iam_arn(sts_arn):
     """
     Convert an STS assumed-role ARN to an IAM role ARN, preserving the partition.
@@ -979,9 +994,9 @@ def _convert_sts_to_iam_arn(sts_arn):
     """
     parts = sts_arn.split(":")
     if (
-        len(parts) < 6
+        not _is_sts_arn(sts_arn)
+        or len(parts) < 6
         or parts[0] != "arn"
-        or parts[2] != "sts"
         # An empty partition cannot produce a usable IAM ARN.
         or not parts[1]
     ):
