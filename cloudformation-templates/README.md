@@ -220,12 +220,21 @@ radius, not about who can trigger it. The role's ARN is a stack output and its n
 predictable, and without a source condition the only thing stopping another account from naming
 it in its own `StartImportTask`/`StartExportTask` is Neptune Analytics refusing a role it was
 not passed legitimately. That refusal has **not been tested here**, and the bucket it guards
-also holds Athena results and any datasets staged in it. Narrowing the grants to the `import/`,
-`export/` and `athena-results/` prefixes would reduce this, but an `s3:prefix` condition on
-`ListBucket` currently makes the permission preflight report the policy as insufficient, because
-the simulation sends no context keys — so that narrowing has to wait for the preflight to supply
-them. If this matters for your threat model, run the two calls from a second account before
-relying on the stack.
+also holds Athena results and any datasets staged in it.
+
+Narrowing the grants to a fixed set of prefixes is the obvious mitigation, and it does not work
+today, for two independent reasons:
+
+- The proxy stages each import under its own `<staging-bucket>/<projection-id>/` prefix, where
+  the id is a UUID generated per projection. A grant limited to `import/`, `export/` and
+  `athena-results/` would refuse those writes and break the proxy's import pipeline.
+- An `s3:prefix` condition on `ListBucket` makes the permission preflight report the policy as
+  insufficient, because the simulation sends no context keys for the condition to match.
+
+So the options are a bucket dedicated to this stack — which is what `StagingBucket` is — or a
+per-prefix scheme that the proxy and the preflight both understand. If cross-account exposure
+matters for your threat model, run `StartImportTask` and `StartExportTask` with this role's ARN
+from a second account and confirm they are refused before relying on the stack.
 
 `NotebookRole` is deliberately **not** changed. It keeps its conditioned `neptune-graph`
 statement, which means it still cannot be used for import — but it also holds Neptune
