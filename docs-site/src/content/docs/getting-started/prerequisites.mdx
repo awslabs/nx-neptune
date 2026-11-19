@@ -295,7 +295,10 @@ This policy combines graph management, S3 import/export, Athena, the import role
         "iam:GetRole",
         "iam:SimulatePrincipalPolicy"
       ],
-      "Resource": "arn:aws:iam::<account-id>:role/<import-role-name>"
+      "Resource": [
+        "arn:aws:iam::<account-id>:role/<import-role-name>",
+        "arn:aws:iam::<account-id>:role/<your-own-role-name>"
+      ]
     },
     {
       "Sid": "PassImportRole",
@@ -310,11 +313,23 @@ This policy combines graph management, S3 import/export, Athena, the import role
 
 `athena:ListDataCatalogs` and `s3:ListAllMyBuckets` don't support resource-level permissions, so they use `"*"`. With the Glue statement limited to your databases, the proxy UI lists only those databases, and validation fails early for tables in others. The import role also needs the trust statement in [Import role](#import-role), and read access to your source tables' buckets isn't included.
 
-Keep the graph management, import/export and snapshot actions in the `NeptuneAnalytics` statement at `"*"`. Before an operation such as creating, deleting, updating, starting or stopping a graph, or taking, restoring or deleting a snapshot, nx-neptune checks that you have the `neptune-graph` actions it needs, testing them against the resource `"*"`. An action scoped to a graph ARN is reported as insufficient. This is tracked in [awslabs/nx-neptune#576](https://github.com/awslabs/nx-neptune/issues/576).
+Before an operation, nx-neptune checks that you hold the `neptune-graph` actions it needs, testing them against the resource `"*"`. An action scoped to a graph ARN is reported as insufficient, so exactly these nine actions need `"*"` in the `NeptuneAnalytics` statement:
 
-Be aware that `"*"` is account-wide: `DeleteGraph`, `StopGraph` and `DeleteGraphSnapshot` at `"*"` let the principal act on every graph and snapshot in the account, not only the ones nx-neptune created. Until #576 is resolved the check can't pass with a narrower resource, so grant these to a role you trust with that scope.
+`CreateGraph`, `DeleteGraph`, `UpdateGraph`, `StartGraph`, `StopGraph`, `TagResource`, `CreateGraphSnapshot`, `RestoreGraphFromSnapshot` and `DeleteGraphSnapshot`.
 
-When that check fails, the operation stops with an error. To see which operations your role can run without attempting them, call `instance_management.validate_permissions()`, which reports `False` for each operation that fails the check. `validate_permissions()` runs its checks against the role you run as, not the import role, so if the two differ it also needs `iam:SimulatePrincipalPolicy` on the role you run as, which the `CheckImportRole` statement above doesn't grant. This affects only `validate_permissions()`, not import or export.
+Nothing else is simulated. The import, export and query actions are **not** checked, so they can stay scoped to a graph ARN — `"*"` on those buys nothing. This is tracked in [awslabs/nx-neptune#576](https://github.com/awslabs/nx-neptune/issues/576).
+
+Be aware that `"*"` is account-wide: `DeleteGraph`, `StopGraph` and `DeleteGraphSnapshot` at `"*"` let the principal act on every graph and snapshot in the account, not only the ones nx-neptune created. `ResetGraph` deserves particular care — it erases a graph's data, and it is **not** one of the nine checked actions, so there is no reason to widen it to `"*"`; keep it scoped to the graphs you intend to reset. Until #576 is resolved the nine checked actions can't pass with a narrower resource, so grant those to a role you trust with that scope.
+
+When that check fails, the operation stops with an error. To see which operations your role can run without attempting them, call `instance_management.validate_permissions()`, which reports `False` for each operation that fails the check.
+
+:::caution[The checks need `iam:SimulatePrincipalPolicy` on your own role]
+Every one of these checks simulates against **the role you run as**, not the import role. If the two differ, your own role also needs `iam:SimulatePrincipalPolicy` on itself — which is why `<your-own-role-name>` appears alongside the import role in `CheckImportRole` above.
+
+Without it the checks do not fail loudly. `iam:SimulatePrincipalPolicy` returns `AccessDenied`, nx-neptune logs a warning that it is skipping the permission check, and every check then passes vacuously: the graph, snapshot, Athena and cleanup preflights all succeed, and `validate_permissions()` reports `True` for operations your role cannot actually perform. The first real failure then surfaces from the AWS call itself.
+
+If you rely on these preflights, confirm the warning is absent from your logs.
+:::
 
 The query actions in `NeptuneAnalyticsTaggedGraphs` (`ReadDataViaQuery`, `WriteDataViaQuery`, `DeleteDataViaQuery`) and `GetGraphSummary` aren't part of these checks, so they can stay scoped to a graph ARN.
 
