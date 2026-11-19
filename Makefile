@@ -104,6 +104,19 @@ integ-test-session: ## Run session manager integration tests only.
 	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
 	$(ENV_PREFIX)pytest -v -l --tb=short --maxfail=1 integ_test/session_manager/
 
+# CloudFormation demo stack. Override on the command line,
+# e.g. make cfn-deploy CFN_REGION=us-east-1 CFN_STACK_NAME=my-stack
+CFN_STACK_NAME ?= nx-neptune-demo
+CFN_REGION ?= us-west-2
+
+.PHONY: cfn-deploy
+cfn-deploy:       ## Deploy the CloudFormation stack (default us-west-2) with a locally built wheel.
+	./cloudformation-templates/deploy.sh $(CFN_STACK_NAME) $(CFN_REGION) true
+
+.PHONY: cfn-teardown
+cfn-teardown:     ## Tear down the CloudFormation stack (default us-west-2) and empty its buckets.
+	./cloudformation-templates/teardown.sh $(CFN_STACK_NAME) $(CFN_REGION)
+
 .PHONY: watch
 watch:            ## Run tests on every change.
 	ls **/**.py | entr $(ENV_PREFIX)pytest -s -vvv -l --tb=long --maxfail=1 tests/
