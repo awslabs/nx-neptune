@@ -62,6 +62,15 @@ def _make_projection(**overrides):
     return store.update(p.id, **overrides) if overrides else p
 
 
+def _no_sleep():
+    """Replacement for asyncio.sleep so the deletion poll runs immediately."""
+
+    async def sleep(_seconds):
+        return None
+
+    return sleep
+
+
 def _client_error(code, message="boom"):
     return ClientError({"Error": {"Code": code, "Message": message}}, "GetGraph")
 
@@ -134,7 +143,15 @@ async def test_delete_graph_returns_404_when_row_vanishes_before_the_claim(clien
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("query", ["", "?force=true"])
-async def test_delete_graph_returns_502_when_graph_cannot_be_verified(client, query):
+async def test_delete_graph_surfaces_the_aws_status_when_graph_cannot_be_verified(
+    client, query
+):
+    """The AWS code keeps its own status and error shape.
+
+    Wrapping these in a 502 HTTPException replaced the {error, message} body
+    the UI reads with a {detail} one, so a denied call rendered as the bare
+    string "Request failed: 502".
+    """
     p = _make_projection(status="failed", graph_id="g-abc123")
     neptune = MagicMock()
     neptune.get_graph.side_effect = _client_error(
@@ -146,7 +163,9 @@ async def test_delete_graph_returns_502_when_graph_cannot_be_verified(client, qu
     with p1, p2:
         resp = await client.post(f"{BASE}/{p.id}/delete-graph{query}")
 
-    assert resp.status_code == 502
+    assert resp.status_code == 403
+    assert resp.json()["error"] == "AccessDeniedException"
+    assert "message" in resp.json()
     assert "123456789012" not in resp.text
     kept = store.get(p.id)
     assert (kept.graph_id, kept.status) == ("g-abc123", "failed")
@@ -164,7 +183,8 @@ async def test_purge_keeps_refusing_after_an_unverifiable_graph(client):
         deleted = await client.post(f"{BASE}/{p.id}/delete-graph")
     purged = await client.delete(f"{BASE}/{p.id}")
 
-    assert (deleted.status_code, purged.status_code) == (502, 409)
+    # Throttling keeps its own 503, not a blanket 502.
+    assert (deleted.status_code, purged.status_code) == (503, 409)
     assert store.get(p.id).graph_id == "g-abc123"
 
 
@@ -209,3 +229,42 @@ async def test_archived_with_live_graph_is_refused_naming_the_archived_state(
     assert "importing" not in detail
     neptune.delete_graph.assert_not_called()
     assert store.get(p.id).graph_id == "g-abc123"
+
+
+class TestPolledDeletionErrorIsNotRawAwsText:
+    """The poll-time error is persisted and served by GET /status.
+
+    Storing the raw AWS message meant anything `sanitize_error_message` has no
+    pattern for - a resource name, a principal - was handed back to the client.
+    """
+
+    @pytest.mark.asyncio
+    async def test_only_the_error_code_reaches_the_row_and_status(self, client):
+        p = _make_projection(status="failed", graph_id="g-abc123")
+        neptune = MagicMock()
+        # The delete is accepted, then the confirmation poll is denied.
+        neptune.get_graph.side_effect = _client_error(
+            "AccessDeniedException",
+            "User proxy-role cannot GetGraph on nxp-customer-prod-graph",
+        )
+
+        p1, p2 = _patch_neptune(neptune)
+        with p1, p2, patch(f"{ROUTER}.assert_managed_graph"):
+            # First get_graph is the prefix guard; make that one succeed.
+            neptune.get_graph.side_effect = [
+                {"name": "nx-neptune-test-graph"},
+                _client_error(
+                    "AccessDeniedException",
+                    "User proxy-role cannot GetGraph on nxp-customer-prod-graph",
+                ),
+            ]
+            with patch(f"{ROUTER}.asyncio.sleep", new=_no_sleep()):
+                await client.post(f"{BASE}/{p.id}/delete-graph")
+
+        row = store.get(p.id)
+        assert row.error == "Could not confirm graph deletion: AccessDeniedException"
+        assert "nxp-customer-prod-graph" not in row.error
+        assert "proxy-role" not in row.error
+
+        status = await client.get(f"{BASE}/{p.id}/status")
+        assert "nxp-customer-prod-graph" not in status.text

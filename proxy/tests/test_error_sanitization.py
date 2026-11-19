@@ -3,6 +3,9 @@
 
 """AWS error message sanitization — no ARNs, account IDs, or keys in responses."""
 
+from botocore.exceptions import ClientError
+
+from nx_neptune_proxy.routers.projection import _graph_delete_error
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 
@@ -28,6 +31,33 @@ class TestErrorSanitization:
         result = sanitize_error_message(msg)
         assert "123456789012" not in result
         assert "arn:aws" not in result
+
+    def test_bare_account_id_stripped(self):
+        """The docstring promised account ids; only full ARNs were matched.
+
+        A poll-time AWS error carrying a bare account id was stored on the row
+        and served back by GET /status.
+        """
+        msg = "User: 123456789012 is not authorized to perform: neptune-graph:GetGraph"
+        result = sanitize_error_message(msg)
+        assert "123456789012" not in result
+        assert "[ACCOUNT_ID]" in result
+
+    def test_longer_digit_runs_are_left_alone(self):
+        """Bounded by non-digits, so a 13+ digit number is not partly rewritten."""
+        msg = "Request id 12345678901234567 took 1234567890123 ms"
+        result = sanitize_error_message(msg)
+        assert "12345678901234567" in result
+        assert "1234567890123" in result
+        assert "[ACCOUNT_ID]" not in result
+
+    def test_account_id_inside_an_arn_is_replaced_once_with_the_arn(self):
+        """ARNs are substituted first, so the id is not double-rewritten."""
+        msg = "Resource arn:aws:iam::123456789012:role/R denied"
+        result = sanitize_error_message(msg)
+        assert "123456789012" not in result
+        assert "[ARN]" in result
+        assert "[ACCOUNT_ID]" not in result
 
     def test_access_key_stripped(self):
         msg = "The security token for AKIA1234567890ABCDEF is invalid"
@@ -57,3 +87,36 @@ class TestErrorSanitization:
         result = sanitize_error_message(msg)
         assert "AccessDeniedException" in result
         assert "cannot perform action" in result
+
+
+class TestPersistedGraphDeleteError:
+    """What is stored on a row and served by GET /status carries no raw AWS text.
+
+    ``sanitize_error_message`` is best-effort pattern matching, so anything it
+    has not been taught about - a resource name, a principal, an id in a shape
+    it does not match - would be persisted and then served straight back.
+    """
+
+    @staticmethod
+    def _error(code, message):
+        return ClientError({"Error": {"Code": code, "Message": message}}, "GetGraph")
+
+    def test_only_the_error_code_is_kept(self):
+        stored = _graph_delete_error(
+            self._error(
+                "AccessDeniedException",
+                "User proxy-role cannot GetGraph on nxp-customer-prod-graph",
+            )
+        )
+        assert stored == "Could not confirm graph deletion: AccessDeniedException"
+
+    def test_the_raw_message_does_not_survive(self):
+        """Names the sanitizer has no pattern for must not reach the row."""
+        stored = _graph_delete_error(
+            self._error("ThrottlingException", "bucket acme-private-exports throttled")
+        )
+        assert "acme-private-exports" not in stored
+
+    def test_a_missing_code_still_yields_a_message(self):
+        stored = _graph_delete_error(ClientError({"Error": {}}, "GetGraph"))
+        assert stored == "Could not confirm graph deletion: UnknownError"

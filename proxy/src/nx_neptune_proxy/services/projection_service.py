@@ -18,15 +18,17 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from .projection_store import IN_FLIGHT_STATUSES, Projection, store as projection_store
-from .query_store import EdgeQuery, NodeQuery, query_store
-from .db import connection
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune.property_graph import (
     AthenaTableMetadata,
     parse_property_graph,
     property_graph_to_sql,
 )
+
+from .db import connection
+from .projection_store import IN_FLIGHT_STATUSES, Projection
+from .projection_store import store as projection_store
+from .query_store import EdgeQuery, NodeQuery, query_store
 
 
 class ProjectionNotFound(Exception):
@@ -74,6 +76,14 @@ class ProjectionService:
         return projection_store.try_transition(
             projection_id, to_status, refuse_when, **data
         )
+
+    def update_if_status(self, projection_id: str, expected: frozenset, **data) -> bool:
+        """Conditional write for a task that may have lost its row: see store."""
+        return projection_store.update_if_status(projection_id, expected, **data)
+
+    def fail_orphaned_runs(self, error: str) -> List[str]:
+        """Reset rows left mid-run by a restart: see ``ProjectionStore``."""
+        return projection_store.fail_orphaned_runs(error)
 
     def purge(self, projection_id: str, force: bool = False) -> bool:
         """Atomically delete a projection and its queries if safe to purge.

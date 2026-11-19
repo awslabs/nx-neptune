@@ -22,7 +22,7 @@ from botocore.exceptions import ClientError
 
 from nx_neptune_proxy.services.pipeline import run_pipeline
 from nx_neptune_proxy.services.project_store import store as project_store
-from nx_neptune_proxy.services.projection_store import store
+from nx_neptune_proxy.services.projection_store import STATUS_IMPORTING, store
 
 # --- Schema validation (defense-in-depth) ---
 
@@ -87,7 +87,13 @@ def _make_projection(**overrides):
     defaults.update(overrides)
     if "project_id" not in defaults:
         defaults["project_id"] = project_store.create(name="Test Project").id
-    return store.create(**defaults)
+    p = store.create(**defaults)
+    # run_pipeline's precondition: execute_projection claims the row as
+    # `importing` before scheduling the task, and the pipeline's writes are
+    # conditional on still holding that claim. Reproduce it here, since these
+    # tests call run_pipeline directly rather than through the endpoint.
+    store.try_transition(p.id, STATUS_IMPORTING, refuse_when=frozenset())
+    return store.get(p.id)
 
 
 def _created_graph(graph_id, name=None):

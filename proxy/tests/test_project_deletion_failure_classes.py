@@ -153,7 +153,13 @@ async def test_failed_graph_deletion_does_not_stop_sibling_cleanup(failure):
 
 
 @pytest.mark.asyncio
-async def test_unforced_delete_takes_over_deleting_child_and_wedges_project(client):
+async def test_conflict_on_delete_graph_is_polled_out_not_treated_as_a_failure(client):
+    """A ConflictException means the delete is already running, not that it failed.
+
+    Counting it as a failure parked the project in `deleting`, and the
+    "Already deleting" check used to sit ahead of `force`, so nothing over HTTP
+    could restart the job.
+    """
     project = project_store.create(name="P")
     child = _child(project.id, status="deleting", graph_id="g-dbl")
     busy = ClientError(
@@ -165,14 +171,49 @@ async def test_unforced_delete_takes_over_deleting_child_and_wedges_project(clie
     p1, p2 = _patch_job_deps(neptune)
     with p1, p2:
         resp = await client.delete(f"{BASE}/{project.id}")
-        retry = await client.delete(f"{BASE}/{project.id}?force=true")
 
     assert resp.status_code == 202
     neptune.delete_graph.assert_called_once_with(
         graphIdentifier="g-dbl", skipSnapshot=True
     )
-    parked = store.get(child.id)
-    assert (parked.status, parked.graph_id) == ("deleting", "g-dbl")
+    # The graph polled out as gone, so the child and the project are removed
+    # rather than parked.
+    assert store.get(child.id) is None
+    assert project_store.get(project.id) is None
+
+
+@pytest.mark.asyncio
+async def test_force_restarts_the_job_for_a_project_parked_in_deleting(client):
+    """`force` has to reach a project already in `deleting`.
+
+    A genuinely failed child graph delete leaves the project there, and before
+    this the "Already deleting" 409 preceded the `force` check, so the project
+    could never be recovered over HTTP.
+    """
+    project = project_store.create(name="P")
+    child = _child(project.id, graph_id="g-stuck")
+    denied = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "nope"}},
+        "DeleteGraph",
+    )
+
+    p1, p2 = _patch_job_deps(_neptune(delete_error=denied))
+    with p1, p2:
+        first = await client.delete(f"{BASE}/{project.id}")
+
+    assert first.status_code == 202
     assert project_store.get(project.id).status == "deleting"
-    assert retry.status_code == 409
-    assert retry.json()["detail"] == "Already deleting"
+    assert store.get(child.id).graph_id == "g-stuck"
+
+    # Unforced, it is refused rather than restarted.
+    refused = await client.delete(f"{BASE}/{project.id}")
+    assert refused.status_code == 409
+
+    # Forced, the job runs again; this time the delete succeeds.
+    p1, p2 = _patch_job_deps(_neptune())
+    with p1, p2:
+        retry = await client.delete(f"{BASE}/{project.id}?force=true")
+
+    assert retry.status_code == 202
+    assert store.get(child.id) is None
+    assert project_store.get(project.id) is None

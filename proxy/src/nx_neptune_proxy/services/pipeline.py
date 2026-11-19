@@ -44,7 +44,9 @@ async def run_pipeline(projection: Projection) -> None:
     s3_location = projection.s3_staging_bucket.rstrip("/") + f"/{projection.id}/"  # type: ignore[union-attr]  # noqa: E501
 
     try:
-        projection_service.update(projection.id, status=STATUS_IMPORTING)
+        # No status write here: execute_projection already claimed the row as
+        # `importing` before scheduling this task. Re-asserting it would undo a
+        # takeover that happened in between and let two owners run at once.
 
         # Step 1: Create or reuse graph
         _update(
@@ -123,7 +125,11 @@ async def run_pipeline(projection: Projection) -> None:
 
         # Step 3: Done
         _update(projection.id, step="ready", label="Graph ready", progress=100)
-        projection_service.update(projection.id, status=STATUS_COMPLETE)
+        # Conditional: if the row was taken over mid-run, `complete` would
+        # overwrite the new owner's status and hide its operation.
+        projection_service.update_if_status(
+            projection.id, frozenset({STATUS_IMPORTING}), status=STATUS_COMPLETE
+        )
 
     except Exception as e:
         logger.exception("Pipeline failed")
@@ -133,18 +139,74 @@ async def run_pipeline(projection: Projection) -> None:
         else:
             error_msg = str(e)
 
-        # Sanitize before persisting — strip ARNs, account IDs
-        projection_service.update(
-            projection.id, status=STATUS_FAILED, error=sanitize_error_message(error_msg)
+        # Sanitize before persisting — strip ARNs, account IDs.
+        # Conditional for the same reason as the success path, and because the
+        # row may already be gone (purged mid-run), in which case there is
+        # nothing to record the failure on.
+        projection_service.update_if_status(
+            projection.id,
+            frozenset({STATUS_IMPORTING}),
+            status=STATUS_FAILED,
+            error=sanitize_error_message(error_msg),
         )
 
 
 def _record_graph(projection_id: str, graph_id: str) -> None:
-    """Save the graph id and endpoint on the projection."""
-    projection_service.update(
+    """Save the graph id and endpoint, or delete the graph if the row is gone.
+
+    Conditional on this run still owning the row. A forced purge or a takeover
+    can remove or re-claim it between the create call and this write; an
+    unconditional ``update`` would then write nothing at all and leave the graph
+    live, untracked and billing, with no reference left anywhere to delete it
+    by. If the row is no longer ours the graph is deleted here instead.
+    """
+    from nx_neptune.clients.client_factory import ClientFactory
+
+    recorded = projection_service.update_if_status(
         projection_id,
+        frozenset({STATUS_IMPORTING}),
         graph_id=graph_id,
         graph_endpoint=f"https://{graph_id}.neptune-graph.amazonaws.com",
+    )
+    if recorded:
+        return
+
+    if projection_service.get(projection_id) is not None:
+        # The row still exists but was re-claimed by another operation. Record
+        # the reference anyway so whatever owns it now has something to delete;
+        # that owner, not this dead run, decides the graph's fate.
+        projection_service.update(
+            projection_id,
+            graph_id=graph_id,
+            graph_endpoint=f"https://{graph_id}.neptune-graph.amazonaws.com",
+        )
+        raise RuntimeError(
+            f"Projection {projection_id} was taken over mid-import; the graph "
+            f"created for it ({graph_id}) is recorded for the new owner"
+        )
+
+    # The row is gone, so nothing can ever reference this graph again. Deleting
+    # it here is the only thing standing between a forced purge and a graph that
+    # bills forever with no record of its existence.
+    logger.warning(
+        "Projection %s was purged mid-import; deleting graph %s rather than "
+        "leaving it untracked and billed",
+        projection_id,
+        graph_id,
+    )
+    try:
+        ClientFactory().neptune().delete_graph(
+            graphIdentifier=graph_id, skipSnapshot=True
+        )
+    except ClientError:
+        logger.exception(
+            "Could not delete untracked graph %s; it is still billing and must "
+            "be removed manually",
+            graph_id,
+        )
+    raise RuntimeError(
+        f"Projection {projection_id} was purged mid-import; the graph created "
+        f"for it ({graph_id}) has been deleted"
     )
 
 
