@@ -182,6 +182,63 @@ class ProjectionStore:
             )
             return cur.rowcount > 0
 
+    def update_if_status(
+        self, projection_id: str, expected: frozenset, **fields
+    ) -> bool:
+        """Write ``fields`` only while the row is still in one of ``expected``.
+
+        The write half of a claim. ``update`` is unconditional, so a background
+        task that no longer owns its row - purged by a forced delete, or
+        re-claimed by another operation - would either write nothing silently
+        or overwrite the new owner's status. Returns True if the row was still
+        ours and the write landed.
+        """
+        invalid = set(fields) - self._ALLOWED_UPDATE_COLUMNS
+        if invalid:
+            raise ValueError(f"Invalid column(s): {invalid}")
+        if not fields:
+            raise ValueError("update_if_status needs at least one field")
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        guard = ", ".join("?" for _ in expected)
+        with connection() as conn:
+            cur = conn.execute(
+                f"UPDATE projections SET {sets} WHERE id = ? AND status IN ({guard})",
+                [*fields.values(), projection_id, *expected],
+            )
+            return cur.rowcount > 0
+
+    def fail_orphaned_runs(self, error: str) -> List[str]:
+        """Mark rows left mid-run by a process exit as ``failed``.
+
+        An ``importing`` or ``executing`` row is owned by a background task in
+        this process. If the proxy stops before that task finishes, nothing is
+        left to advance the row: execute refuses it (the status is in flight)
+        and the UI sends no ``force``, so the projection could never be run
+        again. Called once at startup, before any request is served.
+
+        ``graph_id`` is deliberately kept: a graph created by the dead run is
+        still live and billing, and holding the reference is what lets
+        delete-graph remove it. ``deleting`` is left alone - a forced
+        delete-graph can already take that over.
+
+        Returns the ids that were reset.
+        """
+        statuses = (STATUS_IMPORTING, STATUS_EXECUTING)
+        guard = ", ".join("?" for _ in statuses)
+        with connection() as conn:
+            rows = conn.execute(
+                f"SELECT id FROM projections WHERE status IN ({guard})",
+                list(statuses),
+            ).fetchall()
+            ids = [row["id"] for row in rows]
+            if ids:
+                conn.execute(
+                    f"UPDATE projections SET status = ?, error = ? "
+                    f"WHERE status IN ({guard})",
+                    [STATUS_FAILED, error, *statuses],
+                )
+        return ids
+
     @staticmethod
     def purge_on(conn, projection_id: str, force: bool = False) -> bool:
         """Atomically delete a row only if it is safe to purge.

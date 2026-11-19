@@ -291,6 +291,20 @@ def delete_projection(projection_id: str, force: bool = Query(False)):
     return {"id": p.id, "status": "deleted"}
 
 
+def _graph_delete_error(error: ClientError) -> str:
+    """A fixed, user-facing reason built from the AWS error *code* only.
+
+    This string is persisted on the row and returned by GET ``/status``, so the
+    raw AWS message never goes in: ``sanitize_error_message`` is best-effort
+    pattern matching, and anything it has not been taught about (a resource
+    name, a principal, an account id in a shape it does not match) would be
+    stored and then served back. The code alone is enough to act on, and the
+    full message is already in the proxy's own logs.
+    """
+    code = error.response.get("Error", {}).get("Code") or "UnknownError"
+    return f"Could not confirm graph deletion: {code}"
+
+
 @router.post(
     "/{projection_id}/delete-graph",
     summary="Delete associated graph and archive projection",
@@ -330,10 +344,13 @@ def delete_projection_graph(
         # Not-found was handled above. Anything else (denied, throttled, expired
         # credentials) says nothing about whether the graph exists, so the record
         # is left untouched and purge keeps refusing it.
-        raise HTTPException(
-            status_code=502,
-            detail="Could not verify the graph in Neptune Analytics; try again later",
-        )
+        #
+        # Re-raised as-is, not wrapped: the ClientError handler in app.py maps
+        # the AWS code to its own status (403 for denied, 503 for throttled) and
+        # returns the {error, message} shape the UI reads. Wrapping it in an
+        # HTTPException turned every one of those into a 502 whose {detail} the
+        # UI could not render, so users saw only "Request failed: 502".
+        raise
     assert_managed_graph(resp.get("name"))
 
     refused = {STATUS_ARCHIVED} if force else IN_FLIGHT_STATUSES | {STATUS_ARCHIVED}
@@ -359,7 +376,7 @@ def delete_projection_graph(
                 projection_service.update(
                     projection_id,
                     status=STATUS_FAILED,
-                    error=sanitize_error_message(str(e)),
+                    error=_graph_delete_error(e),
                 )
                 return
         # Poll until gone
@@ -375,7 +392,7 @@ def delete_projection_graph(
                 projection_service.update(
                     projection_id,
                     status=STATUS_FAILED,
-                    error=sanitize_error_message(str(e)),
+                    error=_graph_delete_error(e),
                 )
                 return
         else:

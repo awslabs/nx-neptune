@@ -89,8 +89,14 @@ def delete_project_endpoint(
     p = store.get(project_id)
     if p is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    if p.status == "deleting":
-        raise HTTPException(status_code=409, detail="Already deleting")
+    # `force` has to reach a project already in `deleting`. A child graph whose
+    # delete failed - denied, a Conflict from a second delete_graph, or the
+    # poll timing out - leaves the project parked there, and with this check
+    # ahead of `force` nothing over HTTP could restart the job.
+    if p.status == "deleting" and not force:
+        raise HTTPException(
+            status_code=409, detail="Already deleting; use force to retry"
+        )
 
     projections = projection_service.list_by_project(project_id)
     if not force and any(pr.status in _RUNNING for pr in projections):

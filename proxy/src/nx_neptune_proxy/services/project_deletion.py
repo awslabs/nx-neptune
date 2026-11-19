@@ -88,9 +88,16 @@ async def _delete_graph(graph_id: str) -> None:
     try:
         client.delete_graph(graphIdentifier=graph_id, skipSnapshot=True)
     except ClientError as e:
-        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+        code = e.response["Error"]["Code"]
+        if code == "ResourceNotFoundException":
             return
-        raise
+        # A ConflictException means a delete is already under way - the usual
+        # case when a forced retry re-enters a project whose first attempt
+        # started the delete and then failed later. The graph is still going
+        # away, so poll it out rather than counting this as a failure and
+        # parking the project in `deleting` again.
+        if code != "ConflictException":
+            raise
 
     start = time.time()
     while time.time() - start < TIMEOUT:
