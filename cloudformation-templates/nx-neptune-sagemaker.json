@@ -393,6 +393,8 @@
                     "#!/bin/bash\n",
                     "set -e\n",
                     "sudo -u ec2-user -i <<'EOF'\n",
+                    "# heredoc runs in a new login shell; the outer set -e does not apply here.\n",
+                    "set -eo pipefail\n",
                     "ASSETS_PREFIX=\"", { "Ref": "AssetsS3Prefix" }, "\"\n",
                     "CUSTOM_NOTEBOOKS=\"", { "Ref": "CustomNotebooks" }, "\"\n",
                     "# nx_neptune needs Python >=3.11; the AMI ships only 3.10, so use a dedicated 3.11 env registered over the 'python3' kernelspec.\n",
@@ -422,7 +424,7 @@
                     "  rm -f /tmp/notebooks.zip /tmp/SHA256SUMS\n",
                     "fi\n",
                     "rm -rf /tmp/nx-assets\n",
-                    "conda deactivate\n",
+                    "conda deactivate || true\n",
                     "EOF"
                   ]
                 ]
