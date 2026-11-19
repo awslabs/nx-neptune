@@ -16,43 +16,9 @@ import pytest
 
 from nx_neptune.clients.iam_client import (
     IamClientWrapper,
-    _get_s3_in_arn,
     _convert_sts_to_iam_arn,
     split_s3_arn_to_bucket_and_path,
 )
-
-
-@pytest.mark.parametrize(
-    "s3_path,expected",
-    [
-        # Test with s3:// prefix
-        ("s3://my-bucket/my-folder", "arn:aws:s3:::my-bucket/my-folder"),
-        # Test without s3:// prefix (should not modify the path)
-        ("my-bucket/my-folder", "my-bucket/my-folder"),
-        # Test with trailing slash
-        ("s3://my-bucket/my-folder/", "arn:aws:s3:::my-bucket/my-folder"),
-        # Test with bucket name only
-        ("s3://my-bucket", "arn:aws:s3:::my-bucket"),
-        # Test with bucket name and trailing slash
-        ("s3://my-bucket/", "arn:aws:s3:::my-bucket"),
-        # Test with multiple folders
-        (
-            "s3://my-bucket/folder1/folder2/folder3",
-            "arn:aws:s3:::my-bucket/folder1/folder2/folder3",
-        ),
-        # Test with empty string
-        ("", ""),
-        # Test with already ARN format
-        (
-            "arn:aws:s3:::my-bucket/my-folder",
-            "arn:aws:s3:::my-bucket/my-folder",
-        ),
-    ],
-)
-def test_get_s3_in_arn(s3_path, expected):
-    """Test _get_s3_in_arn with various input formats."""
-    result = _get_s3_in_arn(s3_path)
-    assert result == expected
 
 
 @pytest.mark.parametrize(
@@ -880,6 +846,136 @@ class TestSimulatedResourceArns:
 
         for arns, _ in self._requests(client):
             assert arns[0].startswith("arn:aws-cn:s3:::")
+
+    # --- a path naming one object, not a prefix ------------------------------
+
+    def _wrapper_allowing(self, allowed, role=None, region=REGION):
+        """A simulator fake that allows an action only on the ARNs in ``allowed``.
+
+        ``allowed`` maps a resource ARN to the actions permitted on it; anything
+        else is denied, which is how a real least-privilege policy behaves.
+        """
+        from unittest.mock import MagicMock
+
+        client = MagicMock()
+
+        def simulate(**kwargs):
+            arn = kwargs["ResourceArns"][0]
+            permitted = allowed.get(arn, set())
+            return {
+                "EvaluationResults": [
+                    {
+                        "EvalActionName": action,
+                        "EvalDecision": (
+                            "allowed" if action in permitted else "implicitDeny"
+                        ),
+                    }
+                    for action in kwargs["ActionNames"]
+                ]
+            }
+
+        client.simulate_principal_policy.side_effect = simulate
+        wrapper = IamClientWrapper(
+            role_arn=role or self.ROLE, client=client, region=region
+        )
+        wrapper.check_assume_role = lambda service_name: True
+        wrapper.check_s3_versioning_enabled = lambda *a, **k: None
+        return wrapper, client
+
+    def test_an_exact_object_grant_is_accepted(self):
+        """A path can name one object, and nothing in it says so.
+
+        Appending "/*" unconditionally meant a grant written against the object
+        itself no longer matched, and the preflight reported the action missing.
+        """
+        wrapper, client = self._wrapper_allowing(
+            {
+                "arn:aws:s3:::my-bucket": {"s3:ListBucket"},
+                "arn:aws:s3:::my-bucket/data/file.csv": {
+                    "s3:PutObject",
+                    "s3:DeleteObject",
+                },
+            }
+        )
+
+        wrapper.has_export_to_s3_permissions("s3://my-bucket/data/file.csv")
+
+        tried = [arns[0] for arns, _ in self._requests(client)]
+        assert "arn:aws:s3:::my-bucket/data/file.csv/*" in tried, "prefix form first"
+        assert "arn:aws:s3:::my-bucket/data/file.csv" in tried, "exact object fallback"
+
+    def test_a_prefix_grant_is_still_accepted_without_a_second_request(self):
+        """The common case must not pay for the fallback."""
+        wrapper, client = self._wrapper_allowing(
+            {
+                "arn:aws:s3:::my-bucket": {"s3:ListBucket"},
+                "arn:aws:s3:::my-bucket/staging/*": {
+                    "s3:PutObject",
+                    "s3:DeleteObject",
+                },
+            }
+        )
+
+        wrapper.has_export_to_s3_permissions("s3://my-bucket/staging")
+
+        tried = [arns[0] for arns, _ in self._requests(client)]
+        assert "arn:aws:s3:::my-bucket/staging" not in tried
+
+    def test_neither_object_form_granted_still_fails(self):
+        """The fallback widens what counts as sufficient; it must not accept nothing."""
+        wrapper, _ = self._wrapper_allowing(
+            {"arn:aws:s3:::my-bucket": {"s3:ListBucket"}}
+        )
+
+        with pytest.raises(ValueError, match="Insufficient permission"):
+            wrapper.has_export_to_s3_permissions("s3://my-bucket/staging")
+
+    # --- the public entry points use the same ARNs as the preflights ---------
+
+    def test_validate_permissions_uses_the_real_resource_arns(self):
+        """It reported a correctly scoped policy as insufficient while the
+        narrower preflights passed, so the two contradicted each other."""
+        wrapper, client = self._wrapper_allowing(
+            {
+                "arn:aws:neptune-graph:us-west-2:123456789012:graph/*": {
+                    "neptune-graph:CreateGraph",
+                    "neptune-graph:TagResource",
+                },
+                "arn:aws:s3:::my-bucket": {"s3:ListBucket"},
+                "arn:aws:s3:::my-bucket/staging/*": {
+                    "s3:PutObject",
+                    "s3:DeleteObject",
+                },
+                # With no KMS key configured these still simulate against "*",
+                # which this PR does not change.
+                "*": {"kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"},
+            }
+        )
+
+        results = wrapper.validate_permissions(
+            None, None, "s3://my-bucket/staging", None
+        )
+
+        assert results["create_na_instance"] is True
+        assert results["export_csv_to_s3"] is True
+
+    def test_athena_s3_check_splits_bucket_and_object_actions(self):
+        wrapper, client = self._wrapper_allowing(
+            {
+                "*": {"athena:StartQueryExecution", "athena:GetQueryExecution"},
+                "arn:aws:s3:::results-bucket": {"s3:ListBucket"},
+                "arn:aws:s3:::results-bucket/out/*": {"s3:GetObject", "s3:PutObject"},
+            }
+        )
+
+        assert wrapper.has_athena_permissions("s3://results-bucket/out") is True
+
+        by_arn = {arns[0]: set(actions) for arns, actions in self._requests(client)}
+        assert by_arn["arn:aws:s3:::results-bucket"] == {"s3:ListBucket"}
+        assert by_arn["arn:aws:s3:::results-bucket/out/*"] == {
+            "s3:GetObject",
+            "s3:PutObject",
+        }
 
 
 @pytest.mark.parametrize(

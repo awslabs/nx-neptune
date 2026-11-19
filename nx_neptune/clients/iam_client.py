@@ -171,13 +171,44 @@ class IamClientWrapper:
         object_actions = [p for p in permissions if p not in S3_BUCKET_LEVEL_ACTIONS]
 
         results: dict = {}
-        for actions, arn in (
-            (bucket_actions, bucket_arn),
-            (object_actions, object_arn),
-        ):
-            if actions:
-                results.update(self.check_aws_permission(operation_name, actions, arn))
+        if bucket_actions:
+            results.update(
+                self.check_aws_permission(operation_name, bucket_actions, bucket_arn)
+            )
+        if object_actions:
+            results.update(
+                self._check_s3_object_actions(operation_name, object_actions, s3_path)
+            )
         return results
+
+    def _check_s3_object_actions(
+        self, operation_name: str, actions: list, s3_path: str
+    ) -> dict:
+        """Simulate object-level S3 actions, accepting a prefix or an exact-object grant.
+
+        The path may name a prefix (``s3://bucket/staging``) or a single object
+        (``s3://bucket/data/file.csv``), and nothing in the path distinguishes them.
+        The prefix ARN ``<bucket>/<prefix>/*`` is tried first, since that is the
+        common case; a grant written against the object itself does not match that
+        ARN, so an exact ``<bucket>/<prefix>`` is tried before reporting the action
+        missing. Either grant authorizes the real request, so either is sufficient
+        here.
+        """
+        _, object_arn = _get_s3_bucket_and_object_arns(s3_path, self._partition)
+        exact_arn = _s3_exact_object_arn(s3_path, self._partition)
+
+        try:
+            return self.check_aws_permission(operation_name, actions, object_arn)
+        except ValueError:
+            # No prefix means the object ARN already covers the bucket root, so
+            # there is no narrower exact-object grant left to try.
+            if exact_arn is None:
+                raise
+            self.logger.debug(
+                f"Object actions {actions} not allowed on [{object_arn}], "
+                f"retrying as an exact object grant on [{exact_arn}]"
+            )
+            return self.check_aws_permission(operation_name, actions, exact_arn)
 
     @classmethod
     def default(
@@ -680,9 +711,8 @@ class IamClientWrapper:
         self.check_aws_permission(operation_name, permissions)
 
         if s3_bucket:
-            s3_arn = _get_s3_in_arn(s3_bucket)
             s3_permissions = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
-            self.check_aws_permission(operation_name, s3_permissions, s3_arn)
+            self._check_s3_permission(operation_name, s3_permissions, s3_bucket)
 
         if s3_bucket:
             self.check_s3_versioning_enabled(s3_bucket)
@@ -728,28 +758,32 @@ class IamClientWrapper:
         """
         results = {}
 
-        # Convert s3 bucket urls to arn
-        s3_import = (
-            _get_s3_in_arn(arn_s3_bucket_import) if arn_s3_bucket_import else None
-        )
-        s3_export = (
-            _get_s3_in_arn(arn_s3_bucket_export) if arn_s3_bucket_export else None
-        )
+        # Raw S3 paths; _check_s3_permission builds the bucket and object ARNs,
+        # which differ per action and cannot share one ARN.
+        s3_import = arn_s3_bucket_import or None
+        s3_export = arn_s3_bucket_export or None
 
         checks = {
             "create_na_instance": [
                 {
+                    "kind": "neptune",
                     "permissions": [
                         "neptune-graph:CreateGraph",
                         "neptune-graph:TagResource",
-                    ]
+                    ],
                 }
             ],
-            "delete_na_instance": [{"permissions": ["neptune-graph:DeleteGraph"]}],
-            "start_graph": [{"permissions": ["neptune-graph:StartGraph"]}],
-            "stop_graph": [{"permissions": ["neptune-graph:StopGraph"]}],
+            "delete_na_instance": [
+                {"kind": "neptune", "permissions": ["neptune-graph:DeleteGraph"]}
+            ],
+            "start_graph": [
+                {"kind": "neptune", "permissions": ["neptune-graph:StartGraph"]}
+            ],
+            "stop_graph": [
+                {"kind": "neptune", "permissions": ["neptune-graph:StopGraph"]}
+            ],
             "import_from_s3": [
-                {"permissions": ["s3:GetObject"], "arn": s3_import},
+                {"kind": "s3", "permissions": ["s3:GetObject"], "arn": s3_import},
                 {
                     "permissions": [
                         "kms:Decrypt",
@@ -761,6 +795,7 @@ class IamClientWrapper:
             ],
             "export_csv_to_s3": [
                 {
+                    "kind": "s3",
                     "permissions": ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
                     "arn": s3_export,
                 },
@@ -774,10 +809,14 @@ class IamClientWrapper:
                 },
             ],
             "empty_s3_bucket": [
-                {"permissions": ["s3:PutObject", "s3:ListBucket"], "arn": s3_export},
+                {
+                    "kind": "s3",
+                    "permissions": ["s3:PutObject", "s3:ListBucket"],
+                    "arn": s3_export,
+                },
             ],
             "export_athena_table_to_s3": [
-                {"permissions": ["s3:GetObject"], "arn": s3_import},
+                {"kind": "s3", "permissions": ["s3:GetObject"], "arn": s3_import},
                 {
                     "permissions": [
                         "kms:Decrypt",
@@ -794,7 +833,11 @@ class IamClientWrapper:
                 },
             ],
             "create_csv_table_from_s3": [
-                {"permissions": ["s3:GetObject", "s3:ListBucket"], "arn": s3_export},
+                {
+                    "kind": "s3",
+                    "permissions": ["s3:GetObject", "s3:ListBucket"],
+                    "arn": s3_export,
+                },
                 {
                     "permissions": [
                         "kms:Decrypt",
@@ -820,25 +863,28 @@ class IamClientWrapper:
             ],
             "create_graph_snapshot": [
                 {
+                    "kind": "neptune",
                     "permissions": [
                         "neptune-graph:TagResource",
                         "neptune-graph:CreateGraphSnapshot",
-                    ]
+                    ],
                 },
             ],
             "create_na_instance_from_snapshot": [
                 {
+                    "kind": "neptune",
                     "permissions": [
                         "neptune-graph:TagResource",
                         "neptune-graph:RestoreGraphFromSnapshot",
-                    ]
+                    ],
                 },
             ],
             "delete_graph_snapshot": [
                 {
+                    "kind": "neptune",
                     "permissions": [
                         "neptune-graph:DeleteGraphSnapshot",
-                    ]
+                    ],
                 },
             ],
         }
@@ -846,8 +892,16 @@ class IamClientWrapper:
         for op, permission_pairs in checks.items():
             for pair in permission_pairs:
                 try:
-                    if "arn" in pair and pair["arn"]:
-                        self.check_aws_permission(op, pair["permissions"], pair["arn"])
+                    kind = pair.get("kind")
+                    arn = pair.get("arn")
+                    if kind == "neptune":
+                        # Splits graph and graph-snapshot actions across requests.
+                        self._check_neptune_permission(op, pair["permissions"])
+                    elif kind == "s3" and arn:
+                        # Splits bucket-level and object-level actions across requests.
+                        self._check_s3_permission(op, pair["permissions"], arn)
+                    elif arn:
+                        self.check_aws_permission(op, pair["permissions"], arn)
                     else:
                         self.check_aws_permission(op, pair["permissions"])
                 except Exception as e:
@@ -874,28 +928,6 @@ def split_s3_arn_to_bucket_and_path(s3_arn: str) -> tuple:
     return bucket_name, bucket_path_str
 
 
-def _get_s3_in_arn(s3_path: str, partition: str = "aws") -> str:
-    """
-    Converts an S3 path to an ARN format for use in IAM policy evaluation.
-
-    This method transforms S3 paths by:
-    1. Removing any trailing slashes
-    2. Replacing the 's3://' prefix with 'arn:<partition>:s3:::'
-
-    Args:
-        s3_path (str): The S3 path to convert.
-        partition (str): AWS partition for the ARN. Defaults to 'aws'.
-
-    Returns:
-        str: The S3 path converted to ARN format (arn:aws:s3:::bucket-name/folder)
-             or the original path with trailing slashes removed if it doesn't
-             start with 's3://'
-    """
-    s3_path = s3_path.rstrip("/")
-    s3_path = s3_path.replace("s3://", f"arn:{partition}:s3:::", 1)
-    return s3_path
-
-
 def _split_s3_bucket_and_prefix(s3_path: str) -> tuple:
     """Split an ``s3://`` URI, plain path or S3 ARN into (bucket, prefix without slashes)."""
     path = re.sub(r"^(s3://|arn:[^:]*:s3:::)", "", s3_path)
@@ -915,6 +947,19 @@ def _get_s3_bucket_and_object_arns(s3_path: str, partition: str = "aws") -> tupl
     bucket_arn = f"arn:{partition}:s3:::{bucket}"
     object_arn = f"{bucket_arn}/{prefix}/*" if prefix else f"{bucket_arn}/*"
     return bucket_arn, object_arn
+
+
+def _s3_exact_object_arn(s3_path: str, partition: str = "aws") -> Optional[str]:
+    """ARN for the path treated as one object, or ``None`` when it has no prefix.
+
+    ``_get_s3_bucket_and_object_arns`` reads the path as a prefix and appends
+    ``/*``. A policy granting an action on a single object does not match that, so
+    this gives the preflight the exact ARN to fall back on.
+    """
+    bucket, prefix = _split_s3_bucket_and_prefix(s3_path)
+    if not prefix:
+        return None
+    return f"arn:{partition}:s3:::{bucket}/{prefix}"
 
 
 def _convert_sts_to_iam_arn(sts_arn):
