@@ -54,21 +54,30 @@ The `SessionManager` class is in [`nx_neptune/session_manager.py`](https://githu
 
 `SessionManager(session_name=None, cleanup_task=None)` takes only a session name and an optional cleanup task. It uses the AWS credentials and default region from your environment, and the caller identity of those credentials as the S3 import/export role. S3 locations are passed to the methods that use them.
 
+`async with` is the recommended form: the create methods are `async`, so your code is already running inside an event loop, and `__aexit__` awaits the cleanup on that same loop.
+
 ```python
 from nx_neptune.session_manager import CleanupTask, SessionManager
 
-async def main():
-    with SessionManager("my-session", cleanup_task=CleanupTask.DESTROY) as session:
-        # Reuse an available graph in this session, or create one
-        graph = await session.get_or_create_graph()
+async with SessionManager.session("my-session", CleanupTask.STOP) as session:
+    graph = await session.get_or_create_graph()
 
-        await session.import_from_csv(graph, "s3://my-bucket/import/")
-        # ... run algorithms ...
-        await session.export_to_csv(graph, "s3://my-bucket/export/")
-    # CleanupTask.DESTROY destroys the session's graphs on exit
+    await session.import_from_csv(graph, "s3://my-bucket/import/")
+    # ... run algorithms ...
+    await session.export_to_csv(graph, "s3://my-bucket/export/")
+# the cleanup task runs here, on the way out of the block
 ```
 
-Run it with `asyncio.run(main())`, or `await` the calls directly in a notebook.
+On exit, the configured `CleanupTask` runs over the session's `AVAILABLE` graphs and is awaited to completion, so leaving the block can take minutes:
+
+| Task | On exit |
+|---|---|
+| `STOP` | Stops each graph. Storage still bills, compute does not. |
+| `RESET` | Empties each graph, without taking a snapshot. |
+| `DESTROY` | Deletes each graph. |
+| unset | Nothing — the graphs keep running and billing. |
+
+A graph in any other status, `STOPPED` included, is skipped with a warning. `STOP`, `RESET` and `DESTROY` each require a `session_name`. Without a `with` or `async with` block nothing is cleaned up.
 
 ## Declaring the graph schema
 
