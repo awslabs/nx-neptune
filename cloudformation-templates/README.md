@@ -169,6 +169,14 @@ template provides a dedicated role for that, `ImportRole`, exported as the `Impo
 output and set in the notebook as `NETWORKX_S3_IAM_ROLE_ARN`. It exists because of the
 measurement below.
 
+**`ImportRole` covers the NetworkX backend only.** It takes effect where the library reads
+`NETWORKX_S3_IAM_ROLE_ARN`. `SessionManager` does not read it: it resolves its import role from
+the STS caller identity and passes that to `StartImportTask`, so on this stack it passes
+`NotebookRole` — whose `neptune-graph` trust keeps the conditioned statement, and is therefore
+rejected for exactly the reason measured below. `SessionManager`-driven imports on this stack
+are not expected to work until it can be pointed at a separate import role; that is tracked
+separately and is not addressed here.
+
 #### What was measured
 
 On 2026-11-11, in `us-east-1`, against a 16 m-NCU graph, via `StartImportTask`, one throwaway

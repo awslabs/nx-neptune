@@ -2,9 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 """!!! WARNING: THIS TEST WRITES TO A LIVE GRAPH AND CREATES REAL IAM ROLES !!!
 
-It runs FIVE S3 imports into the graph named by NETWORKX_GRAPH_ID. The graph is NOT reset:
-imported data is ADDED each time. The maintainer chooses the graph; point it at a disposable
-one. It also creates and deletes throwaway IAM roles (prefix ``nxn-trusttest-``).
+It runs FIVE S3 imports into the graph named by NETWORKX_GRAPH_ID, and **RESETS that graph**
+(``skipSnapshot=True``, so the data is gone) immediately before the one import whose outcome is
+asserted. The conditioned forms are record-only and are expected to be rejected before writing,
+so nothing is reset for them. The maintainer chooses the graph; point it at a disposable one.
+It also creates and deletes throwaway IAM roles (prefix ``nxn-trusttest-``), and exports to a
+sibling prefix in the source bucket which it empties afterwards.
 
 Empirical check of which import-role trust-policy forms Neptune Analytics accepts.
 
@@ -199,6 +202,26 @@ def _import_access_policy(partition, s3_path, key_arn):
     return {"Version": "2012-10-17", "Statement": statements}
 
 
+def _export_destination(s3_path: str, run_id: str) -> str:
+    """A prefix for the export that is a sibling of the import source, in the same bucket.
+
+    Two constraints pull against each other. It must not be *under* the import
+    source prefix, or a re-run imports the previous run's exported CSVs. And it
+    must stay inside the source *bucket*, inside the `{prefix}*` grant the
+    throwaway role receives - appending to the whole `s3://bucket/prefix` string
+    satisfies the first and breaks the second when there is no prefix, since
+    `s3://bkt/` then yields `s3://bkt-trust-export-<id>/`, a different bucket.
+
+    So split first, then build:
+      s3://bkt/export/  ->  s3://bkt/export-trust-export-<id>/   (grant bkt/export*)
+      s3://bkt/         ->  s3://bkt/trust-export-<id>/          (grant bkt/*)
+    """
+    bucket, prefix = split_s3_arn_to_bucket_and_path(s3_path)
+    prefix = prefix.rstrip("/")
+    leaf = f"{prefix}-trust-export-{run_id}" if prefix else f"trust-export-{run_id}"
+    return f"s3://{bucket}/{leaf}/"
+
+
 @pytest.fixture(scope="module")
 def env():
     sts = boto3.client("sts")
@@ -319,6 +342,26 @@ def _wait_for_terminal(na_client, task_id):
     return resp
 
 
+def _reset_graph_and_wait(na_client, graph_id):
+    """Empty the graph and wait for it to come back AVAILABLE.
+
+    Only done before the asserted form. The library resets ahead of an import
+    itself (`instance_management.import_csv_from_s3`), but this module calls
+    `_start_import_task` directly to isolate the trust policy, so nothing
+    empties the graph between runs. Without this, the second run's asserted
+    import starts on a non-empty graph and a refusal there would read as a
+    trust failure.
+    """
+    na_client.reset_graph(graphIdentifier=graph_id, skipSnapshot=True)
+    deadline = time.time() + IMPORT_MAX_WAIT_SECONDS
+    while time.time() < deadline:
+        status = na_client.get_graph(graphIdentifier=graph_id).get("status")
+        if status == "AVAILABLE":
+            return
+        time.sleep(IMPORT_POLL_SECONDS)
+    raise TimeoutError(f"Graph {graph_id} did not return to AVAILABLE after a reset")
+
+
 @pytest.mark.parametrize("form", FORMS)
 def test_import_with_trust_form(
     form, env, iam, na_client, created_roles, outcomes, record_property
@@ -360,6 +403,12 @@ def test_import_with_trust_form(
     time.sleep(
         IAM_PROPAGATION_SECONDS
     )  # see IAM_PROPAGATION_SECONDS: false-negative risk
+
+    if form == "no_condition":
+        # This is the form whose outcome is asserted, so it must start from a
+        # known state. The conditioned forms are record-only and are expected to
+        # be rejected before they write anything, so they are left alone.
+        _reset_graph_and_wait(na_client, NETWORKX_GRAPH_ID)
 
     try:
         task_id = _start_import_task(na_client, NETWORKX_GRAPH_ID, S3_BUCKET, role_arn)
@@ -435,11 +484,7 @@ def test_export_with_the_shipped_trust_form(
     role_arn = iam.get_role(RoleName=role_name)["Role"]["Arn"]
     time.sleep(IAM_PROPAGATION_SECONDS)
 
-    # Sibling prefix, deliberately not under S3_BUCKET: that prefix is the import
-    # source, so exporting into it would feed the previous run's CSVs back into
-    # the next run's import. Still inside the `{prefix}*` grant the throwaway
-    # role gets, so no policy change is needed.
-    destination = S3_BUCKET.rstrip("/") + f"-trust-export-{env['run_id']}/"
+    destination = _export_destination(S3_BUCKET, env["run_id"])
     exported_prefixes.append(destination)
     task_id = _start_export_task(
         na_client, NETWORKX_GRAPH_ID, destination, role_arn, key_arn
