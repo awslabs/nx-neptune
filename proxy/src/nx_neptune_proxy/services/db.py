@@ -70,6 +70,7 @@ def init_db() -> None:
             step_label TEXT,
             progress REAL DEFAULT 0,
             error TEXT,
+            owner_token TEXT,
             created_at TEXT NOT NULL,
             FOREIGN KEY (project_id) REFERENCES projects(id)
         );
@@ -103,6 +104,9 @@ def _migrate_projections(conn: sqlite3.Connection) -> None:
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(projections)")}
     added_columns = {
         "property_graph": "TEXT",
+        # Identifies which run owns the row. Rotated by every claim, so a run
+        # that lost its row cannot write to it even if the status looks right.
+        "owner_token": "TEXT",
     }
     for column, decl in added_columns.items():
         if column not in existing:

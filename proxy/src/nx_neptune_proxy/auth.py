@@ -6,7 +6,7 @@
 Gates who may call this proxy's /api/* routes. A fresh, random token is
 generated once per process start and is never logged in full. The server
 Gates who may call this proxy's /api/* routes. A fresh, random token is
-generated once per process start. The server keeps it in localStorage 
+generated once per process start. The server keeps it in localStorage
 only, but it leaves the process in these places:
 
 - the launch URL printed to stdout;

@@ -10,6 +10,17 @@ from typing import List, Optional
 
 from .db import connection
 
+STATUS_DRAFT = "draft"
+STATUS_EXECUTING = "executing"
+STATUS_IMPORTING = "importing"
+STATUS_DELETING = "deleting"
+STATUS_COMPLETE = "complete"
+STATUS_FAILED = "failed"
+STATUS_ARCHIVED = "archived"
+
+# States in which a long-running operation owns the projection.
+IN_FLIGHT_STATUSES = frozenset({STATUS_EXECUTING, STATUS_IMPORTING, STATUS_DELETING})
+
 _FIELDS = [
     "id",
     "status",
@@ -53,6 +64,8 @@ class Projection:
     step_label: Optional[str] = None
     progress: float = 0
     error: Optional[str] = None
+    # Which run owns the row. Rotated by every claim; see try_transition.
+    owner_token: Optional[str] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -71,7 +84,7 @@ class ProjectionStore:
     ) -> Projection:
         p = Projection(
             id=str(uuid.uuid4()),
-            status="draft",
+            status=STATUS_DRAFT,
             catalog=catalog,
             database=database,
             node_query=node_query,
@@ -131,6 +144,7 @@ class ProjectionStore:
         "step_label",
         "progress",
         "error",
+        "owner_token",
     }
 
     def update(self, projection_id: str, **kwargs) -> Optional[Projection]:
@@ -145,20 +159,156 @@ class ProjectionStore:
             conn.execute(f"UPDATE projections SET {sets} WHERE id = ?", vals)
         return self.get(projection_id)
 
-    def delete(self, projection_id: str) -> bool:
+    def try_transition(
+        self,
+        projection_id: str,
+        to_status: str,
+        refuse_when: frozenset = IN_FLIGHT_STATUSES,
+        owner_token: Optional[str] = None,
+        **fields,
+    ) -> bool:
+        """Atomically set ``status`` unless it is currently in ``refuse_when``.
+
+        A single compare-and-set UPDATE, so concurrent callers cannot both win.
+        Extra ``fields`` are written in the same statement. Returns True if the
+        row was claimed, False if it is missing or in a refused status.
+
+        **Every claim rotates ``owner_token``.** A status change is a new
+        ownership epoch, and that is what lets a previous owner's later writes
+        be rejected: matching on status alone cannot tell "still my run" from
+        "a different run that reached the same status". A caller that intends
+        to keep writing passes its own ``owner_token`` so it knows the value it
+        now holds; otherwise a fresh one is generated and the old owner is
+        simply locked out.
+        """
+        invalid = set(fields) - self._ALLOWED_UPDATE_COLUMNS
+        if invalid:
+            raise ValueError(f"Invalid column(s): {invalid}")
+        columns = {
+            "status": to_status,
+            "owner_token": owner_token or str(uuid.uuid4()),
+            **fields,
+        }
+        sets = ", ".join(f"{k} = ?" for k in columns)
+        guard = ", ".join("?" for _ in refuse_when)
         with connection() as conn:
-            cur = conn.execute("DELETE FROM projections WHERE id = ?", (projection_id,))
+            cur = conn.execute(
+                f"UPDATE projections SET {sets} WHERE id = ? AND status NOT IN ({guard})",
+                [*columns.values(), projection_id, *refuse_when],
+            )
             return cur.rowcount > 0
 
-    @staticmethod
-    def delete_on(conn, projection_id: str) -> bool:
-        """Delete a projection row on an existing connection.
+    def try_transition_if_graph(
+        self,
+        projection_id: str,
+        to_status: str,
+        expected_graph_id: Optional[str],
+        refuse_when: frozenset = IN_FLIGHT_STATUSES,
+        owner_token: Optional[str] = None,
+        **fields,
+    ) -> bool:
+        """``try_transition``, additionally requiring ``graph_id`` to be unchanged.
 
-        Runs on a caller-supplied connection so it can participate in a larger
-        transaction (e.g. deleting a projection and its queries atomically).
+        For a caller that read ``graph_id``, decided something about that graph,
+        and now wants to act on the row. With ``force`` the status guard is
+        dropped, so the status alone cannot rule out an in-flight run having
+        recorded a *different* graph in the meantime — clearing the reference
+        then would orphan a live, billing graph.
         """
-        cur = conn.execute("DELETE FROM projections WHERE id = ?", (projection_id,))
-        return cur.rowcount > 0
+        invalid = set(fields) - self._ALLOWED_UPDATE_COLUMNS
+        if invalid:
+            raise ValueError(f"Invalid column(s): {invalid}")
+        columns = {
+            "status": to_status,
+            "owner_token": owner_token or str(uuid.uuid4()),
+            **fields,
+        }
+        sets = ", ".join(f"{k} = ?" for k in columns)
+        guard = ", ".join("?" for _ in refuse_when)
+        with connection() as conn:
+            cur = conn.execute(
+                f"UPDATE projections SET {sets} WHERE id = ? "
+                f"AND status NOT IN ({guard}) AND graph_id IS ?",
+                [*columns.values(), projection_id, *refuse_when, expected_graph_id],
+            )
+            return cur.rowcount > 0
+
+    def update_if_owner(self, projection_id: str, owner_token: str, **fields) -> bool:
+        """Write ``fields`` only while ``owner_token`` still owns the row.
+
+        The write half of a claim. ``update`` is unconditional, and matching on
+        status is not enough: a run that was taken over and then re-claimed by a
+        *new* run reaches the same status again, so the stale run's writes would
+        land on the new run's row and mark it complete or failed underneath it.
+        The token is rotated by every claim, so it distinguishes the two.
+
+        Returns True if the row was still ours and the write landed.
+        """
+        invalid = set(fields) - self._ALLOWED_UPDATE_COLUMNS
+        if invalid:
+            raise ValueError(f"Invalid column(s): {invalid}")
+        if not fields:
+            raise ValueError("update_if_owner needs at least one field")
+        if not owner_token:
+            raise ValueError("update_if_owner needs an owner_token")
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        with connection() as conn:
+            cur = conn.execute(
+                f"UPDATE projections SET {sets} WHERE id = ? AND owner_token = ?",
+                [*fields.values(), projection_id, owner_token],
+            )
+            return cur.rowcount > 0
+
+    def fail_orphaned_runs(self, error: str) -> List[str]:
+        """Mark rows left mid-run by a process exit as ``failed``.
+
+        An ``importing`` or ``executing`` row is owned by a background task in
+        this process. If the proxy stops before that task finishes, nothing is
+        left to advance the row: execute refuses it (the status is in flight)
+        and the UI sends no ``force``, so the projection could never be run
+        again. Called once at startup, before any request is served.
+
+        ``graph_id`` is deliberately kept: a graph created by the dead run is
+        still live and billing, and holding the reference is what lets
+        delete-graph remove it. ``deleting`` is left alone - a forced
+        delete-graph can already take that over.
+
+        Returns the ids that were reset.
+        """
+        statuses = (STATUS_IMPORTING, STATUS_EXECUTING)
+        guard = ", ".join("?" for _ in statuses)
+        with connection() as conn:
+            rows = conn.execute(
+                f"SELECT id FROM projections WHERE status IN ({guard})",
+                list(statuses),
+            ).fetchall()
+            ids = [row["id"] for row in rows]
+            if ids:
+                conn.execute(
+                    f"UPDATE projections SET status = ?, error = ? "
+                    f"WHERE status IN ({guard})",
+                    [STATUS_FAILED, error, *statuses],
+                )
+        return ids
+
+    @staticmethod
+    def purge_on(conn, projection_id: str, force: bool = False) -> bool:
+        """Atomically delete a row only if it is safe to purge.
+
+        A single conditional DELETE: the row goes only when no graph is
+        attached and, unless ``force``, the status is not in flight. ``force``
+        relaxes the status check only, never the graph check. Runs on a
+        caller-supplied connection so it can join a larger transaction.
+        """
+        sql = (
+            "DELETE FROM projections WHERE id = ? "
+            "AND (graph_id IS NULL OR graph_id = '')"
+        )
+        params: list = [projection_id]
+        if not force:
+            sql += f" AND status NOT IN ({', '.join('?' for _ in IN_FLIGHT_STATUSES)})"
+            params += list(IN_FLIGHT_STATUSES)
+        return conn.execute(sql, params).rowcount > 0
 
     @staticmethod
     def _row_to_projection(row) -> Projection:
@@ -180,6 +330,7 @@ class ProjectionStore:
             step_label=row["step_label"],
             progress=row["progress"] or 0,
             error=row["error"],
+            owner_token=row["owner_token"],
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 

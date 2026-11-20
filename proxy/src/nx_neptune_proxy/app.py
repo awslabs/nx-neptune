@@ -27,6 +27,7 @@ from nx_neptune_proxy.routers.projection import router as projection_router
 from nx_neptune_proxy.services.db import init_db
 from nx_neptune_proxy.services.project_deletion import delete_project
 from nx_neptune_proxy.services.project_store import store as project_store
+from nx_neptune_proxy.services.projection_service import projection_service
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 settings = get_settings()
@@ -90,10 +91,7 @@ logger = logging.getLogger("nx_neptune_proxy")
 # driver, so this URL is log-visible — an accepted tradeoff for a
 # localhost dev tool; the real boundary is the 127.0.0.1 bind + middlewares.
 _LAUNCH_URL = f"http://127.0.0.1:{settings.port}/?token={get_token()}"
-print(
-    f"\nOpen the proxy UI (token valid for this run only):\n"
-    f"  {_LAUNCH_URL}\n"
-)
+print(f"\nOpen the proxy UI (token valid for this run only):\n" f"  {_LAUNCH_URL}\n")
 log_token_notice()
 
 
@@ -288,6 +286,24 @@ app.include_router(project_io_router, dependencies=[Depends(require_token)])
 
 
 # --- Startup: resume stuck deletions ---
+
+
+@app.on_event("startup")
+async def fail_orphaned_projection_runs():
+    """Release projection rows whose owning background task died with the process.
+
+    Runs before ``resume_pending_deletions`` so a resumed project deletion sees
+    the released rows rather than refusing them as in flight.
+    """
+    ids = projection_service.fail_orphaned_runs(
+        "Import interrupted by a proxy restart. Re-run the projection; "
+        "if a graph was created it is still attached and can be deleted."
+    )
+    if ids:
+        logger.warning(
+            f"Reset {len(ids)} projection(s) left mid-run by a restart: "
+            f"{', '.join(ids)}. Any graph they created is still live and billed."
+        )
 
 
 @app.on_event("startup")

@@ -12,43 +12,103 @@ from nx_neptune.clients.client_factory import ClientFactory
 
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_service import projection_service
+from nx_neptune_proxy.services.projection_store import (
+    STATUS_DELETING,
+    STATUS_EXECUTING,
+    STATUS_IMPORTING,
+)
 
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 10
 TIMEOUT = 600  # 10 min max wait per graph
+_RUNNING = frozenset({STATUS_IMPORTING, STATUS_EXECUTING})
 
 
-async def delete_project(project_id: str) -> None:
-    """Delete all graphs for a project's projections, then remove records."""
+async def delete_project(project_id: str, force: bool = False) -> None:
+    """Delete a project's projections (and their graphs), then the project.
+
+    Each child is claimed atomically (``deleting``) before its graph is
+    touched; a child running an import/execute is retained unless ``force``.
+    Rows are removed only through the guarded ``purge``.
+    """
     projections = projection_service.list_by_project(project_id)
+    refuse = frozenset() if force else _RUNNING
 
-    # Delete all graphs in parallel
-    graphs_to_delete = [p for p in projections if p.graph_id]
+    claimed = []
+    retained_busy = False
+    for p in projections:
+        if projection_service.try_transition(p.id, STATUS_DELETING, refuse_when=refuse):
+            claimed.append(p)
+        elif projection_service.get(p.id) is not None:
+            retained_busy = True
+
+    with_graph = [p for p in claimed if p.graph_id]
     results = await asyncio.gather(
-        *[_delete_graph(p.graph_id) for p in graphs_to_delete],  # type: ignore[arg-type]
+        *[_delete_graph(p.graph_id) for p in with_graph],  # type: ignore[arg-type]
         return_exceptions=True,
     )
-
-    # Only delete projection records where graph deletion succeeded
     failed_ids = set()
-    for p, result in zip(graphs_to_delete, results):
-        if isinstance(result, Exception):
+    for p, result in zip(with_graph, results):
+        # BaseException, not Exception: gather(return_exceptions=True) can hand
+        # back a CancelledError, which must count as a failed deletion so the
+        # graph reference is kept.
+        if isinstance(result, BaseException):
             logger.warning(
                 f"Failed to delete graph {p.graph_id} for projection {p.id}: {result}"
             )
             failed_ids.add(p.id)
+        else:
+            projection_service.update(p.id, graph_id=None, graph_endpoint=None)
 
-    for p in projections:
-        if p.id not in failed_ids:
-            projection_service.delete(p.id)
+    # Re-read before purging. A forced delete can claim a child that was
+    # mid-import with no graph recorded yet; that run's `_record_graph` then
+    # writes a graph_id while this job is awaiting a sibling's delete. The purge
+    # would refuse the row on its graph_id condition, the project would fall back
+    # to `active`, and that graph would keep billing with nobody looking at it.
+    # So pick up any graph recorded since the claim and delete it too.
+    late_graphs = []
+    for p in claimed:
+        if p.id in failed_ids:
+            continue
+        current = projection_service.get(p.id)
+        if current is not None and current.graph_id and not p.graph_id:
+            late_graphs.append(current)
 
-    # Only delete the project if all graphs were cleaned up
+    if late_graphs:
+        logger.warning(
+            f"Project {project_id}: {len(late_graphs)} projection(s) recorded a "
+            "graph after being claimed for deletion; deleting those too"
+        )
+        late_results = await asyncio.gather(
+            *[_delete_graph(p.graph_id) for p in late_graphs],  # type: ignore[arg-type]
+            return_exceptions=True,
+        )
+        for p, result in zip(late_graphs, late_results):
+            if isinstance(result, BaseException):
+                logger.warning(
+                    f"Failed to delete late-recorded graph {p.graph_id} for "
+                    f"projection {p.id}: {result}"
+                )
+                failed_ids.add(p.id)
+            else:
+                projection_service.update(p.id, graph_id=None, graph_endpoint=None)
+
+    # The claim holds the row (`deleting`) and graph_id is clear, so forcing the
+    # purge is safe; the graph_id condition still protects a failed deletion.
+    for p in claimed:
+        if p.id not in failed_ids and not projection_service.purge(p.id, force=True):
+            retained_busy = True
+
     if failed_ids:
         logger.warning(
             f"Project {project_id} has {len(failed_ids)} projection(s) "
             "with failed graph deletion, keeping project in deleting state"
         )
+        return
+    if retained_busy:
+        logger.warning(f"Project {project_id} kept: a projection could not be removed")
+        project_store.update(project_id, status="active")
         return
 
     project_store.delete(project_id)
@@ -61,9 +121,16 @@ async def _delete_graph(graph_id: str) -> None:
     try:
         client.delete_graph(graphIdentifier=graph_id, skipSnapshot=True)
     except ClientError as e:
-        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+        code = e.response["Error"]["Code"]
+        if code == "ResourceNotFoundException":
             return
-        raise
+        # A ConflictException means a delete is already under way - the usual
+        # case when a forced retry re-enters a project whose first attempt
+        # started the delete and then failed later. The graph is still going
+        # away, so poll it out rather than counting this as a failure and
+        # parking the project in `deleting` again.
+        if code != "ConflictException":
+            raise
 
     start = time.time()
     while time.time() - start < TIMEOUT:
@@ -74,4 +141,6 @@ async def _delete_graph(graph_id: str) -> None:
             if e.response["Error"]["Code"] == "ResourceNotFoundException":
                 return
             raise
-    logger.warning(f"Timeout waiting for graph {graph_id} deletion")
+    # Raising lets the caller count this as a failed deletion: the graph may
+    # still be live, so its reference must be kept for the resume to retry.
+    raise TimeoutError(f"Timeout waiting for graph {graph_id} deletion")

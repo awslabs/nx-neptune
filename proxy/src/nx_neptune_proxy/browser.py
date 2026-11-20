@@ -46,10 +46,10 @@ def _write_redirect_page(url: str) -> Path:
     escaped = html.escape(url, quote=True)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(
-            "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
-            f"<meta http-equiv=\"refresh\" content=\"0;url={escaped}\">"
+            '<!DOCTYPE html><html><head><meta charset="utf-8">'
+            f'<meta http-equiv="refresh" content="0;url={escaped}">'
             "<title>nx-neptune proxy</title></head>"
-            f"<body><a href=\"{escaped}\">Open the nx-neptune proxy UI</a></body></html>"
+            f'<body><a href="{escaped}">Open the nx-neptune proxy UI</a></body></html>'
         )
     path = Path(name)
     atexit.register(path.unlink, missing_ok=True)
@@ -84,7 +84,9 @@ def _open_when_ready(url: str, host: str, port: int) -> None:
             return
         logger.info("No browser available; open the launch URL printed above.")
     except Exception as exc:
-        logger.info(f"Could not open a browser ({exc!r}); open the launch URL printed above.")
+        logger.info(
+            f"Could not open a browser ({exc!r}); open the launch URL printed above."
+        )
     if page is not None:
         _remove(page)
 

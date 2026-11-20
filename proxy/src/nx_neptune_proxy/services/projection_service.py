@@ -18,15 +18,17 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from .projection_store import Projection, store as projection_store
-from .query_store import EdgeQuery, NodeQuery, query_store
-from .db import connection
 from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune.property_graph import (
     AthenaTableMetadata,
     parse_property_graph,
     property_graph_to_sql,
 )
+
+from .db import connection
+from .projection_store import IN_FLIGHT_STATUSES, Projection
+from .projection_store import store as projection_store
+from .query_store import EdgeQuery, NodeQuery, query_store
 
 
 class ProjectionNotFound(Exception):
@@ -63,16 +65,61 @@ class ProjectionService:
     def update(self, projection_id: str, **data) -> Optional[Projection]:
         return projection_store.update(projection_id, **data)
 
-    def delete(self, projection_id: str) -> bool:
-        """Delete a projection and its associated node/edge queries atomically.
+    def try_transition(
+        self,
+        projection_id: str,
+        to_status: str,
+        refuse_when: frozenset = IN_FLIGHT_STATUSES,
+        owner_token: Optional[str] = None,
+        **data,
+    ) -> bool:
+        """Atomic claim: see ``ProjectionStore.try_transition``.
 
-        All deletes run in a single transaction so a crash mid-sequence cannot
-        leave a partial state. Child queries are removed explicitly (rather than
-        relying solely on the ON DELETE CASCADE) as defense-in-depth.
+        Rotates the row's owner token. Pass ``owner_token`` when the caller
+        intends to keep writing to the row after the claim.
+        """
+        return projection_store.try_transition(
+            projection_id, to_status, refuse_when, owner_token, **data
+        )
+
+    def try_transition_if_graph(
+        self,
+        projection_id: str,
+        to_status: str,
+        expected_graph_id: Optional[str],
+        refuse_when: frozenset = IN_FLIGHT_STATUSES,
+        owner_token: Optional[str] = None,
+        **data,
+    ) -> bool:
+        """Claim that also pins ``graph_id``: see ``ProjectionStore``."""
+        return projection_store.try_transition_if_graph(
+            projection_id,
+            to_status,
+            expected_graph_id,
+            refuse_when,
+            owner_token,
+            **data,
+        )
+
+    def update_if_owner(self, projection_id: str, owner_token: str, **data) -> bool:
+        """Conditional write for a run that may have lost its row: see store."""
+        return projection_store.update_if_owner(projection_id, owner_token, **data)
+
+    def fail_orphaned_runs(self, error: str) -> List[str]:
+        """Reset rows left mid-run by a restart: see ``ProjectionStore``."""
+        return projection_store.fail_orphaned_runs(error)
+
+    def purge(self, projection_id: str, force: bool = False) -> bool:
+        """Atomically delete a projection and its queries if safe to purge.
+
+        Returns False (and removes nothing) when the row is missing, has a
+        graph attached, or is in flight without ``force``.
         """
         with connection() as conn:
+            if not projection_store.purge_on(conn, projection_id, force):
+                return False
             query_store.delete_node_and_edge_queries_on(conn, projection_id)
-            return projection_store.delete_on(conn, projection_id)
+            return True
 
     # --- Queries (child of a projection) ---
 

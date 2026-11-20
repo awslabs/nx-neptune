@@ -58,7 +58,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || `Request failed: ${res.status}`);
+    // `message` is the sanitized shape the AWS error handler returns; `detail`
+    // is what FastAPI's HTTPException returns. Reading only `message` meant
+    // every guard that raises HTTPException surfaced as a bare status code.
+    throw new Error(body.message || body.detail || `Request failed: ${res.status}`);
   }
   if (res.status === 204) return undefined as T;
   return res.json();
