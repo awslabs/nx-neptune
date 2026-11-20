@@ -122,6 +122,7 @@ aws cloudformation deploy \
 | GraphId | Neptune Analytics graph ID |
 | NotebookURL | SageMaker notebook URL |
 | StagingBucketName | S3 bucket for import/export, datasets, Athena results, and general use |
+| ImportRoleArn | Role Neptune Analytics assumes for S3 import and export. Its trust is unconditioned because the service does not satisfy `aws:SourceAccount` or `aws:SourceArn` |
 
 ```bash
 aws cloudformation describe-stacks --stack-name nx-neptune-demo --query 'Stacks[0].Outputs'
@@ -160,3 +161,124 @@ aws cloudformation wait stack-delete-complete --stack-name nx-neptune-demo
 - The Neptune Analytics graph takes ~5–10 minutes to create
 - Environment variables are set via `jupyter_notebook_config.py` and require a notebook stop/start to update
 - On every notebook stop/start, `OnStart` re-installs `nx_neptune` (from the `.whl` if provided, otherwise PyPI)
+
+### Neptune Analytics import role trust policy
+
+Neptune Analytics assumes an IAM role to read S3 for imports and write it for exports. This
+template provides a dedicated role for that, `ImportRole`, exported as the `ImportRoleArn`
+output and set in the notebook as `NETWORKX_S3_IAM_ROLE_ARN`. It exists because of the
+measurement below.
+
+**`ImportRole` covers the NetworkX backend only.** It takes effect where the library reads
+`NETWORKX_S3_IAM_ROLE_ARN`. `SessionManager` does not read it: it resolves its import role from
+the STS caller identity and passes that to `StartImportTask`, so on this stack it passes
+`NotebookRole` — whose `neptune-graph` trust keeps the conditioned statement, and is therefore
+rejected for exactly the reason measured below. `SessionManager`-driven imports on this stack
+are not expected to work until it can be pointed at a separate import role; that is tracked
+separately and is not addressed here.
+
+#### What was measured
+
+On 2026-11-11, in `us-east-1`, against a 16 m-NCU graph, via `StartImportTask`, one throwaway
+role per form, one run each:
+
+| Trust condition on the `neptune-graph.amazonaws.com` principal | Result |
+| --- | --- |
+| `StringEquals aws:SourceAccount` | rejected |
+| `ArnLike aws:SourceArn …:neptune-graph:<region>:<acct>:graph/*` | rejected |
+| `ArnLike aws:SourceArn …:neptune-graph:<region>:<acct>:*` | rejected |
+| both of the above together | rejected |
+| no condition | accepted, import succeeded |
+
+Every rejection returned the same message, which names S3 and not trust:
+
+```
+ValidationException: The S3 arn s3://<bucket>/<prefix>/ is inaccessible or your role
+does not have access to it.
+```
+
+The accepted run used the same bucket, the same S3 read policy and the same IAM propagation
+delay as the rejected ones, so the trust condition was the only variable that changed.
+
+**What this does and does not establish.** It establishes that these four conditioned forms
+were rejected and that an unconditioned one was accepted, under those conditions. It does not
+establish *why*: the natural reading is that the service does not supply those context keys, but
+this was one run per form, in one region, through one API, and the conditioned roles produced no
+`AssumeRole` events in CloudTrail at all — which fits a rejection before any assume attempt just
+as well as a condition that failed to match. Other operators and ARN shapes were not tried. If
+you need certainty for your own threat model, re-run it (below) rather than relying on this.
+
+#### Why `ImportRole` has no trust condition, and why that is contained
+
+An `aws:SourceAccount` or `aws:SourceArn` condition is the usual confused-deputy protection for
+a service principal, and `ImportRole` does not have one, because with one it cannot do its job.
+The protection is replaced by making the role not worth confusing: its only permissions are
+`s3:GetObject`, `s3:ListBucket`, `s3:PutObject` and `s3:DeleteObject` on this stack's staging
+bucket, and `kms:Decrypt`/`GenerateDataKey`/`DescribeKey` on that bucket's key. No Neptune
+actions, no Glue, no logs, no SageMaker. Anything that managed to have the service assume it
+could read, write and delete objects in one bucket.
+
+`s3:DeleteObject` is there because the export preflight
+(`has_export_to_s3_permissions`) simulates it, and export is how the demo notebook gets data
+into the bucket in the first place; `tests/cloudformation/test_import_role_policy.py` pins the
+whole set against what the preflights check.
+
+**What is not established: cross-account containment.** The reasoning above is about blast
+radius, not about who can trigger it. The role's ARN is a stack output and its name is
+predictable, and without a source condition the only thing stopping another account from naming
+it in its own `StartImportTask`/`StartExportTask` is Neptune Analytics refusing a role it was
+not passed legitimately. That refusal has **not been tested here**, and the bucket it guards
+also holds Athena results and any datasets staged in it.
+
+Narrowing the grants to a fixed set of prefixes is the obvious mitigation, and it does not work
+today, for two independent reasons:
+
+- The proxy stages each import under its own `<staging-bucket>/<projection-id>/` prefix, where
+  the id is a UUID generated per projection. A grant limited to `import/`, `export/` and
+  `athena-results/` would refuse those writes and break the proxy's import pipeline.
+- An `s3:prefix` condition on `ListBucket` makes the permission preflight report the policy as
+  insufficient, because the simulation sends no context keys for the condition to match.
+
+So the options are a bucket dedicated to this stack — which is what `StagingBucket` is — or a
+per-prefix scheme that the proxy and the preflight both understand. If cross-account exposure
+matters for your threat model, run `StartImportTask` and `StartExportTask` with this role's ARN
+from a second account and confirm they are refused before relying on the stack.
+
+`NotebookRole` is deliberately **not** changed. It keeps its conditioned `neptune-graph`
+statement, which means it still cannot be used for import — but it also holds Neptune
+administration, Glue table writes and broader S3 access, and an unconditioned service trust on
+a role that powerful is a much larger grant than the same trust on `ImportRole`.
+
+Note the key-policy asymmetry: the staging bucket's KMS key names `NotebookRole` explicitly but
+not `ImportRole`. `ImportRole` reaches the key through the key policy's `AllowRootAccount`
+statement, which delegates to IAM. Naming it explicitly is not possible — the key policy would
+depend on `ImportRole` while `ImportRole`'s policy already depends on the key, and CloudFormation
+rejects that as circular. `NotebookRole` can be named only because its permissions live in the
+separate `NeptuneAccessPolicy` rather than inline.
+
+See also the import-role requirements in the Getting Started prerequisites, which document the
+same unconditioned-trust requirement for roles you build yourself.
+
+#### To re-measure
+
+The measurement lives in `deployment_test/`, not `integ_test/`: the latter exercises the Python
+library against AWS resources, while this checks the behaviour of what the template deploys. It
+has its own make target, so a routine `make integ-test` cannot trigger it.
+
+It still needs an explicit `NX_RUN_TRUST_MEASUREMENT=1` on top of `NETWORKX_GRAPH_ID` and
+`NETWORKX_S3_EXPORT_BUCKET_PATH`, and is skipped without it, because it creates and deletes
+throwaway IAM roles prefixed `nxn-trusttest-`, starts real imports, and adds data to the graph
+without resetting it. Point it at a disposable graph:
+
+```bash
+NETWORKX_GRAPH_ID=g-xxxxx NETWORKX_S3_EXPORT_BUCKET_PATH=s3://<bucket>/<prefix>/ \
+  make deployment-test
+```
+
+The export case writes to a sibling prefix, `<prefix>-trust-export-<run-id>/`, so that its own
+output is never fed back into a later import, and empties it afterwards on a best-effort basis.
+
+It records a verdict per form and asserts nothing about which one passes, so a green run is not
+a result — read the per-form summary it prints. The IAM propagation wait is
+`NX_TRUST_TEST_IAM_WAIT_SECONDS` (default 20 seconds); raise it if a form is rejected
+unexpectedly, since too short a wait looks the same as a refused trust.
