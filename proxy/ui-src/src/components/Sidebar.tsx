@@ -184,7 +184,17 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                           onClick={async (e) => {
                             e.stopPropagation();
                             if (!confirm(`Delete project "${proj.name}" and all its graphs? This cannot be undone.`)) return;
-                            await projectApi.delete(proj.id);
+                            try {
+                              await projectApi.delete(proj.id);
+                            } catch (err) {
+                              // The delete is refused with 409 while a child is
+                              // importing. Without this the rejection was
+                              // unhandled: nothing was shown and the list was
+                              // never reloaded, so the project looked stuck.
+                              alert(err instanceof Error ? err.message : "Could not delete project");
+                              loadProjects();
+                              return;
+                            }
                             loadProjects();
                             if (location.search.includes(proj.id)) navigate("/");
                           }}

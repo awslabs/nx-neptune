@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-
 from nx_neptune.property_graph import PropertyGraphSyntaxError
+
 from nx_neptune_proxy.app import app
 from nx_neptune_proxy.auth import get_token
 from nx_neptune_proxy.services.db import connection
@@ -76,10 +76,13 @@ async def test_translate_splits_vertex_and_edge_queries(client):
 
             return [Column(n, t) for n, t in columns[".".join(table).lower()]]
 
-    with patch(
-        "nx_neptune_proxy.services.projection_service.AthenaTableMetadata",
-        FakeMetadata,
-    ), patch("nx_neptune_proxy.services.projection_service.ClientFactory"):
+    with (
+        patch(
+            "nx_neptune_proxy.services.projection_service.AthenaTableMetadata",
+            FakeMetadata,
+        ),
+        patch("nx_neptune_proxy.services.projection_service.ClientFactory"),
+    ):
         resp = await client.post(
             f"/api/v0/projection/{pid}/translate",
             json={"property_graph": ddl},

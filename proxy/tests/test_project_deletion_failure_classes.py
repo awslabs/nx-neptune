@@ -217,3 +217,58 @@ async def test_force_restarts_the_job_for_a_project_parked_in_deleting(client):
     assert retry.status_code == 202
     assert store.get(child.id) is None
     assert project_store.get(project.id) is None
+
+
+@pytest.mark.asyncio
+async def test_a_graph_recorded_after_the_claim_is_still_deleted():
+    """A forced delete can claim a child that has no graph yet.
+
+    That child's import then records a graph_id while this job awaits a
+    sibling's delete. Purge refuses the row on its graph_id condition, the
+    project falls back to `active`, and the graph bills with nobody watching.
+    """
+    project = project_store.create(name="P")
+    project_store.update(project.id, status="deleting")
+    child = _child(project.id)  # claimed with no graph recorded
+    other = _child(project.id, graph_id="g-sibling")
+
+    real_delete = project_deletion._delete_graph
+    deleted = []
+
+    async def delete(graph_id):
+        deleted.append(graph_id)
+        # While the sibling's delete is in flight, the child's import lands.
+        if graph_id == "g-sibling":
+            store.update(child.id, graph_id="g-late")
+        return await real_delete(graph_id) if False else None
+
+    with patch.object(project_deletion, "_delete_graph", AsyncMock(side_effect=delete)):
+        await delete_project(project.id, force=True)
+
+    assert "g-late" in deleted, "the late-recorded graph was left billing"
+    assert store.get(child.id) is None
+    assert store.get(other.id) is None
+    assert project_store.get(project.id) is None
+
+
+@pytest.mark.asyncio
+async def test_a_failed_late_delete_keeps_the_child_and_project():
+    project = project_store.create(name="P")
+    project_store.update(project.id, status="deleting")
+    child = _child(project.id)
+    _child(project.id, graph_id="g-sibling")
+
+    async def delete(graph_id):
+        if graph_id == "g-sibling":
+            store.update(child.id, graph_id="g-late")
+            return None
+        raise ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "no"}}, "DeleteGraph"
+        )
+
+    with patch.object(project_deletion, "_delete_graph", AsyncMock(side_effect=delete)):
+        await delete_project(project.id, force=True)
+
+    kept = store.get(child.id)
+    assert kept is not None and kept.graph_id == "g-late"
+    assert project_store.get(project.id).status == "deleting"

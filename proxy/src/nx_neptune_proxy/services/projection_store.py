@@ -64,6 +64,8 @@ class Projection:
     step_label: Optional[str] = None
     progress: float = 0
     error: Optional[str] = None
+    # Which run owns the row. Rotated by every claim; see try_transition.
+    owner_token: Optional[str] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -142,6 +144,7 @@ class ProjectionStore:
         "step_label",
         "progress",
         "error",
+        "owner_token",
     }
 
     def update(self, projection_id: str, **kwargs) -> Optional[Projection]:
@@ -161,6 +164,7 @@ class ProjectionStore:
         projection_id: str,
         to_status: str,
         refuse_when: frozenset = IN_FLIGHT_STATUSES,
+        owner_token: Optional[str] = None,
         **fields,
     ) -> bool:
         """Atomically set ``status`` unless it is currently in ``refuse_when``.
@@ -168,11 +172,23 @@ class ProjectionStore:
         A single compare-and-set UPDATE, so concurrent callers cannot both win.
         Extra ``fields`` are written in the same statement. Returns True if the
         row was claimed, False if it is missing or in a refused status.
+
+        **Every claim rotates ``owner_token``.** A status change is a new
+        ownership epoch, and that is what lets a previous owner's later writes
+        be rejected: matching on status alone cannot tell "still my run" from
+        "a different run that reached the same status". A caller that intends
+        to keep writing passes its own ``owner_token`` so it knows the value it
+        now holds; otherwise a fresh one is generated and the old owner is
+        simply locked out.
         """
         invalid = set(fields) - self._ALLOWED_UPDATE_COLUMNS
         if invalid:
             raise ValueError(f"Invalid column(s): {invalid}")
-        columns = {"status": to_status, **fields}
+        columns = {
+            "status": to_status,
+            "owner_token": owner_token or str(uuid.uuid4()),
+            **fields,
+        }
         sets = ", ".join(f"{k} = ?" for k in columns)
         guard = ", ".join("?" for _ in refuse_when)
         with connection() as conn:
@@ -182,28 +198,64 @@ class ProjectionStore:
             )
             return cur.rowcount > 0
 
-    def update_if_status(
-        self, projection_id: str, expected: frozenset, **fields
+    def try_transition_if_graph(
+        self,
+        projection_id: str,
+        to_status: str,
+        expected_graph_id: Optional[str],
+        refuse_when: frozenset = IN_FLIGHT_STATUSES,
+        owner_token: Optional[str] = None,
+        **fields,
     ) -> bool:
-        """Write ``fields`` only while the row is still in one of ``expected``.
+        """``try_transition``, additionally requiring ``graph_id`` to be unchanged.
 
-        The write half of a claim. ``update`` is unconditional, so a background
-        task that no longer owns its row - purged by a forced delete, or
-        re-claimed by another operation - would either write nothing silently
-        or overwrite the new owner's status. Returns True if the row was still
-        ours and the write landed.
+        For a caller that read ``graph_id``, decided something about that graph,
+        and now wants to act on the row. With ``force`` the status guard is
+        dropped, so the status alone cannot rule out an in-flight run having
+        recorded a *different* graph in the meantime — clearing the reference
+        then would orphan a live, billing graph.
+        """
+        invalid = set(fields) - self._ALLOWED_UPDATE_COLUMNS
+        if invalid:
+            raise ValueError(f"Invalid column(s): {invalid}")
+        columns = {
+            "status": to_status,
+            "owner_token": owner_token or str(uuid.uuid4()),
+            **fields,
+        }
+        sets = ", ".join(f"{k} = ?" for k in columns)
+        guard = ", ".join("?" for _ in refuse_when)
+        with connection() as conn:
+            cur = conn.execute(
+                f"UPDATE projections SET {sets} WHERE id = ? "
+                f"AND status NOT IN ({guard}) AND graph_id IS ?",
+                [*columns.values(), projection_id, *refuse_when, expected_graph_id],
+            )
+            return cur.rowcount > 0
+
+    def update_if_owner(self, projection_id: str, owner_token: str, **fields) -> bool:
+        """Write ``fields`` only while ``owner_token`` still owns the row.
+
+        The write half of a claim. ``update`` is unconditional, and matching on
+        status is not enough: a run that was taken over and then re-claimed by a
+        *new* run reaches the same status again, so the stale run's writes would
+        land on the new run's row and mark it complete or failed underneath it.
+        The token is rotated by every claim, so it distinguishes the two.
+
+        Returns True if the row was still ours and the write landed.
         """
         invalid = set(fields) - self._ALLOWED_UPDATE_COLUMNS
         if invalid:
             raise ValueError(f"Invalid column(s): {invalid}")
         if not fields:
-            raise ValueError("update_if_status needs at least one field")
+            raise ValueError("update_if_owner needs at least one field")
+        if not owner_token:
+            raise ValueError("update_if_owner needs an owner_token")
         sets = ", ".join(f"{k} = ?" for k in fields)
-        guard = ", ".join("?" for _ in expected)
         with connection() as conn:
             cur = conn.execute(
-                f"UPDATE projections SET {sets} WHERE id = ? AND status IN ({guard})",
-                [*fields.values(), projection_id, *expected],
+                f"UPDATE projections SET {sets} WHERE id = ? AND owner_token = ?",
+                [*fields.values(), projection_id, owner_token],
             )
             return cur.rowcount > 0
 
@@ -278,6 +330,7 @@ class ProjectionStore:
             step_label=row["step_label"],
             progress=row["progress"] or 0,
             error=row["error"],
+            owner_token=row["owner_token"],
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 

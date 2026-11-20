@@ -61,6 +61,39 @@ async def delete_project(project_id: str, force: bool = False) -> None:
         else:
             projection_service.update(p.id, graph_id=None, graph_endpoint=None)
 
+    # Re-read before purging. A forced delete can claim a child that was
+    # mid-import with no graph recorded yet; that run's `_record_graph` then
+    # writes a graph_id while this job is awaiting a sibling's delete. The purge
+    # would refuse the row on its graph_id condition, the project would fall back
+    # to `active`, and that graph would keep billing with nobody looking at it.
+    # So pick up any graph recorded since the claim and delete it too.
+    late_graphs = []
+    for p in claimed:
+        if p.id in failed_ids:
+            continue
+        current = projection_service.get(p.id)
+        if current is not None and current.graph_id and not p.graph_id:
+            late_graphs.append(current)
+
+    if late_graphs:
+        logger.warning(
+            f"Project {project_id}: {len(late_graphs)} projection(s) recorded a "
+            "graph after being claimed for deletion; deleting those too"
+        )
+        late_results = await asyncio.gather(
+            *[_delete_graph(p.graph_id) for p in late_graphs],  # type: ignore[arg-type]
+            return_exceptions=True,
+        )
+        for p, result in zip(late_graphs, late_results):
+            if isinstance(result, BaseException):
+                logger.warning(
+                    f"Failed to delete late-recorded graph {p.graph_id} for "
+                    f"projection {p.id}: {result}"
+                )
+                failed_ids.add(p.id)
+            else:
+                projection_service.update(p.id, graph_id=None, graph_endpoint=None)
+
     # The claim holds the row (`deleting`) and graph_id is clear, so forcing the
     # purge is safe; the graph_id condition still protects a failed deletion.
     for p in claimed:
