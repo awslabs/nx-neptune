@@ -188,10 +188,15 @@ This policy combines graph management, S3 import/export, Athena, the import role
       "Resource": "*"
     },
     {
-      "Sid": "NeptuneAnalytics",
+      "Sid": "NeptuneAnalyticsList",
+      "Effect": "Allow",
+      "Action": "neptune-graph:ListGraphs",
+      "Resource": "*"
+    },
+    {
+      "Sid": "NeptuneAnalyticsGraphs",
       "Effect": "Allow",
       "Action": [
-        "neptune-graph:ListGraphs",
         "neptune-graph:CreateGraph",
         "neptune-graph:CreateGraphUsingImportTask",
         "neptune-graph:GetGraph",
@@ -201,16 +206,26 @@ This policy combines graph management, S3 import/export, Athena, the import role
         "neptune-graph:StopGraph",
         "neptune-graph:DeleteGraph",
         "neptune-graph:TagResource",
-        "neptune-graph:CreateGraphSnapshot",
-        "neptune-graph:GetGraphSnapshot",
-        "neptune-graph:RestoreGraphFromSnapshot",
-        "neptune-graph:DeleteGraphSnapshot",
         "neptune-graph:StartImportTask",
         "neptune-graph:GetImportTask",
         "neptune-graph:StartExportTask",
         "neptune-graph:GetExportTask"
       ],
-      "Resource": "*"
+      "Resource": "arn:aws:neptune-graph:<region>:<account-id>:graph/*"
+    },
+    {
+      "Sid": "NeptuneAnalyticsSnapshots",
+      "Effect": "Allow",
+      "Action": [
+        "neptune-graph:CreateGraphSnapshot",
+        "neptune-graph:GetGraphSnapshot",
+        "neptune-graph:RestoreGraphFromSnapshot",
+        "neptune-graph:DeleteGraphSnapshot"
+      ],
+      "Resource": [
+        "arn:aws:neptune-graph:<region>:<account-id>:graph/*",
+        "arn:aws:neptune-graph:<region>:<account-id>:graph-snapshot/*"
+      ]
     },
     {
       "Sid": "NeptuneAnalyticsTaggedGraphs",
@@ -313,13 +328,18 @@ This policy combines graph management, S3 import/export, Athena, the import role
 
 `athena:ListDataCatalogs` and `s3:ListAllMyBuckets` don't support resource-level permissions, so they use `"*"`. With the Glue statement limited to your databases, the proxy UI lists only those databases, and validation fails early for tables in others. The import role also needs the trust statement in [Import role](#import-role), and read access to your source tables' buckets isn't included.
 
-Before an operation, nx-neptune checks that you hold the `neptune-graph` actions it needs, testing them against the resource `"*"`. An action scoped to a graph ARN is reported as insufficient, so exactly these nine actions need `"*"` in the `NeptuneAnalytics` statement:
+Before an operation, nx-neptune checks that you hold the `neptune-graph` actions it needs. It simulates each one against the resource ARN IAM evaluates for the real request, in your own account and region:
 
-`CreateGraph`, `DeleteGraph`, `UpdateGraph`, `StartGraph`, `StopGraph`, `TagResource`, `CreateGraphSnapshot`, `RestoreGraphFromSnapshot` and `DeleteGraphSnapshot`.
+| Actions checked | Simulated against |
+|---|---|
+| `CreateGraph`, `DeleteGraph`, `UpdateGraph`, `StartGraph`, `StopGraph`, `TagResource` | `arn:aws:neptune-graph:<region>:<account-id>:graph/*` |
+| `CreateGraphSnapshot`, `RestoreGraphFromSnapshot`, `DeleteGraphSnapshot` | `arn:aws:neptune-graph:<region>:<account-id>:graph-snapshot/*` |
 
-Nothing else is simulated. The import, export and query actions are **not** checked, so they can stay scoped to a graph ARN — `"*"` on those buys nothing. This is tracked in [awslabs/nx-neptune#576](https://github.com/awslabs/nx-neptune/issues/576).
+A grant on those ARNs passes the check — `"*"` is not required for any of them. Only `neptune-graph:ListGraphs` needs `"*"`, because list actions don't support resource-level permissions.
 
-Be aware that `"*"` is account-wide: `DeleteGraph`, `StopGraph` and `DeleteGraphSnapshot` at `"*"` let the principal act on every graph and snapshot in the account, not only the ones nx-neptune created. `ResetGraph` deserves particular care — it erases a graph's data, and it is **not** one of the nine checked actions, so there is no reason to widen it to `"*"`; keep it scoped to the graphs you intend to reset. Until #576 is resolved the nine checked actions can't pass with a narrower resource, so grant those to a role you trust with that scope.
+Those nine are the only actions simulated. `ResetGraph`, the import/export task actions and the query actions are **not** checked, so scope them as tightly as you like; the example above puts them on `graph/*`.
+
+Two things to keep in mind when scoping. `graph/*` is still every graph in that account and region, not only the ones nx-neptune created, so `DeleteGraph`, `StopGraph` and especially `ResetGraph` — which erases a graph's data — reach graphs you may not have meant to include. And a grant pinned to a *single* graph ARN will not pass, since the simulation uses the `/*` form above; narrower than that has to wait for the per-action resource-type work.
 
 When that check fails, the operation stops with an error. To see which operations your role can run without attempting them, call `instance_management.validate_permissions()`, which reports `False` for each operation that fails the check.
 
