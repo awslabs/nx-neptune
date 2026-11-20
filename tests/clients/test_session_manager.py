@@ -11,11 +11,14 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 import asyncio
+import inspect
 import logging
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import networkx as nx
 import pytest
+from botocore.exceptions import ClientError
 
 from nx_neptune.session_manager import (
     CleanupTask,
@@ -1595,3 +1598,322 @@ class TestAsyncExitCancellationReachesTheCaller:
                             pass
 
         assert any("CancelledError" in r.getMessage() for r in caplog.records)
+
+
+CALLER_ARN = "arn:aws:iam::123456789012:user/caller"
+IMPORT_ROLE_ARN = "arn:aws:iam::123456789012:role/ImportRole"
+ENV_ROLE_ARN = "arn:aws:iam::123456789012:role/EnvRole"
+S3_LOCATION = "s3://test-bucket/data/"
+
+
+def _boto3_clients():
+    """Build per-service mock boto3 clients; STS identifies a caller distinct from the import role."""
+    sts, iam, other = MagicMock(), MagicMock(), MagicMock()
+    sts.get_caller_identity.return_value = {"Arn": CALLER_ARN}
+    by_service = {"sts": sts, "iam": iam}
+
+    def factory(*args, **kwargs):
+        return by_service.get(
+            kwargs.get("service_name", args[0] if args else None), other
+        )
+
+    return factory, sts, iam
+
+
+@pytest.fixture
+def role_env(monkeypatch):
+    """Isolate role resolution from the ambient environment and NetworkX backend config."""
+    import nx_neptune.na_graph as na_graph
+
+    monkeypatch.setattr(na_graph, "NETWORKX_S3_IAM_ROLE_ARN", None)
+    monkeypatch.setattr(nx.config.backends.neptune, "s3_iam_role", None)
+
+    def set_env(value):
+        monkeypatch.setattr(na_graph, "NETWORKX_S3_IAM_ROLE_ARN", value)
+
+    return set_env
+
+
+def _role_of(sm):
+    return sm._s3_iam_role
+
+
+class TestSessionManagerImportRole:
+    """Import role resolution and use (session-import-role spec)."""
+
+    def test_import_role_arn_is_last_parameter_of_init_and_session(self):
+        """Adding import_role_arn must not shift positional callers."""
+        for fn in (SessionManager.__init__, SessionManager.session):
+            params = [p for p in inspect.signature(fn).parameters if p != "self"]
+            assert params[-1] == "import_role_arn"
+            assert params[:2] == ["session_name", "cleanup_task"]
+
+    @patch("boto3.client")
+    def test_explicit_argument_beats_caller_identity(self, mock_boto3, role_env):
+        factory, sts, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+
+        sm = SessionManager(session_name="s", import_role_arn=IMPORT_ROLE_ARN)
+
+        assert _role_of(sm) == IMPORT_ROLE_ARN
+        assert _role_of(sm) != CALLER_ARN
+
+    @patch("boto3.client")
+    def test_session_classmethod_passes_import_role_arn(self, mock_boto3, role_env):
+        factory, _, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+
+        sm = SessionManager.session("s", import_role_arn=IMPORT_ROLE_ARN)
+
+        assert _role_of(sm) == IMPORT_ROLE_ARN
+
+    @patch("boto3.client")
+    def test_environment_variable_used_when_no_argument(self, mock_boto3, role_env):
+        factory, _, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+        role_env(ENV_ROLE_ARN)
+
+        sm = SessionManager(session_name="s")
+
+        assert _role_of(sm) == ENV_ROLE_ARN
+
+    @patch("boto3.client")
+    def test_argument_beats_environment_variable(self, mock_boto3, role_env):
+        factory, _, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+        role_env(ENV_ROLE_ARN)
+
+        sm = SessionManager(session_name="s", import_role_arn=IMPORT_ROLE_ARN)
+
+        assert _role_of(sm) == IMPORT_ROLE_ARN
+
+    @patch("boto3.client")
+    def test_configured_s3_iam_role_used_when_no_argument(
+        self, mock_boto3, role_env, monkeypatch
+    ):
+        factory, _, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+        monkeypatch.setattr(nx.config.backends.neptune, "s3_iam_role", ENV_ROLE_ARN)
+
+        sm = SessionManager(session_name="s")
+
+        assert _role_of(sm) == ENV_ROLE_ARN
+
+    @patch("boto3.client")
+    def test_falls_back_to_caller_identity(self, mock_boto3, role_env):
+        factory, sts, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+
+        sm = SessionManager(session_name="s")
+
+        assert _role_of(sm) == CALLER_ARN
+        sts.get_caller_identity.assert_called_once()
+
+    @patch("boto3.client")
+    def test_sts_not_called_when_argument_resolves_role(self, mock_boto3, role_env):
+        factory, sts, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+
+        SessionManager(session_name="s", import_role_arn=IMPORT_ROLE_ARN)
+
+        sts.get_caller_identity.assert_not_called()
+
+    @patch("boto3.client")
+    def test_sts_not_called_when_environment_resolves_role(self, mock_boto3, role_env):
+        factory, sts, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+        role_env(ENV_ROLE_ARN)
+
+        SessionManager(session_name="s")
+
+        sts.get_caller_identity.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    async def test_import_request_carries_import_role(self, mock_boto3, role_env):
+        factory, _, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+        graph = MagicMock(graph_id="g-1")
+        sm = SessionManager(session_name="s", import_role_arn=IMPORT_ROLE_ARN)
+
+        with (
+            patch(
+                "nx_neptune.instance_management._get_bucket_encryption_key_arn",
+                return_value=None,
+            ),
+            patch("nx_neptune.clients.IamClientWrapper.has_import_from_s3_permissions"),
+            patch(
+                "nx_neptune.instance_management._start_import_task",
+                return_value="t-1",
+            ) as start,
+            patch("nx_neptune.instance_management.TaskFuture") as future,
+        ):
+            future.return_value.wait_until_complete = AsyncMock()
+            await sm.import_from_csv(graph, S3_LOCATION)
+
+        assert start.call_args.args[3] == IMPORT_ROLE_ARN
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    async def test_export_request_carries_import_role(self, mock_boto3, role_env):
+        factory, _, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+        graph = MagicMock(graph_id="g-1")
+        sm = SessionManager(session_name="s", import_role_arn=IMPORT_ROLE_ARN)
+
+        with (
+            patch(
+                "nx_neptune.instance_management._get_bucket_encryption_key_arn",
+                return_value=None,
+            ),
+            patch("nx_neptune.clients.IamClientWrapper.has_export_to_s3_permissions"),
+            patch(
+                "nx_neptune.instance_management._start_export_task",
+                return_value="t-1",
+            ) as start,
+            patch("nx_neptune.instance_management.TaskFuture") as future,
+        ):
+            future.return_value.wait_until_complete = AsyncMock()
+            await sm.export_to_csv(graph, S3_LOCATION)
+
+        assert start.call_args.args[3] == IMPORT_ROLE_ARN
+
+    @staticmethod
+    def _allow_policy_for_neptune(iam):
+        iam.get_role.return_value = {
+            "Role": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": "sts:AssumeRole",
+                            "Principal": {"Service": "neptune-graph.amazonaws.com"},
+                        }
+                    ]
+                }
+            }
+        }
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    async def test_preflight_evaluates_import_role_not_caller(
+        self, mock_boto3, role_env
+    ):
+        factory, _, iam = _boto3_clients()
+        mock_boto3.side_effect = factory
+        self._allow_policy_for_neptune(iam)
+        iam.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "s3:GetObject", "EvalDecision": "allowed"}
+            ]
+        }
+        graph = MagicMock(graph_id="g-1")
+        sm = SessionManager(session_name="s", import_role_arn=IMPORT_ROLE_ARN)
+
+        with (
+            patch(
+                "nx_neptune.instance_management._get_bucket_encryption_key_arn",
+                return_value=None,
+            ),
+            patch(
+                "nx_neptune.instance_management._start_import_task",
+                return_value="t-1",
+            ),
+            patch("nx_neptune.instance_management.TaskFuture") as future,
+        ):
+            future.return_value.wait_until_complete = AsyncMock()
+            await sm.import_from_csv(graph, S3_LOCATION)
+
+        iam.get_role.assert_called_with(RoleName="ImportRole")
+        evaluated = {
+            c.kwargs["PolicySourceArn"]
+            for c in iam.simulate_principal_policy.call_args_list
+        }
+        assert evaluated == {IMPORT_ROLE_ARN}
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    async def test_preflight_rejects_role_missing_permission_before_import(
+        self, mock_boto3, role_env
+    ):
+        factory, _, iam = _boto3_clients()
+        mock_boto3.side_effect = factory
+        self._allow_policy_for_neptune(iam)
+        iam.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "s3:GetObject", "EvalDecision": "implicitDeny"}
+            ]
+        }
+        graph = MagicMock(graph_id="g-1")
+        sm = SessionManager(session_name="s", import_role_arn=IMPORT_ROLE_ARN)
+
+        with (
+            patch(
+                "nx_neptune.instance_management._get_bucket_encryption_key_arn",
+                return_value=None,
+            ),
+            patch("nx_neptune.instance_management._start_import_task") as start,
+        ):
+            with pytest.raises(ValueError, match="s3:GetObject"):
+                await sm.import_from_csv(graph, S3_LOCATION)
+
+        start.assert_not_called()
+        assert (
+            iam.simulate_principal_policy.call_args.kwargs["PolicySourceArn"]
+            == IMPORT_ROLE_ARN
+        )
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    async def test_table_import_wraps_import_role_not_caller(
+        self, mock_boto3, role_env
+    ):
+        factory, _, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+        graph = MagicMock(graph_id="g-1")
+        sm = SessionManager(session_name="s", import_role_arn=IMPORT_ROLE_ARN)
+
+        with (
+            patch(
+                "nx_neptune.instance_management.export_athena_table_to_s3",
+                new=AsyncMock(return_value=["q-1"]),
+            ),
+            patch(
+                "nx_neptune.instance_management.import_csv_from_s3",
+                new=AsyncMock(return_value="t-1"),
+            ),
+            patch("nx_neptune.session_manager.IamClientWrapper") as wrapper,
+        ):
+            await sm.import_from_table(
+                graph, S3_LOCATION, ["SELECT 1"], remove_buckets=False
+            )
+
+        roles = [c.args[0] for c in wrapper.call_args_list]
+        assert IMPORT_ROLE_ARN in roles
+        assert CALLER_ARN not in roles
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    async def test_table_export_wraps_import_role_not_caller(
+        self, mock_boto3, role_env
+    ):
+        factory, _, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+        graph = MagicMock(graph_id="g-1")
+        sm = SessionManager(session_name="s", import_role_arn=IMPORT_ROLE_ARN)
+
+        with (
+            patch(
+                "nx_neptune.instance_management.export_csv_to_s3",
+                new=AsyncMock(side_effect=RuntimeError("stop after export")),
+            ),
+            patch("nx_neptune.session_manager.IamClientWrapper") as wrapper,
+        ):
+            with pytest.raises(RuntimeError, match="stop after export"):
+                await sm.export_to_table(
+                    graph, S3_LOCATION, "csv_t", "cat", "db", "v_t", "e_t", "cat", "db"
+                )
+
+        roles = [c.args[0] for c in wrapper.call_args_list]
+        assert roles == [IMPORT_ROLE_ARN]
+        assert CALLER_ARN not in roles
