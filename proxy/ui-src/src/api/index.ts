@@ -137,8 +137,15 @@ export const projection = {
   translate: (id: string, propertyGraph?: string) => request<{ node_queries?: string[]; edge_queries?: string[]; error?: string }>(`/projection/${id}/translate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(propertyGraph !== undefined ? { property_graph: propertyGraph } : {}) }),
   preview: (id: string, limit = 10) => request<{ error?: string; results: { columns: string[]; rows: string[][] }[] }>(`/projection/${id}/preview?limit=${limit}`, { method: "POST" }),
   execute: (id: string) => request<{ message: string }>(`/projection/${id}/execute`, { method: "POST" }),
+  runQuery: (id: string, queries: string[]) => request<{ error?: string; results: unknown[] }>(`/projection/${id}/run-query`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ queries }) }),
+  // Validate openCypher syntax via Neptune Analytics EXPLAIN (read-only). One
+  // verdict per non-blank query, in order.
+  explainQuery: (id: string, queries: string[]) => request<{ results: { valid: boolean; error?: string }[] }>(`/projection/${id}/explain-query`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ queries }) }),
   getQueries: (id: string) => request<QueriesResponse>(`/projection/${id}/queries`),
   saveQueries: (id: string, data: QueriesPayload) => request<QueriesResponse>(`/projection/${id}/queries`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
+  // Persist only the openCypher graph queries (leaves node/edge queries intact).
+  // Query text only — results are never persisted.
+  saveGraphQueries: (id: string, graph_queries: GraphQueryInput[]) => request<GraphQueriesResponse>(`/projection/${id}/graph-queries`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph_queries }) }),
   delete: (id: string) => request<{ id: string; status: string }>(`/projection/${id}`, { method: "DELETE" }),
   deleteGraph: (id: string) => request<{ id: string; status: string }>(`/projection/${id}/delete-graph`, { method: "POST" }),
 };
@@ -155,6 +162,11 @@ export interface EdgeQueryInput {
   sql: string;
 }
 
+export interface GraphQueryInput {
+  id?: string;
+  cypher: string;
+}
+
 export interface NodeQueryResponse {
   id: string;
   sql: string;
@@ -167,14 +179,27 @@ export interface EdgeQueryResponse {
   position: number;
 }
 
+export interface GraphQueryResponse {
+  id: string;
+  cypher: string;
+  position: number;
+}
+
 export interface QueriesPayload {
   node_queries: NodeQueryInput[];
   edge_queries: EdgeQueryInput[];
+  // Post-import openCypher graph queries (text only; results are not persisted).
+  graph_queries?: GraphQueryInput[];
 }
 
 export interface QueriesResponse {
   node_queries: NodeQueryResponse[];
   edge_queries: EdgeQueryResponse[];
+  graph_queries: GraphQueryResponse[];
+}
+
+export interface GraphQueriesResponse {
+  graph_queries: GraphQueryResponse[];
 }
 
 // --- Project ---
@@ -185,6 +210,100 @@ export interface Project {
   status: string;
   created_at: string;
 }
+
+// --- AI Assistant (agent backend, spec §9) ---
+//
+// Wire contracts are snake_case (matching the proxy API); the client maps the
+// reply into its camelCase JumpAction/ChatAction shapes in assistant/remote.ts.
+
+export interface AssistantSqlQuery {
+  sql: string;
+}
+
+export interface AssistantCypherQuery {
+  cypher: string;
+}
+
+export interface AssistantProposal {
+  catalog?: string | null;
+  database?: string | null;
+  bucket?: string | null;
+  graph_name?: string | null;
+  node_queries?: AssistantSqlQuery[] | null;
+  edge_queries?: AssistantSqlQuery[] | null;
+  graph_queries?: AssistantCypherQuery[] | null;
+}
+
+export interface AssistantJump {
+  kind: "new-import" | "new-project" | "open-projections";
+  label: string;
+  project_id?: string | null;
+}
+
+export interface AssistantAction {
+  kind: "page-action" | "graph-action" | "run-query";
+  page: string;
+  label: string;
+  action_key?: string | null;
+  enabled?: boolean | null;
+  destructive?: boolean | null;
+  graph_id?: string | null;
+  graph_action?: string | null;
+  // For run-query actions: the openCypher to execute against the page's graph.
+  query?: string | null;
+}
+
+export interface AssistantReply {
+  text: string;
+  proposal?: AssistantProposal | null;
+  jumps?: AssistantJump[];
+  actions?: AssistantAction[];
+  question?: string | null;
+}
+
+export interface AssistantPageContext {
+  page: string;
+  project_id?: string | null;
+  // Import page's selected Athena catalog/database, so the agent can generate an
+  // import without re-asking for what the form already shows.
+  catalog?: string | null;
+  database?: string | null;
+  // Import form's current S3 staging bucket, so the agent can validate the
+  // node/edge SQL (and refuse when it's empty).
+  s3_staging_bucket?: string | null;
+  // Import page state so the agent knows a projection/graph already exists: the
+  // loaded projection id, its import status, the created graph id, and the
+  // node/edge queries that define the current graph model.
+  projection_id?: string | null;
+  graph_status?: string | null;
+  graph_id?: string | null;
+  node_queries?: AssistantSqlQuery[];
+  edge_queries?: AssistantSqlQuery[];
+  // Graph Queries (openCypher) currently on the page, plus whether the page can
+  // run them — set on the Details page so the agent may offer "Run Query" buttons.
+  graph_queries?: AssistantCypherQuery[];
+  can_run_queries?: boolean | null;
+  actions?: { key: string; label: string; enabled?: boolean }[];
+  graph_targets?: { id: string; name: string; actions: string[] }[];
+}
+
+export interface AssistantMessagePayload {
+  text: string;
+  session_id?: string | null;
+  page_context?: AssistantPageContext | null;
+  model?: string | null;
+}
+
+export const assistantApi = {
+  session: () => request<{ session_id: string }>("/assistant/session", { method: "POST" }),
+  message: (payload: AssistantMessagePayload) =>
+    request<AssistantReply>("/assistant/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  models: () => request<{ models: string[]; default: string }>("/assistant/models"),
+};
 
 export const projectApi = {
   list: () => request<Project[]>("/project"),

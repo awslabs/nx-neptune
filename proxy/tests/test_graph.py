@@ -195,7 +195,7 @@ async def test_perform_invalid_transition_returns_409(mock_cf, client):
 
     resp = await client.post("/api/v0/graphs/g-123/stop")
     assert resp.status_code == 409
-    assert "Cannot stop" in resp.json()["detail"]
+    assert "Cannot stop" in resp.json()["message"]
 
 
 @pytest.mark.asyncio
@@ -307,7 +307,7 @@ async def test_delete_rejects_unmanaged_graph(mock_cf, client):
 
     resp = await client.post("/api/v0/graphs/g-456/delete")
     assert resp.status_code == 403
-    assert "not managed" in resp.json()["detail"]
+    assert "not managed" in resp.json()["message"]
 
 
 @pytest.mark.asyncio

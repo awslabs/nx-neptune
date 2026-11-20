@@ -4,6 +4,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 from httpx import ASGITransport, AsyncClient
 
 from nx_neptune_proxy.app import app
@@ -293,6 +294,159 @@ async def test_execute_rejects_missing_required_field(client, field, value, labe
     mock_run.assert_not_called()
 
 
+# --- Run graph queries ---
+
+
+@pytest.mark.asyncio
+async def test_run_query_returns_results(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+    store.update(pid, graph_id="g-abc123")
+
+    mock_na = MagicMock()
+    mock_na.execute_query.return_value = [{"n": {"~id": "1"}}]
+    with patch(
+        "nx_neptune_proxy.routers.projection.NeptuneAnalyticsClient",
+        return_value=mock_na,
+    ) as mock_cls:
+        resp = await client.post(
+            f"/api/v0/projection/{pid}/run-query",
+            json={"queries": ["MATCH (n) RETURN n LIMIT 1", "  "]},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["error"] is None
+    # Blank query is skipped, so exactly one result set is returned.
+    assert body["results"] == [[{"n": {"~id": "1"}}]]
+    mock_cls.assert_called_once_with(graph_id="g-abc123")
+    mock_na.execute_query.assert_called_once_with("MATCH (n) RETURN n LIMIT 1")
+
+
+@pytest.mark.asyncio
+async def test_run_query_no_graph_returns_409(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    resp = await client.post(
+        f"/api/v0/projection/{pid}/run-query",
+        json={"queries": ["MATCH (n) RETURN n"]},
+    )
+    assert resp.status_code == 409
+    assert "No graph" in resp.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_query_client_error_returns_partial(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+    store.update(pid, graph_id="g-abc123")
+
+    mock_na = MagicMock()
+    mock_na.execute_query.side_effect = [
+        [{"ok": True}],
+        ClientError(
+            {"Error": {"Code": "InvalidParameterException", "Message": "bad cypher"}},
+            "ExecuteQuery",
+        ),
+    ]
+    with patch(
+        "nx_neptune_proxy.routers.projection.NeptuneAnalyticsClient",
+        return_value=mock_na,
+    ):
+        resp = await client.post(
+            f"/api/v0/projection/{pid}/run-query",
+            json={"queries": ["MATCH (n) RETURN n", "BROKEN"]},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["error"] is not None
+    # First query's result is preserved before the failure.
+    assert body["results"] == [[{"ok": True}]]
+
+
+# --- Explain (syntax validation) ---
+
+
+@pytest.mark.asyncio
+async def test_explain_query_reports_per_query_validity(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+    store.update(pid, graph_id="g-abc123")
+
+    mock_na = MagicMock()
+    # First query plans cleanly; second is rejected by the engine.
+    mock_na.client.execute_query.side_effect = [
+        {"payload": None},
+        ClientError(
+            {"Error": {"Code": "MalformedQueryException", "Message": "bad cypher"}},
+            "ExecuteQuery",
+        ),
+    ]
+    with patch(
+        "nx_neptune_proxy.routers.projection.NeptuneAnalyticsClient",
+        return_value=mock_na,
+    ):
+        resp = await client.post(
+            f"/api/v0/projection/{pid}/explain-query",
+            json={"queries": ["MATCH (n) RETURN n", "  ", "BROKEN"]},
+        )
+
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    # Blank query is skipped; one verdict per non-blank query.
+    assert len(results) == 2
+    assert results[0] == {"valid": True, "error": None}
+    assert results[1]["valid"] is False
+    assert results[1]["error"]
+
+    # Queries are validated via explainMode on the raw boto client (sent
+    # verbatim, NOT EXPLAIN-prefixed); validation does not stop at the failure.
+    calls = mock_na.client.execute_query.call_args_list
+    assert [c.kwargs["queryString"] for c in calls] == ["MATCH (n) RETURN n", "BROKEN"]
+    assert all(c.kwargs["explainMode"] == "STATIC" for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_explain_query_sends_query_verbatim_with_explain_mode(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+    store.update(pid, graph_id="g-abc123")
+
+    mock_na = MagicMock()
+    mock_na.client.execute_query.return_value = {"payload": None}
+    with patch(
+        "nx_neptune_proxy.routers.projection.NeptuneAnalyticsClient",
+        return_value=mock_na,
+    ):
+        resp = await client.post(
+            f"/api/v0/projection/{pid}/explain-query",
+            json={"queries": ["MATCH (n) RETURN n"]},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["results"] == [{"valid": True, "error": None}]
+    # Sent verbatim with explainMode on the raw boto client — never the literal
+    # "EXPLAIN" prefix that the engine rejects at column 1 ("Invalid input 'E'").
+    kwargs = mock_na.client.execute_query.call_args.kwargs
+    assert kwargs["queryString"] == "MATCH (n) RETURN n"
+    assert "EXPLAIN" not in kwargs["queryString"].upper()
+    assert kwargs["explainMode"] == "STATIC"
+
+
+@pytest.mark.asyncio
+async def test_explain_query_no_graph_returns_409(client):
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    resp = await client.post(
+        f"/api/v0/projection/{pid}/explain-query",
+        json={"queries": ["MATCH (n) RETURN n"]},
+    )
+    assert resp.status_code == 409
+
+
 # --- List projections ---
 
 
@@ -421,6 +575,93 @@ async def test_save_queries_replaces_previous(client):
     data = get_resp.json()
     assert len(data["node_queries"]) == 1
     assert data["node_queries"][0]["sql"] == "new query only"
+
+
+@pytest.mark.asyncio
+async def test_graph_queries_persist_via_queries_endpoint(client):
+    """The /queries endpoint round-trips openCypher graph queries (text only)."""
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    save_resp = await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "SELECT id FROM nodes"}],
+            "edge_queries": [],
+            "graph_queries": [
+                {"cypher": "MATCH (n) RETURN n LIMIT 10"},
+                {"cypher": "MATCH (a)-[r]->(b) RETURN r"},
+            ],
+        },
+    )
+    assert save_resp.status_code == 200
+    data = save_resp.json()
+    assert [q["cypher"] for q in data["graph_queries"]] == [
+        "MATCH (n) RETURN n LIMIT 10",
+        "MATCH (a)-[r]->(b) RETURN r",
+    ]
+    assert data["graph_queries"][1]["position"] == 1
+
+    get_resp = await client.get(f"/api/v0/projection/{pid}/queries")
+    assert get_resp.json()["graph_queries"] == data["graph_queries"]
+
+
+@pytest.mark.asyncio
+async def test_queries_omitting_graph_leaves_them_unchanged(client):
+    """A node/edge-only save must not wipe previously stored graph queries."""
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "n"}],
+            "edge_queries": [],
+            "graph_queries": [{"cypher": "MATCH (n) RETURN n"}],
+        },
+    )
+    # Save again WITHOUT graph_queries (the common node/edge-only save).
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={"node_queries": [{"sql": "n2"}], "edge_queries": []},
+    )
+    get_resp = await client.get(f"/api/v0/projection/{pid}/queries")
+    data = get_resp.json()
+    assert [q["cypher"] for q in data["graph_queries"]] == ["MATCH (n) RETURN n"]
+    # Sending [] explicitly clears them.
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={"node_queries": [{"sql": "n2"}], "edge_queries": [], "graph_queries": []},
+    )
+    get_resp = await client.get(f"/api/v0/projection/{pid}/queries")
+    assert get_resp.json()["graph_queries"] == []
+
+
+@pytest.mark.asyncio
+async def test_graph_only_endpoint_preserves_node_edge(client):
+    """PUT /graph-queries replaces graph queries without touching node/edge."""
+    create_resp = await client.post("/api/v0/projection", json=SAMPLE_BODY())
+    pid = create_resp.json()["id"]
+
+    await client.put(
+        f"/api/v0/projection/{pid}/queries",
+        json={
+            "node_queries": [{"sql": "SELECT id FROM nodes"}],
+            "edge_queries": [{"sql": "SELECT src, dst FROM edges"}],
+        },
+    )
+    graph_resp = await client.put(
+        f"/api/v0/projection/{pid}/graph-queries",
+        json={"graph_queries": [{"cypher": "MATCH (n) RETURN count(n)"}]},
+    )
+    assert graph_resp.status_code == 200
+    assert graph_resp.json()["graph_queries"][0]["cypher"] == "MATCH (n) RETURN count(n)"
+
+    get_resp = await client.get(f"/api/v0/projection/{pid}/queries")
+    data = get_resp.json()
+    assert len(data["node_queries"]) == 1
+    assert len(data["edge_queries"]) == 1
+    assert [q["cypher"] for q in data["graph_queries"]] == ["MATCH (n) RETURN count(n)"]
 
 
 # --- Delete clears queries (regression) ---

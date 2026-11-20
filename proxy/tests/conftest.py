@@ -4,6 +4,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from nx_neptune.clients.client_factory import ClientFactory
 from nx_neptune_proxy.app import app
 from nx_neptune_proxy.auth import get_token
 from nx_neptune_proxy.services.db import connection
@@ -29,6 +30,18 @@ def bare_client():
     """Client without X-Requested-With header — for CSRF rejection tests."""
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://localhost")
+
+
+@pytest.fixture(autouse=True)
+def reset_client_factory():
+    """Drop the shared ClientFactory singleton after each test.
+
+    ClientFactory() caches boto3 clients on one shared instance. A test that
+    builds a real client would otherwise leak it into later tests that patch
+    ``boto3.client`` and expect a fresh one.
+    """
+    yield
+    ClientFactory._default = None
 
 
 @pytest.fixture(autouse=True)

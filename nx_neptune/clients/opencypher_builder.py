@@ -139,10 +139,8 @@ def _escape_identifier(value: str) -> str:
     return "`" + value.replace("`", "``") + "`"
 
 
-# Strict shapes for SET/WHERE key handling: a bare reference identifier
-# (``a``, ``movie``, ``n1``) and a structural predicate like ``id(n)``. Both
-# use plain ASCII identifiers only — an attacker-supplied key containing
-# injection characters will NOT fullmatch and is escaped wholesale instead.
+# Shapes recognized by _escape_property_path: a safe bare reference, and a
+# structural predicate like id(n) that carries no property name to escape.
 _BARE_REF_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _FUNC_PREDICATE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\([A-Za-z_][A-Za-z0-9_]*\)")
 

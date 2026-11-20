@@ -52,6 +52,8 @@ def get_config():
     return {
         "region": settings.region or "",
         "graph_prefix": settings.graph_prefix,
+        "bedrock_model": settings.bedrock_model,
+        "bedrock_region": settings.bedrock_region or "",
     }
 
 
@@ -144,7 +146,12 @@ def list_s3_buckets():
     """List S3 buckets in the configured region"""
     filter_region = get_settings().region
     if not filter_region:
-        return {"buckets": []}
+        raise HTTPException(
+            status_code=400,
+            detail="AWS region is not configured, so S3 buckets cannot be "
+            "listed. Set AWS_REGION (or AWS_DEFAULT_REGION) and restart the "
+            "proxy.",
+        )
     cached = _buckets_cache.get(filter_region)
     if cached is not None:
         return {"buckets": cached}
