@@ -123,7 +123,7 @@ async def test_first_run_never_adopts_existing_graph(mock_sm_cls, mock_cf, clear
     sm.reset_graph = AsyncMock()
     sm.import_from_table = AsyncMock(return_value="task-1")
 
-    await run_pipeline(projection)
+    await run_pipeline(projection, projection.owner_token)
 
     # Brand-new graph created; no reset of any pre-existing graph.
     sm.create_graph.assert_awaited_once()
@@ -157,7 +157,7 @@ async def test_first_run_records_graph_id_when_wait_fails(
     sm.create_graph = AsyncMock(side_effect=create_then_fail)
     sm.import_from_table = AsyncMock()
 
-    await run_pipeline(projection)
+    await run_pipeline(projection, projection.owner_token)
 
     result = store.get(projection.id)
     assert result.status == "failed"
@@ -198,7 +198,7 @@ async def test_first_run_does_not_reuse_sibling_projection_graph(
     mock_import.return_value = "task-1"
 
     projection = _make_projection(graph_name="sales")
-    await run_pipeline(projection)
+    await run_pipeline(projection, projection.owner_token)
 
     mock_create.assert_awaited_once()
     result = store.get(projection.id)
@@ -232,7 +232,7 @@ async def test_retry_resets_only_the_recorded_graph_by_id(
     sm.reset_graph = AsyncMock()
     sm.import_from_table = AsyncMock(return_value="task-1")
 
-    await run_pipeline(projection)
+    await run_pipeline(projection, projection.owner_token)
 
     # Looked up by EXACT id, reset only that graph, did not create a new one.
     neptune.get_graph.assert_called_once_with(graphIdentifier="g-mine")
@@ -275,7 +275,7 @@ async def test_stale_recorded_graph_creates_new(
     sm.reset_graph = AsyncMock()
     sm.import_from_table = AsyncMock(return_value="task-1")
 
-    await run_pipeline(projection)
+    await run_pipeline(projection, projection.owner_token)
 
     neptune.get_graph.assert_called_once_with(graphIdentifier="g-stale")
     sm.create_graph.assert_awaited_once()
@@ -305,7 +305,7 @@ async def test_recorded_graph_lookup_error_fails_and_keeps_id(
     sm.reset_graph = AsyncMock()
     sm.import_from_table = AsyncMock()
 
-    await run_pipeline(projection)
+    await run_pipeline(projection, projection.owner_token)
 
     sm.create_graph.assert_not_called()
     sm.reset_graph.assert_not_called()
@@ -336,7 +336,7 @@ async def test_recorded_graph_not_available_fails_and_keeps_id(
     sm.reset_graph = AsyncMock()
     sm.import_from_table = AsyncMock()
 
-    await run_pipeline(projection)
+    await run_pipeline(projection, projection.owner_token)
 
     sm.create_graph.assert_not_called()
     sm.reset_graph.assert_not_called()
@@ -368,7 +368,7 @@ async def test_recorded_graph_not_managed_fails_without_reset(
     sm.get_or_create_graph = AsyncMock()
     sm.create_graph = AsyncMock()
 
-    await run_pipeline(projection)
+    await run_pipeline(projection, projection.owner_token)
 
     sm.reset_graph.assert_not_called()
     sm.get_or_create_graph.assert_not_called()

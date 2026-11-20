@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+import time
 from functools import partial
 
 from botocore.exceptions import ClientError
@@ -19,6 +20,11 @@ from nx_neptune_proxy.utils.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
+# A graph is typically still CREATING when on_created fires; neither clearing
+# deletion protection nor the delete itself is reliable in that state.
+_ORPHAN_DELETE_POLL = 10
+_ORPHAN_DELETE_TIMEOUT = 600
+
 
 def _assert_managed(graph_name: str | None) -> None:
     """Raise if graph_name isn't managed by this tool (doesn't carry the prefix).
@@ -35,8 +41,13 @@ def _assert_managed(graph_name: str | None) -> None:
         )
 
 
-async def run_pipeline(projection: Projection) -> None:
-    """Execute the full pipeline: create graph → Athena → import."""
+async def run_pipeline(projection: Projection, owner_token: str) -> None:
+    """Execute the full pipeline: create graph → Athena → import.
+
+    ``owner_token`` is the token ``execute_projection`` wrote when it claimed the
+    row. Every write this run makes is conditional on still holding it, so if the
+    row is purged or re-claimed mid-flight nothing lands on someone else's run.
+    """
     from nx_neptune.clients.client_factory import ClientFactory
     from nx_neptune.session_manager import SessionManager
 
@@ -51,6 +62,7 @@ async def run_pipeline(projection: Projection) -> None:
         # Step 1: Create or reuse graph
         _update(
             projection.id,
+            owner_token,
             step="graph_creation",
             label="Creating Neptune Analytics graph",
             progress=5,
@@ -88,9 +100,10 @@ async def run_pipeline(projection: Projection) -> None:
         if existing:
             # Reuse existing graph (retry scenario) — reset data
             graph = existing
-            _record_graph(projection.id, graph.graph_id)
+            _record_graph(projection.id, owner_token, graph.graph_id)
             _update(
                 projection.id,
+                owner_token,
                 step="graph_reset",
                 label="Resetting graph data",
                 progress=25,
@@ -100,12 +113,13 @@ async def run_pipeline(projection: Projection) -> None:
             # Brand new graph — no reset needed
             graph = await sm.create_graph(
                 config={"provisionedMemory": projection.graph_memory_gb},
-                on_created=partial(_record_graph, projection.id),
+                on_created=partial(_record_graph, projection.id, owner_token),
             )
 
         # Step 2: Athena query + CSV import
         _update(
             projection.id,
+            owner_token,
             step="athena_import",
             label="Running Athena query and importing data",
             progress=45,
@@ -120,15 +134,21 @@ async def run_pipeline(projection: Projection) -> None:
             remove_buckets=True,
         )
         _update(
-            projection.id, step="athena_import", label="Import complete", progress=90
+            projection.id,
+            owner_token,
+            step="athena_import",
+            label="Import complete",
+            progress=90,
         )
 
         # Step 3: Done
-        _update(projection.id, step="ready", label="Graph ready", progress=100)
+        _update(
+            projection.id, owner_token, step="ready", label="Graph ready", progress=100
+        )
         # Conditional: if the row was taken over mid-run, `complete` would
         # overwrite the new owner's status and hide its operation.
-        projection_service.update_if_status(
-            projection.id, frozenset({STATUS_IMPORTING}), status=STATUS_COMPLETE
+        projection_service.update_if_owner(
+            projection.id, owner_token, status=STATUS_COMPLETE
         )
 
     except Exception as e:
@@ -143,42 +163,89 @@ async def run_pipeline(projection: Projection) -> None:
         # Conditional for the same reason as the success path, and because the
         # row may already be gone (purged mid-run), in which case there is
         # nothing to record the failure on.
-        projection_service.update_if_status(
+        projection_service.update_if_owner(
             projection.id,
-            frozenset({STATUS_IMPORTING}),
+            owner_token,
             status=STATUS_FAILED,
             error=sanitize_error_message(error_msg),
         )
 
 
-def _record_graph(projection_id: str, graph_id: str) -> None:
+def _delete_orphaned_graph(graph_id: str) -> None:
+    """Delete a graph no row references any more, clearing protection first.
+
+    Two reasons a plain ``delete_graph`` is not enough here:
+
+    - Graphs are created with ``deletionProtection`` on by default, and
+      ``delete_graph`` fails with ConflictException on a protected graph.
+      ``_delete_na_instance_task`` clears protection first, so it is used
+      instead of the raw client call.
+    - ``on_created`` fires as soon as CreateGraph is *accepted*, so the graph is
+      typically still ``CREATING``, and neither the protection update nor the
+      delete can be relied on in that state. So wait for it to settle first.
+
+    Every failure path here is logged rather than raised: the caller is already
+    unwinding, and the point of the warning is to name a graph that is still
+    billing so an operator can remove it by hand.
+    """
+    from nx_neptune.clients.client_factory import ClientFactory
+    from nx_neptune.instance_management import _delete_na_instance_task
+
+    client = ClientFactory().neptune()
+    deadline = time.time() + _ORPHAN_DELETE_TIMEOUT
+    while time.time() < deadline:
+        try:
+            status = client.get_graph(graphIdentifier=graph_id).get("status")
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+                return  # already gone
+            logger.exception(
+                "Could not read graph %s while trying to delete it; it may still "
+                "be running and billing",
+                graph_id,
+            )
+            return
+        if status != "CREATING":
+            break
+        time.sleep(_ORPHAN_DELETE_POLL)
+    else:
+        logger.warning(
+            "Graph %s was still CREATING after %ss; attempting the delete anyway, "
+            "and it must be removed manually if this fails",
+            graph_id,
+            _ORPHAN_DELETE_TIMEOUT,
+        )
+
+    try:
+        _delete_na_instance_task(client, graph_id)
+    except ClientError:
+        logger.exception(
+            "Could not delete untracked graph %s; it is still billing and must "
+            "be removed manually",
+            graph_id,
+        )
+
+
+def _record_graph(projection_id: str, owner_token: str, graph_id: str) -> None:
     """Save the graph id and endpoint, or delete the graph if the row is gone.
 
     Conditional on this run still owning the row. A forced purge or a takeover
     can remove or re-claim it between the create call and this write; an
     unconditional ``update`` would then write nothing at all and leave the graph
-    live, untracked and billing, with no reference left anywhere to delete it
-    by. If the row is no longer ours the graph is deleted here instead.
+    live, untracked and billing, with no reference left anywhere to delete it by.
     """
-    from nx_neptune.clients.client_factory import ClientFactory
-
-    recorded = projection_service.update_if_status(
-        projection_id,
-        frozenset({STATUS_IMPORTING}),
-        graph_id=graph_id,
-        graph_endpoint=f"https://{graph_id}.neptune-graph.amazonaws.com",
-    )
-    if recorded:
+    endpoint = f"https://{graph_id}.neptune-graph.amazonaws.com"
+    if projection_service.update_if_owner(
+        projection_id, owner_token, graph_id=graph_id, graph_endpoint=endpoint
+    ):
         return
 
     if projection_service.get(projection_id) is not None:
-        # The row still exists but was re-claimed by another operation. Record
-        # the reference anyway so whatever owns it now has something to delete;
-        # that owner, not this dead run, decides the graph's fate.
+        # The row still exists but was re-claimed. Record the reference anyway so
+        # whatever owns it now has something to delete, and leave the fate of the
+        # graph to that owner rather than this dead run.
         projection_service.update(
-            projection_id,
-            graph_id=graph_id,
-            graph_endpoint=f"https://{graph_id}.neptune-graph.amazonaws.com",
+            projection_id, graph_id=graph_id, graph_endpoint=endpoint
         )
         raise RuntimeError(
             f"Projection {projection_id} was taken over mid-import; the graph "
@@ -194,23 +261,22 @@ def _record_graph(projection_id: str, graph_id: str) -> None:
         projection_id,
         graph_id,
     )
-    try:
-        ClientFactory().neptune().delete_graph(
-            graphIdentifier=graph_id, skipSnapshot=True
-        )
-    except ClientError:
-        logger.exception(
-            "Could not delete untracked graph %s; it is still billing and must "
-            "be removed manually",
-            graph_id,
-        )
+    _delete_orphaned_graph(graph_id)
     raise RuntimeError(
         f"Projection {projection_id} was purged mid-import; the graph created "
         f"for it ({graph_id}) has been deleted"
     )
 
 
-def _update(projection_id: str, step: str, label: str, progress: float) -> None:
-    projection_service.update(
-        projection_id, step=step, step_label=label, progress=progress
+def _update(
+    projection_id: str, owner_token: str, step: str, label: str, progress: float
+) -> None:
+    """Progress write, conditional on still owning the row.
+
+    Unconditional here meant a run that had been taken over kept writing its
+    step and progress, so a row claimed by a forced delete-graph would display
+    "Graph ready", 100% while it was actually `deleting`.
+    """
+    projection_service.update_if_owner(
+        projection_id, owner_token, step=step, step_label=label, progress=progress
     )

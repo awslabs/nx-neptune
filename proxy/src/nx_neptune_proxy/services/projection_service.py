@@ -70,16 +70,40 @@ class ProjectionService:
         projection_id: str,
         to_status: str,
         refuse_when: frozenset = IN_FLIGHT_STATUSES,
+        owner_token: Optional[str] = None,
         **data,
     ) -> bool:
-        """Atomic claim: see ``ProjectionStore.try_transition``."""
+        """Atomic claim: see ``ProjectionStore.try_transition``.
+
+        Rotates the row's owner token. Pass ``owner_token`` when the caller
+        intends to keep writing to the row after the claim.
+        """
         return projection_store.try_transition(
-            projection_id, to_status, refuse_when, **data
+            projection_id, to_status, refuse_when, owner_token, **data
         )
 
-    def update_if_status(self, projection_id: str, expected: frozenset, **data) -> bool:
-        """Conditional write for a task that may have lost its row: see store."""
-        return projection_store.update_if_status(projection_id, expected, **data)
+    def try_transition_if_graph(
+        self,
+        projection_id: str,
+        to_status: str,
+        expected_graph_id: Optional[str],
+        refuse_when: frozenset = IN_FLIGHT_STATUSES,
+        owner_token: Optional[str] = None,
+        **data,
+    ) -> bool:
+        """Claim that also pins ``graph_id``: see ``ProjectionStore``."""
+        return projection_store.try_transition_if_graph(
+            projection_id,
+            to_status,
+            expected_graph_id,
+            refuse_when,
+            owner_token,
+            **data,
+        )
+
+    def update_if_owner(self, projection_id: str, owner_token: str, **data) -> bool:
+        """Conditional write for a run that may have lost its row: see store."""
+        return projection_store.update_if_owner(projection_id, owner_token, **data)
 
     def fail_orphaned_runs(self, error: str) -> List[str]:
         """Reset rows left mid-run by a restart: see ``ProjectionStore``."""

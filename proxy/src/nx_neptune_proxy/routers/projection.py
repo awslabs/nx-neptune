@@ -3,6 +3,7 @@
 
 import asyncio
 import time
+import uuid
 from dataclasses import asdict
 from typing import NoReturn
 
@@ -261,10 +262,15 @@ def execute_projection(projection_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(
             status_code=400, detail=f"Missing required fields: {', '.join(missing)}."
         )
-    # Atomic claim, after validation so a 400 never needs a rollback.
-    if not projection_service.try_transition(projection_id, STATUS_IMPORTING):
+    # Atomic claim, after validation so a 400 never needs a rollback. The token
+    # is generated here so the pipeline knows which ownership epoch it holds;
+    # every write it makes is conditional on the row still carrying this value.
+    owner_token = str(uuid.uuid4())
+    if not projection_service.try_transition(
+        projection_id, STATUS_IMPORTING, owner_token=owner_token
+    ):
         _raise_claim_refused(projection_id, "Pipeline already running")
-    background_tasks.add_task(run_pipeline, p)
+    background_tasks.add_task(run_pipeline, p, owner_token)
     return {"id": p.id, "status": "accepted"}
 
 
@@ -332,9 +338,14 @@ def delete_projection_graph(
         if e.status_code == 404:
             # The graph is gone from Neptune: clear the dangling reference so the
             # record can be purged. An in-flight pipeline still owns the row.
-            projection_service.try_transition(
+            # graph_id is pinned to the id that 404'd. With `force` the status
+            # guard is dropped, so without this an in-flight import that
+            # recorded a *new* graph between the read above and here would have
+            # its reference cleared, leaving that graph billing and unreferenced.
+            projection_service.try_transition_if_graph(
                 projection_id,
                 STATUS_ARCHIVED,
+                expected_graph_id=p.graph_id,
                 refuse_when=frozenset() if force else IN_FLIGHT_STATUSES,
                 graph_id=None,
                 graph_endpoint=None,

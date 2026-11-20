@@ -151,7 +151,7 @@ class TestRowLostMidRun:
         with connection() as conn:
             conn.execute("DELETE FROM projections WHERE id = ?", [p.id])
 
-        await run_pipeline(p)
+        await run_pipeline(p, p.owner_token)
 
         neptune.delete_graph.assert_called_once_with(
             graphIdentifier="g-orphan", skipSnapshot=True
@@ -171,7 +171,7 @@ class TestRowLostMidRun:
 
         store.try_transition(p.id, STATUS_DELETING, refuse_when=frozenset())
 
-        await run_pipeline(p)
+        await run_pipeline(p, p.owner_token)
 
         neptune.delete_graph.assert_not_called()
         row = store.get(p.id)
@@ -196,7 +196,7 @@ class TestRowLostMidRun:
         with connection() as conn:
             conn.execute("DELETE FROM projections WHERE id = ?", [p.id])
 
-        await run_pipeline(p)
+        await run_pipeline(p, p.owner_token)
 
         assert any("manually" in r.getMessage() for r in caplog.records)
 
@@ -217,6 +217,183 @@ class TestRowLostMidRun:
 
         store.try_transition(p.id, STATUS_DELETING, refuse_when=frozenset())
 
-        await run_pipeline(p)
+        await run_pipeline(p, p.owner_token)
 
         assert store.get(p.id).status == STATUS_DELETING
+
+
+# --- Ownership is a token, not a status ---
+
+
+class TestOwnerToken:
+    """Status cannot distinguish "still my run" from "a different run, same status"."""
+
+    def test_a_claim_rotates_the_token(self):
+        p = _projection(status=STATUS_IMPORTING)
+        first = store.get(p.id).owner_token
+        assert first
+
+        store.try_transition(p.id, STATUS_DELETING, refuse_when=frozenset())
+
+        assert store.get(p.id).owner_token != first
+
+    def test_a_write_from_the_previous_owner_is_rejected(self):
+        p = _projection(status=STATUS_IMPORTING)
+        stale = store.get(p.id).owner_token
+
+        store.try_transition(p.id, STATUS_DELETING, refuse_when=frozenset())
+
+        assert store.update_if_owner(p.id, stale, status="complete") is False
+        assert store.get(p.id).status == STATUS_DELETING
+
+    def test_a_stale_run_cannot_overwrite_a_later_run_in_the_same_status(self):
+        """The case a status match would have missed.
+
+        Run A is importing, is taken over, and the row is re-claimed as
+        `importing` by run B. A status-matched write from A would land on B.
+        """
+        p = _projection(status=STATUS_IMPORTING)
+        token_a = store.get(p.id).owner_token
+        store.try_transition(p.id, STATUS_DELETING, refuse_when=frozenset())
+        store.try_transition(p.id, STATUS_IMPORTING, refuse_when=frozenset())
+        token_b = store.get(p.id).owner_token
+
+        assert store.update_if_owner(p.id, token_a, status="failed") is False
+        assert store.update_if_owner(p.id, token_b, status="failed") is True
+
+    def test_progress_writes_from_a_taken_over_run_do_not_land(self):
+        """A `deleting` row must not display "Graph ready", 100%."""
+        p = _projection(status=STATUS_IMPORTING)
+        stale = store.get(p.id).owner_token
+        store.try_transition(
+            p.id, STATUS_DELETING, refuse_when=frozenset(), step="graph_delete"
+        )
+
+        from nx_neptune_proxy.services.pipeline import _update
+
+        _update(p.id, stale, step="ready", label="Graph ready", progress=100)
+
+        row = store.get(p.id)
+        assert (row.step, row.progress) == ("graph_delete", 0)
+
+
+class TestForcedArchivePinsTheGraphId:
+    """A forced archive drops the status guard, so it must pin graph_id instead."""
+
+    def test_a_graph_recorded_since_the_read_is_not_orphaned(self):
+        p = _projection(status=STATUS_IMPORTING, graph_id="g-old")
+
+        # The caller read g-old and found it gone; meanwhile the run records g-new.
+        store.update(p.id, graph_id="g-new")
+
+        claimed = store.try_transition_if_graph(
+            p.id,
+            "archived",
+            expected_graph_id="g-old",
+            refuse_when=frozenset(),
+            graph_id=None,
+        )
+
+        assert claimed is False, "must not clear a reference it never read"
+        assert store.get(p.id).graph_id == "g-new"
+
+    def test_it_still_archives_when_the_graph_is_unchanged(self):
+        p = _projection(status=STATUS_IMPORTING, graph_id="g-old")
+
+        claimed = store.try_transition_if_graph(
+            p.id,
+            "archived",
+            expected_graph_id="g-old",
+            refuse_when=frozenset(),
+            graph_id=None,
+        )
+
+        assert claimed is True
+        row = store.get(p.id)
+        assert (row.status, row.graph_id) == ("archived", None)
+
+
+class TestOrphanedGraphDelete:
+    """Deleting an orphan has to survive deletion protection and CREATING."""
+
+    @staticmethod
+    def _neptune(statuses):
+        neptune = MagicMock()
+        neptune.get_graph.side_effect = [{"status": s} for s in statuses]
+        return neptune
+
+    def test_it_clears_deletion_protection_before_deleting(self):
+        """Graphs are created protected by default, so a raw delete_graph fails."""
+        from nx_neptune_proxy.services import pipeline
+
+        neptune = self._neptune(["AVAILABLE"])
+        with (
+            patch("nx_neptune.clients.client_factory.ClientFactory") as cf,
+            patch(
+                "nx_neptune.instance_management._delete_na_instance_task"
+            ) as delete_task,
+        ):
+            cf.return_value.neptune.return_value = neptune
+            pipeline._delete_orphaned_graph("g-orphan")
+
+        delete_task.assert_called_once()
+        assert delete_task.call_args.args[1] == "g-orphan"
+        neptune.delete_graph.assert_not_called()
+
+    def test_it_waits_for_a_creating_graph_to_settle(self):
+        """on_created fires when CreateGraph is accepted, so CREATING is the norm."""
+        from nx_neptune_proxy.services import pipeline
+
+        neptune = self._neptune(["CREATING", "CREATING", "AVAILABLE"])
+        with (
+            patch("nx_neptune.clients.client_factory.ClientFactory") as cf,
+            patch(
+                "nx_neptune.instance_management._delete_na_instance_task"
+            ) as delete_task,
+            patch.object(pipeline, "_ORPHAN_DELETE_POLL", 0),
+        ):
+            cf.return_value.neptune.return_value = neptune
+            pipeline._delete_orphaned_graph("g-orphan")
+
+        assert neptune.get_graph.call_count == 3
+        delete_task.assert_called_once()
+
+    def test_an_already_gone_graph_is_not_deleted_again(self):
+        from nx_neptune_proxy.services import pipeline
+
+        neptune = MagicMock()
+        neptune.get_graph.side_effect = ClientError(
+            {"Error": {"Code": "ResourceNotFoundException", "Message": "gone"}},
+            "GetGraph",
+        )
+        with (
+            patch("nx_neptune.clients.client_factory.ClientFactory") as cf,
+            patch(
+                "nx_neptune.instance_management._delete_na_instance_task"
+            ) as delete_task,
+        ):
+            cf.return_value.neptune.return_value = neptune
+            pipeline._delete_orphaned_graph("g-orphan")
+
+        delete_task.assert_not_called()
+
+    def test_a_failed_delete_is_logged_with_the_graph_id(self, caplog):
+        """The warning is the only thing telling an operator what is still billing."""
+        from nx_neptune_proxy.services import pipeline
+
+        neptune = self._neptune(["AVAILABLE"])
+        with (
+            patch("nx_neptune.clients.client_factory.ClientFactory") as cf,
+            patch(
+                "nx_neptune.instance_management._delete_na_instance_task",
+                side_effect=ClientError(
+                    {"Error": {"Code": "ConflictException", "Message": "protected"}},
+                    "DeleteGraph",
+                ),
+            ),
+        ):
+            cf.return_value.neptune.return_value = neptune
+            pipeline._delete_orphaned_graph("g-orphan")
+
+        assert any("g-orphan" in r.getMessage() for r in caplog.records)
+        assert any("manually" in r.getMessage() for r in caplog.records)
