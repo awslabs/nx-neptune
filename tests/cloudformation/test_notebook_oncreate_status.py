@@ -44,9 +44,9 @@ def _render_oncreate_heredoc(refs=None):
     inside the ``<<'EOF'`` heredoc.
     """
     refs = refs or {}
-    parts = TEMPLATE["Resources"]["NotebookLifecycleConfig"]["Properties"][
-        "OnCreate"
-    ][0]["Content"]["Fn::Base64"]["Fn::Join"][1]
+    parts = TEMPLATE["Resources"]["NotebookLifecycleConfig"]["Properties"]["OnCreate"][
+        0
+    ]["Content"]["Fn::Base64"]["Fn::Join"][1]
     rendered = "".join(
         p if isinstance(p, str) else refs.get(p.get("Ref"), "PLACEHOLDER")
         for p in parts
@@ -121,11 +121,13 @@ def test_oncreate_body_sets_its_own_errexit():
     # body itself must enable errexit as its first statement.
     body = _render_oncreate_heredoc()
     first = next(
-        line.strip() for line in body.splitlines() if line.strip() and not line.startswith("#")
+        line.strip()
+        for line in body.splitlines()
+        if line.strip() and not line.startswith("#")
     )
-    assert first.startswith("set -e"), (
-        f"OnCreate heredoc must start with `set -e...`, got: {first!r}"
-    )
+    assert first.startswith(
+        "set -e"
+    ), f"OnCreate heredoc must start with `set -e...`, got: {first!r}"
 
 
 @pytest.mark.parametrize("custom_notebooks", [True, False])

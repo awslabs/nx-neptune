@@ -90,10 +90,7 @@ logger = logging.getLogger("nx_neptune_proxy")
 # driver, so this URL is log-visible — an accepted tradeoff for a
 # localhost dev tool; the real boundary is the 127.0.0.1 bind + middlewares.
 _LAUNCH_URL = f"http://127.0.0.1:{settings.port}/?token={get_token()}"
-print(
-    f"\nOpen the proxy UI (token valid for this run only):\n"
-    f"  {_LAUNCH_URL}\n"
-)
+print(f"\nOpen the proxy UI (token valid for this run only):\n" f"  {_LAUNCH_URL}\n")
 log_token_notice()
 
 
