@@ -1,5 +1,10 @@
 .ONESHELL:
 SHELL := /bin/bash
+# With .ONESHELL a recipe is one script, and make only sees the exit status of its
+# last command. -e stops at the first failing command, so a failed lint step fails
+# the target on GNU make 3.82+ (CI). Older make (macOS 3.81) ignores both settings
+# and already stops at the first failing line.
+.SHELLFLAGS := -e -c
 ENV_PREFIX=$(shell python -c "if __import__('pathlib').Path('.venv/bin/pip').exists(): print('.venv/bin/')")
 USING_POETRY=$(shell grep "tool.poetry" pyproject.toml && echo "yes")
 
