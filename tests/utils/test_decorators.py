@@ -10,7 +10,9 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
+import logging
 import os
+from contextlib import contextmanager
 import asyncio
 from asyncio import Future
 from unittest.mock import MagicMock, patch, call, ANY
@@ -689,3 +691,493 @@ class TestExecuteTeardownRoutinesOnGraph:
 
         # Verify the result is the config
         assert result == mock_config
+
+
+class TestTeardownAfterAFailedAlgorithmCall:
+    """A failing algorithm call must not leave a created instance running.
+
+    The teardown used to run only after a *successful* call, so a call that
+    raised skipped it and left the instance AVAILABLE and billing. It now runs
+    on failure too, but narrowed so a failure cannot destroy data.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _no_algorithm_test_env(self, monkeypatch):
+        """The decorator is a pass-through when this variable is set."""
+        monkeypatch.delenv("NX_ALGORITHM_TEST", raising=False)
+
+    @staticmethod
+    def _config(destroy_instance=True, create_new_instance=True, graph_id=None):
+        config = MagicMock(spec=NeptuneConfig)
+        config.graph_id = graph_id
+        config.create_new_instance = create_new_instance
+        config.destroy_instance = destroy_instance
+        config.export_s3_bucket = None
+        config.import_s3_bucket = None
+        config.save_snapshot = False
+        config.reset_graph = False
+        config.validate_config.return_value = None
+        return config
+
+    @contextmanager
+    def _patched(self, config, created_graph_id="g-created"):
+        """Patch the decorator's AWS surface.
+
+        Yields the delete, export and graph-id-reset doubles.
+        """
+        with (
+            patch("nx_neptune.utils.decorators.get_config", return_value=config),
+            patch("nx_neptune.utils.decorators.NeptuneGraph") as na_graph_cls,
+            patch("nx_neptune.utils.decorators._sync_data_to_neptune"),
+            patch("nx_neptune.utils.decorators._execute_setup_new_graph") as setup_new,
+            patch(
+                "nx_neptune.utils.decorators._execute_setup_routines_on_graph"
+            ) as setup_existing,
+            patch("nx_neptune.utils.decorators.delete_na_instance") as delete,
+            patch("nx_neptune.utils.decorators.export_csv_to_s3") as export,
+            patch("nx_neptune.utils.decorators.set_config_graph_id") as set_graph_id,
+        ):
+            na_graph_cls.from_config.return_value = MagicMock(spec=NeptuneGraph)
+
+            async def _setup_new(cfg, graph):
+                cfg.graph_id = created_graph_id
+                return cfg
+
+            async def _setup_existing(na_graph, cfg, *a, **k):
+                return cfg
+
+            async def _noop(*a, **k):
+                return None
+
+            setup_new.side_effect = _setup_new
+            setup_existing.side_effect = _setup_existing
+            delete.side_effect = _noop
+            export.side_effect = _noop
+            yield delete, export, set_graph_id
+
+    @staticmethod
+    def _failing(graph):
+        raise ValueError("algorithm boom")
+
+    def test_a_created_instance_is_destroyed_when_the_algorithm_raises(self):
+        """The cost leak this fixes: the instance used to be left running."""
+        with self._patched(self._config()) as (delete, _, set_graph_id):
+            with pytest.raises(ValueError, match="algorithm boom"):
+                configure_if_nx_active()(self._failing)(nx.Graph())
+
+        delete.assert_called_once_with("g-created")
+        set_graph_id.assert_called_once_with(None)
+
+    def test_destroy_instance_false_keeps_a_created_instance(self):
+        """`destroy_instance=False` is an explicit "keep it" and must be honoured.
+
+        Pins the guard: narrowed to `if not created_here`, a failed call would
+        delete an instance the user configured to keep.
+        """
+        with self._patched(self._config(destroy_instance=False)) as (
+            delete,
+            _,
+            set_graph_id,
+        ):
+            with pytest.raises(ValueError, match="algorithm boom"):
+                configure_if_nx_active()(self._failing)(nx.Graph())
+
+        delete.assert_not_called()
+        set_graph_id.assert_not_called()
+
+    def test_the_algorithm_error_propagates_unchanged(self):
+        """The caller must see their own error, not a teardown error."""
+        original = ValueError("algorithm boom")
+
+        def failing(graph):
+            raise original
+
+        with self._patched(self._config()):
+            with pytest.raises(ValueError) as excinfo:
+                configure_if_nx_active()(failing)(nx.Graph())
+
+        assert excinfo.value is original
+
+    @pytest.mark.parametrize(
+        "create_new_instance",
+        [False, {"provisionedMemory": 32}],
+        ids=["no-new-instance", "instance-options-dict"],
+    )
+    def test_a_caller_supplied_graph_is_not_destroyed(self, create_new_instance):
+        """destroy_instance is global config; it must not delete a graph this
+        call did not create just because an algorithm raised.
+
+        A dict create_new_instance (custom instance options) is accepted
+        alongside a graph_id, and the wrapper then uses the graph_id, so
+        ownership must come from the branch taken, not from the config.
+        """
+        config = self._config(
+            create_new_instance=create_new_instance, graph_id="g-caller-supplied"
+        )
+
+        with self._patched(config) as (delete, _, set_graph_id):
+            with pytest.raises(ValueError, match="algorithm boom"):
+                configure_if_nx_active()(self._failing)(nx.Graph())
+
+        delete.assert_not_called()
+        set_graph_id.assert_not_called()
+
+    def test_config_accepts_a_graph_id_with_an_instance_options_dict(self):
+        """Pins the premise of the case above against the real validation."""
+        config = NeptuneConfig(
+            graph_id="g-caller-supplied",
+            create_new_instance={"provisionedMemory": 32},
+            destroy_instance=True,
+        )
+
+        config.validate_config()
+
+    def test_the_export_is_skipped_on_failure(self):
+        """A partial export must not overwrite the last good one."""
+        config = self._config()
+        config.export_s3_bucket = "s3://bucket/exports"
+
+        with self._patched(config) as (_, export, _set_graph_id):
+            with pytest.raises(ValueError, match="algorithm boom"):
+                configure_if_nx_active()(self._failing)(nx.Graph())
+
+        export.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "interrupt", [KeyboardInterrupt, lambda: SystemExit(3)], ids=["ctrl-c", "exit"]
+    )
+    def test_an_interrupt_runs_no_teardown(self, interrupt):
+        """Ctrl-C must not be turned into a delete."""
+
+        def interrupted(graph):
+            raise interrupt()
+
+        with self._patched(self._config()) as (delete, _, _set_graph_id):
+            with pytest.raises(type(interrupt())):
+                configure_if_nx_active()(interrupted)(nx.Graph())
+
+        delete.assert_not_called()
+
+    def test_a_failing_teardown_does_not_replace_the_algorithm_error(self, caplog):
+        """The teardown error is logged, the algorithm's error still wins."""
+        with self._patched(self._config()) as (delete, _, set_graph_id):
+
+            async def _boom(graph_id):
+                raise RuntimeError("delete failed")
+
+            delete.side_effect = _boom
+
+            with caplog.at_level(logging.ERROR, logger="nx_neptune.utils.decorators"):
+                with pytest.raises(ValueError, match="algorithm boom"):
+                    configure_if_nx_active()(self._failing)(nx.Graph())
+
+        errors = [
+            r
+            for r in caplog.records
+            if r.levelno == logging.ERROR
+            and "may still be running and billed" in r.getMessage()
+        ]
+        assert errors
+        assert errors[0].exc_info is not None
+        assert isinstance(errors[0].exc_info[1], RuntimeError)
+        set_graph_id.assert_not_called()
+
+    def test_a_successful_call_still_runs_the_normal_teardown(self):
+        """Regression guard: the success path is unchanged."""
+
+        def ok(graph):
+            return "result"
+
+        config = self._config()
+        config.export_s3_bucket = "s3://bucket/exports"
+        order = []
+
+        with self._patched(config) as (delete, export, _set_graph_id):
+
+            async def _export(*a, **k):
+                order.append("export")
+
+            async def _delete(*a, **k):
+                order.append("delete")
+
+            export.side_effect = _export
+            delete.side_effect = _delete
+            assert configure_if_nx_active()(ok)(nx.Graph()) == "result"
+
+        export.assert_called_once()
+        delete.assert_called_once_with("g-created")
+        assert order == ["export", "delete"]
+
+    def test_a_created_instance_is_destroyed_from_inside_a_running_loop(self, caplog):
+        """The Jupyter case: teardown must still run when a loop is running."""
+        running_loop = MagicMock()
+        running_loop.is_running.return_value = True
+
+        with self._patched(self._config()) as (delete, _, set_graph_id):
+            with patch(
+                "nx_neptune.utils.decorators.asyncio.get_running_loop",
+                return_value=running_loop,
+            ):
+                with caplog.at_level(
+                    logging.ERROR, logger="nx_neptune.utils.decorators"
+                ):
+                    with pytest.raises(ValueError, match="algorithm boom"):
+                        configure_if_nx_active()(self._failing)(nx.Graph())
+
+        delete.assert_called_once_with("g-created")
+        set_graph_id.assert_called_once_with(None)
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
+class TestTeardownAfterASetupOrSyncFailure:
+    """A failure before the algorithm runs must not leak a created instance
+    either, and must still never delete a caller-supplied graph."""
+
+    @pytest.fixture(autouse=True)
+    def _no_algorithm_test_env(self, monkeypatch):
+        monkeypatch.delenv("NX_ALGORITHM_TEST", raising=False)
+
+    @staticmethod
+    def _config(
+        create_new_instance=True,
+        graph_id=None,
+        import_s3_bucket=None,
+        destroy_instance=True,
+    ):
+        config = MagicMock(spec=NeptuneConfig)
+        config.graph_id = graph_id
+        config.create_new_instance = create_new_instance
+        config.destroy_instance = destroy_instance
+        config.export_s3_bucket = None
+        config.import_s3_bucket = import_s3_bucket
+        config.restore_snapshot = None
+        config.skip_graph_reset = True
+        config.save_snapshot = False
+        config.reset_graph = False
+        config.validate_config.return_value = None
+        return config
+
+    @contextmanager
+    def _patched(self, config, sync=None, create=None, import_csv=None):
+        """Patch the AWS surface, leaving the real setup routines in place."""
+
+        async def _create(options=None):
+            return "g-created"
+
+        async def _delete(graph_id):
+            return None
+
+        def _set_graph_id(graph_id):
+            config.graph_id = graph_id
+            return config
+
+        with (
+            patch("nx_neptune.utils.decorators.get_config", return_value=config),
+            patch("nx_neptune.utils.decorators.NeptuneGraph") as na_graph_cls,
+            patch(
+                "nx_neptune.utils.decorators._sync_data_to_neptune", side_effect=sync
+            ),
+            patch(
+                "nx_neptune.utils.decorators.create_na_instance",
+                side_effect=create or _create,
+            ),
+            patch(
+                "nx_neptune.utils.decorators.import_csv_from_s3",
+                side_effect=import_csv,
+            ),
+            patch(
+                "nx_neptune.utils.decorators.delete_na_instance", side_effect=_delete
+            ) as delete,
+            patch(
+                "nx_neptune.utils.decorators.set_config_graph_id",
+                side_effect=_set_graph_id,
+            ) as set_graph_id,
+        ):
+            na_graph_cls.from_config.return_value = MagicMock(spec=NeptuneGraph)
+            yield delete, set_graph_id
+
+    @staticmethod
+    def _algorithm(graph):
+        return "result"
+
+    def test_a_created_instance_is_destroyed_when_the_import_raises(self):
+        async def _import(*a, **k):
+            raise RuntimeError("import boom")
+
+        config = self._config(import_s3_bucket="s3://bucket/imports")
+        with self._patched(config, import_csv=_import) as (delete, _):
+            with pytest.raises(RuntimeError, match="import boom"):
+                configure_if_nx_active()(self._algorithm)(nx.Graph())
+
+        delete.assert_called_once_with("g-created")
+
+    def test_a_created_instance_is_destroyed_when_the_sync_raises(self):
+        config = self._config()
+        with self._patched(config, sync=RuntimeError("sync boom")) as (delete, _):
+            with pytest.raises(RuntimeError, match="sync boom"):
+                configure_if_nx_active()(self._algorithm)(nx.Graph())
+
+        delete.assert_called_once_with("g-created")
+
+    @pytest.mark.parametrize("failure", ["sync", "import"], ids=["sync", "import"])
+    def test_destroy_instance_false_keeps_a_created_instance(self, failure):
+        """Same guard, reached through a setup/sync failure rather than the call."""
+
+        async def _import(*a, **k):
+            raise RuntimeError("import boom")
+
+        if failure == "sync":
+            config = self._config(destroy_instance=False)
+            kwargs = {"sync": RuntimeError("sync boom")}
+            match = "sync boom"
+        else:
+            config = self._config(
+                destroy_instance=False, import_s3_bucket="s3://bucket/imports"
+            )
+            kwargs = {"import_csv": _import}
+            match = "import boom"
+
+        with self._patched(config, **kwargs) as (delete, set_graph_id):
+            with pytest.raises(RuntimeError, match=match):
+                configure_if_nx_active()(self._algorithm)(nx.Graph())
+
+        delete.assert_not_called()
+        # Setup legitimately records the new id here; what must not happen is
+        # the teardown clearing it, which is the call with None.
+        assert call(None) not in set_graph_id.call_args_list
+
+    def test_a_failed_instance_creation_attempts_no_delete(self):
+        async def _create(options=None):
+            raise RuntimeError("create boom")
+
+        config = self._config()
+        with self._patched(config, create=_create) as (delete, _):
+            with pytest.raises(RuntimeError, match="create boom"):
+                configure_if_nx_active()(self._algorithm)(nx.Graph())
+
+        delete.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "create_new_instance",
+        [False, {"provisionedMemory": 32}],
+        ids=["no-new-instance", "instance-options-dict"],
+    )
+    def test_a_caller_supplied_graph_is_not_destroyed_when_the_sync_raises(
+        self, create_new_instance
+    ):
+        config = self._config(
+            create_new_instance=create_new_instance, graph_id="g-caller-supplied"
+        )
+        with self._patched(config, sync=RuntimeError("sync boom")) as (delete, _):
+            with pytest.raises(RuntimeError, match="sync boom"):
+                configure_if_nx_active()(self._algorithm)(nx.Graph())
+
+        delete.assert_not_called()
+
+    def test_a_caller_supplied_graph_is_not_destroyed_when_the_import_raises(self):
+        async def _import(*a, **k):
+            raise RuntimeError("import boom")
+
+        config = self._config(
+            create_new_instance=False,
+            graph_id="g-caller-supplied",
+            import_s3_bucket="s3://bucket/imports",
+        )
+        with self._patched(config, import_csv=_import) as (delete, _):
+            with pytest.raises(RuntimeError, match="import boom"):
+                configure_if_nx_active()(self._algorithm)(nx.Graph())
+
+        delete.assert_not_called()
+
+
+class TestTeardownInARunningEventLoop:
+    """The Jupyter case: the teardown reaches AWS through a worker thread.
+
+    `_run_coroutine` cannot use `asyncio.run` inside a running loop, so it
+    bridges to a thread. A regression in that bridge is caught and logged at the
+    failure-teardown call site rather than raised, so without a test the symptom
+    would be one log line and an instance left running and billed.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _no_algorithm_test_env(self, monkeypatch):
+        monkeypatch.delenv("NX_ALGORITHM_TEST", raising=False)
+
+    @staticmethod
+    def _config(destroy_instance=True):
+        config = MagicMock(spec=NeptuneConfig)
+        config.graph_id = None
+        config.create_new_instance = True
+        config.destroy_instance = destroy_instance
+        config.export_s3_bucket = None
+        config.import_s3_bucket = None
+        config.save_snapshot = False
+        config.reset_graph = False
+        config.validate_config.return_value = None
+        return config
+
+    @contextmanager
+    def _patched_in_loop(self, config):
+        """As the failure-path patches, but with a *running* loop reported."""
+
+        async def _setup_new(cfg, graph):
+            cfg.graph_id = "g-created"
+            return cfg
+
+        async def _noop(*a, **k):
+            return None
+
+        running = MagicMock()
+        running.is_running.return_value = True
+
+        with (
+            patch("nx_neptune.utils.decorators.get_config", return_value=config),
+            patch(
+                "nx_neptune.utils.decorators.asyncio.get_running_loop",
+                return_value=running,
+            ),
+            patch("nx_neptune.utils.decorators.NeptuneGraph") as na_graph_cls,
+            patch("nx_neptune.utils.decorators._sync_data_to_neptune"),
+            patch(
+                "nx_neptune.utils.decorators._execute_setup_new_graph",
+                side_effect=_setup_new,
+            ),
+            patch(
+                "nx_neptune.utils.decorators.delete_na_instance", side_effect=_noop
+            ) as delete,
+            patch("nx_neptune.utils.decorators.set_config_graph_id") as set_graph_id,
+        ):
+            na_graph_cls.from_config.return_value = MagicMock(spec=NeptuneGraph)
+            yield delete, set_graph_id
+
+    @staticmethod
+    def _failing(graph):
+        raise ValueError("algorithm boom")
+
+    def test_a_created_instance_is_destroyed_from_inside_a_running_loop(self, caplog):
+        config = self._config()
+
+        with caplog.at_level(logging.ERROR, logger="nx_neptune.utils.decorators"):
+            with self._patched_in_loop(config) as (delete, set_graph_id):
+                with pytest.raises(ValueError, match="algorithm boom"):
+                    configure_if_nx_active()(self._failing)(nx.Graph())
+
+        delete.assert_called_once_with("g-created")
+        set_graph_id.assert_called_once_with(None)
+        errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert (
+            not errors
+        ), f"teardown reported a failure: {[r.getMessage() for r in errors]}"
+
+    def test_destroy_instance_false_is_honoured_in_a_running_loop(self, caplog):
+        with caplog.at_level(logging.ERROR, logger="nx_neptune.utils.decorators"):
+            with self._patched_in_loop(self._config(destroy_instance=False)) as (
+                delete,
+                set_graph_id,
+            ):
+                with pytest.raises(ValueError, match="algorithm boom"):
+                    configure_if_nx_active()(self._failing)(nx.Graph())
+
+        delete.assert_not_called()
+        set_graph_id.assert_not_called()
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR]

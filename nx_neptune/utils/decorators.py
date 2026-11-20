@@ -54,68 +54,123 @@ def configure_if_nx_active():
 
             logger.debug(f"configure_if_nx_active: {func.__name__}")
             graph = args[0]
+            # Whether this call created the instance, tracked by the branch the
+            # wrapper takes. destroy_instance is global config that outlives a
+            # single call, so it cannot answer this.
+            created_here = False
 
             neptune_config = get_config()
             neptune_config.validate_config()
 
-            # Execute setup instructions
-            if neptune_config.graph_id is not None:
-                na_graph = NeptuneGraph.from_config(
-                    config=neptune_config, graph=graph, logger=logger
-                )
-                if loop and loop.is_running():
-                    pool = concurrent.futures.ThreadPoolExecutor()
-                    neptune_config = pool.submit(
-                        asyncio.run,
+            try:
+                # Execute setup instructions
+                if neptune_config.graph_id is not None:
+                    na_graph = NeptuneGraph.from_config(
+                        config=neptune_config, graph=graph, logger=logger
+                    )
+                    neptune_config = _run_coroutine(
                         _execute_setup_routines_on_graph(na_graph, neptune_config),
-                    ).result()
-                else:
-                    neptune_config = asyncio.run(
-                        _execute_setup_routines_on_graph(na_graph, neptune_config)
+                        loop,
                     )
 
-            elif neptune_config.create_new_instance is True or isinstance(
-                neptune_config.create_new_instance, dict
-            ):
-                if loop and loop.is_running():
-                    pool = concurrent.futures.ThreadPoolExecutor()
-                    neptune_config = pool.submit(
-                        asyncio.run, _execute_setup_new_graph(neptune_config, graph)
-                    ).result()
-                else:
-                    neptune_config = asyncio.run(
-                        _execute_setup_new_graph(neptune_config, graph)
+                elif neptune_config.create_new_instance is True or isinstance(
+                    neptune_config.create_new_instance, dict
+                ):
+                    created_here = True
+                    neptune_config = _run_coroutine(
+                        _execute_setup_new_graph(neptune_config, graph), loop
                     )
 
-                na_graph = NeptuneGraph.from_config(
-                    config=neptune_config, graph=graph, logger=logger
-                )
+                    na_graph = NeptuneGraph.from_config(
+                        config=neptune_config, graph=graph, logger=logger
+                    )
 
-            _sync_data_to_neptune(graph, na_graph, neptune_config)
+                _sync_data_to_neptune(graph, na_graph, neptune_config)
 
-            converted_args = (na_graph,) + args[1:]
+                converted_args = (na_graph,) + args[1:]
 
-            # Call algorithm
-            rv = func(*converted_args, **kwargs)
-
-            # Execute teardown instructions
-            if neptune_config.graph_id is not None:
-                if loop and loop.is_running():
-                    pool = concurrent.futures.ThreadPoolExecutor()
-                    pool.submit(
-                        asyncio.run,
+                # Call algorithm
+                rv = func(*converted_args, **kwargs)
+            except (KeyboardInterrupt, SystemExit):
+                # Control flow, not a failure: run no teardown, so a Ctrl-C is
+                # not turned into a delete.
+                raise
+            except BaseException:
+                config_now = neptune_config
+                try:
+                    # Setup may have stored a new graph_id in the global config
+                    # before failing, so read it afresh rather than trusting
+                    # the config captured before setup.
+                    config_now = get_config()
+                    _run_coroutine(
+                        _execute_failure_teardown(config_now, created_here), loop
+                    )
+                except BaseException:  # noqa: BLE001 - see below
+                    # The original exception is the one the caller needs. A
+                    # teardown failure is logged and swallowed so it cannot
+                    # replace it; BaseException so an interrupt during teardown
+                    # cannot either.
+                    logger.error(
+                        "Teardown after a failed call (graph %s) may not have "
+                        "completed; the instance may still be running and billed",
+                        config_now.graph_id,
+                        exc_info=True,
+                    )
+                raise
+            else:
+                # Execute teardown instructions
+                if neptune_config.graph_id is not None:
+                    _run_coroutine(
                         _execute_teardown_routines_on_graph(na_graph, neptune_config),
-                    ).result()
-                else:
-                    asyncio.run(
-                        _execute_teardown_routines_on_graph(na_graph, neptune_config)
+                        loop,
                     )
-
-            return rv
+                return rv
 
         return wrapper
 
     return decorator
+
+
+def _run_coroutine(coro, loop):
+    """Run a coroutine to completion, from inside a running loop or not."""
+    if loop and loop.is_running():
+        # asyncio.run cannot nest in a running loop, so use a worker thread.
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            return pool.submit(asyncio.run, coro).result()
+        finally:
+            pool.shutdown()
+    return asyncio.run(coro)
+
+
+async def _execute_failure_teardown(
+    neptune_config: NeptuneConfig, created_here: bool
+) -> None:
+    """Release what this call created, after the algorithm raised.
+
+    Deliberately narrower than the success teardown, so that a failure cannot
+    destroy data:
+
+    - the S3 export is skipped, so a partial export cannot overwrite the last
+      good one;
+    - the instance is destroyed only when this call created it. A
+      caller-supplied ``graph_id`` is never deleted because an algorithm raised.
+    """
+    if not (created_here and neptune_config.destroy_instance):
+        return
+    if neptune_config.graph_id is None:
+        return
+
+    logger.debug(f"Destroy instance created by this call: {neptune_config.graph_id}")
+    await _destroy_instance(neptune_config.graph_id)
+
+
+async def _destroy_instance(graph_id: str) -> NeptuneConfig:
+    """Delete the instance and clear the stored graph id."""
+    await delete_na_instance(graph_id)
+    config = set_config_graph_id(None)
+    logger.debug("Instance destroyed")
+    return config
 
 
 async def _execute_setup_routines_on_graph(
@@ -251,9 +306,6 @@ async def _execute_teardown_routines_on_graph(
 
         if neptune_config.destroy_instance:
             logger.debug(f"Destroy instance {neptune_config.graph_id}")
-            await delete_na_instance(neptune_config.graph_id)
-            # clear the graph id
-            neptune_config = set_config_graph_id(None)
-            logger.debug("Instance destroyed")
+            neptune_config = await _destroy_instance(neptune_config.graph_id)
 
     return neptune_config
