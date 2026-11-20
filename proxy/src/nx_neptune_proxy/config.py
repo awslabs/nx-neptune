@@ -14,9 +14,11 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
 # Bedrock model used by the AI assistant when BEDROCK_MODEL is unset. This is a
-# cross-region inference profile ID — Bedrock's Converse API rejects the bare
-# "us.anthropic.claude-sonnet-4-5" alias, so the full versioned form is required.
-_DEFAULT_BEDROCK_MODEL = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+# cross-region inference profile ID: Converse needs the profile ID (with the
+# "us." prefix), not the bare model ID. Models move to Legacy over time (the
+# previous default, claude-sonnet-4-5, did), so check the lifecycle with
+# `aws bedrock list-foundation-models --by-provider anthropic`.
+_DEFAULT_BEDROCK_MODEL = "us.anthropic.claude-sonnet-5-5"
 
 
 def normalize_origin(origin: str) -> str | None:

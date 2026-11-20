@@ -87,7 +87,7 @@ Notes:
 - The run endpoint uses `ClientFactory().neptune()` (Neptune Analytics `ExecuteQuery`); there is **no** existing openCypher execution path in the proxy today — this is net-new (`graph.py` only does lifecycle actions).
 
 ### 4.3 Bedrock configuration
-- New settings (env): `BEDROCK_MODEL` (default `us.anthropic.claude-sonnet-4-5-...`), `BEDROCK_REGION` (defaults to `AWS_REGION`).
+- New settings (env): `BEDROCK_MODEL` (default `us.anthropic.claude-sonnet-5-5`), `BEDROCK_REGION` (defaults to `AWS_REGION`).
 - Exposed read-only via `/metadata/config` and selectable in the chat panel's model dropdown.
 
 ### 4.4 Agent pipeline (Strands + Bedrock)

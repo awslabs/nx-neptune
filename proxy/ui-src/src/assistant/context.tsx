@@ -160,7 +160,7 @@ const GREETING: ChatMessage = {
 export function AssistantProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [bedrockModel, setBedrockModel] = useState("us.anthropic.claude-sonnet-4-5-20250929-v1:0");
+  const [bedrockModel, setBedrockModel] = useState("us.anthropic.claude-sonnet-5-5");
   const [chat, setChat] = useState<ChatMessage[]>([GREETING]);
   const [thinking, setThinking] = useState(false);
   const navigate = useNavigate();

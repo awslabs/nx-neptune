@@ -171,7 +171,7 @@ When using the Vite dev server (`npm run dev`), open the proxy launch URL with t
 | `GE_PORT` | `443` | Host port for Graph Explorer (`make up`, `make up-ge`), published on `127.0.0.1`. `make up` builds the UI with the matching link; with `make dev`, build it with `VITE_GRAPH_EXPLORER_URL=https://localhost:<port>/explorer make ui` |
 | `NX_NEPTUNE_DB_PATH` | `~/.nx-neptune/proxy.db` | SQLite database path |
 | `NX_DEBUG` | *(unset)* | When truthy (`1`/`true`/`yes`/`on`), use a fixed access token (`nx-debug-local-token`) instead of a random per-run one, giving a stable launch URL. **Local development only** — see [Access token](#access-token). |
-| `BEDROCK_MODEL` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | Default Bedrock model ID (cross-region inference profile) for the AI assistant agent pipeline. Overridable per request via the chat panel's model selector. |
+| `BEDROCK_MODEL` | `us.anthropic.claude-sonnet-5-5` | Default Bedrock model ID (cross-region inference profile) for the AI assistant agent pipeline. Overridable per request via the chat panel's model selector. |
 | `BEDROCK_REGION` | *(falls back to `AWS_DEFAULT_REGION`/`AWS_REGION`)* | AWS region for Bedrock calls, if Bedrock runs in a different region than Athena/Neptune. |
 | `BEDROCK_AGENT_ROLE_ARN` | *(unset → uses the proxy's process role)* | Optional scoped, **read-only** IAM role for the AI assistant's agent path (spec §9.11). When set, the proxy assumes it via STS and runs the agent's Bedrock/Athena calls under the resulting short-lived credentials, so "the agent can only read/propose" holds at the AWS layer. Set this in any environment where the proxy's own role carries write/destructive permissions. |
 
