@@ -55,7 +55,10 @@ class TestRedirectPage:
         try:
             assert stat.S_IMODE(page.stat().st_mode) == 0o600
             body = page.read_text()
-            assert 'content="0;url=http://127.0.0.1:8080/?token=abc&amp;x=&lt;y&gt;"' in body
+            assert (
+                'content="0;url=http://127.0.0.1:8080/?token=abc&amp;x=&lt;y&gt;"'
+                in body
+            )
             assert "<y>" not in body
         finally:
             page.unlink()
@@ -77,7 +80,9 @@ class TestOpenWhenReady:
         opened.assert_not_called()
 
     def test_browser_failure_does_not_raise(self, listening_port):
-        with mock.patch.object(browser.webbrowser, "open", side_effect=RuntimeError("x")):
+        with mock.patch.object(
+            browser.webbrowser, "open", side_effect=RuntimeError("x")
+        ):
             browser._open_when_ready(URL, "127.0.0.1", listening_port)
 
 
@@ -99,7 +104,9 @@ class TestRedirectPageCleanup:
         assert not page.exists()
 
     def test_page_removed_immediately_when_no_browser(self, listening_port):
-        with mock.patch.object(browser.webbrowser, "open", return_value=False) as opened:
+        with mock.patch.object(
+            browser.webbrowser, "open", return_value=False
+        ) as opened:
             browser._open_when_ready(URL, "127.0.0.1", listening_port)
         assert not self._opened_path(opened).exists()
 
@@ -111,7 +118,11 @@ class TestRedirectPageCleanup:
             written.append(real_write(url))
             return written[-1]
 
-        with mock.patch.object(browser, "_write_redirect_page", side_effect=spy), \
-                mock.patch.object(browser.webbrowser, "open", side_effect=RuntimeError("x")):
+        with (
+            mock.patch.object(browser, "_write_redirect_page", side_effect=spy),
+            mock.patch.object(
+                browser.webbrowser, "open", side_effect=RuntimeError("x")
+            ),
+        ):
             browser._open_when_ready(URL, "127.0.0.1", listening_port)
         assert written and not written[0].exists()
