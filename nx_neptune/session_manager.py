@@ -466,6 +466,9 @@ class SessionManager:
             na_client=self._neptune_client,
             sts_client=self._sts_client,
             iam_client=self._iam_client,
+            # CreateGraphUsingImportTask is passed the wrapper's role, so it has
+            # to be the resolved import role rather than the caller identity.
+            iam_client_wrapper=IamClientWrapper(self._s3_iam_role, self._iam_client),
         )
         return self.get_graph(graph_id)
 

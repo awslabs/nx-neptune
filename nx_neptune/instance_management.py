@@ -136,6 +136,7 @@ async def create_na_instance_with_s3_import(
     na_client: Optional[BaseClient] = None,
     polling_interval=None,
     max_attempts=None,
+    iam_client_wrapper: Optional[IamClientWrapper] = None,
 ) -> tuple[str, str]:
     """Creates a new Neptune Analytics graph instance and imports data from S3.
 
@@ -173,7 +174,13 @@ async def create_na_instance_with_s3_import(
         ValueError: If the role lacks required permissions
     """
 
-    iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
+    # A caller that has already resolved an import role passes its wrapper; the
+    # role inside it is what reaches CreateGraphUsingImportTask below. Without
+    # one, fall back to the caller identity as before, so existing callers and
+    # the public signature are unaffected.
+    iam_client_wrapper = iam_client_wrapper or _create_iam_wrapper(
+        sts_client, iam_client
+    )
 
     na_client = na_client or ClientFactory().neptune()
     # Retrieve key_arn for the bucket and permission check if present

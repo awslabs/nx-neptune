@@ -6,6 +6,20 @@ Unreleased
 
 ### Behaviour changes
 
+`SessionManager` now resolves its S3 import/export role from configuration, not
+only from the caller identity. This affects existing users:
+
+- A caller that sets `NETWORKX_S3_IAM_ROLE_ARN` or
+  `nx.config.backends.neptune.s3_iam_role` for the NetworkX backend will now see
+  `SessionManager` use that role too, for import, export and the permission
+  preflight. Previously `SessionManager` ignored both and always used the caller
+  identity. If you set the variable for the backend but intend sessions to keep
+  running as the caller, pass `import_role_arn` explicitly or unset it for the
+  session's process.
+- Resolution order is the explicit `import_role_arn` argument, then the
+  configured `s3_iam_role`, then the caller identity. STS is only consulted when
+  neither of the first two is set.
+
 `SessionManager` cleanup on context exit changed. These affect existing users:
 
 - `CleanupTask.STOP` now runs when the `with` block exits. Previously only

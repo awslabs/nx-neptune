@@ -1865,6 +1865,56 @@ class TestSessionManagerImportRole:
 
     @pytest.mark.asyncio
     @patch("boto3.client")
+    async def test_create_from_csv_imports_with_the_import_role(
+        self, mock_boto3, role_env
+    ):
+        """CreateGraphUsingImportTask is passed the wrapper's role, so it must be
+        the resolved import role and not the caller identity.
+
+        This path builds its wrapper inside instance_management rather than in
+        session_manager, which is why it was missed: it does not match the
+        `IamClientWrapper(self._s3_iam_role, ...)` shape the other four sites use.
+        """
+        factory, _, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+        sm = SessionManager(session_name="s", import_role_arn=IMPORT_ROLE_ARN)
+
+        with (
+            patch(
+                "nx_neptune.instance_management.create_na_instance_with_s3_import",
+                new=AsyncMock(return_value=("g-new", "t-1")),
+            ) as create,
+            patch.object(sm, "get_graph", return_value=MagicMock(graph_id="g-new")),
+        ):
+            await sm.create_from_csv(S3_LOCATION)
+
+        wrapper = create.await_args.kwargs["iam_client_wrapper"]
+        assert wrapper.role_arn == IMPORT_ROLE_ARN
+        assert wrapper.role_arn != CALLER_ARN
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
+    async def test_create_from_csv_falls_back_to_caller_identity(
+        self, mock_boto3, role_env
+    ):
+        """With no role configured, this path keeps its previous behaviour."""
+        factory, _, _ = _boto3_clients()
+        mock_boto3.side_effect = factory
+        sm = SessionManager(session_name="s")
+
+        with (
+            patch(
+                "nx_neptune.instance_management.create_na_instance_with_s3_import",
+                new=AsyncMock(return_value=("g-new", "t-1")),
+            ) as create,
+            patch.object(sm, "get_graph", return_value=MagicMock(graph_id="g-new")),
+        ):
+            await sm.create_from_csv(S3_LOCATION)
+
+        assert create.await_args.kwargs["iam_client_wrapper"].role_arn == CALLER_ARN
+
+    @pytest.mark.asyncio
+    @patch("boto3.client")
     async def test_table_import_wraps_import_role_not_caller(
         self, mock_boto3, role_env
     ):

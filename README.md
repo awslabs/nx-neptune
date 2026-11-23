@@ -333,8 +333,9 @@ To run the Jupyter notebooks:
 
    - It is read when `nx_neptune` is imported, so export it before starting
      Jupyter. Setting it from inside a running kernel has no effect.
-   - It applies to the NetworkX backend only. `SessionManager` builds its own
-     role from the caller identity and ignores this variable.
+   - It applies to both the NetworkX backend and `SessionManager`. A
+     `SessionManager` built with an explicit `import_role_arn` uses that
+     instead; see [S3 import/export role](#s3-importexport-role).
 
 3. Launch Jupyter Notebook:
    ```bash
