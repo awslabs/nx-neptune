@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
+import { importBlockedReason } from "../util/blocked";
 import { Play, CheckCircle, Eye, Wand2, ChevronRight, Plus, Trash2, AlertTriangle } from "lucide-react";
 
 type UiNodeQuery = NodeQueryInput & { failed?: boolean };
@@ -436,15 +437,13 @@ export function Import() {
 
   const hasQueries = nodeQueries.some((q) => q.sql.trim()) || edgeQueries.some((q) => q.sql.trim());
 
-  // Why Preview/Execute are unavailable, in the order a user would hit them.
-  // Mirrors the `disabled` expressions on those two buttons.
-  const blockedReason = polling
-    ? "An import is already running for this projection."
-    : loading
-      ? "Waiting for the current operation to finish."
-      : !hasQueries
-        ? "Add at least one node or edge query first."
-        : null;
+  // Why Preview/Execute are unavailable. Derived from the same state the
+  // `disabled` expressions below read, so the two cannot disagree.
+  const blockedReason = importBlockedReason({
+    polling,
+    loading: !!loading,
+    hasQueries,
+  });
 
   function renderChecks(source: "resources" | "queries") {
     if (checksSource !== source || checks.length === 0) return null;

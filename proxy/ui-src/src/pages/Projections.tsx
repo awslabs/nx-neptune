@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useSearchParams, NavLink } from "react-router";
 import { projection, metadata, projectApi, graphActions, type Projection, type Project, type Inflight, type QueriesResponse } from "../api";
 import { Card, Button, RefreshButton, ProgressBar } from "../components/ui";
+import { TRANSIENT_POLL_MS, graphActionBlockedReason } from "../util/blocked";
 import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown, Download } from "lucide-react";
 import { useNavigate } from "react-router";
 
@@ -146,7 +147,7 @@ export function Projections() {
     if (!hasTransient) return;
     // 5s, not 30s: this only runs while a graph is mid-transition, and at 30s a
     // user who clicks Stop sees nothing change for half a minute and clicks again.
-    const interval = setInterval(() => load(), 5000);
+    const interval = setInterval(() => load(), TRANSIENT_POLL_MS);
     return () => clearInterval(interval);
   }, [hasTransient]);
 
@@ -289,11 +290,13 @@ export function Projections() {
                         className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-blue-600 disabled:opacity-30 disabled:hover:bg-transparent"
                         disabled={!s.graph_id || graphStatus !== "AVAILABLE"}
                         title={
-                          !s.graph_id
-                            ? "No graph yet — run the import first"
-                            : graphStatus !== "AVAILABLE"
-                              ? `Graph is ${graphStatus?.toLowerCase() || "unavailable"}; it must be available to explore`
-                              : "Open in Graph Explorer"
+                          graphActionBlockedReason({
+                            action: "explore",
+                            graphId: s.graph_id,
+                            graphStatus,
+                            available: actions,
+                            isTransient,
+                          }) || "Open in Graph Explorer"
                         }
                         onClick={(e) => {
                           e.stopPropagation();
@@ -317,11 +320,13 @@ export function Projections() {
                         className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-amber-600 disabled:opacity-30 disabled:hover:bg-transparent"
                         disabled={!actions.includes("stop") || isTransient}
                         title={
-                          isTransient
-                            ? `Graph is ${graphStatus?.toLowerCase() || "changing"}; wait for it to settle`
-                            : !actions.includes("stop")
-                              ? "Graph cannot be stopped in its current state"
-                              : "Stop graph"
+                          graphActionBlockedReason({
+                            action: "stop",
+                            graphId: s.graph_id,
+                            graphStatus,
+                            available: actions,
+                            isTransient,
+                          }) || "Stop graph"
                         }
                         onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "stop", s.graph_name || s.graph_id!); }}
                       >
@@ -333,11 +338,13 @@ export function Projections() {
                         className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-green-600 disabled:opacity-30 disabled:hover:bg-transparent"
                         disabled={!actions.includes("start") || isTransient}
                         title={
-                          isTransient
-                            ? `Graph is ${graphStatus?.toLowerCase() || "changing"}; wait for it to settle`
-                            : !actions.includes("start")
-                              ? "Graph cannot be started in its current state"
-                              : "Start graph"
+                          graphActionBlockedReason({
+                            action: "start",
+                            graphId: s.graph_id,
+                            graphStatus,
+                            available: actions,
+                            isTransient,
+                          }) || "Start graph"
                         }
                         onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "start", s.graph_name || s.graph_id!); }}
                       >
@@ -358,13 +365,14 @@ export function Projections() {
                           className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
                           disabled={!s.graph_id || isTransient || s.status === "importing" || s.status === "executing"}
                           title={
-                            !s.graph_id
-                              ? "No graph attached to this projection"
-                              : s.status === "importing" || s.status === "executing"
-                                ? "An import is running; wait for it to finish"
-                                : isTransient
-                                  ? `Graph is ${graphStatus?.toLowerCase() || "changing"}; wait for it to settle`
-                                  : "Delete graph (archive projection)"
+                            graphActionBlockedReason({
+                              action: "delete-graph",
+                              graphId: s.graph_id,
+                              graphStatus,
+                              available: actions,
+                              isTransient,
+                              projectionStatus: s.status,
+                            }) || "Delete graph (archive projection)"
                           }
                           onClick={(e) => { e.stopPropagation(); archiveProjection(s.id, s.graph_name || s.id.slice(0, 8)); }}
                         >

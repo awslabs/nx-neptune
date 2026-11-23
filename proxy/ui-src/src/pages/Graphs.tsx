@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { metadata, graphActions, Inflight } from "../api";
 import { Card, RefreshButton } from "../components/ui";
+import { TRANSIENT_POLL_MS } from "../util/blocked";
 import { Trash2, ExternalLink, Square, Play, X, AlertTriangle } from "lucide-react";
 
 interface Graph {
@@ -78,7 +79,7 @@ export function Graphs() {
     if (!hasTransient) return;
     // 5s, not 30s: this only runs while a graph is mid-transition, and at 30s a
     // user who clicks Stop sees nothing change for half a minute and clicks again.
-    const interval = setInterval(() => load({ withActions: true }), 5000);
+    const interval = setInterval(() => load({ withActions: true }), TRANSIENT_POLL_MS);
     return () => clearInterval(interval);
   }, [hasTransient, load]);
 
