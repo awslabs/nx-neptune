@@ -436,6 +436,16 @@ export function Import() {
 
   const hasQueries = nodeQueries.some((q) => q.sql.trim()) || edgeQueries.some((q) => q.sql.trim());
 
+  // Why Preview/Execute are unavailable, in the order a user would hit them.
+  // Mirrors the `disabled` expressions on those two buttons.
+  const blockedReason = polling
+    ? "An import is already running for this projection."
+    : loading
+      ? "Waiting for the current operation to finish."
+      : !hasQueries
+        ? "Add at least one node or edge query first."
+        : null;
+
   function renderChecks(source: "resources" | "queries") {
     if (checksSource !== source || checks.length === 0) return null;
     return (
@@ -710,9 +720,27 @@ export function Import() {
       </Card>
 
       {/* Actions */}
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={handlePreview} disabled={!!loading || !hasQueries}><Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview"}</Button>
-        <Button onClick={handleExecute} disabled={polling || !!loading || !hasQueries}><Play className="h-4 w-4" /> Execute</Button>
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={handlePreview}
+            disabled={!!loading || !hasQueries}
+            title={blockedReason || "Preview the first rows each query returns"}
+          >
+            <Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview"}
+          </Button>
+          <Button
+            onClick={handleExecute}
+            disabled={polling || !!loading || !hasQueries}
+            title={blockedReason || "Create the graph and import the query results"}
+          >
+            <Play className="h-4 w-4" /> Execute
+          </Button>
+        </div>
+        {/* A disabled control that does not say why leaves the user guessing at
+            three separate conditions. Name the unmet one. */}
+        {blockedReason && <p className="text-xs text-gray-500">{blockedReason}</p>}
       </div>
 
       {/* Preview */}

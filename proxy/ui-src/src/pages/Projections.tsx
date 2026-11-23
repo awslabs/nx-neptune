@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useSearchParams, NavLink } from "react-router";
 import { projection, metadata, projectApi, graphActions, type Projection, type Project, type Inflight, type QueriesResponse } from "../api";
-import { Card, Button, RefreshButton } from "../components/ui";
+import { Card, Button, RefreshButton, ProgressBar } from "../components/ui";
 import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown, Download } from "lucide-react";
 import { useNavigate } from "react-router";
 
@@ -144,7 +144,9 @@ export function Projections() {
 
   useEffect(() => {
     if (!hasTransient) return;
-    const interval = setInterval(() => load(), 30000);
+    // 5s, not 30s: this only runs while a graph is mid-transition, and at 30s a
+    // user who clicks Stop sees nothing change for half a minute and clicks again.
+    const interval = setInterval(() => load(), 5000);
     return () => clearInterval(interval);
   }, [hasTransient]);
 
@@ -267,7 +269,13 @@ export function Projections() {
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle(s.status)}`}>{s.status}</span>
                   </td>
-                  <td className="px-4 py-3">{Math.round(s.progress)}%</td>
+                  <td className="px-4 py-3">
+                    <ProgressBar
+                      value={s.progress}
+                      label={s.step_label || s.step || undefined}
+                      compact
+                    />
+                  </td>
                   <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
                   <td className="px-4 py-3">
                     {graphStatus ? (
@@ -280,7 +288,13 @@ export function Projections() {
                       <button
                         className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-blue-600 disabled:opacity-30 disabled:hover:bg-transparent"
                         disabled={!s.graph_id || graphStatus !== "AVAILABLE"}
-                        title="Open in Graph Explorer"
+                        title={
+                          !s.graph_id
+                            ? "No graph yet — run the import first"
+                            : graphStatus !== "AVAILABLE"
+                              ? `Graph is ${graphStatus?.toLowerCase() || "unavailable"}; it must be available to explore`
+                              : "Open in Graph Explorer"
+                        }
                         onClick={(e) => {
                           e.stopPropagation();
                           const graphDbUrl = `https://${s.graph_id}.${region}.neptune-graph.amazonaws.com`;
@@ -302,7 +316,13 @@ export function Projections() {
                       <button
                         className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-amber-600 disabled:opacity-30 disabled:hover:bg-transparent"
                         disabled={!actions.includes("stop") || isTransient}
-                        title="Stop graph"
+                        title={
+                          isTransient
+                            ? `Graph is ${graphStatus?.toLowerCase() || "changing"}; wait for it to settle`
+                            : !actions.includes("stop")
+                              ? "Graph cannot be stopped in its current state"
+                              : "Stop graph"
+                        }
                         onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "stop", s.graph_name || s.graph_id!); }}
                       >
                         <Square className="h-4 w-4" />
@@ -312,7 +332,13 @@ export function Projections() {
                       <button
                         className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-green-600 disabled:opacity-30 disabled:hover:bg-transparent"
                         disabled={!actions.includes("start") || isTransient}
-                        title="Start graph"
+                        title={
+                          isTransient
+                            ? `Graph is ${graphStatus?.toLowerCase() || "changing"}; wait for it to settle`
+                            : !actions.includes("start")
+                              ? "Graph cannot be started in its current state"
+                              : "Start graph"
+                        }
                         onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "start", s.graph_name || s.graph_id!); }}
                       >
                         <Play className="h-4 w-4" />
@@ -331,7 +357,15 @@ export function Projections() {
                         <button
                           className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
                           disabled={!s.graph_id || isTransient || s.status === "importing" || s.status === "executing"}
-                          title="Delete graph (archive projection)"
+                          title={
+                            !s.graph_id
+                              ? "No graph attached to this projection"
+                              : s.status === "importing" || s.status === "executing"
+                                ? "An import is running; wait for it to finish"
+                                : isTransient
+                                  ? `Graph is ${graphStatus?.toLowerCase() || "changing"}; wait for it to settle`
+                                  : "Delete graph (archive projection)"
+                          }
                           onClick={(e) => { e.stopPropagation(); archiveProjection(s.id, s.graph_name || s.id.slice(0, 8)); }}
                         >
                           <Trash2 className="h-4 w-4" />

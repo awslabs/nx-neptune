@@ -76,7 +76,9 @@ export function Graphs() {
 
   useEffect(() => {
     if (!hasTransient) return;
-    const interval = setInterval(() => load({ withActions: true }), 30000);
+    // 5s, not 30s: this only runs while a graph is mid-transition, and at 30s a
+    // user who clicks Stop sees nothing change for half a minute and clicks again.
+    const interval = setInterval(() => load({ withActions: true }), 5000);
     return () => clearInterval(interval);
   }, [hasTransient, load]);
 
