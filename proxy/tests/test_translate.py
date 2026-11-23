@@ -76,10 +76,13 @@ async def test_translate_splits_vertex_and_edge_queries(client):
 
             return [Column(n, t) for n, t in columns[".".join(table).lower()]]
 
-    with patch(
-        "nx_neptune_proxy.services.projection_service.AthenaTableMetadata",
-        FakeMetadata,
-    ), patch("nx_neptune_proxy.services.projection_service.ClientFactory"):
+    with (
+        patch(
+            "nx_neptune_proxy.services.projection_service.AthenaTableMetadata",
+            FakeMetadata,
+        ),
+        patch("nx_neptune_proxy.services.projection_service.ClientFactory"),
+    ):
         resp = await client.post(
             f"/api/v0/projection/{pid}/translate",
             json={"property_graph": ddl},
