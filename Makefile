@@ -109,6 +109,15 @@ integ-test-session: ## Run session manager integration tests only.
 	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
 	$(ENV_PREFIX)pytest -v -l --tb=short --maxfail=1 integ_test/session_manager/
 
+# Separate from integ-test on purpose. The integ_test/ suites exercise the
+# Python library against AWS resources; these check the behaviour of what the
+# CloudFormation template deploys, and they create IAM roles. Keeping them out
+# of integ_test/ means a routine integration run cannot trigger them.
+.PHONY: deployment-test
+deployment-test:  ## Run deployment/template behaviour tests (creates IAM roles; needs NX_RUN_TRUST_MEASUREMENT=1).
+	NX_RUN_TRUST_MEASUREMENT=1 \
+	$(ENV_PREFIX)pytest -v -l -rA --tb=short deployment_test/
+
 .PHONY: watch
 watch:            ## Run tests on every change.
 	ls **/**.py | entr $(ENV_PREFIX)pytest -s -vvv -l --tb=long --maxfail=1 tests/
