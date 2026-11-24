@@ -220,7 +220,8 @@ This policy combines graph management, S3 import/export, Athena, the import role
         "neptune-graph:CreateGraphSnapshot",
         "neptune-graph:GetGraphSnapshot",
         "neptune-graph:RestoreGraphFromSnapshot",
-        "neptune-graph:DeleteGraphSnapshot"
+        "neptune-graph:DeleteGraphSnapshot",
+        "neptune-graph:TagResource"
       ],
       "Resource": [
         "arn:aws:neptune-graph:<region>:<account-id>:graph/*",
@@ -338,6 +339,8 @@ Before an operation, nx-neptune checks that you hold the `neptune-graph` actions
 A grant on those ARNs passes the check — `"*"` is not required for any of them. Only `neptune-graph:ListGraphs` needs `"*"`, because list actions don't support resource-level permissions.
 
 Those nine are the only actions simulated. `ResetGraph`, the import/export task actions and the query actions are **not** checked, so scope them as tightly as you like; the example above puts them on `graph/*`.
+
+`neptune-graph:TagResource` appears in two statements on purpose. AWS lists both `graph` and `graph-snapshot` as resource types for it, so a snapshot created with tags is authorized against the snapshot ARN — a `graph/*`-only grant would be denied there while the preflight, which simulates `TagResource` against `graph/*`, still passed. The same is true of `CreateGraphSnapshot` and `RestoreGraphFromSnapshot`, which is why the snapshot statement covers both ARNs.
 
 Two things to keep in mind when scoping. `graph/*` is still every graph in that account and region, not only the ones nx-neptune created, so `DeleteGraph`, `StopGraph` and especially `ResetGraph` — which erases a graph's data — reach graphs you may not have meant to include. And a grant pinned to a *single* graph ARN will not pass, since the simulation uses the `/*` form above; narrower than that has to wait for the per-action resource-type work.
 
