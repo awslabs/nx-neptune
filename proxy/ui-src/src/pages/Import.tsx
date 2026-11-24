@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
-import { importBlockedReason } from "../util/blocked";
+import { executeBlockedReason, previewBlockedReason } from "../util/blocked";
 import { Play, CheckCircle, Eye, Wand2, ChevronRight, Plus, Trash2, AlertTriangle } from "lucide-react";
 
 type UiNodeQuery = NodeQueryInput & { failed?: boolean };
@@ -439,11 +439,13 @@ export function Import() {
 
   // Why Preview/Execute are unavailable. Derived from the same state the
   // `disabled` expressions below read, so the two cannot disagree.
-  const blockedReason = importBlockedReason({
+  const executeBlocked = executeBlockedReason({
     polling,
     loading: !!loading,
     hasQueries,
   });
+  // Preview does not start an import, so a running one does not block it.
+  const previewBlocked = previewBlockedReason({ loading: !!loading, hasQueries });
 
   function renderChecks(source: "resources" | "queries") {
     if (checksSource !== source || checks.length === 0) return null;
@@ -725,21 +727,21 @@ export function Import() {
             variant="secondary"
             onClick={handlePreview}
             disabled={!!loading || !hasQueries}
-            title={blockedReason || "Preview the first rows each query returns"}
+            title={previewBlocked || "Preview the first rows each query returns"}
           >
             <Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview"}
           </Button>
           <Button
             onClick={handleExecute}
             disabled={polling || !!loading || !hasQueries}
-            title={blockedReason || "Create the graph and import the query results"}
+            title={executeBlocked || "Create the graph and import the query results"}
           >
             <Play className="h-4 w-4" /> Execute
           </Button>
         </div>
         {/* A disabled control that does not say why leaves the user guessing at
             three separate conditions. Name the unmet one. */}
-        {blockedReason && <p className="text-xs text-gray-500">{blockedReason}</p>}
+        {executeBlocked && <p className="text-xs text-gray-500">{executeBlocked}</p>}
       </div>
 
       {/* Preview */}

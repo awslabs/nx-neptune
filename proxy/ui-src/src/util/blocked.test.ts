@@ -2,56 +2,104 @@ import { describe, expect, it } from "vitest";
 
 import {
   TRANSIENT_POLL_MS,
+  executeBlockedReason,
   graphActionBlockedReason,
-  importBlockedReason,
-  isImportBlocked,
+  isExecuteBlocked,
+  isPreviewBlocked,
+  previewBlockedReason,
 } from "./blocked";
 
-describe("importBlockedReason", () => {
+describe("executeBlockedReason", () => {
   const ready = { polling: false, loading: false, hasQueries: true };
 
   it("returns null when nothing is in the way", () => {
-    expect(importBlockedReason(ready)).toBeNull();
-    expect(isImportBlocked(ready)).toBe(false);
+    expect(executeBlockedReason(ready)).toBeNull();
+    expect(isExecuteBlocked(ready)).toBe(false);
   });
 
   it("names a running import", () => {
-    expect(importBlockedReason({ ...ready, polling: true })).toMatch(
+    expect(executeBlockedReason({ ...ready, polling: true })).toMatch(
       /already running/,
     );
   });
 
   it("names a pending operation", () => {
-    expect(importBlockedReason({ ...ready, loading: true })).toMatch(
+    expect(executeBlockedReason({ ...ready, loading: true })).toMatch(
       /current operation/,
     );
   });
 
   it("names the missing queries", () => {
-    expect(importBlockedReason({ ...ready, hasQueries: false })).toMatch(
+    expect(executeBlockedReason({ ...ready, hasQueries: false })).toMatch(
       /node or edge query/,
     );
   });
 
   it("reports the first condition a user would hit, not the last", () => {
-    // All three unmet. A user who is mid-import does not need to be told to add
-    // a query, so ordering is part of the contract rather than incidental.
     expect(
-      importBlockedReason({ polling: true, loading: true, hasQueries: false }),
+      executeBlockedReason({ polling: true, loading: true, hasQueries: false }),
     ).toMatch(/already running/);
   });
 
-  it("agrees with isImportBlocked on every combination", () => {
-    // The reason and the disabled state are derived from one place precisely so
-    // they cannot disagree; this pins that rather than trusting it.
+  it("agrees with isExecuteBlocked on every combination", () => {
     for (const polling of [true, false]) {
       for (const loading of [true, false]) {
         for (const hasQueries of [true, false]) {
           const state = { polling, loading, hasQueries };
-          expect(isImportBlocked(state)).toBe(
-            importBlockedReason(state) !== null,
+          expect(isExecuteBlocked(state)).toBe(
+            executeBlockedReason(state) !== null,
           );
         }
+      }
+    }
+  });
+});
+
+describe("previewBlockedReason", () => {
+  it("does not treat a running import as a block", () => {
+    // Preview starts no import, so it stays available during one. Sharing
+    // Execute's reason here claimed a block that was not there while the button
+    // remained clickable.
+    expect(previewBlockedReason({ loading: false, hasQueries: true })).toBeNull();
+    expect(isPreviewBlocked({ loading: false, hasQueries: true })).toBe(false);
+  });
+
+  it("still names a pending operation", () => {
+    expect(previewBlockedReason({ loading: true, hasQueries: true })).toMatch(
+      /current operation/,
+    );
+  });
+
+  it("still names the missing queries", () => {
+    expect(previewBlockedReason({ loading: false, hasQueries: false })).toMatch(
+      /node or edge query/,
+    );
+  });
+
+  it("differs from Execute only on the polling case", () => {
+    // The two share their ordering; polling is the single difference, and
+    // pinning that keeps them from drifting apart in either direction.
+    for (const loading of [true, false]) {
+      for (const hasQueries of [true, false]) {
+        const base = { loading, hasQueries };
+        expect(previewBlockedReason(base)).toBe(
+          executeBlockedReason({ ...base, polling: false }),
+        );
+      }
+    }
+    expect(
+      executeBlockedReason({ polling: true, loading: false, hasQueries: true }),
+    ).not.toBeNull();
+    expect(previewBlockedReason({ loading: false, hasQueries: true })).toBeNull();
+  });
+
+  it("agrees with isPreviewBlocked on every combination", () => {
+    for (const loading of [true, false]) {
+      for (const hasQueries of [true, false]) {
+        const state = { loading, hasQueries };
+        expect(isPreviewBlocked(state)).toBe(
+          previewBlockedReason(state) !== null,
+        );
       }
     }
   });

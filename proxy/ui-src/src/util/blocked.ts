@@ -15,24 +15,47 @@
  */
 export const TRANSIENT_POLL_MS = 5000;
 
-export function importBlockedReason(state: {
+/**
+ * Why Execute is unavailable.
+ *
+ * Execute and Preview are gated differently and must not share a reason: a
+ * running import blocks another Execute but not a Preview, so reporting
+ * Execute's reason on Preview claims a block that is not there.
+ */
+export function executeBlockedReason(state: {
   polling: boolean;
   loading: boolean;
   hasQueries: boolean;
 }): string | null {
   if (state.polling) return "An import is already running for this projection.";
+  return previewBlockedReason(state);
+}
+
+/** Why Preview is unavailable. Deliberately ignores `polling`. */
+export function previewBlockedReason(state: {
+  loading: boolean;
+  hasQueries: boolean;
+}): string | null {
   if (state.loading) return "Waiting for the current operation to finish.";
   if (!state.hasQueries) return "Add at least one node or edge query first.";
   return null;
 }
 
-/** Whether `importBlockedReason`'s inputs mean the action is disabled at all. */
-export function isImportBlocked(state: {
+/** Whether `executeBlockedReason`'s inputs mean Execute is disabled at all. */
+export function isExecuteBlocked(state: {
   polling: boolean;
   loading: boolean;
   hasQueries: boolean;
 }): boolean {
-  return importBlockedReason(state) !== null;
+  return executeBlockedReason(state) !== null;
+}
+
+/** Whether `previewBlockedReason`'s inputs mean Preview is disabled at all. */
+export function isPreviewBlocked(state: {
+  loading: boolean;
+  hasQueries: boolean;
+}): boolean {
+  return previewBlockedReason(state) !== null;
 }
 
 export function graphActionBlockedReason(state: {

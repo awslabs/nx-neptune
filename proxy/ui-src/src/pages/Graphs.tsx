@@ -45,11 +45,14 @@ export function Graphs() {
     }
   }, []);
 
-  const load = useCallback(async (opts?: { withActions?: boolean; withSummaries?: boolean }) => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { withActions?: boolean; withSummaries?: boolean; background?: boolean }) => {
+    // `background` is the polling case. The render swaps the whole table — Stop
+    // and Start buttons included — for "Loading...", so toggling this on every
+    // poll makes the table blink and pulls controls out from under the cursor.
+    if (!opts?.background) setLoading(true);
     const data = await metadata.graphs();
     setGraphs(data.graphs);
-    setLoading(false);
+    if (!opts?.background) setLoading(false);
 
     // Fetch summaries only on initial load or explicit request
     if (opts?.withSummaries) {
@@ -79,7 +82,10 @@ export function Graphs() {
     if (!hasTransient) return;
     // 5s, not 30s: this only runs while a graph is mid-transition, and at 30s a
     // user who clicks Stop sees nothing change for half a minute and clicks again.
-    const interval = setInterval(() => load({ withActions: true }), TRANSIENT_POLL_MS);
+    const interval = setInterval(
+      () => load({ withActions: true, background: true }),
+      TRANSIENT_POLL_MS,
+    );
     return () => clearInterval(interval);
   }, [hasTransient, load]);
 
