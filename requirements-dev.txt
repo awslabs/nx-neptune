@@ -8,9 +8,9 @@ ast-serialize==0.13.1
     # via mypy
 black==26.10.1
     # via nx-neptune (pyproject.toml)
-boto3==1.44.3
+boto3==1.44.12
     # via nx-neptune (pyproject.toml)
-botocore==1.44.3
+botocore==1.44.12
     # via
     #   boto3
     #   s3transfer
@@ -18,7 +18,7 @@ cfgv==3.5.0
     # via pre-commit
 click==8.5.1
     # via black
-coverage==7.17.3
+coverage==7.17.5
     # via pytest-cov
 cymple==0.12.0
     # via nx-neptune (pyproject.toml)
@@ -26,7 +26,7 @@ distlib==0.4.4
     # via virtualenv
 dotenv==0.9.9
     # via nx-neptune (pyproject.toml)
-filelock==4.2.10
+filelock==4.3.1
     # via
     #   python-discovery
     #   virtualenv
@@ -46,7 +46,7 @@ jmespath==1.1.0
     #   botocore
 lark==1.3.1
     # via nx-neptune (pyproject.toml)
-librt==0.16.0
+librt==0.17.0
     # via mypy
 mccabe==0.7.0
     # via flake8
@@ -56,6 +56,7 @@ mypy-extensions==1.2.0
     # via
     #   black
     #   isort
+    #   librt
     #   mypy
 networkx==3.6.1
     # via nx-neptune (pyproject.toml)
@@ -66,7 +67,7 @@ numpy==2.4.6
     #   nx-neptune (pyproject.toml)
     #   pandas
     #   scipy
-packaging==26.3
+packaging==26.4
     # via
     #   black
     #   pytest
@@ -79,7 +80,7 @@ pathspec==1.1.1
     #   mypy
 pip-licenses==5.5.5
     # via nx-neptune (pyproject.toml)
-platformdirs==4.14.5
+platformdirs==4.14.8
     # via
     #   black
     #   virtualenv
@@ -89,7 +90,7 @@ pluggy==1.7.0
     #   pytest-cov
 pre-commit==4.7.0
     # via nx-neptune (pyproject.toml)
-prettytable==3.18.0
+prettytable==3.19.0
     # via pip-licenses
 pycodestyle==2.15.0
     # via flake8
@@ -113,13 +114,13 @@ python-dateutil==2.9.0.post0
     # via
     #   botocore
     #   pandas
-python-discovery==1.9.5
+python-discovery==1.9.7
     # via virtualenv
 python-dotenv==1.2.4
     # via dotenv
 pytokens==0.4.1
     # via black
-pyyaml==6.0.3
+pyyaml==6.0.4
     # via pre-commit
 s3transfer==0.19.3
     # via boto3
@@ -127,7 +128,7 @@ scipy==1.17.1
     # via nx-neptune (pyproject.toml)
 six==1.17.0
     # via python-dateutil
-sqlglot==30.32.0
+sqlglot==30.35.0
     # via nx-neptune (pyproject.toml)
 typing-extensions==4.16.0
     # via
@@ -135,7 +136,7 @@ typing-extensions==4.16.0
     #   pytest-asyncio
 urllib3==2.8.0
     # via botocore
-virtualenv==21.15.6
+virtualenv==21.15.13
     # via pre-commit
-wcwidth==0.9.4
+wcwidth==0.9.5
     # via prettytable
