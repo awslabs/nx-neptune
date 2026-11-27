@@ -1,4 +1,4 @@
-.PHONY: dev install test build run stop clean ui ui-test relock
+.PHONY: dev install test build run stop clean ui ui-test ui-browser relock
 
 SHELL := /bin/bash
 
@@ -9,6 +9,10 @@ ui:               ## Build frontend into ui/ directory.
 
 ui-test:          ## Run frontend unit tests.
 	cd ui-src && npm install && npm test
+
+# Browser tests for the built UI with the proxy API faked (see ui-src/ui-tests).
+ui-browser:       ## Run browser UI tests (mocked API).
+	cd ui-src && npm install && npm run build && npx playwright install chromium && npx playwright test
 
 relock:           ## Rebuild the ui-src lockfile and print a clean version diff.
 	@cd ui-src && jq -r '.packages | to_entries[] | select(.key != "") | "\(.key | sub("^node_modules/";""))@\(.value.version)"' package-lock.json 2>/dev/null | sort > /tmp/npm-before.txt || true

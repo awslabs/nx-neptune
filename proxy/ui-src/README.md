@@ -44,6 +44,14 @@ cd proxy && make ui
 
 This runs `npm install && npm run build` in `ui-src/` and outputs static files to `proxy/ui/`. The FastAPI server serves them automatically.
 
+## Browser tests
+
+`ui-src/ui-tests` holds Playwright tests that run the built UI in a real browser with the proxy API faked (`ui-tests/mockApi.ts`), so they need no AWS. A request the mock doesn't handle fails the test.
+
+```bash
+cd proxy && make ui-browser
+```
+
 ## Project structure
 
 ```
