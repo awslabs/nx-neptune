@@ -193,5 +193,9 @@ cloudformation-templates/build/
 proxy/ui-src/node_modules/
 proxy/ui-src/test-results/
 proxy/ui-src/playwright-report/
+# Live browser tests: real bucket / catalog names and queries stay local
+proxy/ui-src/ui-tests-live/.env*
+!proxy/ui-src/ui-tests-live/.env.example
+proxy/ui-src/ui-tests-live/data.local/
 proxy/ui/
 proxy/docker-compose.override.yml

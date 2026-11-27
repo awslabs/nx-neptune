@@ -52,6 +52,47 @@ This runs `npm install && npm run build` in `ui-src/` and outputs static files t
 cd proxy && make ui-browser
 ```
 
+## Live browser tests
+
+`ui-tests-live/` holds Playwright tests that click through the real UI against a real proxy and real AWS. They prove the product works end to end, which the mocked tests above cannot. They **create and delete real Neptune Analytics graphs**, so they run on demand and never in CI.
+
+Test cases:
+
+| Test case | What it does |
+|---|---|
+| Import into a graph session | Creates a project, imports your Athena data into a 4 NCU graph session, waits for "Graph ready", checks the graph is `AVAILABLE`, deletes it from the UI. |
+| Import into a provisioned graph | The same journey with a 16 NCU provisioned graph. This one is slower. |
+
+Every step asserts what the user sees. The API is never called to help a step along.
+
+**Set up**
+
+```bash
+cd proxy/ui-src/ui-tests-live
+cp .env.example .env.local        # git-ignored: your bucket and database names stay local
+mkdir data.local                  # git-ignored: your real queries
+cp data.example/import-nodes.sql data.local/   # then edit it, and import-edges.sql if you need edges
+```
+
+Fill in `.env.local`. Each test case has its own section, and its keys start with `E2E_<CASE>_`. Values already exported in your shell win over the file. A test case with missing keys is skipped.
+
+AWS credentials and region come from your shell, as for the proxy itself. The shell also needs the Python environment that has `nx_neptune_proxy` installed, or set `E2E_PYTHON`.
+
+**Run**
+
+```bash
+cd proxy
+make ui-browser-live
+npx playwright test -c playwright.live.config.ts -g "Graph sessions"   # from ui-src: one case only
+```
+
+**What to know**
+- The tests start their own proxy on `127.0.0.1:18080`, so a dev proxy on 8080 keeps working. They use a temporary database, so your saved projects are not touched. Set `E2E_PORT` to change the port.
+- The test proxy only manages graphs named `nxp-e2e-*`. Public connectivity is on and deletion protection is off, as for `make dev`, so it can reach and delete its graphs.
+- One graph exists at a time. A graph a failed run leaves behind is deleted when the run ends. If cleanup cannot finish, it prints the run id to look for in the graph names.
+- Nothing is recorded: no screenshots, traces or videos, and the proxy token and your resource names are never printed.
+- The tests wait up to 15 minutes for an import, so a run can take a while and costs real money.
+
 ## Project structure
 
 ```
