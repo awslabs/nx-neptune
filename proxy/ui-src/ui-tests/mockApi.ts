@@ -54,8 +54,9 @@ export interface MockState {
   config: {
     region: string;
     graph_prefix: string;
-    memory_sizes: number[]; // every size offered in the Import memory selector
-    session_memory_sizes: number[]; // the sizes that create a graph session
+    // Both lists are optional because an older proxy does not send them.
+    memory_sizes?: number[]; // every size offered in the Import memory selector
+    session_memory_sizes?: number[]; // the sizes that create a graph session
   };
   catalogs: { name: string; status: string }[];
   databases: string[];
