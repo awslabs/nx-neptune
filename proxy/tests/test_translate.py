@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-
 from nx_neptune.property_graph import PropertyGraphSyntaxError
+
 from nx_neptune_proxy.app import app
 from nx_neptune_proxy.auth import get_token
 from nx_neptune_proxy.services.db import connection
