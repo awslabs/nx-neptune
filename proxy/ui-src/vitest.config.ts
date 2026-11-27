@@ -7,6 +7,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    // Only unit tests in src. ui-tests/ holds Playwright specs, run by `npx playwright test`.
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
     setupFiles: "./src/test/setup.ts",
     css: false,
     restoreMocks: true,
