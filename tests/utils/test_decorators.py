@@ -197,7 +197,12 @@ class TestConfigureIfNxActive:
 
         # Verify setup and teardown routines were executed
         assert mock_asyncio_run.call_count == 2
-        mock_execute_setup_new_graph.assert_called_once_with(mock_initial_config, graph)
+        # `on_created` is checked by identity-agnostic means: it is a closure
+        # over the wrapper's local, so only that it was supplied matters here.
+        mock_execute_setup_new_graph.assert_called_once()
+        call_args, call_kwargs = mock_execute_setup_new_graph.call_args
+        assert call_args == (mock_initial_config, graph)
+        assert callable(call_kwargs["on_created"])
         # Verify sync data was called
         mock_sync_data.assert_called_once_with(
             graph, mock_na_graph, mock_updated_config
@@ -739,8 +744,13 @@ class TestTeardownAfterAFailedAlgorithmCall:
         ):
             na_graph_cls.from_config.return_value = MagicMock(spec=NeptuneGraph)
 
-            async def _setup_new(cfg, graph):
+            async def _setup_new(cfg, graph, *a, on_created=None, **k):
+                # The real setup reports the id the moment the graph exists.
+                # A stub that skips this hides the teardown's only safe source
+                # for it, which is the whole point of the callback.
                 cfg.graph_id = created_graph_id
+                if on_created:
+                    on_created(created_graph_id)
                 return cfg
 
             async def _setup_existing(na_graph, cfg, *a, **k):
@@ -943,6 +953,7 @@ class TestTeardownAfterASetupOrSyncFailure:
         graph_id=None,
         import_s3_bucket=None,
         destroy_instance=True,
+        save_snapshot=False,
     ):
         config = MagicMock(spec=NeptuneConfig)
         config.graph_id = graph_id
@@ -952,7 +963,7 @@ class TestTeardownAfterASetupOrSyncFailure:
         config.import_s3_bucket = import_s3_bucket
         config.restore_snapshot = None
         config.skip_graph_reset = True
-        config.save_snapshot = False
+        config.save_snapshot = save_snapshot
         config.reset_graph = False
         config.validate_config.return_value = None
         return config
@@ -961,7 +972,12 @@ class TestTeardownAfterASetupOrSyncFailure:
     def _patched(self, config, sync=None, create=None, import_csv=None):
         """Patch the AWS surface, leaving the real setup routines in place."""
 
-        async def _create(options=None):
+        async def _create(options=None, *, on_created=None, **kwargs):
+            # The real create_na_instance reports the id as soon as creation is
+            # accepted, before waiting for the graph to become available. A stub
+            # that does not is a stub in which no graph can ever leak.
+            if on_created:
+                on_created("g-created")
             return "g-created"
 
         async def _delete(graph_id):
@@ -1046,8 +1062,88 @@ class TestTeardownAfterASetupOrSyncFailure:
         # the teardown clearing it, which is the call with None.
         assert call(None) not in set_graph_id.call_args_list
 
+    def test_the_graph_this_call_created_is_deleted_not_the_configs_current_one(self):
+        """Ownership is an id, not a flag plus a read of global state.
+
+        `get_config()` returns the one process-global
+        `networkx.config.backends.neptune` object, which `set_config_graph_id`
+        mutates. Sourcing the deletion target from it meant a failing call
+        deleted whatever graph the global named at that moment — another
+        concurrent call's, if one had just created it — and leaked its own.
+        """
+        config = self._config(import_s3_bucket="s3://bucket/imports")
+
+        async def _import(*a, **k):
+            # Stands in for another call finishing its own setup against the
+            # shared global between this call's creation and its failure.
+            config.graph_id = "g-another-calls-graph"
+            raise RuntimeError("import boom")
+
+        with self._patched(config, import_csv=_import) as (delete, _):
+            with pytest.raises(RuntimeError, match="import boom"):
+                configure_if_nx_active()(self._algorithm)(nx.Graph())
+
+        delete.assert_called_once_with("g-created")
+        assert call("g-another-calls-graph") not in delete.call_args_list
+
+    def test_a_graph_created_before_a_failed_availability_wait_is_deleted(self):
+        """The id is reported when creation is *accepted*, not when it returns.
+
+        `create_na_instance` waits for the graph to become AVAILABLE after
+        creating it. If that wait raises, the graph exists and bills, and a
+        caller that only captured the return value never learns its id.
+        """
+
+        async def _create(options=None, *, on_created=None, **kwargs):
+            if on_created:
+                on_created("g-accepted")
+            raise RuntimeError("timed out waiting for AVAILABLE")
+
+        config = self._config()
+        with self._patched(config, create=_create) as (delete, _):
+            with pytest.raises(RuntimeError, match="timed out"):
+                configure_if_nx_active()(self._algorithm)(nx.Graph())
+
+        delete.assert_called_once_with("g-accepted")
+
+    def test_a_failed_success_teardown_still_releases_the_created_graph(self):
+        """The success teardown is inside the `try`, not an `else`.
+
+        `save_snapshot` raises "Not implemented yet" before the destroy step is
+        reached. From an `else` that exception escaped the failure handler, so
+        the instance this call created was left running and billed — the exact
+        leak this path exists to close.
+        """
+        config = self._config(save_snapshot="snap-1")
+
+        with self._patched(config) as (delete, _):
+            with pytest.raises(Exception, match="Not implemented yet"):
+                configure_if_nx_active()(self._algorithm)(nx.Graph())
+
+        delete.assert_called_once_with("g-created")
+
+    def test_an_interrupt_names_the_graph_it_leaves_running(self, caplog):
+        """No teardown on Ctrl-C, but the id must not vanish with the session."""
+        import logging
+
+        async def _create(options=None, *, on_created=None, **kwargs):
+            if on_created:
+                on_created("g-orphaned")
+            raise KeyboardInterrupt
+
+        config = self._config()
+        with self._patched(config, create=_create) as (delete, _):
+            with caplog.at_level(logging.WARNING):
+                with pytest.raises(KeyboardInterrupt):
+                    configure_if_nx_active()(self._algorithm)(nx.Graph())
+
+        delete.assert_not_called()
+        assert "g-orphaned" in caplog.text
+
     def test_a_failed_instance_creation_attempts_no_delete(self):
-        async def _create(options=None):
+        async def _create(options=None, *, on_created=None, **kwargs):
+            # Fails before creation is accepted, so no id is ever reported and
+            # there is nothing to delete.
             raise RuntimeError("create boom")
 
         config = self._config()
@@ -1120,8 +1216,10 @@ class TestTeardownInARunningEventLoop:
     def _patched_in_loop(self, config):
         """As the failure-path patches, but with a *running* loop reported."""
 
-        async def _setup_new(cfg, graph):
+        async def _setup_new(cfg, graph, *a, on_created=None, **k):
             cfg.graph_id = "g-created"
+            if on_created:
+                on_created("g-created")
             return cfg
 
         async def _noop(*a, **k):

@@ -12,6 +12,7 @@
 # language governing permissions and limitations under the License.
 import asyncio
 import concurrent.futures
+from collections.abc import Callable
 import logging
 import os
 from functools import wraps
@@ -54,10 +55,14 @@ def configure_if_nx_active():
 
             logger.debug(f"configure_if_nx_active: {func.__name__}")
             graph = args[0]
-            # Whether this call created the instance, tracked by the branch the
-            # wrapper takes. destroy_instance is global config that outlives a
-            # single call, so it cannot answer this.
-            created_here = False
+            # The graph *this* call created, or None if it reused one. Held as an
+            # id rather than a bool: the config is a single process-global object
+            # (`networkx.config.backends.neptune`) that `set_config_graph_id`
+            # overwrites, so by the time a failure lands the global may name a
+            # graph belonging to another call. Deleting whatever it holds then
+            # destroys someone else's graph and leaks this one. A bool can say
+            # "this call created something" but not *which* something.
+            created_graph_id: str | None = None
 
             neptune_config = get_config()
             neptune_config.validate_config()
@@ -76,9 +81,19 @@ def configure_if_nx_active():
                 elif neptune_config.create_new_instance is True or isinstance(
                     neptune_config.create_new_instance, dict
                 ):
-                    created_here = True
+
+                    def _record_created(graph_id: str) -> None:
+                        # Captured the instant the graph exists, so a setup step
+                        # that fails after creation (the S3 import, say) still
+                        # leaves the id in hand for the teardown below.
+                        nonlocal created_graph_id
+                        created_graph_id = graph_id
+
                     neptune_config = _run_coroutine(
-                        _execute_setup_new_graph(neptune_config, graph), loop
+                        _execute_setup_new_graph(
+                            neptune_config, graph, on_created=_record_created
+                        ),
+                        loop,
                     )
 
                     na_graph = NeptuneGraph.from_config(
@@ -91,40 +106,38 @@ def configure_if_nx_active():
 
                 # Call algorithm
                 rv = func(*converted_args, **kwargs)
-            except (KeyboardInterrupt, SystemExit):
-                # Control flow, not a failure: run no teardown, so a Ctrl-C is
-                # not turned into a delete.
-                raise
-            except BaseException:
-                config_now = neptune_config
-                try:
-                    # Setup may have stored a new graph_id in the global config
-                    # before failing, so read it afresh rather than trusting
-                    # the config captured before setup.
-                    config_now = get_config()
-                    _run_coroutine(
-                        _execute_failure_teardown(config_now, created_here), loop
-                    )
-                except BaseException:  # noqa: BLE001 - see below
-                    # The original exception is the one the caller needs. A
-                    # teardown failure is logged and swallowed so it cannot
-                    # replace it; BaseException so an interrupt during teardown
-                    # cannot either.
-                    logger.error(
-                        "Teardown after a failed call (graph %s) may not have "
-                        "completed; the instance may still be running and billed",
-                        config_now.graph_id,
-                        exc_info=True,
-                    )
-                raise
-            else:
-                # Execute teardown instructions
+
+                # Inside the `try`, deliberately, not in an `else`. The success
+                # teardown can itself raise — `export_csv_to_s3` can fail, and
+                # `save_snapshot` or `reset_graph` raise "Not implemented yet"
+                # *before* the destroy step is reached. From an `else` that
+                # exception escaped the handler below, leaving the instance this
+                # call created running and billed: the very leak this path exists
+                # to close.
                 if neptune_config.graph_id is not None:
                     _run_coroutine(
                         _execute_teardown_routines_on_graph(na_graph, neptune_config),
                         loop,
                     )
                 return rv
+            except (KeyboardInterrupt, SystemExit):
+                # Control flow, not a failure: run no teardown, so a Ctrl-C is
+                # not turned into a delete. But name the graph on the way out —
+                # interrupting a long call is how a notebook user abandons one,
+                # and while the id survives in the global config for the rest of
+                # the session, restarting the kernel is the usual next step and
+                # loses it. After that nothing left running can delete the graph,
+                # so this log line is the only record the user has.
+                if created_graph_id is not None:
+                    logger.warning(
+                        "Interrupted after creating graph %s; it was left running "
+                        "and is billed. Delete it by hand if it is not wanted.",
+                        created_graph_id,
+                    )
+                raise
+            except BaseException:
+                _teardown_after_failure(created_graph_id, loop)
+                raise
 
         return wrapper
 
@@ -143,8 +156,33 @@ def _run_coroutine(coro, loop):
     return asyncio.run(coro)
 
 
+def _teardown_after_failure(created_graph_id: str | None, loop) -> None:
+    """Run the failure teardown, never letting it replace the caller's error.
+
+    Extracted from the exception handler so the policy — swallow, log, and let
+    the original exception propagate — is stated in one place rather than nested
+    two levels inside the wrapper, where a later edit could mask the error the
+    caller actually needs.
+    """
+    try:
+        _run_coroutine(_execute_failure_teardown(created_graph_id, get_config()), loop)
+    except (KeyboardInterrupt, SystemExit):
+        # An interrupt is the user's instruction, not a teardown failure. It was
+        # previously swallowed here, which contradicted the wrapper's own policy
+        # of never turning a Ctrl-C into a delete: the user pressed it and
+        # nothing happened.
+        raise
+    except Exception:
+        logger.error(
+            "Teardown after a failed call (graph %s) may not have completed; "
+            "the instance may still be running and billed",
+            created_graph_id,
+            exc_info=True,
+        )
+
+
 async def _execute_failure_teardown(
-    neptune_config: NeptuneConfig, created_here: bool
+    created_graph_id: str | None, neptune_config: NeptuneConfig
 ) -> None:
     """Release what this call created, after the algorithm raised.
 
@@ -153,16 +191,21 @@ async def _execute_failure_teardown(
 
     - the S3 export is skipped, so a partial export cannot overwrite the last
       good one;
-    - the instance is destroyed only when this call created it. A
-      caller-supplied ``graph_id`` is never deleted because an algorithm raised.
+    - only ``created_graph_id`` is destroyed — the graph this call created, and
+      never the one the config happens to name now. A caller-supplied
+      ``graph_id`` is never deleted because an algorithm raised, and neither is
+      a concurrent call's graph.
+
+    ``neptune_config`` is read for ``destroy_instance`` only, which is a setting
+    rather than an identity, so the global is the right source for it.
     """
-    if not (created_here and neptune_config.destroy_instance):
+    if created_graph_id is None:
         return
-    if neptune_config.graph_id is None:
+    if not neptune_config.destroy_instance:
         return
 
-    logger.debug(f"Destroy instance created by this call: {neptune_config.graph_id}")
-    await _destroy_instance(neptune_config.graph_id)
+    logger.debug(f"Destroy instance created by this call: {created_graph_id}")
+    await _destroy_instance(created_graph_id)
 
 
 async def _destroy_instance(graph_id: str) -> NeptuneConfig:
@@ -195,15 +238,33 @@ async def _execute_setup_routines_on_graph(
 
 
 async def _execute_setup_new_graph(
-    neptune_config: NeptuneConfig, graph: networkx.Graph, *args, **kwargs
+    neptune_config: NeptuneConfig,
+    graph: networkx.Graph,
+    *args,
+    on_created: Callable[[str], None] | None = None,
+    **kwargs,
 ) -> NeptuneConfig:
+    """Create a graph and load it.
+
+    ``on_created`` is called with the new graph id the moment creation returns,
+    before anything that could fail afterwards. The caller needs the id even
+    when this function raises — an import that fails after the graph exists
+    still leaves it running and billed — and it must not have to recover the id
+    from the process-global config, which another call may have overwritten.
+    """
     if neptune_config.import_s3_bucket is not None:
         # TODO: update this to do everything in one shot
 
         logger.debug("Create empty instance")
         config = neptune_config.create_new_instance
+        # Passed down, not just applied to the return value: create_na_instance
+        # reports the id as soon as creation is *accepted* and then waits for the
+        # graph to become available. If that wait throws, the graph exists in AWS
+        # but this call never returns, so an id captured only here would miss the
+        # one case that leaves a graph nobody can name.
         graph_id = await create_na_instance(
-            config if isinstance(config, dict) else None
+            config if isinstance(config, dict) else None,
+            on_created=on_created,
         )
 
         # once done: save the graph id and update the config
@@ -230,8 +291,14 @@ async def _execute_setup_new_graph(
     else:
         logger.debug("Create empty instance")
         config = neptune_config.create_new_instance
+        # Passed down, not just applied to the return value: create_na_instance
+        # reports the id as soon as creation is *accepted* and then waits for the
+        # graph to become available. If that wait throws, the graph exists in AWS
+        # but this call never returns, so an id captured only here would miss the
+        # one case that leaves a graph nobody can name.
         graph_id = await create_na_instance(
-            config if isinstance(config, dict) else None
+            config if isinstance(config, dict) else None,
+            on_created=on_created,
         )
 
         # once done: save the graph id and update the config
