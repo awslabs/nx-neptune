@@ -9,6 +9,7 @@ import time
 
 from botocore.exceptions import ClientError
 from nx_neptune.clients.client_factory import ClientFactory
+from nx_neptune.instance_management import _delete_na_instance_task
 
 from nx_neptune_proxy.services.project_store import store as project_store
 from nx_neptune_proxy.services.projection_service import projection_service
@@ -59,20 +60,30 @@ async def delete_project(project_id: str, force: bool = False) -> None:
             )
             failed_ids.add(p.id)
         else:
-            projection_service.update(p.id, graph_id=None, graph_endpoint=None)
+            # Pinned to the graph that was actually deleted. An unconditional
+            # clear would wipe a reference a taken-over run recorded for a
+            # *different* graph (`pipeline._record_graph`), orphaning a live one.
+            # A False here is not an error: the re-read below picks that graph up.
+            # with_graph was built by filtering on graph_id, which mypy does not
+            # narrow through the comprehension.
+            projection_service.clear_graph_if(
+                p.id, p.graph_id  # type: ignore[arg-type]
+            )
 
-    # Re-read before purging. A forced delete can claim a child that was
-    # mid-import with no graph recorded yet; that run's `_record_graph` then
-    # writes a graph_id while this job is awaiting a sibling's delete. The purge
-    # would refuse the row on its graph_id condition, the project would fall back
-    # to `active`, and that graph would keep billing with nobody looking at it.
-    # So pick up any graph recorded since the claim and delete it too.
+    # Re-read before purging, and trust the row rather than the pre-claim
+    # snapshot. A forced delete can claim a child mid-import, and that run's
+    # `_record_graph` writes a graph_id while this job awaits a sibling's delete
+    # — whether or not the snapshot had one. Every reference this job did delete
+    # has just been cleared, so any graph_id still present names a graph nobody
+    # has deleted: the purge would refuse the row on its graph_id condition, the
+    # project would fall back to `active`, and that graph would keep billing with
+    # nobody looking at it. So pick up whatever is there now and delete it too.
     late_graphs = []
     for p in claimed:
         if p.id in failed_ids:
             continue
         current = projection_service.get(p.id)
-        if current is not None and current.graph_id and not p.graph_id:
+        if current is not None and current.graph_id:
             late_graphs.append(current)
 
     if late_graphs:
@@ -92,7 +103,11 @@ async def delete_project(project_id: str, force: bool = False) -> None:
                 )
                 failed_ids.add(p.id)
             else:
-                projection_service.update(p.id, graph_id=None, graph_endpoint=None)
+                # late_graphs only holds rows whose graph_id was set, which mypy
+                # does not narrow through the loop.
+                projection_service.clear_graph_if(
+                    p.id, p.graph_id  # type: ignore[arg-type]
+                )
 
     # The claim holds the row (`deleting`) and graph_id is clear, so forcing the
     # purge is safe; the graph_id condition still protects a failed deletion.
@@ -115,22 +130,38 @@ async def delete_project(project_id: str, force: bool = False) -> None:
     logger.info(f"Project {project_id} fully deleted")
 
 
-async def _delete_graph(graph_id: str) -> None:
-    """Delete a Neptune graph and wait until gone."""
-    client = ClientFactory().neptune()
+def _issue_delete(client, graph_id: str) -> bool:
+    """Ask for the delete. True once the graph is confirmed gone.
+
+    Deletion protection is cleared first. Graphs are created with it on by
+    default (``NETWORKX_DELETION_PROTECTION`` defaults to true), and a raw
+    ``delete_graph`` fails with ConflictException on a protected graph, so
+    ``_delete_na_instance_task`` is used for the same reason
+    ``pipeline._delete_orphaned_graph`` uses it — the two teardown paths must
+    not disagree about whether protection has to be cleared.
+
+    False means "not gone yet": either the delete was accepted, or it was
+    refused by a transient graph state and the caller should poll and re-ask.
+    """
     try:
-        client.delete_graph(graphIdentifier=graph_id, skipSnapshot=True)
+        _delete_na_instance_task(client, graph_id)
     except ClientError as e:
         code = e.response["Error"]["Code"]
         if code == "ResourceNotFoundException":
-            return
-        # A ConflictException means a delete is already under way - the usual
-        # case when a forced retry re-enters a project whose first attempt
-        # started the delete and then failed later. The graph is still going
-        # away, so poll it out rather than counting this as a failure and
-        # parking the project in `deleting` again.
+            return True
+        # ConflictException now means a transient state rather than protection:
+        # either a delete is already under way, or the graph is still CREATING
+        # and nothing can be deleted yet. Both resolve by waiting.
         if code != "ConflictException":
             raise
+    return False
+
+
+async def _delete_graph(graph_id: str) -> None:
+    """Delete a Neptune graph and wait until gone."""
+    client = ClientFactory().neptune()
+    if _issue_delete(client, graph_id):
+        return
 
     start = time.time()
     while time.time() - start < TIMEOUT:
@@ -141,6 +172,11 @@ async def _delete_graph(graph_id: str) -> None:
             if e.response["Error"]["Code"] == "ResourceNotFoundException":
                 return
             raise
+        # Still there. Re-ask rather than polling out the full timeout on a
+        # graph nothing ever accepted a delete for: a CREATING graph refuses the
+        # first attempt and would otherwise reach AVAILABLE and simply stay.
+        if _issue_delete(client, graph_id):
+            return
     # Raising lets the caller count this as a failed deletion: the graph may
     # still be live, so its reference must be kept for the resume to retry.
     raise TimeoutError(f"Timeout waiting for graph {graph_id} deletion")

@@ -233,6 +233,30 @@ class ProjectionStore:
             )
             return cur.rowcount > 0
 
+    def clear_graph_if(self, projection_id: str, expected_graph_id: str) -> bool:
+        """Drop the graph reference only while it still names ``expected_graph_id``.
+
+        For a caller that has just deleted a graph and wants to remove the
+        reference to it. An unconditional clear is wrong here: a run that was
+        taken over mid-import records *its* graph on the same row
+        (``pipeline._record_graph``), so a clear keyed off the id the caller
+        read earlier would wipe a reference to a different, live graph and leave
+        it billing with nothing pointing at it.
+
+        Returns True if the reference was still the expected one and was
+        cleared. False means the row is gone or now names another graph, and the
+        caller has to deal with that graph rather than assume it cleaned up.
+        """
+        if not expected_graph_id:
+            raise ValueError("clear_graph_if needs the graph id it expects")
+        with connection() as conn:
+            cur = conn.execute(
+                "UPDATE projections SET graph_id = NULL, graph_endpoint = NULL "
+                "WHERE id = ? AND graph_id IS ?",
+                [projection_id, expected_graph_id],
+            )
+            return cur.rowcount > 0
+
     def update_if_owner(self, projection_id: str, owner_token: str, **fields) -> bool:
         """Write ``fields`` only while ``owner_token`` still owns the row.
 

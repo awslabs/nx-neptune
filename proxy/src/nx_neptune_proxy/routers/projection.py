@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
+import logging
 import time
 import uuid
 from dataclasses import asdict
@@ -53,6 +54,8 @@ from nx_neptune_proxy.utils.aws_helper import (
     get_graph_or_exception,
 )
 from nx_neptune_proxy.utils.sanitize import sanitize_error_message
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v0/projection", tags=["projection"])
 
@@ -365,12 +368,19 @@ def delete_projection_graph(
     assert_managed_graph(resp.get("name"))
 
     refused = {STATUS_ARCHIVED} if force else IN_FLIGHT_STATUSES | {STATUS_ARCHIVED}
+    # Held, not discarded: every claim rotates the token, and the background task
+    # below has to prove it still owns the row before each write. With `force`
+    # the status guard is dropped, so a second forced delete-graph can take over
+    # a row already `deleting` — and without the token the first task's later
+    # `archived`/`failed` write would land on the second owner's row.
+    owner_token = str(uuid.uuid4())
     if not projection_service.try_transition(
         projection_id,
         STATUS_DELETING,
         # An archived record is one whose graph deletion already finished; a
         # request that read it before the archive landed must not claim it again.
         refuse_when=frozenset(refused),
+        owner_token=owner_token,
         step="graph_delete",
         step_label="Deleting graph",
     ):
@@ -379,16 +389,30 @@ def delete_projection_graph(
         )
 
     async def _delete_graph():
+        def _write(**fields) -> None:
+            """Write only while this task still owns the row.
+
+            A refused write means the row was taken over (a forced re-delete) or
+            purged. Either way the new owner is responsible for it, so this task
+            logs and stops rather than stamping a terminal status over someone
+            else's operation.
+            """
+            if not projection_service.update_if_owner(
+                projection_id, owner_token, **fields
+            ):
+                logger.warning(
+                    "Projection %s was taken over or purged during graph "
+                    "deletion; dropping this task's write %s",
+                    projection_id,
+                    sorted(fields),
+                )
+
         client = ClientFactory().neptune()
         try:
             client.delete_graph(graphIdentifier=p.graph_id, skipSnapshot=True)
         except ClientError as e:
             if e.response["Error"]["Code"] != "ResourceNotFoundException":
-                projection_service.update(
-                    projection_id,
-                    status=STATUS_FAILED,
-                    error=_graph_delete_error(e),
-                )
+                _write(status=STATUS_FAILED, error=_graph_delete_error(e))
                 return
         # Poll until gone
         for _ in range(60):
@@ -400,21 +424,15 @@ def delete_projection_graph(
                     break
                 # Denied/throttled/expired says nothing about the graph being
                 # gone: keep graph_id so purge keeps refusing the record.
-                projection_service.update(
-                    projection_id,
-                    status=STATUS_FAILED,
-                    error=_graph_delete_error(e),
-                )
+                _write(status=STATUS_FAILED, error=_graph_delete_error(e))
                 return
         else:
-            projection_service.update(
-                projection_id,
+            _write(
                 status=STATUS_FAILED,
                 error="Timeout waiting for graph deletion",
             )
             return
-        projection_service.update(
-            projection_id,
+        _write(
             status=STATUS_ARCHIVED,
             graph_id=None,
             graph_endpoint=None,

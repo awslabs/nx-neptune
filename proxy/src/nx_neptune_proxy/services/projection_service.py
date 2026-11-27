@@ -101,6 +101,10 @@ class ProjectionService:
             **data,
         )
 
+    def clear_graph_if(self, projection_id: str, expected_graph_id: str) -> bool:
+        """Drop the graph reference only if it still names that graph: see store."""
+        return projection_store.clear_graph_if(projection_id, expected_graph_id)
+
     def update_if_owner(self, projection_id: str, owner_token: str, **data) -> bool:
         """Conditional write for a run that may have lost its row: see store."""
         return projection_store.update_if_owner(projection_id, owner_token, **data)

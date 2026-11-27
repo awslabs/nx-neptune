@@ -1,6 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import asyncio
 import logging
 import time
 from functools import partial
@@ -24,6 +25,10 @@ logger = logging.getLogger(__name__)
 # deletion protection nor the delete itself is reliable in that state.
 _ORPHAN_DELETE_POLL = 10
 _ORPHAN_DELETE_TIMEOUT = 600
+
+# Strong references to in-flight orphan deletes handed to the executor, so a
+# fire-and-forget delete is not garbage-collected before it finishes.
+_ORPHAN_DELETES: set = set()
 
 
 def _assert_managed(graph_name: str | None) -> None:
@@ -226,6 +231,32 @@ def _delete_orphaned_graph(graph_id: str) -> None:
         )
 
 
+def _delete_orphaned_graph_off_loop(graph_id: str) -> None:
+    """Run the orphan delete without occupying the event loop.
+
+    ``_delete_orphaned_graph`` waits on AWS with a blocking ``time.sleep`` for
+    up to ``_ORPHAN_DELETE_TIMEOUT``. Its caller, ``_record_graph``, is the
+    synchronous ``on_created`` callback that ``create_na_instance`` invokes from
+    inside a coroutine, so calling it directly stalls every request and every
+    other background task for as long as the orphan takes to settle — which is
+    minutes, because ``on_created`` fires while the graph is still CREATING.
+
+    Handing it to the default executor keeps the waiting off the loop. Nothing
+    awaits the result: every failure path in there logs rather than raises, and
+    the caller is already unwinding. The reference is held until it finishes so
+    the task is not garbage-collected mid-flight.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No loop (tests, or a synchronous caller): nothing to block.
+        _delete_orphaned_graph(graph_id)
+        return
+    future = loop.run_in_executor(None, _delete_orphaned_graph, graph_id)
+    _ORPHAN_DELETES.add(future)
+    future.add_done_callback(_ORPHAN_DELETES.discard)
+
+
 def _record_graph(projection_id: str, owner_token: str, graph_id: str) -> None:
     """Save the graph id and endpoint, or delete the graph if the row is gone.
 
@@ -261,10 +292,10 @@ def _record_graph(projection_id: str, owner_token: str, graph_id: str) -> None:
         projection_id,
         graph_id,
     )
-    _delete_orphaned_graph(graph_id)
+    _delete_orphaned_graph_off_loop(graph_id)
     raise RuntimeError(
         f"Projection {projection_id} was purged mid-import; the graph created "
-        f"for it ({graph_id}) has been deleted"
+        f"for it ({graph_id}) is being deleted"
     )
 
 
