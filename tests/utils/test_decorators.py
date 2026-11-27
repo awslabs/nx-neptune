@@ -868,6 +868,29 @@ class TestTeardownAfterAFailedAlgorithmCall:
 
         delete.assert_not_called()
 
+    def test_an_interrupt_on_a_reused_graph_warns_about_nothing(self, caplog):
+        """The orphan warning is for graphs this call created, and only those.
+
+        An interrupt on a caller-supplied graph created nothing, so there is no
+        orphan to name. Without this the guard on the warning was untested: a
+        mutation making it unconditional still passed the suite, and the user
+        would be told a graph they own had been "left running and is billed".
+        """
+        import logging
+
+        def interrupted(graph):
+            raise KeyboardInterrupt
+
+        config = self._config(graph_id="g-callers-own", create_new_instance=False)
+        with self._patched(config) as (delete, _, _set_graph_id):
+            with caplog.at_level(logging.WARNING):
+                with pytest.raises(KeyboardInterrupt):
+                    configure_if_nx_active()(interrupted)(nx.Graph())
+
+        delete.assert_not_called()
+        assert "left running" not in caplog.text
+        assert "g-callers-own" not in caplog.text
+
     def test_a_failing_teardown_does_not_replace_the_algorithm_error(self, caplog):
         """The teardown error is logged, the algorithm's error still wins."""
         with self._patched(self._config()) as (delete, _, set_graph_id):
