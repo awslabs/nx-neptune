@@ -55,7 +55,7 @@ Required to import/export between S3 and Neptune Analytics:
 - `neptune-graph:StartExportTask`
 - `neptune-graph:GetExportTask`
 
-Every S3 import also calls `neptune-graph:GetGraph` first, to tell a graph session from a provisioned graph and choose the import path. It is listed under Graph management above, but a role that was scoped to the import actions alone must now include it, or the import fails with `AccessDenied`.
+Every S3 import first calls `neptune-graph:GetGraph`, to distinguish a graph session (Neptune Graph Session) from a provisioned (Neptune Analytics) graph and choose the import path. It is listed under Graph management above, but a role that was scoped to the import actions alone must now include it, or the import fails with `AccessDenied`.
 
 `nx-neptune` stages CSV files in S3, deletes them after an import, and checks the bucket's settings. On the staging and export buckets, this needs:
 
