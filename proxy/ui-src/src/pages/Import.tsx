@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { metadata, projection, projectApi, type Projection, type ProjectionStatus, type Project, type NodeQueryInput, type EdgeQueryInput } from "../api";
 import { Button, Select, ProgressBar, Card, RefreshButton } from "../components/ui";
+import { executeBlockedReason, previewBlockedReason } from "../util/blocked";
 import { Play, CheckCircle, Eye, Wand2, ChevronRight, Plus, Trash2, AlertTriangle } from "lucide-react";
 
 type UiNodeQuery = NodeQueryInput & { failed?: boolean };
@@ -436,6 +437,17 @@ export function Import() {
 
   const hasQueries = nodeQueries.some((q) => q.sql.trim()) || edgeQueries.some((q) => q.sql.trim());
 
+  // `loading` is a phase name or null; name the boolean once instead of
+  // coercing it at each of the six places that ask.
+  const busy = !!loading;
+
+  // Why Preview/Execute are unavailable. The `disabled` expressions below are
+  // `=== null` checks on these, so a control and its explanation are one rule
+  // rather than two copies that can drift.
+  const executeBlocked = executeBlockedReason({ polling, loading: busy, hasQueries });
+  // Preview does not start an import, so a running one does not block it.
+  const previewBlocked = previewBlockedReason({ loading: busy, hasQueries });
+
   function renderChecks(source: "resources" | "queries") {
     if (checksSource !== source || checks.length === 0) return null;
     return (
@@ -710,9 +722,37 @@ export function Import() {
       </Card>
 
       {/* Actions */}
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={handlePreview} disabled={!!loading || !hasQueries}><Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview"}</Button>
-        <Button onClick={handleExecute} disabled={polling || !!loading || !hasQueries}><Play className="h-4 w-4" /> Execute</Button>
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={handlePreview}
+            disabled={previewBlocked !== null}
+            title={previewBlocked || "Preview the first rows each query returns"}
+          >
+            <Eye className="h-4 w-4" /> {loading === "preview" ? "Loading..." : "Preview"}
+          </Button>
+          <Button
+            onClick={handleExecute}
+            disabled={executeBlocked !== null}
+            title={executeBlocked || "Create the graph and import the query results"}
+          >
+            <Play className="h-4 w-4" /> Execute
+          </Button>
+        </div>
+        {/* A disabled control that does not say why leaves the user guessing at
+            three separate conditions, so name the unmet one in the page.
+            `title` alone cannot do this job here: `Button` carries
+            `disabled:pointer-events-none`, and a browser fires no hover on an
+            element with pointer events off, so the tooltip never appears in the
+            one state it exists for. `aria-live` so a screen reader hears the
+            reason change without having to find the text. */}
+        <div aria-live="polite" className="space-y-1">
+          {executeBlocked && <p className="text-xs text-gray-500">Execute: {executeBlocked}</p>}
+          {previewBlocked && previewBlocked !== executeBlocked && (
+            <p className="text-xs text-gray-500">Preview: {previewBlocked}</p>
+          )}
+        </div>
       </div>
 
       {/* Preview */}

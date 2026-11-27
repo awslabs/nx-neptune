@@ -1,7 +1,12 @@
 import { useEffect, useState, useRef } from "react";
 import { useSearchParams, NavLink } from "react-router";
 import { projection, metadata, projectApi, graphActions, type Projection, type Project, type Inflight, type QueriesResponse } from "../api";
-import { Card, Button, RefreshButton } from "../components/ui";
+import { Card, Button, RefreshButton, ProgressBar } from "../components/ui";
+import {
+  TRANSIENT_POLL_MS,
+  graphActionBlockedReason,
+  isTransientStatus,
+} from "../util/blocked";
 import { X, ExternalLink, Trash2, Square, Play, AlertTriangle, ChevronRight, ChevronDown, Download } from "lucide-react";
 import { useNavigate } from "react-router";
 
@@ -19,6 +24,7 @@ export function Projections() {
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
+  const inFlight = useRef(false);
   const navigate = useNavigate();
   const filterProjectId = searchParams.get("project");
 
@@ -39,6 +45,19 @@ export function Projections() {
   }, []);
 
   async function load() {
+    // One pass at a time. The poll fires every TRANSIENT_POLL_MS and this does
+    // ~2+2N requests, several of them real graph queries that can take longer
+    // than the interval, so overlapping passes resolve out of order.
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try {
+      await loadOnce();
+    } finally {
+      inFlight.current = false;
+    }
+  }
+
+  async function loadOnce() {
     const list = await projection.list();
     setProjections(list);
     // Fetch graph statuses and actions
@@ -69,7 +88,15 @@ export function Projections() {
         } catch {}
       })
     );
-    setSummaries(new Map(entries));
+    // Merge, don't replace. A summary call that fails — likely while its graph
+    // is STOPPING, and swallowed above — is absent from `entries`, and replacing
+    // the whole map made that row's counts vanish on the next poll. That is the
+    // same "a background poll blanks the UI" bug this page is meant to avoid.
+    setSummaries(prev => {
+      const next = new Map(prev);
+      for (const [id, summary] of entries) next.set(id, summary);
+      return next;
+    });
   }
 
   const allFiltered = filterProjectId
@@ -144,7 +171,9 @@ export function Projections() {
 
   useEffect(() => {
     if (!hasTransient) return;
-    const interval = setInterval(() => load(), 30000);
+    // 5s, not 30s: this only runs while a graph is mid-transition, and at 30s a
+    // user who clicks Stop sees nothing change for half a minute and clicks again.
+    const interval = setInterval(() => load(), TRANSIENT_POLL_MS);
     return () => clearInterval(interval);
   }, [hasTransient]);
 
@@ -252,8 +281,25 @@ export function Projections() {
               ) : active.map((s) => {
                 const graphStatus = s.graph_id ? graphStatuses.get(s.graph_id) : undefined;
                 const state = s.graph_id ? actionStates[s.graph_id] : undefined;
-                const actions = state?.actions || [];
-                const isTransient = graphStatus ? ["STOPPING", "STARTING", "DELETING", "CREATING"].includes(graphStatus) : false;
+                // null while unfetched or failed, so the reason says "checking"
+                // rather than asserting the service refused the action.
+                const actions = state ? state.actions : null;
+                const isTransient = isTransientStatus(graphStatus);
+                // One call per action, and `disabled` is derived from the same
+                // result, so a control and its explanation cannot disagree.
+                const reasonFor = (action: "explore" | "stop" | "start" | "delete-graph") =>
+                  graphActionBlockedReason({
+                    action,
+                    graphId: s.graph_id,
+                    graphStatus,
+                    available: actions,
+                    isTransient,
+                    projectionStatus: s.status,
+                  });
+                const exploreBlocked = reasonFor("explore");
+                const stopBlocked = reasonFor("stop");
+                const startBlocked = reasonFor("start");
+                const deleteGraphBlocked = reasonFor("delete-graph");
 
                 return (
                 <tr
@@ -267,7 +313,13 @@ export function Projections() {
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle(s.status)}`}>{s.status}</span>
                   </td>
-                  <td className="px-4 py-3">{Math.round(s.progress)}%</td>
+                  <td className="px-4 py-3">
+                    <ProgressBar
+                      value={s.progress}
+                      label={s.step_label || s.step || undefined}
+                      compact
+                    />
+                  </td>
                   <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString()}</td>
                   <td className="px-4 py-3">
                     {graphStatus ? (
@@ -279,8 +331,9 @@ export function Projections() {
                       {/* Graph Explorer */}
                       <button
                         className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-blue-600 disabled:opacity-30 disabled:hover:bg-transparent"
-                        disabled={!s.graph_id || graphStatus !== "AVAILABLE"}
-                        title="Open in Graph Explorer"
+                        disabled={exploreBlocked !== null}
+                        aria-label="Open in Graph Explorer"
+                        title={exploreBlocked || "Open in Graph Explorer"}
                         onClick={(e) => {
                           e.stopPropagation();
                           const graphDbUrl = `https://${s.graph_id}.${region}.neptune-graph.amazonaws.com`;
@@ -301,8 +354,9 @@ export function Projections() {
                       {/* Stop */}
                       <button
                         className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-amber-600 disabled:opacity-30 disabled:hover:bg-transparent"
-                        disabled={!actions.includes("stop") || isTransient}
-                        title="Stop graph"
+                        disabled={stopBlocked !== null}
+                        aria-label="Stop graph"
+                        title={stopBlocked || "Stop graph"}
                         onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "stop", s.graph_name || s.graph_id!); }}
                       >
                         <Square className="h-4 w-4" />
@@ -311,8 +365,9 @@ export function Projections() {
                       {/* Start */}
                       <button
                         className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-green-600 disabled:opacity-30 disabled:hover:bg-transparent"
-                        disabled={!actions.includes("start") || isTransient}
-                        title="Start graph"
+                        disabled={startBlocked !== null}
+                        aria-label="Start graph"
+                        title={startBlocked || "Start graph"}
                         onClick={(e) => { e.stopPropagation(); performGraphAction(s.graph_id!, "start", s.graph_name || s.graph_id!); }}
                       >
                         <Play className="h-4 w-4" />
@@ -330,8 +385,9 @@ export function Projections() {
                       ) : (
                         <button
                           className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent"
-                          disabled={!s.graph_id || isTransient || s.status === "importing" || s.status === "executing"}
-                          title="Delete graph (archive projection)"
+                          disabled={deleteGraphBlocked !== null}
+                          aria-label="Delete graph (archive projection)"
+                          title={deleteGraphBlocked || "Delete graph (archive projection)"}
                           onClick={(e) => { e.stopPropagation(); archiveProjection(s.id, s.graph_name || s.id.slice(0, 8)); }}
                         >
                           <Trash2 className="h-4 w-4" />

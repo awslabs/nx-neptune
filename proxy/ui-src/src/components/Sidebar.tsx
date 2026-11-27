@@ -99,7 +99,13 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
             <span className="text-sm font-semibold">nx-neptune</span>
           </NavLink>
         )}
-        <button onClick={onToggle} className="rounded p-1 text-gray-500 hover:bg-gray-100">
+        <button
+          onClick={onToggle}
+          className="rounded p-1 text-gray-500 hover:bg-gray-100"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
           {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
         </button>
       </div>
