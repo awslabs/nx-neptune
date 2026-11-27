@@ -16,8 +16,6 @@ Neptune constants
 
 # AWS boto3 client services
 SERVICE_NA = "neptune-graph"
-# IAM service principal prefix ("<prefix>.amazonaws.com") that Neptune Analytics
-# assumes roles as. It is not the boto service name above.
 SERVICE_NA_PRINCIPAL = "neptune-graph"
 SERVICE_IAM = "iam"
 SERVICE_STS = "sts"

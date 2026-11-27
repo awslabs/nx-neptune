@@ -84,8 +84,6 @@ class ClientFactory:
         if self._timeout_seconds:
             config_kwargs["read_timeout"] = self._timeout_seconds
         if self._max_attempts:
-            # total_max_attempts counts the first call; botocore's max_attempts
-            # counts retries only, so max_attempts=1 would still send twice.
             config_kwargs["retries"] = {
                 "total_max_attempts": self._max_attempts,
                 "mode": "standard",

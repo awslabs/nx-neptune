@@ -8,11 +8,11 @@ One scenario, start to finish:
   3. Assert it is detected as a session graph.
   4. Import the uploaded data via the import path (routes to neptune.load).
   5. Assert node/edge counts and identities match what was uploaded.
-  6. Explicitly reset the graph and assert it is empty.
-  7. Delete the instance.
+  6. Delete the instance.
 
 A Graph Session does not support the asynchronous import task; the library routes
-its imports through the synchronous `neptune.load` procedure instead.
+its imports through the synchronous `neptune.load` procedure instead. It does not
+support ResetGraph either, so there is no reset step.
 
 WARNING: Creates and destroys a real, billable graph. Several minutes runtime.
 
@@ -126,7 +126,7 @@ def test_tiny_graph_end_to_end(event_loop, resource_tracker, s3_client, memory):
 
             # --- 4. Import the uploaded data --------------------------------
             # (for a session graph) routes to neptune.load, returning a loadId.
-            log.info("STEP 4 starting: import_from_csv(reset_graph_ahead=True)")
+            log.info("STEP 4 starting: import_from_csv")
             load_id = event_loop.run_until_complete(
                 sm.import_from_csv(graph, s3_source)
             )
@@ -172,27 +172,8 @@ def test_tiny_graph_end_to_end(event_loop, resource_tracker, s3_client, memory):
                 f"{sorted(EXPECTED_EDGE_PAIRS)}"
             )
 
-            # --- 6. Explicit reset, then assert the graph is empty ----------
-            # TBC: Until Graph Session support
-            # log.info("STEP 6 starting: reset_graph then assert empty")
-            # event_loop.run_until_complete(sm.reset_graph(graph.name))
-            #
-            # node_count_after = _read_with_retry(
-            #     lambda: graph.execute_query("MATCH (n) RETURN count(n) AS c")
-            # )[0]["c"]
-            # assert node_count_after == 0, (
-            #     f"after reset, node count {node_count_after} != 0"
-            # )
-            #
-            # edge_count_after = graph.execute_query(
-            #     "MATCH ()-[r]->() RETURN count(r) AS c"
-            # )[0]["c"]
-            # assert edge_count_after == 0, (
-            #     f"after reset, edge count {edge_count_after} != 0"
-            # )
-
-        # --- 7. Delete the instance -----------------------------------------
-        log.info("STEP 7 starting: destroy_all_graphs()")
+        # --- 6. Delete the instance -----------------------------------------
+        log.info("STEP 6 starting: destroy_all_graphs()")
         event_loop.run_until_complete(sm.destroy_all_graphs())
     finally:
         # Clean up the uploaded staging objects regardless of outcome.
