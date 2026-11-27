@@ -95,7 +95,15 @@ export default async function globalSetup() {
       console.warn(`Cleanup could not finish (${(e as Error).message}). Check for graphs named *${runId}*.`);
     } finally {
       child.removeAllListeners("exit");
-      child.kill();
+      // Wait for the proxy to exit, so the port is free for an immediate re-run.
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 10_000);
+        child.once("exit", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        child.kill();
+      });
       rmSync(dbDir, { recursive: true, force: true });
     }
   };

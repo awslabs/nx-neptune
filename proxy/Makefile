@@ -1,4 +1,4 @@
-.PHONY: dev install test build run stop clean ui ui-test ui-browser ui-browser-live relock
+.PHONY: dev install test build run stop clean ui ui-test ui-browser ui-browser-live ui-browser-live-headed relock
 
 SHELL := /bin/bash
 
@@ -14,8 +14,14 @@ ui-test:          ## Run frontend unit tests.
 ui-browser:       ## Run browser UI tests (mocked API). Full test titles, not cut to the terminal width.
 	cd ui-src && npm install && npm run build && npx playwright install chromium && PLAYWRIGHT_FORCE_TTY=0 npx playwright test
 
+# Pass extra Playwright options with ARGS, e.g. make ui-browser-live ARGS='-g "Graph sessions"'
+UI_LIVE = cd ui-src && npm install && npm run build && npx playwright install chromium && PLAYWRIGHT_FORCE_TTY=0 npx playwright test -c playwright.live.config.ts
+
 ui-browser-live:  ## Run live browser tests against real AWS (creates and deletes graphs). See ui-src/README.md.
-	cd ui-src && npm install && npm run build && npx playwright install chromium && PLAYWRIGHT_FORCE_TTY=0 npx playwright test -c playwright.live.config.ts
+	$(UI_LIVE) $(ARGS)
+
+ui-browser-live-headed: ## Same, with a visible browser window so you can watch each click.
+	$(UI_LIVE) --headed $(ARGS)
 
 relock:           ## Rebuild the ui-src lockfile and print a clean version diff.
 	@cd ui-src && jq -r '.packages | to_entries[] | select(.key != "") | "\(.key | sub("^node_modules/";""))@\(.value.version)"' package-lock.json 2>/dev/null | sort > /tmp/npm-before.txt || true

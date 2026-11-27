@@ -3,13 +3,14 @@ import { importConfig, loadLiveEnv, type ImportConfig } from "./config";
 
 // Import journey, clicked through the real UI against a real proxy and real AWS:
 //   create a project -> fill in the import form -> Execute -> wait for "Graph ready"
-//   -> see the graph AVAILABLE on the Graphs page -> delete it from the UI.
+//   -> see the projection's import status is complete -> see the graph AVAILABLE on the
+//   Graphs page -> delete it from the UI.
 // Every step asserts what the user sees. The API is never called to help a step along.
 // Graphs a failed run leaves behind are deleted by the teardown in global-setup.ts.
 
 loadLiveEnv();
 const { config, missing } = importConfig();
-const skipReason = `Set ${missing.join(", ")} in ui-tests-live/.env.local (see .env.example)`;
+const skipReason = `Set ${missing.join(", ")} in the file named by E2E_ENV_FILE (see ui-tests-live/.env.example)`;
 
 const READY_TIMEOUT = 15 * 60_000; // an import can take minutes
 const DELETE_TIMEOUT = 15 * 60_000;
@@ -22,7 +23,8 @@ async function importJourney(page: Page, cfg: ImportConfig, opts: { memory: numb
 
   // 1. A project to import into.
   await page.goto("/projects");
-  await page.getByPlaceholder("Project name").fill(`e2e ${opts.graphName}`);
+  const projectName = `e2e ${opts.graphName}`;
+  await page.getByPlaceholder("Project name").fill(projectName);
   await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(page).toHaveURL(/\/projections\?project=/);
 
@@ -40,20 +42,28 @@ async function importJourney(page: Page, cfg: ImportConfig, opts: { memory: numb
   await page.getByPlaceholder(/~label", col1/).fill(cfg.nodeQuery);
   if (cfg.edgeQuery) await page.getByPlaceholder(/~from/).fill(cfg.edgeQuery);
 
-  // 3. Run it and wait for the result. The Import page shows a red box when the run fails,
-  //    so a failure ends the test now instead of after the full timeout.
+  // 3. Run it and wait for the result. The Import page shows a red box when the run fails and a
+  //    list with ✗ entries when a field is missing, so either ends the test now instead of
+  //    after the full timeout.
   await page.getByRole("button", { name: "Execute" }).click();
   const ready = page.getByText("✓ Graph ready");
-  const failed = page.locator("div.border-red-200");
+  const failed = page.locator("div.border-red-200").or(page.getByText("✗"));
   await expect(ready.or(failed).first()).toBeVisible({ timeout: READY_TIMEOUT });
   await expect(ready, "the import should finish with a ready graph").toBeVisible();
 
-  // 4. The graph is listed as available.
+  // 4. The projection records the import as complete. A graph can be AVAILABLE even when the
+  //    import into it failed, so this is the check that the data actually loaded.
+  await page.getByRole("link", { name: projectName }).click();
+  const projection = page.getByRole("row", { name: new RegExp(opts.graphName) });
+  await expect(projection).toContainText("complete", { timeout: 60_000 });
+  await expect(projection).not.toContainText("failed");
+
+  // 5. The graph is listed as available.
   await page.getByRole("link", { name: "Graphs" }).click();
   const row = page.getByRole("row", { name: new RegExp(runId) });
   await expect(row).toContainText("AVAILABLE", { timeout: 2 * 60_000 });
 
-  // 5. Delete it from the UI (this also cleans up after the test).
+  // 6. Delete it from the UI (this also cleans up after the test).
   page.once("dialog", (dialog) => dialog.accept());
   await row.getByTitle("Delete graph").click();
   await expect(row).toHaveCount(0, { timeout: DELETE_TIMEOUT });
