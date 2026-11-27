@@ -31,6 +31,7 @@ export interface MockGraph {
   id: string;
   name: string;
   status: string;
+  graph_type: "session" | "provisioned" | "unknown";
 }
 
 export interface MockStatus {
@@ -50,7 +51,12 @@ export interface RecordedCall {
 }
 
 export interface MockState {
-  config: { region: string; graph_prefix: string };
+  config: {
+    region: string;
+    graph_prefix: string;
+    memory_sizes: number[]; // every size offered in the Import memory selector
+    session_memory_sizes: number[]; // the sizes that create a graph session
+  };
   catalogs: { name: string; status: string }[];
   databases: string[];
   buckets: string[];
@@ -67,7 +73,12 @@ export const CREATED_AT = "2026-01-15T10:00:00Z";
 
 export function defaultState(): MockState {
   return {
-    config: { region: "us-west-2", graph_prefix: "nxp-" },
+    config: {
+      region: "us-west-2",
+      graph_prefix: "nxp-",
+      memory_sizes: [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096],
+      session_memory_sizes: [4, 8],
+    },
     catalogs: [{ name: "AwsDataCatalog", status: "ACTIVE" }],
     databases: ["finance", "sales"],
     buckets: ["e2e-staging"],
@@ -87,7 +98,9 @@ export function defaultState(): MockState {
         created_at: CREATED_AT,
       },
     ],
-    graphs: [{ id: "g-abc123", name: "nxp-fraud-demo", status: "AVAILABLE" }],
+    graphs: [
+      { id: "g-abc123", name: "nxp-fraud-demo", status: "AVAILABLE", graph_type: "provisioned" },
+    ],
     statusSequence: [
       { id: "new-1", status: "importing", step: "load", step_label: "Loading data", progress: 40 },
       {
