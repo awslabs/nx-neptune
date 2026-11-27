@@ -966,9 +966,10 @@ def _get_create_instance_config(graph_name, config=None):
     fills in default values for required parameters if they are missing, and
     ensures the presence of the 'agent' tag and the graph name.
 
-    The requested ``provisionedMemory`` selects the graph size: 4 or 8 m-NCU use
-    the session-tier shape (built automatically), 16 m-NCU and above use the
-    standard shape, and other values raise ``ValueError``. Defaults to 16 m-NCU.
+    The requested ``provisionedMemory`` selects the graph size: 4 or 8 NCU build
+    a graph session (``computeConfiguration`` is set automatically), 16 NCU and
+    above build a provisioned graph, and other values raise ``ValueError``.
+    Defaults to 16 NCU.
 
     Args:
         graph_name (str): The name of the graph to create. This is always included in the result.
@@ -1006,8 +1007,8 @@ def _get_create_instance_config(graph_name, config=None):
     if memory is not None and memory < 16:
         if memory not in _SESSION_MEMORY_SIZES:
             raise ValueError(
-                f"Unsupported memory size {memory} m-NCU. Only "
-                f"{sorted(_SESSION_MEMORY_SIZES)} (session tier) or 16 m-NCU "
+                f"Unsupported memory size {memory} NCU. Only "
+                f"{sorted(_SESSION_MEMORY_SIZES)} (graph session) or 16 "
                 f"and above are supported."
             )
         config.pop("provisionedMemory")
@@ -1057,7 +1058,7 @@ def _get_create_instance_with_import_config(
         or config.get("minProvisionedMemory") in _SESSION_MEMORY_SIZES
     ):
         raise ValueError(
-            "Create-with-import does not support 4 or 8 m-NCU memory; use 16 or above."
+            "Create-with-import does not support 4 or 8 s-NCU memory; use 16 m-NCU or above."
         )
 
     # Ensure mandatory config present.

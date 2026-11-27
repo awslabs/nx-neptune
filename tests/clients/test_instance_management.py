@@ -1129,7 +1129,7 @@ async def test_create_graph_config_override_default_options():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("memory", [4, 8])
 async def test_create_graph_config_tiny_graph(monkeypatch, memory):
-    # provisionedMemory 4/8 is a smaller offering that uses a different request
+    # provisionedMemory 4/8 is a graph session, which uses a different request
     # shape: the value moves to computeConfiguration. provisionedMemory must not
     # be sent.
     monkeypatch.delenv("NETWORKX_PUBLIC_CONNECTIVITY", raising=False)
@@ -1151,13 +1151,13 @@ async def test_create_graph_config_tiny_graph(monkeypatch, memory):
 def test_create_graph_config_rejects_unsupported_small_memory(memory):
     # Only 4 or 8 are valid below 16; any other small size must raise rather
     # than silently falling through to the provisioned path (server min is 16).
-    with pytest.raises(ValueError, match=rf"Unsupported memory size {memory} m-NCU"):
+    with pytest.raises(ValueError, match=rf"Unsupported memory size {memory} NCU"):
         _get_create_instance_config("test", {"provisionedMemory": memory})
 
 
 @pytest.mark.parametrize("memory", [4, 8])
 def test_create_graph_config_conflicting_memory_and_compute_raises(memory):
-    # Passing both a session-tier provisionedMemory and an explicit
+    # Passing both a graph-session provisionedMemory and an explicit
     # computeConfiguration is ambiguous and must raise, not silently drop the
     # requested size.
     with pytest.raises(ValueError, match="Cannot set both provisionedMemory"):
@@ -1555,12 +1555,12 @@ def test_get_create_instance_with_import_config_custom():
 @pytest.mark.parametrize("key", ["minProvisionedMemory", "provisionedMemory"])
 @pytest.mark.parametrize("memory", [4, 8])
 def test_get_create_instance_with_import_config_rejects_session_memory(key, memory):
-    """Create-with-import must reject 4/8 m-NCU requests (16 or above only)."""
+    """Create-with-import must reject 4/8 s-NCU requests (16 m-NCU or above only)."""
     from nx_neptune.instance_management import _get_create_instance_with_import_config
 
     with pytest.raises(
         ValueError,
-        match=r"does not support 4 or 8 m-NCU memory; use 16 or above",
+        match=r"does not support 4 or 8 s-NCU memory; use 16 m-NCU or above",
     ):
         _get_create_instance_with_import_config(
             "test-graph",

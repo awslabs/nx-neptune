@@ -77,7 +77,7 @@ Because nx-neptune deletes its staged files, a versioned bucket keeps their old 
 
 ### Importing into a graph session
 
-A graph session (4 or 8 m-NCU) does not support import tasks. `nx-neptune` loads the staged files with the `neptune.load` procedure instead, as one openCypher query, so:
+A graph session (4 or 8 s-NCU) does not support import tasks. `nx-neptune` loads the staged files with the `neptune.load` procedure instead, as one openCypher query, so:
 
 - Neptune Analytics does not read S3 with an import role. The load uses your own credentials, so you need `s3:GetObject` and `s3:ListBucket` on the staging location, and `kms:Decrypt` on its key if the bucket is KMS-encrypted.
 - The import role, its trust policy and `iam:PassRole` are not used on this path.

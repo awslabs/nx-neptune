@@ -551,10 +551,10 @@ export function Import() {
             </label>
             <label className="space-y-1">
               <span className="flex items-center gap-1 text-sm font-medium text-gray-700">
-                Memory (m-NCU)
+                Memory (NCU)
                 {sessionSizes.includes(graphMemoryGb) && (
-                  <span title="Session tier: faster start-up.">
-                    <Info className="h-3.5 w-3.5 text-gray-400" aria-label="Session tier info" />
+                  <span title="Graph session: scales to zero when idle.">
+                    <Info className="h-3.5 w-3.5 text-gray-400" aria-label="Graph session info" />
                   </span>
                 )}
               </span>
@@ -564,7 +564,7 @@ export function Import() {
               >
                 {memorySizes.map((size) => (
                   <option key={size} value={size}>
-                    {sessionSizes.includes(size) ? `${size} m-NCU \u26A1` : `${size} m-NCU`}
+                    {sessionSizes.includes(size) ? `${size} NCU \u26A1` : `${size} NCU`}
                   </option>
                 ))}
               </Select>

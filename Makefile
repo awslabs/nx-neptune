@@ -110,7 +110,7 @@ integ-test-session: ## Run session manager integration tests only.
 	$(ENV_PREFIX)pytest -v -l --tb=short --maxfail=1 integ_test/session_manager/
 
 .PHONY: integ-test-graph-session
-integ-test-graph-session: ## Run the graph session (4/8 m-NCU) integration test only.
+integ-test-graph-session: ## Run the graph session (4/8 s-NCU) integration test only.
 	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
 	$(ENV_PREFIX)pytest -v -l --tb=short --maxfail=1 integ_test/session_manager/test_graph_session_import.py
 
