@@ -191,5 +191,7 @@ cloudformation-templates/build/
 
 # Frontend
 proxy/ui-src/node_modules/
+proxy/ui-src/test-results/
+proxy/ui-src/playwright-report/
 proxy/ui/
 proxy/docker-compose.override.yml
