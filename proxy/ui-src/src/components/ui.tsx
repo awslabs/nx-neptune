@@ -38,28 +38,39 @@ export function ProgressBar({
   label,
   compact = false,
 }: { value: number; label?: string; compact?: boolean }) {
+  // Clamp both ends, and treat a missing or NaN progress as 0. `Math.min` alone
+  // let a negative or undefined value through as `width: -5%` / `width: NaN%`.
+  const pct = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
+  const aria = {
+    role: "progressbar" as const,
+    "aria-valuenow": Math.round(pct),
+    "aria-valuemin": 0,
+    "aria-valuemax": 100,
+    "aria-label": label,
+  };
+
   // `compact` is the table-cell form: a short bar with the percentage beside it,
   // so a row reads at a glance without a full-width bar blowing out the column.
   if (compact) {
     return (
-      <div className="flex items-center gap-2" title={label}>
+      <div className="flex items-center gap-2" title={label} {...aria}>
         <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200">
           <div
             className="h-full rounded-full bg-blue-600 transition-all duration-300"
-            style={{ width: `${Math.min(100, value)}%` }}
+            style={{ width: `${pct}%` }}
           />
         </div>
-        <span className="text-xs text-gray-600">{Math.round(value)}%</span>
+        <span className="text-xs text-gray-600">{Math.round(pct)}%</span>
       </div>
     );
   }
   return (
-    <div className="space-y-1">
+    <div className="space-y-1" {...aria}>
       {label && <p className="text-xs text-gray-500">{label}</p>}
       <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
         <div
           className="h-full rounded-full bg-blue-600 transition-all duration-300"
-          style={{ width: `${Math.min(100, value)}%` }}
+          style={{ width: `${pct}%` }}
         />
       </div>
     </div>

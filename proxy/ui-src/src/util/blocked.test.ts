@@ -4,8 +4,7 @@ import {
   TRANSIENT_POLL_MS,
   executeBlockedReason,
   graphActionBlockedReason,
-  isExecuteBlocked,
-  isPreviewBlocked,
+  isTransientStatus,
   previewBlockedReason,
 } from "./blocked";
 
@@ -14,7 +13,6 @@ describe("executeBlockedReason", () => {
 
   it("returns null when nothing is in the way", () => {
     expect(executeBlockedReason(ready)).toBeNull();
-    expect(isExecuteBlocked(ready)).toBe(false);
   });
 
   it("names a running import", () => {
@@ -41,18 +39,6 @@ describe("executeBlockedReason", () => {
     ).toMatch(/already running/);
   });
 
-  it("agrees with isExecuteBlocked on every combination", () => {
-    for (const polling of [true, false]) {
-      for (const loading of [true, false]) {
-        for (const hasQueries of [true, false]) {
-          const state = { polling, loading, hasQueries };
-          expect(isExecuteBlocked(state)).toBe(
-            executeBlockedReason(state) !== null,
-          );
-        }
-      }
-    }
-  });
 });
 
 describe("previewBlockedReason", () => {
@@ -61,7 +47,6 @@ describe("previewBlockedReason", () => {
     // Execute's reason here claimed a block that was not there while the button
     // remained clickable.
     expect(previewBlockedReason({ loading: false, hasQueries: true })).toBeNull();
-    expect(isPreviewBlocked({ loading: false, hasQueries: true })).toBe(false);
   });
 
   it("still names a pending operation", () => {
@@ -93,16 +78,6 @@ describe("previewBlockedReason", () => {
     expect(previewBlockedReason({ loading: false, hasQueries: true })).toBeNull();
   });
 
-  it("agrees with isPreviewBlocked on every combination", () => {
-    for (const loading of [true, false]) {
-      for (const hasQueries of [true, false]) {
-        const state = { loading, hasQueries };
-        expect(isPreviewBlocked(state)).toBe(
-          previewBlockedReason(state) !== null,
-        );
-      }
-    }
-  });
 });
 
 describe("graphActionBlockedReason", () => {
@@ -209,9 +184,102 @@ describe("graphActionBlockedReason", () => {
 
 describe("TRANSIENT_POLL_MS", () => {
   it("is short enough that a state change is visible", () => {
-    // Was 30s, which is long enough that clicking Stop looks like it did
-    // nothing. This pins the number against an accidental revert.
+    // A long interval makes clicking Stop look like it did nothing, which
+    // invites a second click. This pins the number against an accidental revert.
     expect(TRANSIENT_POLL_MS).toBeLessThanOrEqual(5000);
     expect(TRANSIENT_POLL_MS).toBeGreaterThan(0);
+  });
+});
+
+describe("an unknown action list", () => {
+  const base = {
+    graphId: "g-1",
+    graphStatus: "AVAILABLE",
+    isTransient: false,
+  };
+
+  it("says it is still checking rather than claiming a refusal", () => {
+    // `[]` means "the service says no"; `null` means "we have not asked yet, or
+    // the request failed". Conflating them told the user an AVAILABLE graph
+    // could not be stopped — on every page load, and forever after a failure.
+    for (const action of ["stop", "start"] as const) {
+      const reason = graphActionBlockedReason({ ...base, action, available: null });
+      expect(reason).toMatch(/Checking/);
+      expect(reason).not.toMatch(/cannot be/);
+    }
+  });
+
+  it("still reports a genuine refusal when the list is known and empty", () => {
+    expect(
+      graphActionBlockedReason({ ...base, action: "stop", available: [] }),
+    ).toMatch(/cannot be stopped/);
+  });
+
+  it("does not mask a reason that outranks it", () => {
+    // Transient and no-graph come first: an unknown action list must not hide
+    // the more specific thing that is actually in the way.
+    expect(
+      graphActionBlockedReason({
+        ...base,
+        action: "stop",
+        available: null,
+        isTransient: true,
+        graphStatus: "STOPPING",
+      }),
+    ).toMatch(/wait for it to settle/);
+    expect(
+      graphActionBlockedReason({ ...base, action: "stop", available: null, graphId: null }),
+    ).toMatch(/No graph/);
+  });
+});
+
+describe("the delete action", () => {
+  const base = { graphId: "g-1", graphStatus: "AVAILABLE", isTransient: false };
+
+  it("is gated by the action list, like stop and start", () => {
+    // The Graphs page's Delete goes through the graph action API, so the
+    // service's list is authoritative for it.
+    expect(
+      graphActionBlockedReason({ ...base, action: "delete", available: ["delete"] }),
+    ).toBeNull();
+    expect(
+      graphActionBlockedReason({ ...base, action: "delete", available: [] }),
+    ).toMatch(/cannot be deleted/);
+  });
+
+  it("is not confused with the projection-side delete-graph", () => {
+    // `delete-graph` is the projection teardown and goes through a different
+    // API, so the graph action list says nothing about it. Gating it on
+    // `available` would have disabled it permanently.
+    expect(
+      graphActionBlockedReason({ ...base, action: "delete-graph", available: [] }),
+    ).toBeNull();
+  });
+
+  it("still refuses either delete while an import is running", () => {
+    for (const action of ["delete", "delete-graph"] as const) {
+      expect(
+        graphActionBlockedReason({
+          ...base,
+          action,
+          available: ["delete"],
+          projectionStatus: "importing",
+        }),
+      ).toMatch(/import is running/);
+    }
+  });
+});
+
+describe("isTransientStatus", () => {
+  it("recognises the mid-transition states", () => {
+    for (const s of ["STOPPING", "STARTING", "DELETING", "CREATING"]) {
+      expect(isTransientStatus(s)).toBe(true);
+    }
+  });
+
+  it("treats a settled or absent status as not transient", () => {
+    for (const s of ["AVAILABLE", "STOPPED", undefined, null, ""]) {
+      expect(isTransientStatus(s)).toBe(false);
+    }
   });
 });

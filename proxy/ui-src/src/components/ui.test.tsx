@@ -46,6 +46,39 @@ describe("ProgressBar", () => {
     expect(screen.getByText("42%")).toBeInTheDocument();
   });
 
+  it("is announced as a progress bar in both forms", () => {
+    // Neither form carried a role, so the only thing a screen reader could
+    // reach was the hover `title`.
+    for (const compact of [false, true]) {
+      const { unmount } = render(
+        <ProgressBar value={42} label="Importing" compact={compact} />,
+      );
+      const bar = screen.getByRole("progressbar", { name: "Importing" });
+      expect(bar).toHaveAttribute("aria-valuenow", "42");
+      expect(bar).toHaveAttribute("aria-valuemin", "0");
+      expect(bar).toHaveAttribute("aria-valuemax", "100");
+      unmount();
+    }
+  });
+
+  it("clamps a value outside 0-100 instead of rendering a negative width", () => {
+    // `Math.min(100, value)` capped only the top, so a negative progress gave
+    // `width: -20%` and an undefined one gave `width: NaN%`.
+    render(<ProgressBar value={-20} label="Importing" compact />);
+    expect(screen.getByText("0%")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "0");
+  });
+
+  it("treats a non-finite value as zero", () => {
+    render(<ProgressBar value={NaN} label="Importing" compact />);
+    expect(screen.getByText("0%")).toBeInTheDocument();
+  });
+
+  it("caps a value above 100", () => {
+    render(<ProgressBar value={140} label="Importing" compact />);
+    expect(screen.getByText("100%")).toBeInTheDocument();
+  });
+
   it("rounds the percentage rather than printing a float", () => {
     render(<ProgressBar value={42.6} compact />);
 
