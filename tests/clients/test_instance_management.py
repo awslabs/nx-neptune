@@ -1417,6 +1417,103 @@ async def test_create_na_instance_with_s3_import_success(
     assert task_id == "test-task-id"
 
 
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+async def test_create_with_s3_import_checks_each_principal_for_its_own_action(
+    mock_get_bucket_encryption_key_arn,
+    mock_resolve_iam,
+    mock_get_status_check_future,
+):
+    """CreateGraph is checked on the caller; S3 on the import role.
+
+    Two principals are involved: the caller makes the API call, and Neptune
+    assumes the import role to read S3. A minimal import role has no Neptune
+    permissions at all, so simulating CreateGraph against it fails for a role
+    configured exactly as the prerequisites document.
+    """
+    from nx_neptune.instance_management import create_na_instance_with_s3_import
+
+    caller = MagicMock()
+    caller.role_arn = "arn:aws:iam::123456789012:role/Caller"
+    # Stands in for a documented minimal import role: S3 and KMS only.
+    import_role = MagicMock()
+    import_role.role_arn = "arn:aws:iam::123456789012:role/ImportRole"
+    import_role.has_create_na_permissions.side_effect = AssertionError(
+        "CreateGraph must not be simulated against the import role"
+    )
+
+    mock_resolve_iam.return_value = caller
+    mock_get_bucket_encryption_key_arn.return_value = None
+
+    async def mock_future():
+        return None
+
+    mock_get_status_check_future.side_effect = lambda *a, **k: mock_future()
+
+    na_client = MagicMock()
+    na_client.create_graph_using_import_task.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 201},
+        "graphId": "g-1",
+        "taskId": "t-1",
+    }
+
+    await create_na_instance_with_s3_import(
+        "s3://test-bucket/test-data/",
+        na_client=na_client,
+        iam_client_wrapper=import_role,
+    )
+
+    caller.has_create_na_permissions.assert_called_once()
+    import_role.has_import_from_s3_permissions.assert_called_once()
+    caller.has_import_from_s3_permissions.assert_not_called()
+
+    # The ARN in the request is still the import role, since that is the role
+    # Neptune assumes to read the bucket.
+    kwargs = na_client.create_graph_using_import_task.call_args.kwargs
+    assert kwargs["roleArn"] == "arn:aws:iam::123456789012:role/ImportRole"
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_status_check_future")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+async def test_create_with_s3_import_uses_the_caller_for_both_without_a_wrapper(
+    mock_get_bucket_encryption_key_arn,
+    mock_resolve_iam,
+    mock_get_status_check_future,
+):
+    """With no wrapper supplied, behaviour is unchanged from before."""
+    from nx_neptune.instance_management import create_na_instance_with_s3_import
+
+    caller = MagicMock()
+    caller.role_arn = "arn:aws:iam::123456789012:role/Caller"
+    mock_resolve_iam.return_value = caller
+    mock_get_bucket_encryption_key_arn.return_value = None
+
+    async def mock_future():
+        return None
+
+    mock_get_status_check_future.side_effect = lambda *a, **k: mock_future()
+
+    na_client = MagicMock()
+    na_client.create_graph_using_import_task.return_value = {
+        "ResponseMetadata": {"HTTPStatusCode": 201},
+        "graphId": "g-1",
+        "taskId": "t-1",
+    }
+
+    await create_na_instance_with_s3_import(
+        "s3://test-bucket/test-data/", na_client=na_client
+    )
+
+    caller.has_create_na_permissions.assert_called_once()
+    caller.has_import_from_s3_permissions.assert_called_once()
+    kwargs = na_client.create_graph_using_import_task.call_args.kwargs
+    assert kwargs["roleArn"] == "arn:aws:iam::123456789012:role/Caller"
+
+
 def test_get_create_instance_with_import_config(monkeypatch):
     """Test _get_create_instance_with_import_config function."""
     from nx_neptune.instance_management import _get_create_instance_with_import_config

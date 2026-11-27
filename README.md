@@ -191,6 +191,17 @@ case-insensitive, and any unrecognized value keeps the secure default.
 An explicit value passed in the `config` dict always wins over the environment
 variable, which in turn wins over the default.
 
+### S3 import/export role
+
+`SessionManager` uses an IAM role for S3 import, export and the permission
+preflight. The role is resolved in this order:
+
+1. the `import_role_arn` argument: `SessionManager.session(import_role_arn="arn:aws:iam::123456789012:role/MyImportRole")`
+2. the configured role: `NETWORKX_S3_IAM_ROLE_ARN` or `nx.config.backends.neptune.s3_iam_role`
+3. the ARN of the current caller identity (STS)
+
+STS is only called when neither of the first two is set.
+
 ### Connecting to a private graph (VPC)
 
 With `NETWORKX_PUBLIC_CONNECTIVITY=false`, the graph is only reachable over a
@@ -322,8 +333,9 @@ To run the Jupyter notebooks:
 
    - It is read when `nx_neptune` is imported, so export it before starting
      Jupyter. Setting it from inside a running kernel has no effect.
-   - It applies to the NetworkX backend only. `SessionManager` builds its own
-     role from the caller identity and ignores this variable.
+   - It applies to both the NetworkX backend and `SessionManager`. A
+     `SessionManager` built with an explicit `import_role_arn` uses that
+     instead; see [S3 import/export role](#s3-importexport-role).
 
 3. Launch Jupyter Notebook:
    ```bash

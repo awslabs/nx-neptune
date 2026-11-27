@@ -11,6 +11,7 @@ from botocore.exceptions import ClientError
 from . import NeptuneGraph, instance_management
 from .clients import IamClientWrapper, NeptuneAnalyticsClient
 from .clients.client_factory import ClientFactory
+from .na_graph import get_config
 from .property_graph import (
     AthenaTableMetadata,
     PropertyGraph,
@@ -67,7 +68,7 @@ class SessionManager:
             graph = await session.get_or_create_graph()
     """
 
-    def __init__(self, session_name=None, cleanup_task=None):
+    def __init__(self, session_name=None, cleanup_task=None, import_role_arn=None):
         """Initialize a SessionManager instance.
 
         Args:
@@ -79,6 +80,10 @@ class SessionManager:
               When set to STOP, will stop all instances in the session on exit.
               STOP, RESET and DESTROY each require a session_name and raise
               ValueError without one.
+            import_role_arn (str, optional): IAM role ARN used for S3 import/export.
+                Resolved in order: this argument, the configured ``s3_iam_role``
+                (``NETWORKX_S3_IAM_ROLE_ARN`` or ``nx.config``), then the STS
+                caller identity.
         """
         self.session_name = session_name
         self.cleanup_task = cleanup_task or CleanupTask.NONE
@@ -90,7 +95,11 @@ class SessionManager:
         self._clients = ClientFactory()
         self._neptune_client = self._clients.neptune()
         self._sts_client = self._clients.sts()
-        self._s3_iam_role = self._sts_client.get_caller_identity()["Arn"]
+        self._s3_iam_role = (
+            import_role_arn
+            or get_config().s3_iam_role
+            or self._sts_client.get_caller_identity()["Arn"]
+        )
         self._iam_client = self._clients.iam()
         self._s3_client = self._clients.s3()
         self._athena_client = self._clients.athena()
@@ -99,18 +108,19 @@ class SessionManager:
         self._cleanup_failures: list[tuple[str, BaseException]] = []
 
     @classmethod
-    def session(cls, session_name=None, cleanup_task=None):
+    def session(cls, session_name=None, cleanup_task=None, import_role_arn=None):
         """Create a new SessionManager instance.
 
         Args:
             session_name (str, optional): Session name. The session uses graphs named
                 session_name or '{session_name}-{uuid}'.
             cleanup_task (CleanupTask, optional): Cleanup task to perform on exit. Defaults to None.
+            import_role_arn (str, optional): IAM role ARN for S3 import/export.
 
         Returns:
             SessionManager: A new SessionManager instance.
         """
-        return cls(session_name, cleanup_task)
+        return cls(session_name, cleanup_task, import_role_arn=import_role_arn)
 
     def __enter__(self):
         """Enter the session manager.
@@ -456,6 +466,9 @@ class SessionManager:
             na_client=self._neptune_client,
             sts_client=self._sts_client,
             iam_client=self._iam_client,
+            # CreateGraphUsingImportTask is passed the wrapper's role, so it has
+            # to be the resolved import role rather than the caller identity.
+            iam_client_wrapper=IamClientWrapper(self._s3_iam_role, self._iam_client),
         )
         return self.get_graph(graph_id)
 

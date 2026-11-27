@@ -136,6 +136,7 @@ async def create_na_instance_with_s3_import(
     na_client: Optional[BaseClient] = None,
     polling_interval=None,
     max_attempts=None,
+    iam_client_wrapper: Optional[IamClientWrapper] = None,
 ) -> tuple[str, str]:
     """Creates a new Neptune Analytics graph instance and imports data from S3.
 
@@ -173,18 +174,31 @@ async def create_na_instance_with_s3_import(
         ValueError: If the role lacks required permissions
     """
 
-    iam_client_wrapper = _create_iam_wrapper(sts_client, iam_client)
+    # Two different principals are involved, and conflating them breaks one of
+    # the two checks below:
+    #
+    #   caller identity - makes the CreateGraphUsingImportTask call, so it is
+    #     the principal that needs neptune-graph:CreateGraph.
+    #   import role     - assumed by Neptune Analytics to read S3, so it is the
+    #     principal that needs the S3 and KMS grants, and the ARN that goes in
+    #     the request.
+    #
+    # A minimal import role has no Neptune permissions at all (see the
+    # prerequisites docs), so simulating CreateGraph against it fails for a role
+    # that is configured exactly as documented.
+    caller_wrapper = _create_iam_wrapper(sts_client, iam_client)
+    import_wrapper = iam_client_wrapper or caller_wrapper
 
     na_client = na_client or ClientFactory().neptune()
     # Retrieve key_arn for the bucket and permission check if present
     key_arn = _get_bucket_encryption_key_arn(s3_arn)
-    # Permission checks
-    iam_client_wrapper.has_create_na_permissions()
-    iam_client_wrapper.has_import_from_s3_permissions(s3_arn, key_arn)
+    # Permission checks, each against the principal that performs the action
+    caller_wrapper.has_create_na_permissions()
+    import_wrapper.has_import_from_s3_permissions(s3_arn, key_arn)
 
     graph_name = _create_random_graph_name(graph_name_prefix)
     kwargs = _get_create_instance_with_import_config(
-        graph_name, s3_arn, iam_client_wrapper.role_arn, config
+        graph_name, s3_arn, import_wrapper.role_arn, config
     )
     response = na_client.create_graph_using_import_task(**kwargs)
     graph_id = response.get("graphId")
