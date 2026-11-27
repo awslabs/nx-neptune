@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-"""End-to-end integration test for a Graph Session instance.
+"""End-to-end integration test for a Neptune Graph Session instance.
 
 One scenario, start to finish:
   1. Upload known CSVs to a unique S3 prefix.
