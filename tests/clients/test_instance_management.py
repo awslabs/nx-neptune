@@ -12,6 +12,7 @@
 # language governing permissions and limitations under the License.
 import json
 import asyncio
+import logging
 from unittest.mock import patch, MagicMock, AsyncMock
 import os
 from unittest.mock import patch, MagicMock
@@ -28,6 +29,11 @@ from nx_neptune.instance_management import (
     _get_graph_id,
     create_na_instance,
     import_csv_from_s3,
+    _get_graph_type,
+    _import_via_neptune_load,
+    _load_client,
+    _LOAD_TIMEOUT_SECONDS,
+    GraphType,
     export_csv_to_s3,
     delete_na_instance,
     _get_create_instance_config,
@@ -355,6 +361,17 @@ def test_validate_athena_query(query, projection_type, expected_result):
 
 
 @pytest.mark.parametrize(
+    "s3_path,expected_bucket",
+    [
+        # Single-level prefix.
+        ("s3://my-test-bucket/folder/", "my-test-bucket"),
+        # Multi-level prefix: regression guard. _clean_s3_path would return
+        # "bucket/a/b" here (rejected by get_bucket_encryption); the bare bucket
+        # must be extracted instead.
+        ("s3://bucket/a/b/c/", "bucket"),
+    ],
+)
+@pytest.mark.parametrize(
     "mock_response,expected_result",
     [
         # Test with KMS encryption
@@ -392,7 +409,7 @@ def test_validate_athena_query(query, projection_type, expected_result):
 )
 @patch("nx_neptune.instance_management.ClientFactory")
 def test_get_bucket_encryption_key_arn(
-    mock_factory_cls, mock_response, expected_result
+    mock_factory_cls, mock_response, expected_result, s3_path, expected_bucket
 ):
     """Test the _get_bucket_encryption_key_arn function with various scenarios."""
     # Mock the S3 client
@@ -403,16 +420,14 @@ def test_get_bucket_encryption_key_arn(
     mock_s3_client.get_bucket_encryption.return_value = mock_response
 
     # Call the function with a test S3 path
-    result = _get_bucket_encryption_key_arn("s3://my-test-bucket/folder/")
+    result = _get_bucket_encryption_key_arn(s3_path)
 
     # Verify the result
     assert result == expected_result
 
     # Verify the S3 client was called correctly
     mock_factory_cls.return_value.s3.assert_called_once()
-    mock_s3_client.get_bucket_encryption.assert_called_once_with(
-        Bucket="my-test-bucket"
-    )
+    mock_s3_client.get_bucket_encryption.assert_called_once_with(Bucket=expected_bucket)
 
 
 @patch("nx_neptune.instance_management.ClientFactory")
@@ -1112,6 +1127,82 @@ async def test_create_graph_config_override_default_options():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("memory", [4, 8])
+async def test_create_graph_config_tiny_graph(monkeypatch, memory):
+    # provisionedMemory 4/8 is a graph session, which uses a different request
+    # shape: the value moves to computeConfiguration. provisionedMemory must not
+    # be sent.
+    monkeypatch.delenv("NETWORKX_PUBLIC_CONNECTIVITY", raising=False)
+    monkeypatch.delenv("NETWORKX_DELETION_PROTECTION", raising=False)
+    result = _get_create_instance_config("test", {"provisionedMemory": memory})
+    expected = {
+        "graphName": "test",
+        "publicConnectivity": False,
+        "replicaCount": 0,
+        "deletionProtection": True,
+        "computeConfiguration": {"graphSession": {"minMemory": memory}},
+        "tags": {"agent": "nx-neptune"},
+    }
+    assert expected == result
+    assert "provisionedMemory" not in result
+
+
+@pytest.mark.parametrize("memory", [1, 2, 3, 5, 6, 7, 9, 15])
+def test_create_graph_config_rejects_unsupported_small_memory(memory):
+    # Only 4 or 8 are valid below 16; any other small size must raise rather
+    # than silently falling through to the provisioned path (server min is 16).
+    with pytest.raises(ValueError, match=rf"Unsupported memory size {memory} NCU"):
+        _get_create_instance_config("test", {"provisionedMemory": memory})
+
+
+@pytest.mark.parametrize("memory", [4, 8])
+def test_create_graph_config_conflicting_memory_and_compute_raises(memory):
+    # Passing both a graph-session provisionedMemory and an explicit
+    # computeConfiguration is ambiguous and must raise, not silently drop the
+    # requested size.
+    with pytest.raises(ValueError, match="Cannot set both provisionedMemory"):
+        _get_create_instance_config(
+            "test",
+            {
+                "provisionedMemory": memory,
+                "computeConfiguration": {"graphSession": {"minMemory": 8}},
+            },
+        )
+
+
+def test_create_graph_config_conflict_raises_for_nonsession_memory():
+    # The conflict check is unconditional: it must also fire when the supplied
+    # provisionedMemory is a non-session (>=16) size, not only for 4/8.
+    with pytest.raises(ValueError, match="Cannot set both provisionedMemory"):
+        _get_create_instance_config(
+            "test",
+            {
+                "provisionedMemory": 16,
+                "computeConfiguration": {"graphSession": {"minMemory": 8}},
+            },
+        )
+
+
+def test_create_graph_config_nested_compute_only():
+    # Passing the nested computeConfiguration form directly (no
+    # provisionedMemory) must be accepted as-is: no provisionedMemory injected.
+    result = _get_create_instance_config(
+        "test",
+        {"computeConfiguration": {"graphSession": {"minMemory": 8}}},
+    )
+    assert result["computeConfiguration"] == {"graphSession": {"minMemory": 8}}
+    assert "provisionedMemory" not in result
+
+
+@pytest.mark.asyncio
+async def test_create_graph_config_default_is_ec2():
+    # No memory specified -> standard EC2-backed graph, no graph-session keys.
+    result = _get_create_instance_config("test")
+    assert result["provisionedMemory"] == 16
+    assert "computeConfiguration" not in result
+
+
+@pytest.mark.asyncio
 async def test_create_graph_config_env_override(monkeypatch):
     # Env vars flip the secure defaults when no explicit config is given.
     monkeypatch.setenv("NETWORKX_PUBLIC_CONNECTIVITY", "true")
@@ -1459,6 +1550,24 @@ def test_get_create_instance_with_import_config_custom():
     assert result["minProvisionedMemory"] == 32
     assert result["maxProvisionedMemory"] == 64
     assert result["format"] == "PARQUET"
+
+
+@pytest.mark.parametrize("key", ["minProvisionedMemory", "provisionedMemory"])
+@pytest.mark.parametrize("memory", [4, 8])
+def test_get_create_instance_with_import_config_rejects_session_memory(key, memory):
+    """Create-with-import must reject 4/8 s-NCU requests (16 m-NCU or above only)."""
+    from nx_neptune.instance_management import _get_create_instance_with_import_config
+
+    with pytest.raises(
+        ValueError,
+        match=r"does not support 4 or 8 s-NCU memory; use 16 m-NCU or above",
+    ):
+        _get_create_instance_with_import_config(
+            "test-graph",
+            "s3://test-bucket/data",
+            "arn:aws:iam::123456789012:role/test-role",
+            {key: memory},
+        )
 
 
 @pytest.mark.asyncio
@@ -1871,3 +1980,444 @@ def test_get_athena_query_results_creates_default_client(mock_factory_cls):
     get_athena_query_results("test-query-id")
 
     mock_factory_cls.return_value.athena.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Graph-type detection + synchronous neptune.load import (graph session path)
+# ---------------------------------------------------------------------------
+
+
+def _make_na_client(execute_return=None, region="us-west-2", graph_id="g-1"):
+    """Build a mock NeptuneAnalyticsClient-like object for the load helper."""
+    na_client = MagicMock()
+    na_client.graph_id = graph_id
+    na_client.client.meta.region_name = region
+    if execute_return is not None:
+        na_client.execute_query.return_value = execute_return
+    return na_client
+
+
+def test_get_graph_type_session():
+    client = MagicMock()
+    client.get_graph.return_value = {
+        "computeConfiguration": {"graphSession": {"minMemory": 8}}
+    }
+    assert _get_graph_type("g-1", client) == GraphType.SESSION
+    client.get_graph.assert_called_once_with(graphIdentifier="g-1")
+
+
+def test_get_graph_type_provisioned():
+    client = MagicMock()
+    client.get_graph.return_value = {
+        "computeConfiguration": {"provisionedGraph": {"memory": 16}}
+    }
+    assert _get_graph_type("g-1", client) == GraphType.PROVISIONED
+
+
+def test_get_graph_type_missing_compute_is_unknown():
+    client = MagicMock()
+    client.get_graph.return_value = {}
+    assert _get_graph_type("g-1", client) == GraphType.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    "details, expected",
+    [
+        ({"computeConfiguration": {"graphSession": {"minMemory": 4}}}, "session"),
+        ({"computeConfiguration": {"provisionedGraph": {"memory": 16}}}, "provisioned"),
+        ({"computeConfiguration": None}, "unknown"),
+        ({"computeConfiguration": {}}, "unknown"),
+        ({"provisionedMemory": 16}, "provisioned"),
+        ({}, "unknown"),
+    ],
+)
+def test_graph_type_from_details(details, expected):
+    # Works on a GetGraph response or a ListGraphs item; makes no AWS call.
+    from nx_neptune.instance_management import graph_type_from_details
+
+    assert graph_type_from_details(details).value == expected
+
+
+def test_import_via_neptune_load_success_returns_load_id():
+    na_client = _make_na_client(
+        execute_return=[
+            {"totalRecords": 108070, "insertErrors": 0, "loadId": "abc-123"}
+        ]
+    )
+    load_id = _import_via_neptune_load(na_client, "s3://bucket/prefix/")
+    assert load_id == "abc-123"
+    # The query carries source, region and format.
+    query = na_client.execute_query.call_args[0][0]
+    assert "neptune.load" in query
+    assert "s3://bucket/prefix/" in query
+    assert "us-west-2" in query
+    assert "csv" in query
+
+
+def test_import_via_neptune_load_insert_errors_raises():
+    na_client = _make_na_client(execute_return=[{"insertErrors": 5, "loadId": "bad-1"}])
+    with pytest.raises(Exception, match="insert error"):
+        _import_via_neptune_load(na_client, "s3://bucket/prefix/")
+
+
+@pytest.mark.parametrize(
+    "stats",
+    [
+        {"totalRecords": 1, "insertErrors": 0},  # loadId key absent
+        {"totalRecords": 1, "insertErrors": 0, "loadId": None},
+        {"totalRecords": 1, "insertErrors": 0, "loadId": ""},
+    ],
+)
+def test_import_via_neptune_load_missing_load_id_raises(stats):
+    # The contract promises a loadId string; a missing/empty id is a broken
+    # response and must raise rather than silently return None.
+    na_client = _make_na_client(execute_return=[stats])
+    with pytest.raises(Exception, match="no loadId"):
+        _import_via_neptune_load(na_client, "s3://bucket/prefix/")
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        's3://b/x"}) MATCH (n) DETACH DELETE n //',
+        's3://bucket/pre"fix/',
+        "s3://bucket/pre\\fix/",
+        "s3://bucket/trailing\\",
+        "s3://bucket/a\nb/",
+        "s3://bucket/x'}) //",
+        "http://bucket/prefix/",
+        "bucket/prefix/",
+        "s3://B/prefix/",
+        "",
+        None,
+    ],
+)
+def test_import_via_neptune_load_rejects_unsafe_source(source):
+    na_client = _make_na_client(execute_return=[{"loadId": "x", "insertErrors": 0}])
+    with pytest.raises(ValueError, match="Invalid S3 location"):
+        _import_via_neptune_load(na_client, source)
+    na_client.execute_query.assert_not_called()
+
+
+@pytest.mark.parametrize("region", ['us-west-2", format: "x', "US-WEST-2", "", None])
+def test_import_via_neptune_load_rejects_unsafe_region(region):
+    na_client = _make_na_client(
+        execute_return=[{"loadId": "x", "insertErrors": 0}], region=region
+    )
+    with pytest.raises(ValueError, match="Invalid region"):
+        _import_via_neptune_load(na_client, "s3://bucket/prefix/")
+    na_client.execute_query.assert_not_called()
+
+
+@pytest.mark.parametrize("data_format", ['csv"}) //', "parquet", "", None])
+def test_import_via_neptune_load_rejects_unsupported_format(data_format):
+    na_client = _make_na_client(execute_return=[{"loadId": "x", "insertErrors": 0}])
+    with pytest.raises(ValueError, match="Unsupported format"):
+        _import_via_neptune_load(na_client, "s3://bucket/prefix/", data_format)
+    na_client.execute_query.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "source",
+    ["s3://bucket", "s3://bucket/", "s3://my.bucket-1/a/b_c=1/d.e/", "s3://abc/x*"],
+)
+def test_import_via_neptune_load_accepts_normal_sources(source):
+    na_client = _make_na_client(execute_return=[{"loadId": "ok", "insertErrors": 0}])
+    assert _import_via_neptune_load(na_client, source) == "ok"
+
+
+@pytest.mark.parametrize(
+    "bad_response",
+    [[], None, {}, "not-a-list"],
+)
+def test_import_via_neptune_load_bad_shape_raises(bad_response):
+    na_client = _make_na_client(execute_return=bad_response)
+    with pytest.raises(Exception, match="Unexpected neptune.load response"):
+        _import_via_neptune_load(na_client, "s3://bucket/prefix/")
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("nx_neptune.instance_management.reset_graph")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
+@patch("nx_neptune.instance_management._load_client")
+@patch("nx_neptune.instance_management._import_via_neptune_load")
+@patch("nx_neptune.instance_management._get_graph_type")
+@patch("nx_neptune.instance_management._start_import_task")
+async def test_import_csv_from_s3_routes_session_to_neptune_load(
+    mock_start_import_task,
+    mock_get_graph_type,
+    mock_load,
+    mock_load_client,
+    mock_iam_wrapper,
+    mock_reset_graph,
+    mock_key_arn,
+):
+    # A session graph must use neptune.load and skip the import task entirely.
+    mock_get_graph_type.return_value = GraphType.SESSION
+    mock_load.return_value = "load-id-1"
+    mock_key_arn.return_value = None
+
+    mock_na_graph = MagicMock()
+    mock_na_graph.na_client.graph_id = "g-session"
+    mock_na_graph.na_client.client = MagicMock()
+
+    result = await import_csv_from_s3(
+        mock_na_graph, "s3://bucket/prefix/", reset_graph_ahead=True
+    )
+
+    assert result == "load-id-1"
+    # Caller-side read permission is validated (not the service-role import check).
+    mock_iam_wrapper.return_value.has_read_s3_permissions.assert_called_once_with(
+        "s3://bucket/prefix/", None
+    )
+    # The caller's identity is checked, not na_graph.iam_client (which may be a
+    # role for Neptune to assume).
+    mock_na_graph.iam_client.has_read_s3_permissions.assert_not_called()
+    mock_na_graph.iam_client.has_import_from_s3_permissions.assert_not_called()
+    # Reset honored, then load; import task never used.
+    mock_reset_graph.assert_called_once()
+    mock_load_client.assert_called_once_with(mock_na_graph.na_client)
+    mock_load.assert_called_once_with(
+        mock_load_client.return_value, "s3://bucket/prefix/"
+    )
+    mock_start_import_task.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("nx_neptune.instance_management.reset_graph")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
+@patch("nx_neptune.instance_management._load_client")
+@patch("nx_neptune.instance_management._import_via_neptune_load")
+@patch("nx_neptune.instance_management._get_graph_type")
+async def test_import_csv_from_s3_session_forwards_kms_key_arn(
+    mock_get_graph_type,
+    mock_load,
+    mock_load_client,
+    mock_iam_wrapper,
+    mock_reset_graph,
+    mock_key_arn,
+):
+    # When the source bucket is KMS-encrypted, the resolved key ARN must be
+    # forwarded to the caller-side read check so kms:Decrypt is validated.
+    key_arn = "arn:aws:kms:us-west-2:123456789012:key/abc"
+    mock_get_graph_type.return_value = GraphType.SESSION
+    mock_load.return_value = "load-id-3"
+    mock_key_arn.return_value = key_arn
+
+    mock_na_graph = MagicMock()
+    mock_na_graph.na_client.graph_id = "g-session"
+    mock_na_graph.na_client.client = MagicMock()
+
+    result = await import_csv_from_s3(
+        mock_na_graph, "s3://bucket/prefix/", reset_graph_ahead=False
+    )
+
+    assert result == "load-id-3"
+    mock_iam_wrapper.return_value.has_read_s3_permissions.assert_called_once_with(
+        "s3://bucket/prefix/", key_arn
+    )
+    mock_reset_graph.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("nx_neptune.instance_management.reset_graph")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
+@patch("nx_neptune.instance_management._load_client")
+@patch("nx_neptune.instance_management._import_via_neptune_load")
+@patch("nx_neptune.instance_management._get_graph_type")
+async def test_import_csv_from_s3_session_skips_reset_when_false(
+    mock_get_graph_type,
+    mock_load,
+    mock_load_client,
+    mock_iam_wrapper,
+    mock_reset_graph,
+    mock_key_arn,
+):
+    mock_get_graph_type.return_value = GraphType.SESSION
+    mock_load.return_value = "load-id-2"
+    mock_key_arn.return_value = None
+
+    mock_na_graph = MagicMock()
+    mock_na_graph.na_client.graph_id = "g-session"
+    mock_na_graph.na_client.client = MagicMock()
+
+    result = await import_csv_from_s3(
+        mock_na_graph, "s3://bucket/prefix/", reset_graph_ahead=False
+    )
+
+    assert result == "load-id-2"
+    mock_iam_wrapper.return_value.has_read_s3_permissions.assert_called_once()
+    mock_reset_graph.assert_not_called()
+
+
+@patch("nx_neptune.instance_management.ClientFactory")
+def test_load_client_has_long_timeout_and_single_attempt(mock_factory):
+    # neptune.load must not be re-sent, and must not hit the 60s default read timeout.
+    na_client = _make_na_client(region="us-west-2", graph_id="g-9")
+    load_client = _load_client(na_client)
+
+    mock_factory.assert_called_once_with(
+        region="us-west-2", timeout_seconds=_LOAD_TIMEOUT_SECONDS, max_attempts=1
+    )
+    assert load_client.graph_id == "g-9"
+    assert load_client.client is mock_factory.return_value.neptune.return_value
+    # Also sent as queryTimeoutMilliseconds on the query itself.
+    assert load_client.timeout_seconds == _LOAD_TIMEOUT_SECONDS
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("nx_neptune.instance_management._create_iam_wrapper")
+@patch("nx_neptune.instance_management._load_client")
+@patch("nx_neptune.instance_management._get_graph_type")
+async def test_import_csv_from_s3_session_load_runs_off_the_event_loop(
+    mock_get_graph_type, mock_load_client, mock_iam_wrapper, mock_key_arn
+):
+    import threading
+    import time
+
+    mock_get_graph_type.return_value = GraphType.SESSION
+    mock_key_arn.return_value = None
+    threads = []
+
+    def slow_load(client, s3_arn):
+        threads.append(threading.current_thread())
+        time.sleep(0.3)
+        return "load-id"
+
+    ticks = []
+
+    async def ticker():
+        for _ in range(5):
+            await asyncio.sleep(0.05)
+            ticks.append(1)
+
+    mock_na_graph = MagicMock()
+    with patch("nx_neptune.instance_management._import_via_neptune_load", slow_load):
+        result, _ = await asyncio.gather(
+            import_csv_from_s3(
+                mock_na_graph, "s3://bucket/prefix/", reset_graph_ahead=False
+            ),
+            ticker(),
+        )
+
+    assert result == "load-id"
+    assert threads[0] is not threading.main_thread()
+    # The event loop kept running while the load blocked in its worker thread.
+    assert len(ticks) == 5
+
+
+@pytest.mark.parametrize(
+    "details, expected",
+    [
+        ({"provisionedMemory": 16}, 16),
+        ({"computeConfiguration": {"provisionedGraph": {"memory": 32}}}, 32),
+        (
+            {
+                "provisionedMemory": 16,
+                "computeConfiguration": {"provisionedGraph": {"memory": 32}},
+            },
+            16,
+        ),
+        ({"computeConfiguration": {"graphSession": {"minMemory": 8}}}, None),
+        ({"computeConfiguration": None}, None),
+        ({}, None),
+    ],
+)
+def test_provisioned_memory_from_details(details, expected):
+    from nx_neptune.instance_management import provisioned_memory_from_details
+
+    assert provisioned_memory_from_details(details) == expected
+
+
+def _reset_not_supported_error():
+    from botocore.exceptions import ClientError
+
+    return ClientError(
+        {
+            "Error": {
+                "Code": "ValidationException",
+                "Message": "ResetGraph is not supported for graph sessions.",
+            }
+        },
+        "ResetGraph",
+    )
+
+
+@pytest.mark.asyncio
+async def test_reset_graph_propagates_the_service_error_unchanged():
+    # reset_graph does not classify or swallow a ResetGraph failure: the caller
+    # gets the service's own exception, and nothing waits on a reset that never began.
+    from nx_neptune.instance_management import reset_graph
+
+    error = _reset_not_supported_error()
+    na_client = MagicMock()
+    na_client.reset_graph.side_effect = error
+
+    with patch("nx_neptune.instance_management.TaskFuture") as mock_future:
+        with pytest.raises(type(error)) as raised:
+            await reset_graph("g-1", na_client)
+
+    assert raised.value is error
+    mock_future.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_reset_graph_failure_logs_a_warning_with_the_details(caplog):
+    from botocore.exceptions import ClientError
+    from nx_neptune.instance_management import reset_graph
+
+    # A service message that carries an ARN and an account ID.
+    raw = "Cannot reset arn:aws:neptune-graph:us-west-2:123456789012:graph/g-42"
+    error = ClientError(
+        {"Error": {"Code": "ValidationException", "Message": raw}}, "ResetGraph"
+    )
+    na_client = MagicMock()
+    na_client.reset_graph.side_effect = error
+
+    with caplog.at_level(logging.WARNING, logger="nx_neptune.instance_management"):
+        with pytest.raises(ClientError) as raised:
+            await reset_graph("g-42", na_client, skip_snapshot=False)
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "g-42" in message
+    assert "skip_snapshot=False" in message
+    assert "ValidationException" in message
+    assert "not reset" in message
+    # The service's message is not logged, in the text or as an attached traceback.
+    assert raw not in message
+    assert "123456789012" not in message
+    assert warnings[0].exc_info is None
+    # It is still on the exception the caller receives.
+    assert raised.value is error
+    assert raw in str(raised.value)
+
+
+@pytest.mark.asyncio
+@patch("nx_neptune.instance_management._create_iam_wrapper")
+@patch("nx_neptune.instance_management._get_bucket_encryption_key_arn")
+@patch("nx_neptune.instance_management._import_via_neptune_load")
+@patch("nx_neptune.instance_management._get_graph_type")
+async def test_import_csv_from_s3_aborts_before_loading_when_reset_fails(
+    mock_get_graph_type, mock_load, mock_key_arn, mock_iam_wrapper
+):
+    # The reset runs before the load, so a failed reset leaves the graph unchanged.
+    mock_get_graph_type.return_value = GraphType.SESSION
+    mock_key_arn.return_value = None
+    error = _reset_not_supported_error()
+    mock_na_graph = MagicMock()
+    mock_na_graph.na_client.graph_id = "g-session"
+    mock_na_graph.na_client.client.reset_graph.side_effect = error
+
+    with pytest.raises(type(error)) as raised:
+        await import_csv_from_s3(
+            mock_na_graph, "s3://bucket/prefix/", reset_graph_ahead=True
+        )
+
+    assert raised.value is error
+    mock_load.assert_not_called()

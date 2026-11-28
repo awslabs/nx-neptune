@@ -55,6 +55,7 @@ class NeptuneAnalyticsGraph(BaseModel):
     id: str
     name: str
     status: str
+    graph_type: str
 
 
 class NeptuneAnalyticsGraphsResponse(BaseModel):

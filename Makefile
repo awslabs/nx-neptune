@@ -109,6 +109,11 @@ integ-test-session: ## Run session manager integration tests only.
 	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
 	$(ENV_PREFIX)pytest -v -l --tb=short --maxfail=1 integ_test/session_manager/
 
+.PHONY: integ-test-graph-session
+integ-test-graph-session: ## Run the graph session (4/8 s-NCU) integration test only.
+	NETWORKX_PUBLIC_CONNECTIVITY=true NETWORKX_DELETION_PROTECTION=false \
+	$(ENV_PREFIX)pytest -v -l --tb=short --maxfail=1 integ_test/session_manager/test_graph_session_import.py
+
 # CloudFormation demo stack. Override on the command line,
 # e.g. make cfn-deploy CFN_REGION=us-east-1 CFN_STACK_NAME=my-stack
 CFN_STACK_NAME ?= nx-neptune-demo

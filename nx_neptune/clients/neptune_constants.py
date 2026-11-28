@@ -16,6 +16,7 @@ Neptune constants
 
 # AWS boto3 client services
 SERVICE_NA = "neptune-graph"
+SERVICE_NA_PRINCIPAL = "neptune-graph"
 SERVICE_IAM = "iam"
 SERVICE_STS = "sts"
 SERVICE_ATHENA = "athena"

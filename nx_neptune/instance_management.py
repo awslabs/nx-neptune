@@ -27,6 +27,7 @@ from sqlglot import exp, parse_one
 
 from .clients import IamClientWrapper
 from .clients.client_factory import ClientFactory
+from .clients.na_client import NeptuneAnalyticsClient
 from .clients.iam_client import split_s3_arn_to_bucket_and_path
 from .na_graph import NeptuneGraph
 
@@ -65,6 +66,21 @@ from .utils.utils import (
 logger = logging.getLogger(__name__)
 
 _PROJECT_IDENTIFIER = "nx-neptune"
+
+_SESSION_MEMORY_SIZES = frozenset({4, 8})
+
+_MEMORY_SIZES = (4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096)
+
+# neptune.load inputs are interpolated into the query text, because the service
+# rejects query parameters inside CALL ("Parameterization inside CALL procedure is
+# not supported"). They are therefore validated before use.
+_LOAD_REGION_PATTERN = re.compile(r"[a-z]{2}(-[a-z]+)+-[0-9]+")
+_LOAD_FORMATS = frozenset({"csv"})
+
+# A neptune.load call runs as one request and is not safe to send twice, so it uses
+# its own client: a read timeout and query timeout long enough for a large load, and
+# no automatic retries.
+_LOAD_TIMEOUT_SECONDS = 3600
 
 
 async def create_na_instance(
@@ -527,6 +543,186 @@ async def create_graph_snapshot(
     )
 
 
+class GraphType(Enum):
+    """Backing type of a Neptune Analytics graph."""
+
+    SESSION = "session"
+    PROVISIONED = "provisioned"
+    UNKNOWN = "unknown"
+
+
+def graph_type_from_details(details: dict) -> "GraphType":
+    """Classify a graph from a ``GetGraph`` / ``ListGraphs`` item, without any call.
+
+    Works on data the caller already has (for example a graph list) and never
+    touches the graph itself. ``computeConfiguration`` is only present when the
+    service model in use defines it, so a missing field is not evidence of
+    anything: a graph is ``PROVISIONED`` only on positive evidence, and
+    ``UNKNOWN`` otherwise. Callers that can wake a graph (for example by asking for
+    its summary) should act only on ``PROVISIONED``.
+
+    Args:
+        details (dict): A ``GetGraph`` response or a ``ListGraphs`` item.
+
+    Returns:
+        GraphType: ``SESSION`` when ``computeConfiguration`` has a ``graphSession``
+        member; ``PROVISIONED`` when it has a ``provisionedGraph`` member or the
+        item carries a top-level ``provisionedMemory``; otherwise ``UNKNOWN``.
+    """
+    compute = details.get("computeConfiguration") or {}
+    if "graphSession" in compute:
+        return GraphType.SESSION
+    if "provisionedGraph" in compute or "provisionedMemory" in details:
+        return GraphType.PROVISIONED
+    return GraphType.UNKNOWN
+
+
+def provisioned_memory_from_details(details: dict) -> Optional[int]:
+    """Read a provisioned graph's memory (m-NCU) from a ``GetGraph`` / ``ListGraphs`` item.
+
+    The size is a top-level ``provisionedMemory``, or
+    ``computeConfiguration.provisionedGraph.memory`` on a model that reports it
+    there. Session graphs have neither.
+
+    Args:
+        details (dict): A ``GetGraph`` response or a ``ListGraphs`` item.
+
+    Returns:
+        Optional[int]: The memory size, or None if the item does not carry one.
+    """
+    memory = details.get("provisionedMemory")
+    if memory is None:
+        compute = details.get("computeConfiguration") or {}
+        memory = (compute.get("provisionedGraph") or {}).get("memory")
+    return memory
+
+
+def _get_graph_type(graph_id: str, na_client: BaseClient) -> "GraphType":
+    """Determine a graph's backing from its compute configuration.
+
+    Args:
+        graph_id (str): The graph identifier.
+        na_client (BaseClient): Neptune Analytics boto3 client.
+
+    Returns:
+        GraphType: ``SESSION`` for a smaller (graph-session) instance,
+        ``PROVISIONED`` for a provisioned one, ``UNKNOWN`` when the response does
+        not say. Only ``SESSION`` selects the ``neptune.load`` import path.
+    """
+    response = na_client.get_graph(graphIdentifier=graph_id)
+    graph_type = graph_type_from_details(response)
+    logger.debug("Resolved graph [%s] type as [%s]", graph_id, graph_type.value)
+    return graph_type
+
+
+def _load_client(na_client) -> NeptuneAnalyticsClient:
+    """Build a client for one ``neptune.load`` call: long timeouts, no retries.
+
+    The shared client has botocore's default 60 second read timeout and retries
+    timeouts, so a long load would be re-sent while it was still running. This
+    client reads for up to ``_LOAD_TIMEOUT_SECONDS``, sends the same value as the
+    query timeout and makes a single attempt. It uses the default credential chain,
+    like the shared client.
+
+    Args:
+        na_client (NeptuneAnalyticsClient): The graph client to load into.
+
+    Returns:
+        NeptuneAnalyticsClient: A client for the same graph, in the same region.
+    """
+    boto_client = ClientFactory(
+        region=na_client.client.meta.region_name,
+        timeout_seconds=_LOAD_TIMEOUT_SECONDS,
+        max_attempts=1,
+    ).neptune()
+    return NeptuneAnalyticsClient(
+        na_client.graph_id,
+        client=boto_client,
+        timeout_seconds=_LOAD_TIMEOUT_SECONDS,
+    )
+
+
+def _import_via_neptune_load(na_client, s3_arn: str, data_format: str = "csv") -> str:
+    """Synchronously load S3 data into a graph via the ``neptune.load`` procedure.
+
+    Unlike the import task, this runs inline as an openCypher mutation query and
+    returns once the load completes. It uses the caller's own credentials to read
+    from S3, so no role is passed.
+
+    Args:
+        na_client (NeptuneAnalyticsClient): The Neptune Analytics graph client.
+        s3_arn (str): The S3 source URI prefix (e.g. ``s3://bucket/prefix/``).
+        data_format (str): The source data format. Defaults to ``csv``.
+
+    Returns:
+        str: The loadId of the completed load, aligning with the task_id returned
+            by the import-task path.
+
+    Raises:
+        ValueError: If the source, region or format is not a plain, expected
+            value (they are placed in the query text).
+        Exception: If the response is not the expected shape, or if the load
+            reported insert errors (insertErrors > 0).
+    """
+    region = na_client.client.meta.region_name
+    # _validate_s3_location rejects quotes and newlines. A backslash would escape the
+    # closing quote of the string literal, so it is rejected here as well.
+    _validate_s3_location(s3_arn)
+    if "\\" in s3_arn:
+        raise ValueError(f"Invalid S3 location: {s3_arn!r}.")
+    if not isinstance(region, str) or not _LOAD_REGION_PATTERN.fullmatch(region):
+        raise ValueError(f"Invalid region for neptune.load: {region!r}")
+    if data_format not in _LOAD_FORMATS:
+        raise ValueError(
+            f"Unsupported format for neptune.load: {data_format!r}. "
+            f"Supported: {sorted(_LOAD_FORMATS)}"
+        )
+    query = (
+        "CALL neptune.load("
+        f'{{source: "{s3_arn}", region: "{region}", format: "{data_format}"}}'
+        ")"
+    )
+    logger.debug(
+        "Running neptune.load on graph [%s] from source [%s] (format=%s, region=%s)",
+        na_client.graph_id,
+        s3_arn,
+        data_format,
+        region,
+    )
+    response = na_client.execute_query(query)
+
+    # execute_query returns the unwrapped results list:
+    # [{"totalRecords": ..., "insertErrors": ..., "loadId": ..., ...}]
+    if not isinstance(response, list) or not response:
+        raise Exception(
+            f"Unexpected neptune.load response shape for graph "
+            f"[{na_client.graph_id}]: {response}"
+        )
+    stats = response[0]
+
+    logger.debug(
+        "neptune.load complete on graph [%s]: records=%s",
+        na_client.graph_id,
+        stats.get("totalRecords"),
+    )
+
+    insert_errors = stats.get("insertErrors", 0)
+    if insert_errors > 0:
+        raise Exception(
+            f"neptune.load reported {insert_errors} insert error(s) on graph "
+            f"[{na_client.graph_id}] (loadId={stats.get('loadId')}). "
+            f"See CloudWatch import-task-logs for details."
+        )
+
+    load_id = stats.get("loadId")
+    if not load_id:
+        raise Exception(
+            f"neptune.load returned no loadId for graph "
+            f"[{na_client.graph_id}]: {stats}"
+        )
+    return load_id
+
+
 async def import_csv_from_s3(
     na_graph: NeptuneGraph,
     s3_arn,
@@ -559,6 +755,21 @@ async def import_csv_from_s3(
     """
     graph_id = na_graph.na_client.graph_id
     na_client = na_graph.na_client.client
+
+    if _get_graph_type(graph_id, na_client) == GraphType.SESSION:
+        key_arn = _get_bucket_encryption_key_arn(s3_arn)
+        # neptune.load reads S3 with the caller's own credentials, so check the
+        # caller's identity. na_graph.iam_client may carry s3_iam_role, a role for
+        # Neptune to assume, which is not who reads here.
+        _create_iam_wrapper().has_read_s3_permissions(s3_arn, key_arn)
+        if reset_graph_ahead:
+            await reset_graph(graph_id, na_client, skip_snapshot)
+        # The load blocks for as long as it runs, so run it in a worker thread to keep
+        # the event loop (for example the proxy's) free.
+        return await asyncio.to_thread(
+            _import_via_neptune_load, _load_client(na_graph.na_client), s3_arn
+        )
+
     iam_client = na_graph.iam_client
     role_arn = iam_client.role_arn
 
@@ -659,7 +870,17 @@ async def reset_graph(
     logger.info(
         f"Perform reset_graph action on graph: [{graph_id}] with skip_snapshot: [{skip_snapshot}]"
     )
-    response = na_client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
+    try:
+        response = na_client.reset_graph(graphIdentifier=graph_id, skipSnapshot=skip_snapshot)  # type: ignore[attr-defined]
+    except ClientError as e:
+        logger.warning(
+            "ResetGraph failed on graph [%s] (skip_snapshot=%s): %s. "
+            "The graph was not reset and keeps its data; aborting.",
+            graph_id,
+            skip_snapshot,
+            e.response.get("Error", {}).get("Code", "Error"),
+        )
+        raise
     status_code = _get_status_code(response)
     if status_code == 200:
         fut = TaskFuture(graph_id, TaskType.RESET_GRAPH, polling_interval, max_attempts)
@@ -687,7 +908,7 @@ async def update_na_instance_size(
 
     Args:
         graph_id (str): The ID of the Neptune Analytics graph to resize
-        prospect_size (int): The desired new memory size in GB
+        prospect_size (int): The desired new memory size in m-NCU
         sts_client (Optional[BaseClient]): Optional STS boto3 client. If not provided, a new one will be created.
         iam_client (Optional[BaseClient]): Optional IAM boto3 client. If not provided, a new one will be created.
         na_client (Optional[BaseClient]): Optional Neptune Analytics boto3 client. If not provided, a new one will be created.
@@ -745,6 +966,11 @@ def _get_create_instance_config(graph_name, config=None):
     fills in default values for required parameters if they are missing, and
     ensures the presence of the 'agent' tag and the graph name.
 
+    The requested ``provisionedMemory`` selects the graph size: 4 or 8 NCU build
+    a graph session (``computeConfiguration`` is set automatically), 16 NCU and
+    above build a provisioned graph, and other values raise ``ValueError``.
+    Defaults to 16 NCU.
+
     Args:
         graph_name (str): The name of the graph to create. This is always included in the result.
         config (dict, optional): An optional dictionary of user-provided configuration values.
@@ -767,7 +993,26 @@ def _get_create_instance_config(graph_name, config=None):
         "deletionProtection",
         os.getenv("NETWORKX_DELETION_PROTECTION", "true").strip().lower() != "false",
     )
-    config.setdefault("provisionedMemory", 16)
+
+    if "provisionedMemory" in config and "computeConfiguration" in config:
+        raise ValueError(
+            "Cannot set both provisionedMemory and computeConfiguration; "
+            "pass only one."
+        )
+
+    if "computeConfiguration" not in config:
+        config.setdefault("provisionedMemory", 16)
+
+    memory = config.get("provisionedMemory")
+    if memory is not None and memory < 16:
+        if memory not in _SESSION_MEMORY_SIZES:
+            raise ValueError(
+                f"Unsupported memory size {memory} NCU. Only "
+                f"{sorted(_SESSION_MEMORY_SIZES)} (graph session) or 16 "
+                f"and above are supported."
+            )
+        config.pop("provisionedMemory")
+        config["computeConfiguration"] = {"graphSession": {"minMemory": memory}}
 
     # Make sure agent tag shows regardless
     config["graphName"] = graph_name
@@ -796,8 +1041,8 @@ def _get_create_instance_with_import_config(
             - publicConnectivity (bool): Whether the graph has public connectivity
             - replicaCount (int): Number of read replicas
             - deletionProtection (bool): Whether deletion protection is enabled
-            - minProvisionedMemory (int): Minimum provisioned memory in GB
-            - maxProvisionedMemory (int): Maximum provisioned memory in GB
+            - minProvisionedMemory (int): Minimum provisioned memory in m-NCU
+            - maxProvisionedMemory (int): Maximum provisioned memory in m-NCU
             - format (str): Import data format (e.g. "CSV")
             - tags (dict): Resource tags
 
@@ -807,6 +1052,15 @@ def _get_create_instance_with_import_config(
     """
 
     config = config or {}
+
+    if (
+        config.get("provisionedMemory") in _SESSION_MEMORY_SIZES
+        or config.get("minProvisionedMemory") in _SESSION_MEMORY_SIZES
+    ):
+        raise ValueError(
+            "Create-with-import does not support 4 or 8 s-NCU memory; use 16 m-NCU or above."
+        )
+
     # Ensure mandatory config present.
     # Secure by default: private graph + deletion protection. Public connectivity
     # is opt-in ("true"); deletion protection is opt-out ("false"). Any other
@@ -1037,7 +1291,10 @@ def _get_bucket_encryption_key_arn(s3_arn):
         s3_client = ClientFactory().s3()
 
         # Get the bucket encryption configuration
-        bucket_name = _clean_s3_path(s3_arn)
+        # get_bucket_encryption needs the bare bucket name. _clean_s3_path keeps
+        # the key prefix (bucket/folder/...), which boto rejects, so extract the
+        # bucket explicitly.
+        bucket_name, _ = split_s3_arn_to_bucket_and_path(s3_arn)
         response = s3_client.get_bucket_encryption(Bucket=bucket_name)
         # Use jmespath to extract the KMS key ARN
         key_arn = jmespath.search(

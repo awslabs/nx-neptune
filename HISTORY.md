@@ -29,3 +29,22 @@ Unreleased
   (including notebook cells). The synchronous `with` still works inside a
   running event loop, but blocks that loop — and Ctrl-C — until cleanup ends,
   and warns that it is doing so.
+
+S3 delete permission check changed. This affects callers of `empty_s3_bucket`
+(including `SessionManager` with `remove_buckets=True`):
+
+- The check no longer requires that your role can be assumed by the Neptune
+  Analytics service (`neptune-graph.amazonaws.com`). Emptying a bucket deletes
+  objects with your own credentials, so that check was never relevant. It now
+  validates only your own `s3:DeleteObject` and `s3:ListBucket` permissions
+  and that bucket versioning is enabled. Callers that previously failed this
+  check only because of the trust policy now succeed.
+
+S3 imports now call `neptune-graph:GetGraph`. This affects callers of
+`import_csv_from_s3` and `SessionManager.import_from_csv` / `import_from_table`:
+
+- `import_csv_from_s3` looks up the graph first, to tell a graph session from
+  a provisioned graph, and uses `neptune.load` for a session graph. Roles that
+  could import but lacked `neptune-graph:GetGraph` now fail with `AccessDenied`
+  on every import, including into provisioned graphs. Add the permission; it is
+  already part of the documented graph-management set.

@@ -8,9 +8,9 @@ ast-serialize==0.13.1
     # via mypy
 black==26.10.1
     # via nx-neptune (pyproject.toml)
-boto3==1.44.12
+boto3==1.44.13
     # via nx-neptune (pyproject.toml)
-botocore==1.44.12
+botocore==1.44.13
     # via
     #   boto3
     #   s3transfer

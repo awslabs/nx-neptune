@@ -593,6 +593,84 @@ class TestIamClientWrapper:
                 "test-operation", ["s3:GetObject"], "arn:aws:s3:::test-bucket"
             )
 
+    def test_has_read_s3_permissions_success(self, mock_iam_client):
+        """Caller-side read check passes without a role-assume gate."""
+        iam_client, mock_client = mock_iam_client
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "s3:GetObject", "EvalDecision": "allowed"},
+                {"EvalActionName": "s3:ListBucket", "EvalDecision": "allowed"},
+            ]
+        }
+
+        # Should not raise; no assume-role (get_role) call is required.
+        iam_client.has_read_s3_permissions("s3://test-bucket/prefix/")
+        mock_client.get_role.assert_not_called()
+
+    def test_has_read_s3_permissions_checks_kms_when_key_present(self, mock_iam_client):
+        """When a KMS key is given, kms:Decrypt is also validated."""
+        iam_client, mock_client = mock_iam_client
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "s3:GetObject", "EvalDecision": "allowed"},
+                {"EvalActionName": "s3:ListBucket", "EvalDecision": "allowed"},
+                {"EvalActionName": "kms:Decrypt", "EvalDecision": "allowed"},
+            ]
+        }
+        iam_client.has_read_s3_permissions(
+            "s3://test-bucket/prefix/", "arn:aws:kms:us-west-2:123456789012:key/abc"
+        )
+        # Three simulations: S3 bucket-level, S3 object-level, then KMS.
+        assert mock_client.simulate_principal_policy.call_count == 3
+
+    def test_has_read_s3_permissions_denied_raises(self, mock_iam_client):
+        """A denied S3 read raises ValueError."""
+        iam_client, mock_client = mock_iam_client
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "s3:GetObject", "EvalDecision": "denied"}
+            ]
+        }
+        with pytest.raises(ValueError, match="Insufficient permission"):
+            iam_client.has_read_s3_permissions("s3://test-bucket/prefix/")
+
+    def test_has_delete_s3_permissions_success(self, mock_iam_client):
+        """Caller-side delete check passes without a role-assume gate."""
+        from unittest.mock import patch, MagicMock
+
+        iam_client, mock_client = mock_iam_client
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "s3:DeleteObject", "EvalDecision": "allowed"},
+                {"EvalActionName": "s3:ListBucket", "EvalDecision": "allowed"},
+            ]
+        }
+
+        # Versioning is checked via a fresh S3 client; make it report Enabled.
+        mock_s3 = MagicMock()
+        mock_s3.get_bucket_versioning.return_value = {"Status": "Enabled"}
+        with patch("nx_neptune.clients.iam_client.ClientFactory") as mock_factory_cls:
+            mock_factory_cls.return_value.s3.return_value = mock_s3
+
+            # Should not raise; delete is caller-initiated, so no assume-role
+            # (get_role) gate applies.
+            iam_client.has_delete_s3_permissions("s3://test-bucket/prefix/")
+
+        mock_client.get_role.assert_not_called()
+        # Versioning is still enforced for delete.
+        mock_s3.get_bucket_versioning.assert_called_once_with(Bucket="test-bucket")
+
+    def test_has_delete_s3_permissions_denied_raises(self, mock_iam_client):
+        """A denied S3 delete raises ValueError."""
+        iam_client, mock_client = mock_iam_client
+        mock_client.simulate_principal_policy.return_value = {
+            "EvaluationResults": [
+                {"EvalActionName": "s3:DeleteObject", "EvalDecision": "denied"}
+            ]
+        }
+        with pytest.raises(ValueError, match="Insufficient permission"):
+            iam_client.has_delete_s3_permissions("s3://test-bucket/prefix/")
+
     def test_check_aws_permission_wildcard_resource(self, mock_iam_client):
         """Test check_aws_permission with wildcard resource."""
         iam_client, mock_client = mock_iam_client

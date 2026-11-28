@@ -23,7 +23,7 @@ from botocore.utils import ArnParser
 __all__ = ["IamClientWrapper", "split_s3_arn_to_bucket_and_path"]
 
 from .client_factory import ClientFactory
-from .neptune_constants import SERVICE_NA
+from .neptune_constants import SERVICE_NA_PRINCIPAL
 
 # S3 actions that IAM authorizes against the bucket ARN rather than an object ARN.
 # Everything else in this module's permission sets is object-level.
@@ -426,8 +426,8 @@ class IamClientWrapper:
             f"Permission check on ARN(s): {self.role_arn}, {bucket_arn}, {key_arn}"
         )
 
-        if not self.check_assume_role(SERVICE_NA):
-            raise ValueError(f"Missing role assume on principle {SERVICE_NA}")
+        if not self.check_assume_role(SERVICE_NA_PRINCIPAL):
+            raise ValueError(f"Missing role assume on principle {SERVICE_NA_PRINCIPAL}")
         # Check S3: bucket-level and object-level actions go to different ARNs
         self._check_s3_permission(operation_name, s3_permissions, bucket_arn)
 
@@ -474,10 +474,38 @@ class IamClientWrapper:
         """
         s3_permissions = ["s3:DeleteObject", "s3:ListBucket"]
         operation_name = "S3-Delete"
-        self._s3_kms_permission_check(
-            operation_name, bucket_arn, None, s3_permissions, []
-        )
+        # Deleting the staging objects is performed by the caller directly (not
+        # by Neptune assuming a role), so validate the caller's own permissions
+        # and skip the role-assume gate used by the export/import-task paths.
+        self._check_s3_permission(operation_name, s3_permissions, bucket_arn)
         self.check_s3_versioning_enabled(bucket_arn)
+
+    def has_read_s3_permissions(self, bucket_arn, key_arn=None):
+        """Check if the caller can read S3 data for a synchronous (neptune.load) import.
+
+        Unlike the import-task path, neptune.load reads S3 using the caller's own
+        credentials rather than a Neptune service role, so this validates the
+        caller's own permissions directly and skips the role-assume gate. If the
+        source bucket is SSE-KMS encrypted, kms:Decrypt is also required to read
+        the objects.
+
+        Args:
+            bucket_arn (str): The ARN of the S3 bucket
+            key_arn (str, optional): The ARN of the KMS key, or None if the bucket
+                is not KMS encrypted. Defaults to None.
+
+        Raises:
+            ValueError: If the caller lacks required permissions
+
+        Returns:
+            None
+        """
+        operation_name = "S3-Read"
+        self._check_s3_permission(
+            operation_name, ["s3:GetObject", "s3:ListBucket"], bucket_arn
+        )
+        if key_arn is not None:
+            self.check_aws_permission(operation_name, ["kms:Decrypt"], key_arn)
 
     def has_create_na_permissions(self):
         """Check if the configured IAM role has permissions to create a Neptune Analytics instance.

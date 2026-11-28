@@ -22,6 +22,11 @@ from nx_neptune_proxy.utils.aws_helper import (
     assert_managed_graph,
     get_graph_or_exception,
 )
+from nx_neptune.instance_management import (
+    _MEMORY_SIZES,
+    _SESSION_MEMORY_SIZES,
+    graph_type_from_details,
+)
 
 router = APIRouter(prefix="/api/v0/metadata", tags=["metadata"])
 
@@ -52,6 +57,8 @@ def get_config():
     return {
         "region": settings.region or "",
         "graph_prefix": settings.graph_prefix,
+        "session_memory_sizes": sorted(_SESSION_MEMORY_SIZES),
+        "memory_sizes": sorted(_MEMORY_SIZES),
     }
 
 
@@ -171,7 +178,13 @@ def list_neptune_graphs():
     filtered = [g for g in items if g.get("name", "").startswith(prefix)]
     return {
         "graphs": [
-            {"id": g["id"], "name": g["name"], "status": g["status"]} for g in filtered
+            {
+                "id": g["id"],
+                "name": g["name"],
+                "status": g["status"],
+                "graph_type": graph_type_from_details(g).value,
+            }
+            for g in filtered
         ]
     }
 

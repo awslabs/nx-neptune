@@ -7,6 +7,7 @@ interface Graph {
   id: string;
   name: string;
   status: string;
+  graph_type: "session" | "provisioned" | "unknown";
 }
 
 interface Summary {
@@ -50,10 +51,11 @@ export function Graphs() {
     setGraphs(data.graphs);
     setLoading(false);
 
-    // Fetch summaries only on initial load or explicit request
+    // Fetch summaries only on initial load or explicit request. Only ask for
+    // graphs confirmed as provisioned; session and unknown graphs are skipped.
     if (opts?.withSummaries) {
       for (const g of data.graphs) {
-        if (g.status === "AVAILABLE") {
+        if (g.status === "AVAILABLE" && g.graph_type === "provisioned") {
           metadata.graphSummary(g.id).then(s => setSummaries(prev => ({ ...prev, [g.id]: s }))).catch(() => {});
         }
       }

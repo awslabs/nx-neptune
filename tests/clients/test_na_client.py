@@ -227,3 +227,22 @@ class TestNeptuneAnalyticsClient:
         )
         assert na.client == mock_client
         mock_boto3.client.assert_not_called()
+
+
+def test_client_factory_max_attempts_means_a_single_call():
+    from nx_neptune.clients.client_factory import ClientFactory
+
+    config = ClientFactory(
+        region="us-west-2", timeout_seconds=3600, max_attempts=1
+    )._na_config()
+    assert config.read_timeout == 3600
+    # total_max_attempts=1 means one call and no retries.
+    assert config.retries == {"total_max_attempts": 1, "mode": "standard"}
+
+
+def test_client_factory_default_has_no_retry_override():
+    from nx_neptune.clients.client_factory import ClientFactory
+
+    assert ClientFactory()._na_config().retries is None
+    # Asking for a retry limit must not return the shared default instance.
+    assert ClientFactory(max_attempts=1) is not ClientFactory()

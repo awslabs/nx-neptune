@@ -41,10 +41,15 @@ export function Projections() {
   async function load() {
     const list = await projection.list();
     setProjections(list);
-    // Fetch graph statuses and actions
-    metadata.graphs().then(({ graphs }) => {
+    // Fetch graph statuses and types. Awaited: the summary step below needs the
+    // types. Only graphs confirmed as provisioned are summarized, so a failed
+    // list call, a missing graph or an unknown type never wakes a session graph.
+    const provisionedGraphs = new Set<string>();
+    try {
+      const { graphs } = await metadata.graphs();
       setGraphStatuses(new Map(graphs.map(g => [g.id, g.status])));
-    }).catch(() => {});
+      for (const g of graphs) if (g.graph_type === "provisioned") provisionedGraphs.add(g.id);
+    } catch {}
     // Fetch actions for projections with graphs
     for (const s of list) {
       if (s.graph_id) {
@@ -59,10 +64,10 @@ export function Projections() {
         }).catch(() => {});
       }
     }
-    // Fetch graph summaries for completed projections
+    // Fetch graph summaries for completed projections on confirmed provisioned graphs
     const entries: [string, { numNodes: number; numEdges: number }][] = [];
     await Promise.all(
-      list.filter(p => p.graph_id && (p.status === "complete" || p.status === "importing")).map(async (p) => {
+      list.filter(p => p.graph_id && provisionedGraphs.has(p.graph_id!) && (p.status === "complete" || p.status === "importing")).map(async (p) => {
         try {
           const s = await metadata.graphSummary(p.graph_id!);
           entries.push([p.id, { numNodes: s.numNodes, numEdges: s.numEdges }]);

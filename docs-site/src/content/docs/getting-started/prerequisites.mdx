@@ -55,6 +55,8 @@ Required to import/export between S3 and Neptune Analytics:
 - `neptune-graph:StartExportTask`
 - `neptune-graph:GetExportTask`
 
+Every S3 import first calls `neptune-graph:GetGraph`, to distinguish a graph session (Neptune Graph Session) from a provisioned (Neptune Analytics) graph and choose the import path. It is listed under Graph management above, but a role that was scoped to the import actions alone must now include it, or the import fails with `AccessDenied`.
+
 `nx-neptune` stages CSV files in S3, deletes them after an import, and checks the bucket's settings. On the staging and export buckets, this needs:
 
 - `s3:GetObject`
@@ -72,6 +74,14 @@ aws s3api put-bucket-versioning --bucket <bucket> --versioning-configuration Sta
 ```
 
 Because nx-neptune deletes its staged files, a versioned bucket keeps their old versions. A lifecycle rule that expires noncurrent versions avoids paying to store them.
+
+### Importing into a graph session
+
+A graph session (4 or 8 s-NCU) does not support import tasks. `nx-neptune` loads the staged files with the `neptune.load` procedure instead, as one openCypher query, so:
+
+- Neptune Analytics does not read S3 with an import role. The load uses your own credentials, so you need `s3:GetObject` and `s3:ListBucket` on the staging location, and `kms:Decrypt` on its key if the bucket is KMS-encrypted.
+- The import role, its trust policy and `iam:PassRole` are not used on this path.
+- The query permissions listed above apply. `nx-neptune` checks your S3 and KMS permissions before the load with `iam:SimulatePrincipalPolicy`, as it does for other imports.
 
 ### Import role
 
